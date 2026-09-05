@@ -10,6 +10,14 @@ export default async function handler(req, res) {
     const { text, voice } = req.body || {};
     if (!text?.trim()) return res.status(400).json({ error: 'Missing text' });
 
+    // Keep compatibility with the existing browser UI while switching providers.
+    // The old Cartesia voice IDs are mapped to valid Gemini TTS voices.
+    const voiceMap = {
+      'f786b574-daa5-4673-aa0c-cbe3e8534c02': 'Kore',
+      'a5136bf9-224c-4d76-b823-52bd5efcffcc': 'Aoede'
+    };
+    const selectedVoice = voiceMap[voice?.trim()] || voice?.trim() || 'Kore';
+
     const response = await fetch('https://openrouter.ai/api/v1/audio/speech', {
       method: 'POST',
       headers: {
@@ -21,7 +29,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: 'google/gemini-3.1-flash-tts-preview',
         input: text.trim(),
-        voice: voice?.trim() || 'Kore',
+        voice: selectedVoice,
         response_format: 'mp3'
       })
     });
