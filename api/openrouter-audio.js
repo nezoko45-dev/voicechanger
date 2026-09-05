@@ -7,15 +7,15 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { text, voice = '' } = req.body || {};
+    const { text, voice } = req.body || {};
     if (!text?.trim()) return res.status(400).json({ error: 'Missing text' });
 
     const body = {
       model: 'fish-audio/s2.1-pro-free:free',
       input: text.trim(),
-      response_format: 'mp3'
+      response_format: 'mp3',
+      voice: voice?.trim() || '5161d41404314212af1254556477c17d'
     };
-    if (voice?.trim()) body.voice = voice.trim();
 
     const response = await fetch('https://openrouter.ai/api/v1/audio/speech', {
       method: 'POST',
@@ -23,7 +23,7 @@ export default async function handler(req, res) {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'https://voicechanger.vercel.app',
-        'X-Title': 'Free Low Latency Voice Changer'
+        'X-Title': 'Free Low Latency Female Voice Changer'
       },
       body: JSON.stringify(body)
     });
