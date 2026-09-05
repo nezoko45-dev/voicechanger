@@ -10,7 +10,6 @@ from pathlib import Path
 
 
 def ensure_dependencies():
-    """Install the small Python dependencies automatically on first launch."""
     packages = [
         "rvc-python==0.1.5",
         "numpy>=1.26,<3",
@@ -40,6 +39,7 @@ PORT = int(os.getenv("RVC_PORT", "8765"))
 BASE_DIR = Path(__file__).resolve().parent
 MODEL_DIR = BASE_DIR / "models"
 DEVICE = os.getenv("RVC_DEVICE", "")
+MAX_MODEL_SIZE = 2 * 1024 * 1024 * 1024
 
 converter = None
 current_model = None
@@ -75,9 +75,7 @@ def load_converter(model_path=None):
     elif models:
         path = models[0]
     else:
-        raise RuntimeError(
-            "No .pth RVC model found. Put your trained .pth file in the models folder."
-        )
+        raise RuntimeError("No .pth RVC model found. Upload a .pth file with the webpage.")
 
     if not path.exists() or path.suffix.lower() != ".pth":
         raise RuntimeError(f"RVC model not found: {path}")
@@ -114,9 +112,15 @@ def convert_chunk(pcm: bytes, sample_rate: int) -> bytes:
         src = Path(d) / "input.wav"
         dst = Path(d) / "output.wav"
         src.write_bytes(pcm_to_wav(pcm, sample_rate))
-        # rvc-python's inference API accepts the source/output WAV paths.
         converter.infer_file(str(src), str(dst))
         return wav_to_packet(dst)
+
+
+async def send_models(ws):
+    await ws.send(json.dumps({
+        "type": "models",
+        "models": [p.name for p in find_models()],
+    }))
 
 
 async def handler(ws):
@@ -126,13 +130,11 @@ async def handler(ws):
         "models": [p.name for p in find_models()],
     }))
 
+    upload = None
     async for message in ws:
         if isinstance(message, str):
             if message == "LIST_MODELS":
-                await ws.send(json.dumps({
-                    "type": "models",
-                    "models": [p.name for p in find_models()],
-                }))
+                await send_models(ws)
                 continue
 
             if message.startswith("MODEL "):
@@ -147,6 +149,29 @@ async def handler(ws):
                     await ws.send(json.dumps({"type": "error", "message": str(exc)}))
                 continue
 
+            if message.startswith("UPLOAD_MODEL "):
+                try:
+                    parts = message.split(" ", 2)
+                    name = Path(parts[1]).name
+                    size = int(parts[2])
+                    if not name.lower().endswith(".pth"):
+                        raise ValueError("Only .pth RVC models are supported.")
+                    if size <= 0 or size > MAX_MODEL_SIZE:
+                        raise ValueError("Model file is too large or empty.")
+                    MODEL_DIR.mkdir(exist_ok=True)
+                    destination = MODEL_DIR / name
+                    upload = {
+                        "path": destination,
+                        "size": size,
+                        "received": 0,
+                        "file": destination.open("wb"),
+                    }
+                    await ws.send(json.dumps({"type": "upload_started", "model": name, "size": size}))
+                except Exception as exc:
+                    upload = None
+                    await ws.send(json.dumps({"type": "error", "message": str(exc)}))
+                continue
+
             try:
                 data = json.loads(message)
                 if data.get("type") == "settings":
@@ -157,8 +182,30 @@ async def handler(ws):
                 pass
             continue
 
+        # Binary messages are either model-upload chunks or PCM16 audio.
+        if upload is not None:
+            try:
+                upload["file"].write(message)
+                upload["received"] += len(message)
+                if upload["received"] > upload["size"]:
+                    raise ValueError("Model upload exceeded declared size.")
+                if upload["received"] == upload["size"]:
+                    upload["file"].close()
+                    path = upload["path"]
+                    upload = None
+                    await ws.send(json.dumps({"type": "upload_complete", "model": path.name}))
+                    await asyncio.to_thread(load_converter, str(path))
+                    await ws.send(json.dumps({"type": "model_loaded", "model": path.name}))
+            except Exception as exc:
+                try:
+                    upload["file"].close()
+                except Exception:
+                    pass
+                upload = None
+                await ws.send(json.dumps({"type": "error", "message": str(exc)}))
+            continue
+
         try:
-            # First 4 bytes: little-endian sample rate; remainder: PCM16 mono.
             if len(message) < 5:
                 continue
             rate = int.from_bytes(message[:4], "little")
@@ -167,6 +214,12 @@ async def handler(ws):
             await ws.send(output)
         except Exception as exc:
             await ws.send(json.dumps({"type": "error", "message": str(exc)}))
+
+    if upload is not None:
+        try:
+            upload["file"].close()
+        except Exception:
+            pass
 
 
 async def main():
@@ -184,7 +237,7 @@ async def main():
         except Exception as exc:
             print(f"Model load failed: {exc}")
     else:
-        print("Put a trained .pth model in the models folder, then reconnect.")
+        print("No model yet. Upload one from the webpage.")
     print(f"Listening on ws://{HOST}:{PORT}")
     print("Keep this window open while using the website.")
     async with websockets.serve(handler, HOST, PORT, max_size=16 * 1024 * 1024):
