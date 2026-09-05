@@ -1,27 +1,24 @@
+import { decryptKeys, readCookie } from './_key-store.js';
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
-  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
-  if (!apiKey) {
-    return res.status(500).json({ error: 'Server is not configured. Set OPENROUTER_API_KEY in Vercel.' });
-  }
-
   try {
+    const { openrouterKey } = decryptKeys(readCookie(req));
+    if (!openrouterKey) {
+      return res.status(401).json({ error: 'OpenRouter is not connected. Open API Integrations and save your OpenRouter key.' });
+    }
+
     const { text, voice } = req.body || {};
     if (!text?.trim()) return res.status(400).json({ error: 'Missing text' });
 
-    // Keep compatibility with the existing browser UI while switching providers.
-    // The old Cartesia voice IDs are mapped to valid Gemini TTS voices.
-    const voiceMap = {
-      'f786b574-daa5-4673-aa0c-cbe3e8534c02': 'Kore',
-      'a5136bf9-224c-4d76-b823-52bd5efcffcc': 'Aoede'
-    };
-    const selectedVoice = voiceMap[voice?.trim()] || voice?.trim() || 'Kore';
+    const validVoices = new Set(['Kore', 'Aoede', 'Leda', 'Zephyr']);
+    const selectedVoice = validVoices.has(voice?.trim()) ? voice.trim() : 'Kore';
 
     const response = await fetch('https://openrouter.ai/api/v1/audio/speech', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${openrouterKey}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'https://voicechanger-f7kui1owf-nezoko45-8506s-projects.vercel.app/',
         'X-Title': 'Low-Latency Female Voice Changer'
@@ -43,11 +40,8 @@ export default async function handler(req, res) {
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());
-    return res.status(200).json({
-      audio: buffer.toString('base64'),
-      format: 'mp3'
-    });
+    return res.status(200).json({ audio: buffer.toString('base64'), format: 'mp3' });
   } catch (error) {
-    return res.status(502).json({ error: error?.message || 'OpenRouter TTS request failed' });
+    return res.status(500).json({ error: error?.message || 'OpenRouter TTS request failed' });
   }
 }
