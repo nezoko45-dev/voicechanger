@@ -13,7 +13,7 @@ export default async function handler(req, res) {
     const body = {
       model: 'fish-audio/s2.1-pro-free:free',
       input: text.trim(),
-      response_format: 'pcm'
+      response_format: 'mp3'
     };
     if (voice?.trim()) body.voice = voice.trim();
 
@@ -23,12 +23,11 @@ export default async function handler(req, res) {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'https://voicechanger.vercel.app',
-        'X-Title': 'Free Voice Changer'
+        'X-Title': 'Free Low Latency Voice Changer'
       },
       body: JSON.stringify(body)
     });
 
-    const contentType = response.headers.get('content-type') || '';
     if (!response.ok) {
       const textBody = await response.text();
       let data;
@@ -39,11 +38,7 @@ export default async function handler(req, res) {
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());
-    return res.status(200).json({
-      audio: buffer.toString('base64'),
-      format: contentType.includes('mpeg') ? 'mp3' : 'pcm',
-      sampleRate: 44100
-    });
+    return res.status(200).json({ audio: buffer.toString('base64'), format: 'mp3' });
   } catch (error) {
     return res.status(502).json({ error: error?.message || 'OpenRouter request failed' });
   }
