@@ -1,38 +1,28 @@
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
-  const apiKey = process.env.CARTESIA_API_KEY;
+  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
   if (!apiKey) {
-    return res.status(500).json({ error: 'Server is not configured. Set CARTESIA_API_KEY in Vercel.' });
+    return res.status(500).json({ error: 'Server is not configured. Set OPENROUTER_API_KEY in Vercel.' });
   }
 
   try {
     const { text, voice } = req.body || {};
     if (!text?.trim()) return res.status(400).json({ error: 'Missing text' });
 
-    const response = await fetch('https://api.cartesia.ai/tts/bytes', {
+    const response = await fetch('https://openrouter.ai/api/v1/audio/speech', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        'Cartesia-Version': '2026-03-01',
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://voicechanger-f7kui1owf-nezoko45-8506s-projects.vercel.app/',
+        'X-Title': 'Low-Latency Female Voice Changer'
       },
       body: JSON.stringify({
-        model_id: 'sonic-3.5',
-        transcript: text.trim(),
-        voice: {
-          mode: 'id',
-          id: voice?.trim() || 'f786b574-daa5-4673-aa0c-cbe3e8534c02'
-        },
-        output_format: {
-          container: 'mp3',
-          bit_rate: 128000
-        },
-        language: 'en',
-        generation_config: {
-          volume: 1,
-          speed: 1
-        }
+        model: 'google/gemini-3.1-flash-tts-preview',
+        input: text.trim(),
+        voice: voice?.trim() || 'Kore',
+        response_format: 'mp3'
       })
     });
 
@@ -40,9 +30,8 @@ export default async function handler(req, res) {
       const body = await response.text();
       let data;
       try { data = JSON.parse(body); } catch { data = null; }
-      return res.status(response.status).json({
-        error: data?.message || data?.error || body || 'Cartesia request failed'
-      });
+      const message = data?.error?.message || data?.message || body || 'OpenRouter TTS request failed';
+      return res.status(response.status).json({ error: message });
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());
@@ -51,6 +40,6 @@ export default async function handler(req, res) {
       format: 'mp3'
     });
   } catch (error) {
-    return res.status(502).json({ error: error?.message || 'Cartesia request failed' });
+    return res.status(502).json({ error: error?.message || 'OpenRouter TTS request failed' });
   }
 }
