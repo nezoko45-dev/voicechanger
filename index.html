@@ -2,34 +2,31 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>OpenRouter Voice Changer</title>
+<title>Free Female Voice Changer</title>
 <style>
 :root{color-scheme:dark;font-family:Inter,system-ui,sans-serif}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090a10;color:#f4f4f8}.app{width:min(780px,92vw);padding:28px;border:1px solid #292b3a;border-radius:20px;background:#11131c;box-shadow:0 20px 70px #0009}h1{margin:0 0 7px}.sub{color:#a8aabc;margin-bottom:22px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.control{padding:14px;border:1px solid #292b3a;border-radius:12px;background:#171924}.control label{display:block;color:#aeb1c3;font-size:13px;margin-bottom:7px}select,button{box-sizing:border-box;width:100%;border:1px solid #34374a;background:#1b1e2a;color:#fff;border-radius:10px;padding:11px}button{cursor:pointer}.primary{background:#7c4dff;border-color:#7c4dff}.buttons{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.status{margin:16px 0;padding:12px;border-radius:10px;background:#191c27;color:#c5c8d8}.meter{height:8px;background:#20232f;border-radius:99px;overflow:hidden}.meter i{display:block;width:0;height:100%;background:#8d63ff;transition:width .06s}.log{height:180px;overflow:auto;background:#0a0b10;border:1px solid #252838;border-radius:10px;padding:12px;white-space:pre-wrap;color:#b9bdcc;font-size:13px}.note{font-size:12px;color:#85899c;line-height:1.5;margin-top:16px}@media(max-width:620px){.grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body><main class="app">
-<h1>🎙️ OpenRouter Voice Changer</h1>
-<div class="sub">Microphone → OpenRouter audio model → natural female voice. Audio is processed in short browser chunks so you don't have to record an entire sentence first.</div>
+<h1>🎙️ Free Female Voice Changer</h1>
+<div class="sub">Free OpenRouter Fish Audio re-voices your speech. The browser handles speech recognition, then OpenRouter speaks it back with a natural voice.</div>
 <div class="grid">
-<div class="control"><label>Female voice</label><select id="voice"><option value="nova">Nova — female</option><option value="shimmer">Shimmer — female</option><option value="alloy">Alloy — neutral</option></select></div>
-<div class="control"><label>Chunk size</label><select id="chunk"><option value="900">Fast — ~0.9 s</option><option value="1400" selected>Balanced — ~1.4 s</option><option value="2000">Smoother — ~2.0 s</option></select></div>
+<div class="control"><label>Voice</label><select id="voice"><option value="">Fish Audio default voice</option></select></div>
+<div class="control"><label>Processing</label><select id="mode"><option value="fast" selected>Fast — short phrases</option><option value="sentence">Sentence — complete phrases</option></select></div>
 </div>
 <div class="buttons"><button class="primary" id="start">Start Voice Changer</button><button id="stop" disabled>Stop</button></div>
 <div class="status" id="status">Ready — press Start Voice Changer.</div>
 <div class="meter"><i id="meter"></i></div>
-<h3>Cloud activity</h3><div class="log" id="log"></div>
-<div class="note"><b>Vercel setup:</b> add <code>OPENROUTER_API_KEY</code> to the Vercel project, then redeploy. The key stays server-side and is never sent to the browser.</div>
+<h3>Activity</h3><div class="log" id="log"></div>
+<div class="note"><b>Free model:</b> <code>fish-audio/s2.1-pro-free:free</code>. No paid audio model is used. OpenRouter currently lists this model at $0 input/output. Free endpoints are rate-limited.</div>
 </main>
 <script>
-const $=id=>document.getElementById(id);let running=false,mic=null,rec=null,queue=Promise.resolve(),lastRequest=0;
-function status(s){$("status").textContent=s}function log(s){$("log").textContent+=s+"\n";$("log").scrollTop=$("log").scrollHeight}
-function pickMime(){const types=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus'];return types.find(t=>MediaRecorder.isTypeSupported(t))||''}
-function bytesToBase64(buffer){let binary='';const bytes=new Uint8Array(buffer),step=0x8000;for(let i=0;i<bytes.length;i+=step)binary+=String.fromCharCode(...bytes.subarray(i,i+step));return btoa(binary)}
-async function playBase64(b64,format){const bytes=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));const blob=new Blob([bytes],{type:format==='wav'?'audio/wav':'audio/mpeg'});const url=URL.createObjectURL(blob);const a=new Audio(url);a.onended=()=>URL.revokeObjectURL(url);try{await a.play()}catch(e){log('Playback: '+e.message)}}
-async function convert(blob){const started=performance.now();status('Converting microphone audio…');const format=blob.type.includes('ogg')?'ogg':'webm';const audio=bytesToBase64(await blob.arrayBuffer());const r=await fetch('/api/openrouter-audio',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({audio,format})});const d=await r.json();if(!r.ok)throw new Error(d.error||'OpenRouter conversion failed');await playBase64(d.audio,d.format);status('Live female voice active');log('Converted chunk in '+Math.round(performance.now()-started)+' ms'+(d.transcript?' — '+d.transcript:''))}
-function handleChunk(blob){if(!blob||blob.size<500)return;queue=queue.then(()=>convert(blob)).catch(e=>{log(e.message||String(e));status('Conversion error — see activity log')})}
-async function start(){if(running)return;try{await navigator.mediaDevices.getUserMedia({audio:true}).then(s=>{mic=s});running=true;$("start").disabled=true;$("stop").disabled=false;const mime=pickMime();if(!mime)throw new Error('This browser does not support MediaRecorder WebM/OGG audio');const ms=Number($("chunk").value);rec=new MediaRecorder(mic,{mimeType:mime,audioBitsPerSecond:64000});rec.ondataavailable=e=>handleChunk(e.data);rec.onerror=e=>{log('Recorder error: '+(e.error?.message||'unknown'));status('Microphone recorder error')};rec.start(ms);status('Listening — speak now');log('Microphone started; sending ~'+ms+' ms chunks');}
-catch(e){log(e.message||String(e));stop()}}
-function stop(){running=false;if(rec&&rec.state!=='inactive')rec.stop();rec=null;if(mic){mic.getTracks().forEach(t=>t.stop());mic=null}$("start").disabled=false;$("stop").disabled=true;$("meter").style.width='0%';status('Stopped')}
-let meterTimer;setInterval(()=>{if(!running)return;$("meter").style.width=(15+Math.random()*70)+'%'},100);$("start").onclick=start;$("stop").onclick=stop;window.addEventListener('beforeunload',stop);
+const $=id=>document.getElementById(id);let recognition=null,running=false,requestBusy=false;
+function status(s){$('status').textContent=s}function log(s){$('log').textContent+=s+'\n';$('log').scrollTop=$('log').scrollHeight}
+function b64ToBytes(b64){const raw=atob(b64),out=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);return out}
+function pcmToWav(bytes,sampleRate=44100){const pcm=new Int16Array(bytes.buffer,bytes.byteOffset,Math.floor(bytes.byteLength/2));const ab=new ArrayBuffer(44+pcm.byteLength),v=new DataView(ab),w=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))};w(0,'RIFF');v.setUint32(4,36+pcm.byteLength,true);w(8,'WAVE');w(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,sampleRate,true);v.setUint32(28,sampleRate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,pcm.byteLength,true);new Uint8Array(ab,44).set(new Uint8Array(pcm.buffer,pcm.byteOffset,pcm.byteLength));return ab}
+async function speak(text){if(!text.trim()||requestBusy)return;requestBusy=true;try{status('Generating female voice…');$('meter').style.width='75%';const r=await fetch('/api/openrouter-audio',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,voice:$('voice').value})});const d=await r.json();if(!r.ok)throw new Error(d.error||'OpenRouter request failed');const wav=pcmToWav(b64ToBytes(d.audio),d.sampleRate||44100),url=URL.createObjectURL(new Blob([wav],{type:'audio/wav'})),audio=new Audio(url);audio.onended=()=>{URL.revokeObjectURL(url);if(running)status('Listening…')};await audio.play();log('Re-voiced: '+text)}catch(e){log('Error: '+e.message);status(e.message||'Voice generation failed')}finally{requestBusy=false;$('meter').style.width='0%'}}
+function start(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){status('Speech recognition is not supported. Use Chrome or Edge.');return}running=true;$('start').disabled=true;$('stop').disabled=false;recognition=new SR();recognition.continuous=true;recognition.interimResults=true;recognition.lang='en-US';recognition.onstart=()=>{status('Listening… speak now');log('Browser speech recognition started')};recognition.onresult=e=>{let finalText='';for(let i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)finalText+=e.results[i][0].transcript}if(finalText.trim())speak(finalText.trim())};recognition.onerror=e=>{log('Speech recognition: '+e.error);if(e.error==='not-allowed')status('Microphone permission was denied')};recognition.onend=()=>{if(running)try{recognition.start()}catch{}};try{recognition.start()}catch(e){status(e.message);stop()}}
+function stop(){running=false;if(recognition){try{recognition.stop()}catch{}recognition=null}$('start').disabled=false;$('stop').disabled=true;$('meter').style.width='0%';status('Stopped')}
+$('start').onclick=start;$('stop').onclick=stop;window.addEventListener('beforeunload',stop);
 </script></body></html>
