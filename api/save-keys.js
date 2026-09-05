@@ -1,37 +1,37 @@
-import crypto from 'crypto';
-
-const COOKIE_NAME = 'voicechanger_keys';
-const MAX_AGE = 60 * 60 * 24 * 30;
-
-function secret() {
-  return process.env.KEY_COOKIE_SECRET?.trim() || process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim() || process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() || 'voicechanger-local-secret';
-}
-
-function encrypt(value) {
-  const key = crypto.createHash('sha256').update(secret()).digest();
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-  const encrypted = Buffer.concat([cipher.update(JSON.stringify(value), 'utf8'), cipher.final()]);
-  return [iv, cipher.getAuthTag(), encrypted].map(b => b.toString('base64url')).join('.');
-}
+import { decryptKeys, encryptKeys, readCookie, setKeysCookie } from './_key-store.js';
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  if (req.method === 'GET') {
+    try {
+      const keys = decryptKeys(readCookie(req));
+      return res.status(200).json({
+        openrouter: Boolean(keys.openrouterKey),
+        deepgram: Boolean(keys.deepgramKey)
+      });
+    } catch (error) {
+      return res.status(500).json({ error: error?.message || 'Key storage is not configured.' });
+    }
+  }
+
+  if (req.method !== 'POST') return res.status(405).json({ error: 'GET or POST only' });
 
   try {
-    const { openrouterKey, deepgramKey } = req.body || {};
-    const keys = {
-      openrouterKey: typeof openrouterKey === 'string' ? openrouterKey.trim() : '',
-      deepgramKey: typeof deepgramKey === 'string' ? deepgramKey.trim() : ''
-    };
+    const body = req.body || {};
+    const existing = decryptKeys(readCookie(req));
+    const openrouterKey = typeof body.openrouterKey === 'string' ? body.openrouterKey.trim() : '';
+    const deepgramKey = typeof body.deepgramKey === 'string' ? body.deepgramKey.trim() : '';
 
-    if (!keys.openrouterKey && !keys.deepgramKey) {
+    if (!openrouterKey && !deepgramKey) {
       return res.status(400).json({ error: 'Enter at least one API key.' });
     }
 
-    // Store only an encrypted, HttpOnly cookie. The key is never returned to JavaScript.
-    const token = encrypt(keys);
-    res.setHeader('Set-Cookie', `${COOKIE_NAME}=${token}; Max-Age=${MAX_AGE}; Path=/; HttpOnly; Secure; SameSite=Strict`);
+    // Only replace the provider being saved. The other provider remains encrypted.
+    const keys = {
+      openrouterKey: openrouterKey || existing.openrouterKey,
+      deepgramKey: deepgramKey || existing.deepgramKey
+    };
+
+    setKeysCookie(res, keys);
     return res.status(200).json({
       ok: true,
       openrouter: Boolean(keys.openrouterKey),
