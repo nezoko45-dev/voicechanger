@@ -1,5 +1,6 @@
 import asyncio
 import io
+import json
 import os
 import tempfile
 import wave
@@ -8,6 +9,15 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 import websockets
+
+
+def cuda_available():
+    try:
+        import torch
+        return torch.cuda.is_available()
+    except Exception:
+        return False
+
 
 try:
     from rvc_python.infer import RVCInference
@@ -19,17 +29,7 @@ except ImportError as exc:
 HOST = os.getenv("RVC_HOST", "127.0.0.1")
 PORT = int(os.getenv("RVC_PORT", "8765"))
 MODEL = os.getenv("RVC_MODEL", "")
-DEVICE = os.getenv("RVC_DEVICE", "cuda:0" if _cuda_available() else "cpu")
-SAMPLE_RATE = int(os.getenv("RVC_SAMPLE_RATE", "48000"))
-
-
-def _cuda_available():
-    try:
-        import torch
-        return torch.cuda.is_available()
-    except Exception:
-        return False
-
+DEVICE = os.getenv("RVC_DEVICE", "cuda:0" if cuda_available() else "cpu")
 
 converter = None
 
@@ -37,9 +37,7 @@ converter = None
 def load_converter(model_path: str):
     global converter
     if not model_path:
-        raise RuntimeError(
-            "No RVC model selected. Set RVC_MODEL to a .pth model path."
-        )
+        raise RuntimeError("No RVC model selected. Set RVC_MODEL to a .pth model path.")
     if not Path(model_path).exists():
         raise RuntimeError(f"RVC model not found: {model_path}")
     print(f"Loading RVC model: {model_path} on {DEVICE}")
@@ -81,15 +79,19 @@ def convert_chunk(pcm: bytes, sample_rate: int) -> bytes:
 
 
 async def handler(ws):
-    await ws.send('{"type":"ready","device":"%s"}' % DEVICE)
+    await ws.send(json.dumps({"type": "ready", "device": DEVICE}))
     async for message in ws:
         if isinstance(message, str):
             if message.startswith("MODEL "):
-                load_converter(message[6:].strip())
-                await ws.send('{"type":"model_loaded"}')
+                try:
+                    load_converter(message[6:].strip())
+                    await ws.send(json.dumps({"type": "model_loaded"}))
+                except Exception as exc:
+                    await ws.send(json.dumps({"type": "error", "message": str(exc)}))
             continue
+
         try:
-            # First 4 bytes are the little-endian sample rate, followed by PCM16 mono.
+            # First 4 bytes are little-endian sample rate, followed by PCM16 mono.
             if len(message) < 5:
                 continue
             rate = int.from_bytes(message[:4], "little")
@@ -97,7 +99,7 @@ async def handler(ws):
             output = await asyncio.to_thread(convert_chunk, pcm, rate)
             await ws.send(output)
         except Exception as exc:
-            await ws.send('{"type":"error","message":%r}' % str(exc))
+            await ws.send(json.dumps({"type": "error", "message": str(exc)}))
 
 
 async def main():
