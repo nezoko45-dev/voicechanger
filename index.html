@@ -1,1 +1,70 @@
-
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Deepgram Voice Morph</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,system-ui,sans-serif}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0b12;color:#f5f5fa}.app{width:min(760px,92vw);padding:28px;border:1px solid #29293a;border-radius:20px;background:#12121b;box-shadow:0 20px 70px #0008}h1{margin:0 0 8px;font-size:30px}.sub{color:#aaaabd;margin-bottom:24px}.row{display:flex;gap:10px;flex-wrap:wrap}.key{display:flex;gap:8px;margin-bottom:18px}.key input{flex:1}.key input,select,button{border:1px solid #333348;background:#191925;color:#fff;border-radius:10px;padding:12px}button{cursor:pointer}button:hover{background:#222238}.primary{background:#743cff;border-color:#743cff}.primary:hover{background:#8758ff}.status{margin:18px 0;padding:12px;border-radius:10px;background:#191925;color:#bcbcd0}.meter{height:8px;background:#20202c;border-radius:99px;overflow:hidden;margin-top:14px}.meter i{display:block;width:0;height:100%;background:#8b5cff;transition:width .08s}.log{height:170px;overflow:auto;background:#0b0b12;border:1px solid #252538;border-radius:10px;padding:12px;white-space:pre-wrap;color:#b9b9c8;font-size:13px}.note{font-size:12px;color:#858597;line-height:1.5;margin-top:16px}
+</style>
+</head>
+<body>
+<main class="app">
+<h1>🎙️ Deepgram Voice Morph</h1>
+<div class="sub">Low-latency speech → female voice. Audio is processed continuously in small chunks.</div>
+<div class="key"><input id="key" type="password" placeholder="Deepgram API key"><button id="save">Save key</button></div>
+<div class="row" style="margin-bottom:14px"><label>Female voice&nbsp; <select id="voice"><option value="aura-2-thalia-en">Thalia</option><option value="aura-2-asteria-en">Asteria</option><option value="aura-2-luna-en">Luna</option></select></label><label>Chunk&nbsp; <select id="chunk"><option value="2">2 words</option><option value="4" selected>4 words</option><option value="6">6 words</option></select></label></div>
+<div class="row"><button class="primary" id="start">Start</button><button id="stop" disabled>Stop</button></div>
+<div class="status" id="status">Ready — enter your key, then press Start.</div>
+<div class="meter"><i id="meter"></i></div>
+<h3>Live transcript</h3><div class="log" id="log"></div>
+<div class="note">Important: Deepgram Aura is text-to-speech, not acoustic voice conversion. This first version converts your speech to text and immediately regenerates it with a female Deepgram voice. It does not preserve your original vocal identity. For true voice-to-voice conversion, a dedicated voice-conversion model is needed.</div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const keyEl=$("key"), statusEl=$("status"), logEl=$("log"), meter=$("meter");
+let savedKey=localStorage.getItem("deepgram_voicechanger_key")||""; keyEl.value=savedKey?"":"";
+$("save").onclick=()=>{const k=keyEl.value.trim();if(!k)return setStatus("Enter an API key first.");localStorage.setItem("deepgram_voicechanger_key",k);setStatus("API key saved locally.")};
+let audioCtx,micStream,processor,source,stt,tts,playingAt=0,running=false,transcriptBuffer="",lastInterim="";
+function setStatus(s){statusEl.textContent=s}
+function log(s){logEl.textContent+=s+"\n";logEl.scrollTop=logEl.scrollHeight}
+function authSocket(url,key){return new WebSocket(url,["token",key])}
+async function start(){
+ const key=keyEl.value.trim()||localStorage.getItem("deepgram_voicechanger_key");
+ if(!key)return setStatus("Enter your Deepgram API key.");
+ if(running)return; running=true; $("start").disabled=true;$("stop").disabled=false;
+ try{
+  audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  micStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+  await audioCtx.resume();
+  const rate=audioCtx.sampleRate;
+  stt=authSocket(`wss://api.deepgram.com/v1/listen?model=nova-3&language=en-US&encoding=linear16&sample_rate=${rate}&channels=1&interim_results=true&smart_format=true`,key);
+  stt.binaryType="arraybuffer";
+  stt.onopen=()=>{setStatus("Listening — speaking will be converted in chunks…");log("STT connected")};
+  stt.onmessage=e=>{try{const d=JSON.parse(e.data);const alt=d.channel?.alternatives?.[0];if(!alt)return;const text=(alt.transcript||"").trim();if(text){lastInterim=text;meter.style.width=Math.min(100,text.length*3)+"%";if(d.is_final){log("You: "+text);transcriptBuffer+=(transcriptBuffer?" ":"")+text;flushTextChunks(false)}}}catch(err){console.error(err)}};
+  stt.onerror=e=>{log("STT error");console.error(e)};
+  stt.onclose=()=>{if(running)log("STT disconnected")};
+  tts=authSocket(`wss://api.deepgram.com/v1/speak?model=${encodeURIComponent($("voice").value)}&encoding=linear16&sample_rate=24000`,key);
+  tts.binaryType="arraybuffer";
+  tts.onopen=()=>log("TTS connected")
+  tts.onmessage=e=>{if(e.data instanceof ArrayBuffer)queuePCM(e.data);};
+  tts.onerror=e=>{log("TTS error");console.error(e)};
+  source=audioCtx.createMediaStreamSource(micStream);
+  processor=audioCtx.createScriptProcessor(4096,1,1);
+  processor.onaudioprocess=e=>{if(!running||!stt||stt.readyState!==1)return;const input=e.inputBuffer.getChannelData(0);const pcm=new Int16Array(input.length);let sum=0;for(let i=0;i<input.length;i++){const x=Math.max(-1,Math.min(1,input[i]));pcm[i]=x<0?x*32768:x*32767;sum+=x*x}const rms=Math.sqrt(sum/input.length);meter.style.width=Math.min(100,rms*500)+"%";stt.send(pcm.buffer)};
+  source.connect(processor);processor.connect(audioCtx.destination);
+ }catch(err){log(err.message||String(err));stop()}
+}
+function flushTextChunks(force){
+ const n=+$("chunk").value; let words=transcriptBuffer.trim().split(/\s+/).filter(Boolean);
+ if(force){if(words.length)sendTTS(words.join(" "));transcriptBuffer="";return}
+ while(words.length>=n){const chunk=words.splice(0,n).join(" ");sendTTS(chunk)}
+ transcriptBuffer=words.join(" ");
+}
+function sendTTS(text){if(!text||!tts||tts.readyState!==1)return;log("Female: "+text);tts.send(JSON.stringify({type:"Speak",text}));tts.send(JSON.stringify({type:"Flush"}))}
+function queuePCM(buf){if(!audioCtx)return;const samples=new Int16Array(buf);const audio=audioCtx.createBuffer(1,samples.length,24000);const ch=audio.getChannelData(0);for(let i=0;i<samples.length;i++)ch[i]=samples[i]/32768;const src=audioCtx.createBufferSource();src.buffer=audio;src.connect(audioCtx.destination);const now=audioCtx.currentTime;playingAt=Math.max(playingAt,now+0.02);src.start(playingAt);playingAt+=audio.duration}
+function stop(){running=false;$("start").disabled=false;$("stop").disabled=true;try{flushTextChunks(true)}catch{};if(stt&&stt.readyState===1)stt.close();if(tts&&tts.readyState===1){try{tts.send(JSON.stringify({type:"Close"}))}catch{};try{tts.close()}catch{}};if(processor){processor.disconnect();processor=null}if(source){source.disconnect();source=null}if(micStream){micStream.getTracks().forEach(t=>t.stop());micStream=null}setStatus("Stopped.");meter.style.width="0%"}
+$("start").onclick=start;$("stop").onclick=stop;window.addEventListener("beforeunload",stop);
+</script>
+</body>
+</html>
