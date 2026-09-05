@@ -1,89 +1,36 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Deepgram Voice Morph</title>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RVC Live Voice Changer</title>
 <style>
-:root{color-scheme:dark;font-family:Inter,system-ui,sans-serif}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0b12;color:#f5f5fa}.app{width:min(760px,92vw);padding:28px;border:1px solid #29293a;border-radius:20px;background:#12121b;box-shadow:0 20px 70px #0008}h1{margin:0 0 8px;font-size:30px}.sub{color:#aaaabd;margin-bottom:24px}.row{display:flex;gap:10px;flex-wrap:wrap}.key{display:flex;gap:8px;margin-bottom:18px}.key input{flex:1}.key input,select,button{border:1px solid #333348;background:#191925;color:#fff;border-radius:10px;padding:12px}button{cursor:pointer}button:hover{background:#222238}.primary{background:#743cff;border-color:#743cff}.primary:hover{background:#8758ff}.status{margin:18px 0;padding:12px;border-radius:10px;background:#191925;color:#bcbcd0}.meter{height:8px;background:#20202c;border-radius:99px;overflow:hidden;margin-top:14px}.meter i{display:block;width:0;height:100%;background:#8b5cff;transition:width .08s}.log{height:170px;overflow:auto;background:#0b0b12;border:1px solid #252538;border-radius:10px;padding:12px;white-space:pre-wrap;color:#b9b9c8;font-size:13px}.note{font-size:12px;color:#858597;line-height:1.5;margin-top:16px}
+:root{color-scheme:dark;font-family:Inter,system-ui,sans-serif}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090a10;color:#f4f4f8}.app{width:min(780px,92vw);padding:28px;border:1px solid #292b3a;border-radius:20px;background:#11131c;box-shadow:0 20px 70px #0009}h1{margin:0 0 7px}.sub{color:#a8aabc;margin-bottom:22px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.control{padding:14px;border:1px solid #292b3a;border-radius:12px;background:#171924}.control label{display:block;color:#aeb1c3;font-size:13px;margin-bottom:7px}input,select,button{box-sizing:border-box;width:100%;border:1px solid #34374a;background:#1b1e2a;color:#fff;border-radius:10px;padding:11px}button{cursor:pointer}.primary{background:#7c4dff;border-color:#7c4dff}.buttons{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.status{margin:16px 0;padding:12px;border-radius:10px;background:#191c27;color:#c5c8d8}.meter{height:8px;background:#20232f;border-radius:99px;overflow:hidden}.meter i{display:block;width:0;height:100%;background:#8d63ff;transition:width .06s}.log{height:160px;overflow:auto;background:#0a0b10;border:1px solid #252838;border-radius:10px;padding:12px;white-space:pre-wrap;color:#b9bdcc;font-size:13px}.note{font-size:12px;color:#85899c;line-height:1.5;margin-top:16px}@media(max-width:620px){.grid{grid-template-columns:1fr}}
 </style>
 </head>
-<body>
-<main class="app">
-<h1>🎙️ Deepgram Voice Morph</h1>
-<div class="sub">Low-latency speech → female voice. Audio is processed continuously in small chunks.</div>
-<div class="key"><input id="key" type="password" placeholder="Deepgram API key"><button id="save">Save key</button></div>
-<div class="row" style="margin-bottom:14px"><label>Female voice&nbsp; <select id="voice"><option value="aura-2-thalia-en">Thalia</option><option value="aura-2-asteria-en">Asteria</option><option value="aura-2-luna-en">Luna</option></select></label><label>Chunk&nbsp; <select id="chunk"><option value="1">1 word</option><option value="2" selected>2 words</option><option value="4">4 words</option><option value="6">6 words</option></select></label></div>
-<div class="row"><button class="primary" id="start">Start</button><button id="stop" disabled>Stop</button></div>
-<div class="status" id="status">Ready — enter your key, then press Start.</div>
+<body><main class="app">
+<h1>🎙️ RVC Live Voice Changer</h1>
+<div class="sub">Microphone → Python RVC → converted female voice. No speech-to-text or Deepgram TTS in the conversion path.</div>
+<div class="grid">
+ <div class="control"><label>RVC server</label><input id="server" value="ws://127.0.0.1:8765"></div>
+ <div class="control"><label>RVC model (.pth path on Python machine)</label><input id="model" placeholder="models/female.pth"></div>
+ <div class="control"><label>Pitch shift (semitones): <output id="pitchOut">+8</output></label><input id="pitch" type="range" min="-12" max="12" value="8"></div>
+ <div class="control"><label>Chunk size</label><select id="chunk"><option value="0.35">0.35 sec — lowest latency</option><option value="0.5" selected>0.50 sec — balanced</option><option value="0.75">0.75 sec — smoother</option><option value="1">1.00 sec — highest quality</option></select></div>
+</div>
+<div class="buttons"><button class="primary" id="start">Start RVC</button><button id="stop" disabled>Stop</button></div>
+<div class="status" id="status">Ready — start the Python RVC server first.</div>
 <div class="meter"><i id="meter"></i></div>
-<h3>Live transcript</h3><div class="log" id="log"></div>
-<div class="note">Important: Deepgram Aura is text-to-speech, not acoustic voice conversion. This first version converts your speech to text and immediately regenerates it with a female Deepgram voice. It does not preserve your original vocal identity. For true voice-to-voice conversion, a dedicated voice-conversion model is needed.</div>
+<h3>RVC activity</h3><div class="log" id="log"></div>
+<div class="note"><b>Important:</b> the browser cannot run the Python RVC model itself. This page connects to the local Python server. Your trained <code>.pth</code> model stays on that machine. Use headphones to reduce microphone feedback.</div>
 </main>
 <script>
-const $=id=>document.getElementById(id);
-const keyEl=$("key"), statusEl=$("status"), logEl=$("log"), meter=$("meter");
-let savedKey=localStorage.getItem("deepgram_voicechanger_key")||""; keyEl.value="";
-$("save").onclick=()=>{const k=keyEl.value.trim();if(!k)return setStatus("Enter an API key first.");localStorage.setItem("deepgram_voicechanger_key",k);setStatus("API key saved locally.")};
-let audioCtx,micStream,processor,source,stt,tts,playingAt=0,running=false,transcriptBuffer="";
-function setStatus(s){statusEl.textContent=s}
-function log(s){logEl.textContent+=s+"\n";logEl.scrollTop=logEl.scrollHeight}
-function authSocket(url,key){return new WebSocket(url,["token",key])}
-async function start(){
- const key=keyEl.value.trim()||localStorage.getItem("deepgram_voicechanger_key");
- if(!key)return setStatus("Enter your Deepgram API key.");
- if(running)return; running=true; transcriptBuffer=""; playingAt=0; $("start").disabled=true;$("stop").disabled=false;
- try{
-  audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-  micStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
-  await audioCtx.resume();
-  const rate=audioCtx.sampleRate;
-  stt=authSocket(`wss://api.deepgram.com/v1/listen?model=nova-3&language=en-US&encoding=linear16&sample_rate=${rate}&channels=1&interim_results=true&smart_format=true&punctuate=true&endpointing=300`,key);
-  stt.binaryType="arraybuffer";
-  stt.onopen=()=>{setStatus("Listening — speaking will be converted in chunks…");log("STT connected")};
-  stt.onmessage=e=>{
-   try{
-    const d=JSON.parse(e.data); const alt=d.channel?.alternatives?.[0]; if(!alt)return;
-    const text=(alt.transcript||"").trim();
-    if(text){
-      meter.style.width=Math.min(100,text.length*3)+"%";
-      if(d.is_final){
-        log("You: "+text);
-        transcriptBuffer+=(transcriptBuffer?" ":"")+text;
-        // Send complete word groups immediately. Do not wait for the next sentence.
-        flushTextChunks(false);
-        // Deepgram marks the end of the utterance with speech_final.
-        // Flush any short remainder right now so a 1–3 word first sentence
-        // can never get stuck until the following sentence arrives.
-        if(d.speech_final) flushTextChunks(true);
-      }
-    }
-   }catch(err){console.error(err)}
-  };
-  stt.onerror=e=>{log("STT error");console.error(e)};
-  stt.onclose=()=>{if(running)log("STT disconnected")};
-  tts=authSocket(`wss://api.deepgram.com/v1/speak?model=${encodeURIComponent($("voice").value)}&encoding=linear16&sample_rate=24000`,key);
-  tts.binaryType="arraybuffer";
-  tts.onopen=()=>log("TTS connected");
-  tts.onmessage=e=>{if(e.data instanceof ArrayBuffer)queuePCM(e.data);};
-  tts.onerror=e=>{log("TTS error");console.error(e)};
-  source=audioCtx.createMediaStreamSource(micStream);
-  processor=audioCtx.createScriptProcessor(4096,1,1);
-  processor.onaudioprocess=e=>{if(!running||!stt||stt.readyState!==1)return;const input=e.inputBuffer.getChannelData(0);const pcm=new Int16Array(input.length);let sum=0;for(let i=0;i<input.length;i++){const x=Math.max(-1,Math.min(1,input[i]));pcm[i]=x<0?x*32768:x*32767;sum+=x*x}const rms=Math.sqrt(sum/input.length);meter.style.width=Math.min(100,rms*500)+"%";stt.send(pcm.buffer)};
-  source.connect(processor);processor.connect(audioCtx.destination);
- }catch(err){log(err.message||String(err));stop()}
-}
-function flushTextChunks(force){
- const n=+$("chunk").value;
- let words=transcriptBuffer.trim().split(/\s+/).filter(Boolean);
- if(force){if(words.length)sendTTS(words.join(" "));transcriptBuffer="";return}
- while(words.length>=n){sendTTS(words.splice(0,n).join(" "))}
- transcriptBuffer=words.join(" ");
-}
-function sendTTS(text){if(!text||!tts||tts.readyState!==1)return;log("Female: "+text);tts.send(JSON.stringify({type:"Speak",text}));tts.send(JSON.stringify({type:"Flush"}))}
-function queuePCM(buf){if(!audioCtx)return;const samples=new Int16Array(buf);const audio=audioCtx.createBuffer(1,samples.length,24000);const ch=audio.getChannelData(0);for(let i=0;i<samples.length;i++)ch[i]=samples[i]/32768;const src=audioCtx.createBufferSource();src.buffer=audio;src.connect(audioCtx.destination);const now=audioCtx.currentTime;playingAt=Math.max(playingAt,now+0.02);src.start(playingAt);playingAt+=audio.duration}
-function stop(){running=false;$("start").disabled=false;$("stop").disabled=true;try{flushTextChunks(true)}catch{};if(stt&&stt.readyState===1)stt.close();if(tts&&tts.readyState===1){try{tts.send(JSON.stringify({type:"Close"}))}catch{};try{tts.close()}catch{}};if(processor){processor.disconnect();processor=null}if(source){source.disconnect();source=null}if(micStream){micStream.getTracks().forEach(t=>t.stop());micStream=null}setStatus("Stopped.");meter.style.width="0%"}
+const $=id=>document.getElementById(id);let ws=null,audioCtx=null,mic=null,source=null,processor=null,running=false;let inputRate=48000,pending=new Float32Array(0),playAt=0;
+function status(s){$("status").textContent=s}function log(s){$("log").textContent+=s+"\n";$("log").scrollTop=$("log").scrollHeight}
+$("pitch").oninput=()=>{const v=+$ ("pitch").value;$("pitchOut").textContent=(v>=0?"+":"")+v};
+function pcm16(float32){const out=new Int16Array(float32.length);for(let i=0;i<float32.length;i++){const x=Math.max(-1,Math.min(1,float32[i]));out[i]=x<0?x*32768:x*32767}return out}
+function concat(a,b){const c=new Float32Array(a.length+b.length);c.set(a);c.set(b,a.length);return c}
+function sendChunk(samples){if(!ws||ws.readyState!==1)return;const pcm=pcm16(samples);const packet=new ArrayBuffer(4+pcm.byteLength);new DataView(packet).setUint32(0,inputRate,true);new Int16Array(packet,4).set(pcm);ws.send(packet)}
+function queueOutput(buf){if(!audioCtx)return;const i16=new Int16Array(buf);const b=audioCtx.createBuffer(1,i16.length,48000);const ch=b.getChannelData(0);for(let i=0;i<i16.length;i++)ch[i]=i16[i]/32768;const n=audioCtx.currentTime;playAt=Math.max(playAt,n+.01);const s=audioCtx.createBufferSource();s.buffer=b;s.connect(audioCtx.destination);s.start(playAt);playAt+=b.duration}
+async function start(){if(running)return;running=true;$("start").disabled=true;$("stop").disabled=false;pending=new Float32Array(0);playAt=0;try{audioCtx=new(window.AudioContext||window.webkitAudioContext)();await audioCtx.resume();inputRate=audioCtx.sampleRate;mic=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});ws=new WebSocket($("server").value.trim());ws.binaryType="arraybuffer";ws.onopen=()=>{log("Connected to RVC server");const model=$("model").value.trim();if(model)ws.send("MODEL "+model);ws.send(JSON.stringify({type:"settings",pitch:+$("pitch").value}));status(model?"RVC connected — loading model…":"RVC connected — waiting for a model");};ws.onmessage=e=>{if(typeof e.data==="string"){try{const d=JSON.parse(e.data);if(d.type==="ready")log("RVC ready on "+d.device);if(d.type==="model_loaded"){log("Model loaded");status("RVC model loaded — speak now")}if(d.type==="error")log("RVC error: "+d.message)}catch{log(e.data)}}else queueOutput(e.data)};ws.onerror=()=>{log("WebSocket error — is rvc_server.py running?");status("RVC connection error")};ws.onclose=()=>{if(running){log("RVC server disconnected");status("RVC disconnected")}};source=audioCtx.createMediaStreamSource(mic);processor=audioCtx.createScriptProcessor(4096,1,1);processor.onaudioprocess=e=>{if(!running||!ws||ws.readyState!==1)return;const x=e.inputBuffer.getChannelData(0);let sum=0;for(const v of x)sum+=v*v;$("meter").style.width=Math.min(100,Math.sqrt(sum/x.length)*500)+"%";pending=concat(pending,x);const seconds=+$ ("chunk").value,needed=Math.max(1,Math.floor(inputRate*seconds));while(pending.length>=needed){sendChunk(pending.slice(0,needed));pending=pending.slice(needed)}};source.connect(processor);processor.connect(audioCtx.destination)}catch(e){log(e.message||String(e));stop()}}
+function stop(){running=false;$("start").disabled=false;$("stop").disabled=true;if(processor){processor.disconnect();processor=null}if(source){source.disconnect();source=null}if(mic){mic.getTracks().forEach(t=>t.stop());mic=null}if(ws){try{ws.close()}catch{}ws=null}if(audioCtx){try{audioCtx.close()}catch{}audioCtx=null}$("meter").style.width="0%";status("Stopped")}
 $("start").onclick=start;$("stop").onclick=stop;window.addEventListener("beforeunload",stop);
-</script>
-</body>
-</html>
+</script></body></html>
