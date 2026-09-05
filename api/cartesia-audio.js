@@ -1,15 +1,10 @@
-import { decryptKeys, readCookie } from './_key-store.js';
-
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
   try {
-    const { openrouterKey } = decryptKeys(readCookie(req));
-    if (!openrouterKey) {
-      return res.status(401).json({ error: 'OpenRouter is not connected. Open API Integrations and save your OpenRouter key.' });
-    }
-
-    const { text, voice } = req.body || {};
+    const { text, voice, openrouterKey } = req.body || {};
+    const apiKey = typeof openrouterKey === 'string' ? openrouterKey.trim() : '';
+    if (!apiKey) return res.status(401).json({ error: 'Enter your OpenRouter API key in API Integrations first.' });
     if (!text?.trim()) return res.status(400).json({ error: 'Missing text' });
 
     const validVoices = new Set(['Kore', 'Aoede', 'Leda', 'Zephyr']);
@@ -18,7 +13,7 @@ export default async function handler(req, res) {
     const response = await fetch('https://openrouter.ai/api/v1/audio/speech', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${openrouterKey}`,
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'https://voicechanger-f7kui1owf-nezoko45-8506s-projects.vercel.app/',
         'X-Title': 'Low-Latency Female Voice Changer'
