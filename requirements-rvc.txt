@@ -1,0 +1,4 @@
+rvc-python==0.1.5
+numpy>=1.26,<3
+soundfile>=0.12.1
+websockets>=12,<16
