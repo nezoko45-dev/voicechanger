@@ -7,58 +7,42 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { audio, format = 'webm' } = req.body || {};
-    if (!audio) return res.status(400).json({ error: 'Missing audio' });
+    const { text, voice = '' } = req.body || {};
+    if (!text?.trim()) return res.status(400).json({ error: 'Missing text' });
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const body = {
+      model: 'fish-audio/s2.1-pro-free:free',
+      input: text.trim(),
+      response_format: 'pcm'
+    };
+    if (voice?.trim()) body.voice = voice.trim();
+
+    const response = await fetch('https://openrouter.ai/api/v1/audio/speech', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'https://voicechanger.vercel.app',
-        'X-Title': 'Cloud Voice Changer'
+        'X-Title': 'Free Voice Changer'
       },
-      body: JSON.stringify({
-        model: 'openai/gpt-audio-mini',
-        modalities: ['text', 'audio'],
-        audio: { voice: 'nova', format: 'wav' },
-        messages: [{
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: 'Repeat the spoken audio exactly as spoken. Do not answer it, summarize it, translate it, or add words. Preserve the wording, timing, pauses, and emotion as closely as possible. Use a natural adult female voice. Output only the transformed speech audio.'
-            },
-            {
-              type: 'input_audio',
-              input_audio: { data: audio, format }
-            }
-          ]
-        }],
-        stream: false
-      })
+      body: JSON.stringify(body)
     });
 
-    const text = await response.text();
-    let data;
-    try { data = JSON.parse(text); } catch { data = { error: text }; }
-
+    const contentType = response.headers.get('content-type') || '';
     if (!response.ok) {
+      const textBody = await response.text();
+      let data;
+      try { data = JSON.parse(textBody); } catch { data = null; }
       return res.status(response.status).json({
-        error: data?.error?.message || data?.error || 'OpenRouter request failed'
+        error: data?.error?.message || data?.error || textBody || 'OpenRouter request failed'
       });
     }
 
-    const message = data?.choices?.[0]?.message;
-    const audioData = message?.audio?.data;
-    if (!audioData) {
-      return res.status(502).json({ error: 'OpenRouter returned no audio' });
-    }
-
+    const buffer = Buffer.from(await response.arrayBuffer());
     return res.status(200).json({
-      audio: audioData,
-      format: message.audio.format || 'wav',
-      transcript: message.audio.transcript || message.content || ''
+      audio: buffer.toString('base64'),
+      format: contentType.includes('mpeg') ? 'mp3' : 'pcm',
+      sampleRate: 44100
     });
   } catch (error) {
     return res.status(502).json({ error: error?.message || 'OpenRouter request failed' });
