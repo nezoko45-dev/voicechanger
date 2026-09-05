@@ -11,7 +11,7 @@
 <body>
 <main class="app">
 <h1>🎙️ Low-Latency Female Voice Changer</h1>
-<div class="sub">Deepgram Nova-3 live STT → Deepgram Aura-2/Flux streaming TTS + Fish-style breathing.</div>
+<div class="sub">Deepgram Flux live STT → Deepgram Aura-2/Flux streaming TTS + Fish-style breathing.</div>
 <details class="integrations" open>
 <summary>⚙️ API Integrations</summary>
 <div class="keys">
@@ -20,8 +20,8 @@
 </div>
 </details>
 <div class="grid">
-<div class="control"><label>Voice</label><select id="voice"><option value="flux-haley-en" selected>Haley — Female</option><option value="flux-hannah-en">Hannah — Female</option><option value="flux-brooke-en">Brooke — Female</option><option value="flux-heather-en">Heather — Female</option><option value="flux-alexis-en">Alexis — Female</option><option value="flux-sienna-en">Sienna — Female</option><option value="flux-gemma-en">Gemma — Female</option><option value="style-jpkr">🌸 Japanese Lady — Aura-2 Uzume</option></select><div class="keyhint">Japanese Lady uses Deepgram Aura-2's native Japanese Uzume voice instead of an English Flux voice.</div></div>
-<div class="control"><label>Response latency</label><select id="latency"><option value="250">Ultra — ~250 ms</option><option value="400" selected>Fast — ~400 ms</option><option value="650">Stable — ~650 ms</option></select></div>
+<div class="control"><label>Voice</label><select id="voice"><option value="flux-haley-en" selected>Haley — Female</option><option value="flux-hannah-en">Hannah — Female</option><option value="flux-brooke-en">Brooke — Female</option><option value="flux-heather-en">Heather — Female</option><option value="flux-alexis-en">Alexis — Female</option><option value="flux-sienna-en">Sienna — Female</option><option value="flux-gemma-en">Gemma — Female</option><option value="style-jpkr">🌸 Japanese Lady — Aura-2 Uzume</option></select><div class="keyhint">Japanese Lady uses Deepgram Aura-2's native Japanese Uzume voice.</div></div>
+<div class="control"><label>Response latency</label><select id="latency"><option value="0.35">Ultra — fastest</option><option value="0.45" selected>Fast — balanced</option><option value="0.60">Stable — fewer false starts</option></select></div>
 <div class="control"><label>Expressivity</label><div class="rangeRow"><input id="expressivity" type="range" min="-2" max="2" step="1" value="1"><span class="value" id="expressivityValue">+1</span></div><div class="keyhint">Flux voices only. Aura-2 Japanese uses its native prosody.</div></div>
 <div class="control"><label>Breathing expressions</label><select id="breathMode"><option value="natural" selected>Natural — Fish-style</option><option value="frequent">Frequent — more noticeable</option><option value="soft">Soft — subtle</option><option value="off">Off</option></select><div class="keyhint">Adds an audible inhale/exhale layer between natural speech phrases.</div></div>
 </div>
@@ -33,142 +33,28 @@
 </main>
 <script>
 const $=id=>document.getElementById(id);
-let running=false,mediaStream=null,mediaRecorder=null,dgSocket=null,ttsSocket=null,audioContext=null,audioQueue=[],playing=false,debounceTimer=null,lastAudioAt=0;
-let finalBuffer='',lastSentFinal='',ttsReady=false,speechChain=Promise.resolve();
+let running=false,mediaStream=null,mediaRecorder=null,dgSocket=null,ttsSocket=null,audioContext=null,audioQueue=[],playing=false,lastAudioAt=0;
+let finalBuffer='',lastSentFinal='',ttsReady=false,speechChain=Promise.resolve(),outputActiveUntil=0;
 let sessionDeepgramKey='';
-let outputActiveUntil=0;
-let ttsTurnWaiters=[];
 const voicePresets={'style-jpkr':{model:'aura-2-uzume-ja',type:'aura',speed:1,breath:'natural'}};
-
 function status(s){$('status').textContent=s}
 function setDeepgramStatus(connected){$('deepgramStatus').textContent=connected?'● Ready — key held for this session':'Not configured';$('deepgramStatus').className=connected?'connected':'keyhint'}
 function saveDeepgramKey(){const input=$('deepgramKey'),value=input.value.trim();if(!value){status('Enter a Deepgram API key first.');return}sessionDeepgramKey=value;input.value='';setDeepgramStatus(true);status('Deepgram key loaded in memory. Ready to start.')}
 function updateExpressivity(){const v=Number($('expressivity').value);$('expressivityValue').textContent=v>0?'+'+v:String(v)}
 function applyVoicePreset(){const preset=voicePresets[$('voice').value];if(!preset)return;$('expressivity').value='0';$('breathMode').value=preset.breath;updateExpressivity()}
 function getVoiceConfig(){const selected=$('voice').value;return voicePresets[selected]||{model:selected,type:'flux',expressivity:Number($('expressivity').value),breath:$('breathMode').value}}
-
-function resolveTtsTurn(){const waiters=ttsTurnWaiters.splice(0);for(const fn of waiters)fn()}
-function waitForTtsTurn(timeout=15000){return new Promise(resolve=>{let done=false;const finish=()=>{if(done)return;done=true;clearTimeout(timer);resolve()};const timer=setTimeout(finish,timeout);ttsTurnWaiters.push(finish)})}
-
-function stopTTS(){audioQueue=[];playing=false;ttsReady=false;speechChain=Promise.resolve();outputActiveUntil=0;resolveTtsTurn();ttsTurnWaiters=[];if(ttsSocket){try{ttsSocket.send(JSON.stringify({type:'Close'}))}catch{}try{ttsSocket.close()}catch{}ttsSocket=null}if(audioContext){try{audioContext.close()}catch{}audioContext=null}}
-
-async function playPcmChunk(arrayBuffer){if(!audioContext)return;const bytes=new Uint8Array(arrayBuffer);if(!bytes.length)return;const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);const samples=new Int16Array(Math.floor(view.byteLength/2));for(let i=0;i<samples.length;i++)samples[i]=view.getInt16(i*2,true);const floatData=new Float32Array(samples.length);for(let i=0;i<samples.length;i++)floatData[i]=samples[i]/32768;audioQueue.push(floatData);lastAudioAt=performance.now();outputActiveUntil=lastAudioAt+Math.max(250,floatData.length/48);if(playing)return;playing=true;while(audioQueue.length&&audioContext){const data=audioQueue.shift(),buffer=audioContext.createBuffer(1,data.length,48000);buffer.copyToChannel(data,0);const source=audioContext.createBufferSource();source.buffer=buffer;source.connect(audioContext.destination);source.start();await new Promise(resolve=>{source.onended=resolve})}playing=false;outputActiveUntil=performance.now()+350;if(running)status('Listening…')}
-
-function playBreath(kind='inhale'){if(!audioContext||!running||$('breathMode').value==='off')return Promise.resolve();const mode=$('breathMode').value;let duration=kind==='inhale'?.22:.34;if(mode==='soft')duration*=.72;if(mode==='frequent')duration*=1.05;const sampleRate=audioContext.sampleRate,frames=Math.floor(sampleRate*duration),buffer=audioContext.createBuffer(1,frames,sampleRate),data=buffer.getChannelData(0);for(let i=0;i<frames;i++){const t=i/frames;const env=Math.pow(Math.sin(Math.PI*t),kind==='inhale'?1.7:1.35);const noise=Math.random()*2-1;const texture=Math.sin(t*Math.PI*5)*(0.35+0.65*Math.random());data[i]=(noise*.7+texture*.3)*env*(mode==='soft'?.045:mode==='frequent'?.075:.06)}const source=audioContext.createBufferSource(),filter=audioContext.createBiquadFilter(),gain=audioContext.createGain();filter.type='bandpass';filter.frequency.value=kind==='inhale'?1250:950;filter.Q.value=.65;gain.gain.value=1;source.buffer=buffer;source.connect(filter);filter.connect(gain);gain.connect(audioContext.destination);source.start();outputActiveUntil=performance.now()+duration*1000+350;return new Promise(resolve=>{source.onended=resolve})}
-
-async function waitForPlaybackIdle(timeout=15000){if(!audioContext)return;const deadline=performance.now()+timeout;let sawAudio=false;while(running&&performance.now()<deadline){if(playing||performance.now()<outputActiveUntil)sawAudio=true;if(sawAudio&&!playing&&performance.now()>=outputActiveUntil)return;await new Promise(r=>setTimeout(r,25))}}
-function shouldBreatheBetween(text){const mode=$('breathMode').value;if(mode==='off')return false;const words=text.trim().split(/\s+/).filter(Boolean).length;if(words<7)return false;if(mode==='frequent')return words>=7;if(mode==='soft')return words>=12;return words>=9}
+function stopTTS(){audioQueue=[];playing=false;ttsReady=false;speechChain=Promise.resolve();outputActiveUntil=0;if(ttsSocket){try{ttsSocket.send(JSON.stringify({type:'Close'}))}catch{}try{ttsSocket.close()}catch{}ttsSocket=null}if(audioContext){try{audioContext.close()}catch{}audioContext=null}}
+async function playPcmChunk(arrayBuffer){if(!audioContext)return;const bytes=new Uint8Array(arrayBuffer);if(!bytes.length)return;const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);const samples=new Int16Array(Math.floor(view.byteLength/2));for(let i=0;i<samples.length;i++)samples[i]=view.getInt16(i*2,true);const floatData=new Float32Array(samples.length);for(let i=0;i<samples.length;i++)floatData[i]=samples[i]/32768;audioQueue.push(floatData);lastAudioAt=performance.now();outputActiveUntil=lastAudioAt+Math.max(180,floatData.length/48);if(playing)return;playing=true;while(audioQueue.length&&audioContext){const data=audioQueue.shift(),buffer=audioContext.createBuffer(1,data.length,48000);buffer.copyToChannel(data,0);const source=audioContext.createBufferSource();source.buffer=buffer;source.connect(audioContext.destination);source.start();await new Promise(resolve=>{source.onended=resolve})}playing=false;outputActiveUntil=performance.now()+180;if(running)status('Listening…')}
+function playBreath(kind='inhale'){if(!audioContext||!running||$('breathMode').value==='off')return Promise.resolve();const mode=$('breathMode').value;let duration=kind==='inhale'?.22:.34;if(mode==='soft')duration*=.72;if(mode==='frequent')duration*=1.05;const sampleRate=audioContext.sampleRate,frames=Math.floor(sampleRate*duration),buffer=audioContext.createBuffer(1,frames,sampleRate),data=buffer.getChannelData(0);for(let i=0;i<frames;i++){const t=i/frames,env=Math.pow(Math.sin(Math.PI*t),kind==='inhale'?1.7:1.35),noise=Math.random()*2-1,texture=Math.sin(t*Math.PI*5)*(0.35+0.65*Math.random());data[i]=(noise*.7+texture*.3)*env*(mode==='soft'?.045:mode==='frequent'?.075:.06)}const source=audioContext.createBufferSource(),filter=audioContext.createBiquadFilter(),gain=audioContext.createGain();filter.type='bandpass';filter.frequency.value=kind==='inhale'?1250:950;filter.Q.value=.65;gain.gain.value=1;source.buffer=buffer;source.connect(filter);filter.connect(gain);gain.connect(audioContext.destination);source.start();outputActiveUntil=performance.now()+duration*1000+180;return new Promise(resolve=>{source.onended=resolve})}
 function splitSpeech(text){return text.replace(/\s+/g,' ').trim().split(/(?<=[.!?,;:])\s+/).filter(Boolean)}
-
-// The previous version fired several Speak+Flush commands only 80 ms apart.
-// That could create queued turns faster than the browser could play them, which
-// sounded like the voice was being cut off. Each turn is now fully serialized.
-async function speakTurn(text){
-  if(!running||!ttsReady||ttsSocket?.readyState!==WebSocket.OPEN)return;
-  text=text.replace(/\s+/g,' ').trim();
-  if(!text)return;
-  status('Speaking…');$('meter').style.width='80%';
-  const isFlux=getVoiceConfig().type==='flux';
-  ttsSocket.send(JSON.stringify({type:'Speak',text}));
-  if(isFlux) ttsSocket.send(JSON.stringify({type:'Flush'}));
-  else ttsSocket.send(JSON.stringify({type:'Flush'}));
-  await waitForTtsTurn();
-  await waitForPlaybackIdle();
-  if(running){$('meter').style.width='0%';status('Listening…')}
-}
-
-function queueSpeech(text){
-  speechChain=speechChain.then(async()=>{
-    if(!running||!ttsReady||ttsSocket?.readyState!==WebSocket.OPEN)return;
-    const parts=splitSpeech(text);
-    for(let i=0;i<parts.length&&running;i++){
-      if(i>0&&shouldBreatheBetween(text)){await playBreath(i%3===0?'inhale':'exhale');await new Promise(r=>setTimeout(r,40))}
-      await speakTurn(parts[i]);
-    }
-  }).catch(e=>console.error('Speech queue error:',e));
-  return speechChain;
-}
-
-function connectTTS(){return new Promise((resolve,reject)=>{
-  if(!sessionDeepgramKey)return reject(new Error('Deepgram key missing'));
-  const config=getVoiceConfig();
-  const path=config.type==='aura'?'/v1/speak':'/v2/speak';
-  const params=new URLSearchParams({model:config.model,encoding:'linear16',sample_rate:'48000'});
-  if(config.type==='aura')params.set('speed',String(config.speed||1));else params.set('expressivity',String(config.expressivity));
-  ttsSocket=new WebSocket('wss://api.deepgram.com'+path+'?'+params.toString(),['token',sessionDeepgramKey]);
-  ttsSocket.binaryType='arraybuffer';
-  ttsSocket.onopen=()=>{ttsReady=true;resolve()};
-  ttsSocket.onmessage=e=>{
-    if(typeof e.data==='string'){
-      let m;try{m=JSON.parse(e.data)}catch{return}
-      if(m.type==='Error'||m.type==='Warning')console.error('TTS:',m.description||m.message||m.code);
-      if(m.type==='SpeechMetadata'||m.type==='Flushed'){resolveTtsTurn();}
-      return;
-    }
-    playPcmChunk(e.data);
-  };
-  ttsSocket.onerror=()=>{ttsReady=false;if(!running)reject(new Error('Deepgram TTS connection failed'))};
-  ttsSocket.onclose=()=>{ttsReady=false;resolveTtsTurn()};
-})}
-
-async function speak(text){text=text.trim();if(!text||text.length<2)return;if(text===lastSentFinal)return;if(!ttsReady||ttsSocket?.readyState!==WebSocket.OPEN)return;lastSentFinal=text;queueSpeech(text)}
-
-async function connectDeepgram(){
-  if(!sessionDeepgramKey)throw new Error('Enter your Deepgram API key first.');
-  const params=new URLSearchParams({model:'nova-3',language:'en-US',interim_results:'true',smart_format:'true',endpointing:String(Number($('latency').value)),vad_events:'true'});
-  dgSocket=new WebSocket('wss://api.deepgram.com/v1/listen?'+params.toString(),['token',sessionDeepgramKey]);
-  dgSocket.binaryType='arraybuffer';
-  dgSocket.onopen=()=>{status('Listening… speak now');if(mediaRecorder)mediaRecorder.start(100)};
-  dgSocket.onmessage=event=>{
-    if(typeof event.data!=='string'||performance.now()<outputActiveUntil)return;
-    let data;try{data=JSON.parse(event.data)}catch{return}
-    if(data.type!=='Results')return;
-    const transcript=(data.channel?.alternatives?.[0]?.transcript||'').trim();
-    if(!transcript)return;
-    if(data.is_final){
-      finalBuffer+=(finalBuffer?' ':'')+transcript;
-      if(data.speech_final){const finalText=finalBuffer.trim();finalBuffer='';if(finalText)speak(finalText)}
-    }
-  };
-  dgSocket.onerror=()=>console.error('Deepgram STT WebSocket error');
-}
-
-async function start(){
-  if(running)return;
-  if(!sessionDeepgramKey){status('Enter your Deepgram API key above before starting.');return}
-  running=true;$('start').disabled=true;$('stop').disabled=false;finalBuffer='';lastSentFinal='';speechChain=Promise.resolve();lastAudioAt=0;outputActiveUntil=0;
-  try{
-    if(!navigator.mediaDevices?.getUserMedia)throw new Error('Microphone access is not supported');
-    if(!window.MediaRecorder)throw new Error('This browser does not support MediaRecorder');
-    const mimeTypes=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus'];
-    const mimeType=mimeTypes.find(t=>MediaRecorder.isTypeSupported(t));
-    if(!mimeType)throw new Error('No supported browser audio recording format was found');
-    audioContext=new AudioContext({sampleRate:48000});await audioContext.resume();
-    await connectTTS();
-    mediaStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
-    mediaRecorder=new MediaRecorder(mediaStream,{mimeType});
-    mediaRecorder.ondataavailable=e=>{if(e.data.size&&dgSocket?.readyState===WebSocket.OPEN&&performance.now()>=outputActiveUntil)dgSocket.send(e.data)};
-    await connectDeepgram();
-  }catch(e){console.error(e);stop();status('Error: '+(e?.message||'Unable to start'))}
-}
-
-function stop(){
-  running=false;clearTimeout(debounceTimer);finalBuffer='';
-  if(mediaRecorder){try{if(mediaRecorder.state!=='inactive')mediaRecorder.stop()}catch{}mediaRecorder=null}
-  if(mediaStream){for(const track of mediaStream.getTracks())track.stop();mediaStream=null}
-  if(dgSocket){try{dgSocket.close()}catch{}dgSocket=null}
-  stopTTS();
-  $('start').disabled=false;$('stop').disabled=true;$('meter').style.width='0%';
-  status('Stopped — ready to start again.');
-}
-
-$('saveDeepgram').addEventListener('click',saveDeepgramKey);
-$('deepgramKey').addEventListener('keydown',e=>{if(e.key==='Enter')saveDeepgramKey()});
-$('expressivity').addEventListener('input',updateExpressivity);
-$('voice').addEventListener('change',applyVoicePreset);
-$('start').addEventListener('click',start);
-$('stop').addEventListener('click',stop);
-updateExpressivity();
+function queueSpeech(text){speechChain=speechChain.then(async()=>{if(!running||!ttsReady||ttsSocket?.readyState!==WebSocket.OPEN)return;const parts=splitSpeech(text);for(let i=0;i<parts.length&&running;i++){if(i>0&&$('breathMode').value!=='off'){await playBreath(i%3===0?'inhale':'exhale')}if(!running||ttsSocket?.readyState!==WebSocket.OPEN)break;ttsSocket.send(JSON.stringify({type:'Speak',text:parts[i]}));if(getVoiceConfig().type==='aura')ttsSocket.send(JSON.stringify({type:'Flush'}));await new Promise(r=>setTimeout(r,25))}}).catch(e=>console.error('Speech queue error:',e));return speechChain}
+function speak(text){text=text.trim();if(!text||text.length<2||text===lastSentFinal||!ttsReady||ttsSocket?.readyState!==WebSocket.OPEN)return;lastSentFinal=text;status('Speaking…');$('meter').style.width='80%';queueSpeech(text)}
+function interruptTTS(){if(!ttsSocket||ttsSocket.readyState!==WebSocket.OPEN)return;try{if(getVoiceConfig().type==='flux')ttsSocket.send(JSON.stringify({type:'Interrupt'}));else ttsSocket.send(JSON.stringify({type:'Clear'}))}catch{}audioQueue=[];playing=false;outputActiveUntil=0;speechChain=Promise.resolve()}
+function connectTTS(){return new Promise((resolve,reject)=>{if(!sessionDeepgramKey)return reject(new Error('Deepgram key missing'));const config=getVoiceConfig();const path=config.type==='aura'?'/v1/speak':'/v2/speak';const params=new URLSearchParams({model:config.model,encoding:'linear16',sample_rate:'48000'});if(config.type==='aura')params.set('speed',String(config.speed||1));else params.set('expressivity',String(config.expressivity));ttsSocket=new WebSocket('wss://api.deepgram.com'+path+'?'+params.toString(),['token',sessionDeepgramKey]);ttsSocket.binaryType='arraybuffer';ttsSocket.onopen=()=>{ttsReady=true;resolve()};ttsSocket.onmessage=e=>{if(typeof e.data==='string'){let m;try{m=JSON.parse(e.data)}catch{return}if(m.type==='Error'||m.type==='Warning')console.error('TTS:',m.description||m.message||m.code);return}playPcmChunk(e.data)};ttsSocket.onerror=()=>{ttsReady=false;if(!running)reject(new Error('Deepgram TTS connection failed'))};ttsSocket.onclose=()=>{ttsReady=false}})}
+async function connectDeepgram(){if(!sessionDeepgramKey)throw new Error('Enter your Deepgram API key first.');const threshold=Number($('latency').value);const params=new URLSearchParams({model:'flux-general-en',encoding:'linear16',sample_rate:'16000',eager_eot_threshold:String(threshold),eot_threshold:'0.7',eot_timeout_ms:'2500'});dgSocket=new WebSocket('wss://api.deepgram.com/v2/listen?'+params.toString(),['token',sessionDeepgramKey]);dgSocket.binaryType='arraybuffer';dgSocket.onopen=()=>{status('Listening… speak now');if(mediaRecorder)mediaRecorder.start(100)};dgSocket.onmessage=event=>{if(typeof event.data!=='string'||performance.now()<outputActiveUntil)return;let data;try{data=JSON.parse(event.data)}catch{return}if(data.type==='TurnInfo'&&data.event==='EagerEndOfTurn'){const text=(data.transcript||'').trim();if(text)speak(text)}else if(data.type==='TurnInfo'&&data.event==='EndOfTurn'){const text=(data.transcript||'').trim();if(text)speak(text)}};dgSocket.onerror=()=>console.error('Deepgram Flux STT WebSocket error');dgSocket.onclose=()=>{if(running)status('STT connection closed. Restart to reconnect.')}}
+async function start(){if(running)return;if(!sessionDeepgramKey){status('Enter your Deepgram API key above before starting.');return}running=true;$('start').disabled=true;$('stop').disabled=false;finalBuffer='';lastSentFinal='';speechChain=Promise.resolve();lastAudioAt=0;outputActiveUntil=0;try{if(!navigator.mediaDevices?.getUserMedia)throw new Error('Microphone access is not supported');if(!window.MediaRecorder)throw new Error('This browser does not support MediaRecorder');const mimeTypes=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus'];const mimeType=mimeTypes.find(t=>MediaRecorder.isTypeSupported(t));if(!mimeType)throw new Error('No supported browser audio recording format was found');audioContext=new AudioContext({sampleRate:48000});await audioContext.resume();await connectTTS();mediaStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});mediaRecorder=new MediaRecorder(mediaStream,{mimeType});mediaRecorder.ondataavailable=e=>{if(e.data.size&&dgSocket?.readyState===WebSocket.OPEN&&performance.now()>=outputActiveUntil)dgSocket.send(e.data)};await connectDeepgram()}catch(e){console.error(e);stop();status('Error: '+(e?.message||'Unable to start'))}}
+function stop(){running=false;finalBuffer='';if(mediaRecorder){try{if(mediaRecorder.state!=='inactive')mediaRecorder.stop()}catch{}mediaRecorder=null}if(mediaStream){for(const track of mediaStream.getTracks())track.stop();mediaStream=null}if(dgSocket){try{dgSocket.send(JSON.stringify({type:'CloseStream'}))}catch{}try{dgSocket.close()}catch{}dgSocket=null}stopTTS();$('start').disabled=false;$('stop').disabled=true;$('meter').style.width='0%';status('Stopped — ready to start again.')}
+$('saveDeepgram').addEventListener('click',saveDeepgramKey);$('deepgramKey').addEventListener('keydown',e=>{if(e.key==='Enter')saveDeepgramKey()});$('expressivity').addEventListener('input',updateExpressivity);$('voice').addEventListener('change',applyVoicePreset);$('start').addEventListener('click',start);$('stop').addEventListener('click',stop);updateExpressivity();
 </script>
 </body>
 </html>
