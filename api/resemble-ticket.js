@@ -4,11 +4,11 @@ export default async function handler(req, res) {
   }
 
   const apiKey = process.env.RESEMBLE_API_KEY;
-  const host = process.env.RESEMBLE_LIVE_VC_HOST;
+  const host = (process.env.RESEMBLE_LIVE_VC_HOST || 'api.resemble.ai').replace(/^https?:\/\//, '').replace(/\/$/, '');
 
-  if (!apiKey || !host) {
+  if (!apiKey) {
     return res.status(500).json({
-      error: 'Server is not configured. Set RESEMBLE_API_KEY and RESEMBLE_LIVE_VC_HOST in Vercel environment variables.'
+      error: 'Server is not configured. Set RESEMBLE_API_KEY in Vercel environment variables.'
     });
   }
 
