@@ -1,20 +1,18 @@
+import { decryptKeys, readCookie } from './_key-store.js';
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'GET only' });
 
-  // Read the secret only on the server. Never expose its value to the browser.
-  const apiKey = process.env.DEEPGRAM_API_KEY?.trim();
-  if (!apiKey) {
-    const environment = process.env.VERCEL_ENV || 'unknown';
-    return res.status(500).json({
-      error: `Deepgram server key is missing from this ${environment} deployment. Add DEEPGRAM_API_KEY to the same Vercel environment, then redeploy.`
-    });
-  }
-
   try {
+    const { deepgramKey } = decryptKeys(readCookie(req));
+    if (!deepgramKey) {
+      return res.status(401).json({ error: 'Deepgram is not connected. Open API Integrations and save your Deepgram key.' });
+    }
+
     const response = await fetch('https://api.deepgram.com/v1/auth/grant', {
       method: 'POST',
       headers: {
-        Authorization: `Token ${apiKey}`,
+        Authorization: `Token ${deepgramKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ ttl_seconds: 60 })
@@ -36,6 +34,6 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ token: data.access_token });
   } catch (error) {
-    return res.status(502).json({ error: error?.message || 'Deepgram token request failed' });
+    return res.status(500).json({ error: error?.message || 'Deepgram token request failed' });
   }
 }
