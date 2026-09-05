@@ -2,23 +2,23 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Low Latency Female Voice Changer</title>
+<title>Low-Latency Female Voice Changer</title>
 <style>
 :root{color-scheme:dark;font-family:Inter,system-ui,sans-serif}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090a10;color:#f4f4f8}.app{width:min(780px,92vw);padding:28px;border:1px solid #292b3a;border-radius:20px;background:#11131c;box-shadow:0 20px 70px #0009}h1{margin:0 0 7px}.sub{color:#a8aabc;margin-bottom:22px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.control{padding:14px;border:1px solid #292b3a;border-radius:12px;background:#171924}.control label{display:block;color:#aeb1c3;font-size:13px;margin-bottom:7px}select,button{box-sizing:border-box;width:100%;border:1px solid #34374a;background:#1b1e2a;color:#fff;border-radius:10px;padding:11px}button{cursor:pointer}.primary{background:#7c4dff;border-color:#7c4dff}.buttons{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.status{margin:16px 0;padding:12px;border-radius:10px;background:#191c27;color:#c5c8d8}.meter{height:8px;background:#20232f;border-radius:99px;overflow:hidden}.meter i{display:block;width:0;height:100%;background:#8d63ff;transition:width .06s}.log{height:180px;overflow:auto;background:#0a0b10;border:1px solid #252838;border-radius:10px;padding:12px;white-space:pre-wrap;color:#b9bdcc;font-size:13px}.note{font-size:12px;color:#85899c;line-height:1.5;margin-top:16px}@media(max-width:620px){.grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body><main class="app">
 <h1>🎙️ Low-Latency Female Voice Changer</h1>
-<div class="sub">Browser speech recognition feeds short phrases to the free Fish Audio voice model. Newer speech can interrupt older playback instead of waiting for a whole sentence.</div>
+<div class="sub">Browser speech recognition feeds short phrases to the free Fish Audio female voice. Newer speech can interrupt older playback instead of waiting for a whole sentence.</div>
 <div class="grid">
-<div class="control"><label>Voice</label><select id="voice"><option value="">Fish Audio default voice</option></select></div>
+<div class="control"><label>Voice</label><select id="voice"><option value="5161d41404314212af1254556477c17d">Female — Cheerful</option></select></div>
 <div class="control"><label>Latency</label><select id="latency"><option value="250">Ultra — ~250 ms debounce</option><option value="450" selected>Fast — ~450 ms debounce</option><option value="700">Stable — ~700 ms debounce</option></select></div>
 </div>
 <div class="buttons"><button class="primary" id="start">Start Voice Changer</button><button id="stop" disabled>Stop</button></div>
 <div class="status" id="status">Ready — press Start Voice Changer.</div>
 <div class="meter"><i id="meter"></i></div>
 <h3>Activity</h3><div class="log" id="log"></div>
-<div class="note"><b>Free model:</b> <code>fish-audio/s2.1-pro-free:free</code>. Requests use OpenRouter's dedicated speech endpoint. Free models can be rate-limited. For the lowest latency, Chrome/Edge speech recognition is used locally in the browser.</div>
+<div class="note"><b>Free Fish model:</b> <code>fish-audio/s2.1-pro-free:free</code>. The selected voice uses a Fish Audio reference ID. Requests use OpenRouter's dedicated speech endpoint. For the lowest latency, Chrome/Edge speech recognition is used locally in the browser.</div>
 </main>
 <script>
 const $=id=>document.getElementById(id);
