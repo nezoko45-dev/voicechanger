@@ -8,7 +8,7 @@ export default async function handler(req, res) {
     if (!text?.trim()) return res.status(400).json({ error: 'Missing text' });
 
     const validVoices = new Set(['Kore', 'Aoede', 'Leda', 'Zephyr']);
-    const selectedVoice = validVoices.has(voice?.trim()) ? voice.trim() : 'Kore';
+    const selectedVoice = validVoices.has(String(voice || '').trim()) ? String(voice).trim() : 'Kore';
 
     const response = await fetch('https://openrouter.ai/api/v1/audio/speech', {
       method: 'POST',
@@ -28,14 +28,17 @@ export default async function handler(req, res) {
 
     if (!response.ok) {
       const body = await response.text();
-      let data;
-      try { data = JSON.parse(body); } catch { data = null; }
-      const message = data?.error?.message || data?.message || body || 'OpenRouter TTS request failed';
-      return res.status(response.status).json({ error: message });
+      let data = null;
+      try { data = JSON.parse(body); } catch {}
+      return res.status(response.status).json({
+        error: data?.error?.message || data?.message || body || 'OpenRouter TTS request failed'
+      });
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());
-    return res.status(200).json({ audio: buffer.toString('base64'), format: 'mp3' });
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).send(buffer);
   } catch (error) {
     return res.status(500).json({ error: error?.message || 'OpenRouter TTS request failed' });
   }
