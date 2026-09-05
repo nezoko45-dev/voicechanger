@@ -2,14 +2,14 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
   const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: 'Server is not configured. Set OPENROUTER_API_KEY in Vercel.' });
-  }
+  if (!apiKey) return res.status(500).json({ error: 'Server is not configured. Set OPENROUTER_API_KEY in Vercel.' });
 
   try {
     const { text, voice } = req.body || {};
     if (!text?.trim()) return res.status(400).json({ error: 'Missing text' });
 
+    // Keep Fish Audio responsible for the expressive female delivery.
+    // Deepgram is used only for the live/interim speech recognition side.
     const body = {
       model: 'fish-audio/s2.1-pro-free:free',
       input: text.trim(),
@@ -23,7 +23,7 @@ export default async function handler(req, res) {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'https://voicechanger.vercel.app',
-        'X-Title': 'Free Low Latency Female Voice Changer'
+        'X-Title': 'Low Latency Deepgram + Fish Female Voice Changer'
       },
       body: JSON.stringify(body)
     });
@@ -32,9 +32,7 @@ export default async function handler(req, res) {
       const textBody = await response.text();
       let data;
       try { data = JSON.parse(textBody); } catch { data = null; }
-      return res.status(response.status).json({
-        error: data?.error?.message || data?.error || textBody || 'OpenRouter request failed'
-      });
+      return res.status(response.status).json({ error: data?.error?.message || data?.error || textBody || 'OpenRouter request failed' });
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());
