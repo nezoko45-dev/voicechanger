@@ -3,70 +3,65 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>WAV Voice Changer — No Python</title>
+<title>VoiceChanger — WAV Voice Studio</title>
 <style>
-:root{color-scheme:dark;font-family:Inter,system-ui,sans-serif}*{box-sizing:border-box}
-body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090811;color:#f7f3ff}
-.app{width:min(800px,94vw);padding:28px;border:1px solid #43284e;border-radius:22px;background:#15111b;box-shadow:0 20px 80px #000b}
-h1{margin:0 0 8px;font-size:clamp(24px,5vw,36px)}.sub{color:#bcb2c8;margin-bottom:20px;line-height:1.5}.pill{display:inline-block;padding:5px 9px;border:1px solid #6d3b7d;border-radius:999px;background:#24162c;color:#f0c9ff;font-size:12px;margin-bottom:14px}
-.card{padding:18px;border:1px solid #3b2948;border-radius:14px;background:#1b1622;margin-bottom:12px}label{display:block;color:#c8bfd0;font-size:13px;margin-bottom:8px}
-input,button{width:100%;border:1px solid #493552;background:#211a29;color:#fff;border-radius:10px;padding:12px}input{font-family:monospace}
-.steps{display:grid;gap:10px;margin:0;padding:0;list-style:none}.steps li{padding:12px;border-radius:10px;background:#211a29;line-height:1.45}.num{display:inline-grid;place-items:center;width:25px;height:25px;border-radius:50%;background:#d35cff;color:#160b1c;font-weight:900;margin-right:8px}
-.hint{font-size:12px;color:#93879c;line-height:1.5;margin-top:9px}.fileName{margin-top:8px;color:#d8c8e0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.status{margin-top:14px;padding:13px;border-radius:10px;background:#201925;color:#ddd3e5;line-height:1.45}
-a{color:#f0b8ff}.links{display:grid;gap:10px}.linkbtn{display:block;text-decoration:none;text-align:center;border:1px solid #684078;background:#241a2b;color:#fff;border-radius:10px;padding:12px;font-weight:800}.linkbtn:hover{background:#302039}.primary{background:#d35cff;border-color:#d35cff;color:#160b1c}
+:root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#f8f5ff;background:#09070d}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 20% 0%,#32124d 0,#09070d 45%),#09070d}.wrap{width:min(980px,94vw);margin:auto;padding:44px 0}.hero{padding:34px;border:1px solid #4b2a60;border-radius:28px;background:linear-gradient(145deg,#1b1024e8,#100d16f5);box-shadow:0 24px 90px #0008}.badge{display:inline-flex;padding:7px 11px;border-radius:999px;border:1px solid #754293;background:#2a1535;color:#efcaff;font-size:12px;font-weight:800}.hero h1{font-size:clamp(32px,7vw,58px);line-height:1;margin:18px 0 12px}.hero p{color:#c8bdd0;line-height:1.6;max-width:720px}.grid{display:grid;grid-template-columns:1.1fr .9fr;gap:16px;margin-top:16px}@media(max-width:760px){.grid{grid-template-columns:1fr}}.card{border:1px solid #3c2948;background:#151019dd;border-radius:20px;padding:22px}.card h2{margin:0 0 8px;font-size:20px}.muted{color:#9e92a8;font-size:13px;line-height:1.5}.drop{margin-top:16px;border:1px dashed #80539a;border-radius:16px;padding:22px;text-align:center;background:#1b1222}.drop input{width:100%}.file{margin-top:10px;color:#e7d8eb;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.status{margin-top:14px;padding:12px;border-radius:12px;background:#211827;color:#ddd1e4;font-size:13px}.transcript{width:100%;min-height:150px;resize:vertical;margin-top:14px;border:1px solid #493653;border-radius:12px;background:#0e0b12;color:#fff;padding:13px;font:inherit}.actions{display:grid;gap:10px;margin-top:14px}.btn{display:block;width:100%;padding:13px 15px;border-radius:12px;border:1px solid #70458a;background:#24162d;color:#fff;text-decoration:none;text-align:center;font-weight:850;cursor:pointer}.btn:hover{background:#32203d}.primary{background:#d95dff;border-color:#d95dff;color:#160a1c}.step{display:flex;gap:12px;align-items:flex-start;padding:13px 0;border-bottom:1px solid #2e2236}.step:last-child{border-bottom:0}.n{min-width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:#d95dff;color:#170a1c;font-weight:900}.tool{padding:14px;border:1px solid #3d2948;border-radius:14px;background:#1a1420;margin-top:10px}.tool strong{display:block}.tool span{display:block;color:#a99caf;font-size:12px;margin:4px 0 10px}.footer{margin-top:16px;text-align:center;color:#776c80;font-size:12px}.hidden{display:none}
 </style>
 </head>
 <body>
-<main class="app">
-<h1>🎀 WAV Voice Changer</h1>
-<div class="sub">No Python. No terminal. No Deepgram Flux. Use your WAV as a voice reference, transcribe it in your browser, then create new speech with a browser-based voice-cloning tool.</div>
-<div class="pill">🌐 Browser-based • No Python server • WAV supported</div>
+<div class="wrap">
+<section class="hero">
+<span class="badge">🎀 NO PYTHON • NO TERMINAL • NO FLUX</span>
+<h1>WAV VoiceChanger</h1>
+<p>Upload a WAV, get its speech as text, then use the same recording as a voice reference for browser-based voice cloning. Everything on this page is designed around a simple no-code workflow.</p>
+</section>
 
-<div class="card">
-<label>🚀 Recommended no-code workflow</label>
-<ol class="steps">
-<li><span class="num">1</span><b>Transcribe your WAV</b><br>Upload your WAV to a browser STT tool and copy the transcript.</li>
-<li><span class="num">2</span><b>Clone the voice</b><br>Upload the same WAV as the voice sample to a browser voice-cloning tool.</li>
-<li><span class="num">3</span><b>Enter the transcript</b><br>Paste the transcript or type completely new text, then generate speech.</li>
-<li><span class="num">4</span><b>Download WAV</b><br>Play or download the synthesized WAV from the cloning tool.</li>
-</ol>
+<div class="grid">
+<section class="card">
+<h2>🎙️ 1. Choose your WAV</h2>
+<p class="muted">Your recording stays selected in this page. External tools handle their own uploads.</p>
+<div class="drop">
+<input id="wav" type="file" accept=".wav,audio/wav">
+<div id="file" class="file">No WAV selected</div>
 </div>
+<div id="status" class="status">Choose a WAV to begin.</div>
 
-<div class="card">
-<label for="wav">🎀 Choose your WAV</label>
-<input id="wav" type="file" accept="audio/wav,.wav">
-<div class="fileName" id="fileName">No WAV selected.</div>
-<div class="hint">The file is selected only in this page. The external tools below handle their own uploads. Only use a voice you own or have permission to clone.</div>
-<div class="status" id="status">Choose a WAV, then open one of the browser tools below.</div>
-</div>
+<h2 style="margin-top:24px">📝 2. Transcript</h2>
+<p class="muted">Use one of the browser STT tools to transcribe the recording, then paste the result here. You can also replace it with completely new text.</p>
+<textarea id="text" class="transcript" placeholder="Your transcript or new text goes here..."></textarea>
+</section>
 
-<div class="card">
-<label>📝 Step 1 — WAV → text (STT)</label>
-<div class="links">
-<a class="linkbtn" href="https://www.usewhispy.com/upload" target="_blank" rel="noopener">Open Whispy — private browser STT</a>
-<a class="linkbtn" href="https://whisperweb.dev/wav-to-text" target="_blank" rel="noopener">Open Whisper Web — WAV → text</a>
-</div>
-<div class="hint">Whispy says transcription runs locally in your browser and accepts WAV. Whisper Web also supports WAV and offers local processing for its free workflow.</div>
-</div>
+<section class="card">
+<h2>⚡ Quick workflow</h2>
+<div class="step"><div class="n">1</div><div><b>Upload WAV</b><div class="muted">Pick the voice recording you want to use.</div></div></div>
+<div class="step"><div class="n">2</div><div><b>Transcribe</b><div class="muted">Open browser STT and copy the text.</div></div></div>
+<div class="step"><div class="n">3</div><div><b>Clone voice</b><div class="muted">Use the WAV as the reference sample.</div></div></div>
+<div class="step"><div class="n">4</div><div><b>Generate WAV</b><div class="muted">Enter text and download the synthesized audio.</div></div></div>
 
-<div class="card">
-<label>🔊 Step 2 — WAV voice sample → cloned TTS</label>
-<div class="links">
-<a class="linkbtn primary" href="https://soundtools.io/voice-cloning/" target="_blank" rel="noopener">Open SoundTools — browser voice cloning</a>
-<a class="linkbtn" href="https://www.tts-free.com/voice-cloning" target="_blank" rel="noopener">Open TTS-Free — browser voice cloning</a>
-<a class="linkbtn" href="https://free.ai/voice/clone/" target="_blank" rel="noopener">Open Free.ai — voice cloning</a>
+<div class="actions">
+<a class="btn primary" href="https://www.usewhispy.com/upload" target="_blank" rel="noopener">📝 Open Whispy STT</a>
+<a class="btn" href="https://whisperweb.dev/wav-to-text" target="_blank" rel="noopener">📝 Open Whisper Web STT</a>
 </div>
-<div class="hint">These tools let you upload a voice sample, enter text, and generate speech. Availability, limits, and model behavior can change.</div>
+</section>
 </div>
 
-<div class="card">
-<label>💡 What happened to Python?</label>
-<div class="hint">It's completely removed from the website workflow. The page no longer checks for localhost:8787, no longer asks you to start a Python server, and no longer uses XTTS-v2 or Deepgram Flux.</div>
+<section class="card" style="margin-top:16px">
+<h2>🔊 3. Voice cloning TTS</h2>
+<p class="muted">These browser tools let you upload your WAV as a voice sample, enter the text above, and generate speech. Pick whichever option works best for you.</p>
+<div class="grid" style="margin-top:10px">
+<div class="tool"><strong>SoundTools Voice Cloning</strong><span>Browser-based voice cloning and speech generation.</span><a class="btn primary" href="https://soundtools.io/voice-cloning/" target="_blank" rel="noopener">Open Voice Cloning</a></div>
+<div class="tool"><strong>TTS-Free Voice Cloning</strong><span>Voice sample → generated speech workflow.</span><a class="btn" href="https://www.tts-free.com/voice-cloning" target="_blank" rel="noopener">Open TTS-Free</a></div>
+<div class="tool"><strong>Free.ai Voice Clone</strong><span>Upload a voice sample and generate speech.</span><a class="btn" href="https://free.ai/voice/clone/" target="_blank" rel="noopener">Open Free.ai</a></div>
+<div class="tool"><strong>ElevenLabs</strong><span>Powerful hosted voice cloning/TTS option; account/features may vary.</span><a class="btn" href="https://elevenlabs.io/voice-cloning" target="_blank" rel="noopener">Open ElevenLabs</a></div>
 </div>
-</main>
+</section>
+
+<div class="footer">Only clone voices you own or have permission to use. This app contains no Python server, no XTTS installer, and no Deepgram Flux runtime.</div>
+</div>
 <script>
-const wav=document.getElementById('wav'),name=document.getElementById('fileName'),status=document.getElementById('status');
-wav.addEventListener('change',()=>{const f=wav.files[0];name.textContent=f?f.name:'No WAV selected.';status.textContent=f?'✅ WAV selected. Open an STT tool to get its transcript, then use the same WAV as the voice sample in a cloning tool.':'Choose a WAV, then open one of the browser tools below.'});
+const wav=document.getElementById('wav');const file=document.getElementById('file');const status=document.getElementById('status');
+const text=document.getElementById('text');
+wav.addEventListener('change',()=>{const f=wav.files[0];if(!f){file.textContent='No WAV selected';status.textContent='Choose a WAV to begin.';return}file.textContent=f.name;status.textContent=`✅ ${f.name} selected. Use an STT button to transcribe it, then use this same WAV as the voice reference in a cloning tool.`});
 </script>
 </body>
 </html>
