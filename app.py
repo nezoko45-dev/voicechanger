@@ -1,7 +1,6 @@
 import io
 import os
 import tempfile
-import wave
 from pathlib import Path
 
 import gradio as gr
@@ -10,7 +9,6 @@ import soundfile as sf
 import speech_recognition as sr
 import torch
 from huggingface_hub import snapshot_download
-import spaces
 
 from openvoice import se_extractor
 from openvoice.api import ToneColorConverter
@@ -63,8 +61,8 @@ def transcribe(audio: np.ndarray, sample_rate: int) -> str:
         return ""
 
 
-@spaces.GPU(duration=90)
 def clone_voice(text: str):
+    """Generate speech with MeloTTS and clone the reference voice with OpenVoice."""
     with tempfile.NamedTemporaryFile(suffix=".wav", dir=OUTPUT_DIR, delete=False) as src_file:
         src_path = Path(src_file.name)
     out_path = src_path.with_name(src_path.stem + "_cloned.wav")
@@ -93,7 +91,6 @@ def process_chunk(audio, buffer):
     samples = samples.astype(np.float32)
 
     buffer = np.concatenate([buffer, samples])
-    # Process roughly two seconds at a time.
     needed = int(sample_rate * 2.0)
     if len(buffer) < needed:
         return buffer, "", None, "🎤 Listening…"
@@ -113,6 +110,7 @@ def process_chunk(audio, buffer):
 
 def clear_buffer():
     return np.zeros(0, dtype=np.float32), "", None, "Ready."
+
 
 with gr.Blocks(title="VoiceChanger — OpenVoice V2") as demo:
     gr.Markdown(
@@ -154,5 +152,8 @@ with gr.Blocks(title="VoiceChanger — OpenVoice V2") as demo:
         "The model checkpoint is pulled from the public `myshell-ai/OpenVoiceV2` Hugging Face model repository at startup."
     )
 
+
 if __name__ == "__main__":
-    demo.queue().launch()
+    # Colab can expose Gradio through a temporary share URL. Local runs stay local.
+    in_colab = bool(os.environ.get("COLAB_RELEASE_TAG"))
+    demo.queue().launch(share=in_colab)
