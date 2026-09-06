@@ -1,1 +1,138 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>UwU STT → TTS Voice Changer</title><style>:root{color-scheme:dark;font-family:Inter,system-ui,sans-serif}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090811;color:#f7f3ff}.app{width:min(760px,94vw);padding:28px;border:1px solid #43284e;border-radius:22px;background:#15111b;box-shadow:0 20px 80px #000b}h1{margin:0 0 8px}.sub{color:#bcb2c8;margin-bottom:20px}.card{padding:16px;border:1px solid #3b2948;border-radius:14px;background:#1b1622;margin-bottom:12px}label{display:block;color:#c8bfd0;font-size:13px;margin-bottom:8px}input,select,button{width:100%;border:1px solid #493552;background:#211a29;color:#fff;border-radius:10px;padding:11px}input{font-family:monospace}.buttons{display:grid;grid-template-columns:1fr 1fr;gap:10px}.primary{background:#d35cff;border-color:#d35cff;color:#160b1c;font-weight:800}button{cursor:pointer}.status{margin-top:14px;padding:13px;border-radius:10px;background:#201925;color:#ddd3e5}.hint{font-size:12px;color:#93879c;line-height:1.5;margin-top:8px}.uwu{padding:13px;border:1px solid #6d3b7d;border-radius:12px;background:#24162c;color:#f0c9ff;margin-bottom:16px}.range{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}.range input{padding:0}.value{min-width:50px;text-align:center}.log{margin-top:12px;font:11px ui-monospace,monospace;color:#91849b;max-height:180px;overflow:auto;white-space:pre-wrap}.fileName{margin-top:8px;color:#d8c8e0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}@media(max-width:600px){.buttons{grid-template-columns:1fr}}</style></head><body><main class="app"><h1>🎀 UwU STT → TTS Voice Changer</h1><div class="sub">Speak into the mic or choose a WAV file → speech-to-text → cute UwU processing → feminine TTS.</div><div class="uwu">✨ <b>New: WAV → TTS!</b> Pick a .wav recording and the app will transcribe it with Deepgram, then send the transcript to the selected girl voice for TTS playback.</div><div class="card"><label for="key">Deepgram API Key</label><input id="key" type="password" autocomplete="off" placeholder="Paste your Deepgram API key"><div class="hint">Kept in this page's memory only.</div></div><div class="card"><label for="wav">Choose a WAV file</label><input id="wav" type="file" accept="audio/wav,.wav"><div class="fileName" id="fileName">No WAV selected.</div><div class="hint">The WAV is transcribed first; its original audio is not sent to the TTS voice.</div><button class="primary" id="convert" style="margin-top:12px">🎀 Convert WAV → Text → TTS</button></div><div class="card"><label for="voice">TTS girl voice</label><select id="voice"><option value="flux-bree-en" selected>Bree — sweet & friendly</option><option value="flux-brittany-en">Brittany — soft & confident</option><option value="flux-brooke-en">Brooke — energetic</option><option value="flux-hannah-en">Hannah — pleasant</option><option value="flux-maeve-en">Maeve — energetic & gentle</option></select></div><div class="card"><label for="uwu">UwU strength</label><div class="range"><input id="uwu" type="range" min="0" max="3" value="2"><span class="value" id="uwuVal">2</span></div><div class="hint">0 = normal words · 1 = subtle · 2 = cute · 3 = extra UwU. This affects the text sent to TTS.</div></div><div class="card"><label for="express">Flux expressivity</label><div class="range"><input id="express" type="range" min="-2" max="2" value="2"><span class="value" id="expressVal">+2</span></div></div><div class="buttons"><button id="start">🎤 Start live STT + TTS</button><button id="stop" disabled>Stop</button></div><div class="status" id="status">Ready — enter your Deepgram key.</div><div class="log" id="log"></div></main><script>const $=id=>document.getElementById(id);let key='',running=false,stt=null,tts=null,stream=null,ctx=null,source=null,proc=null,gen=0;function status(x){$('status').textContent=x}function log(x){$('log').textContent=(new Date().toLocaleTimeString()+' '+x+'\n'+$('log').textContent).slice(0,9000)}function ws(url){return new WebSocket(url,['token',key])}function uwu(text){let s=text.trim(),n=+$('uwu').value;if(!s||n===0)return s;if(n>=1){s=s.replace(/\br/gi,'w').replace(/\bl/gi,'w').replace(/\b(you|your)\b/gi,m=>m.toLowerCase()==='your'?'yuwr':'yuw')}if(n>=2){s=s.replace(/\b(very)\b/gi,'vewy').replace(/\b(love)\b/gi,'wuv').replace(/\b(little)\b/gi,'wittle').replace(/\b(please)\b/gi,'pwease')}if(n>=3){s=s.replace(/\b(hello|hi)\b/gi,'hewwo').replace(/\b(friend)\b/gi,'fwiend').replace(/\b(no|not)\b/gi,'noo');s=s.replace(/!+/g,'~!')}return s}function pcm(data){let v=new DataView(data),a=new Float32Array(v.byteLength/2);for(let i=0;i<a.length;i++)a[i]=v.getInt16(i*2,true)/32768;return a}async function play(data,g){if(g!==gen||!ctx)return;let a=pcm(data),b=ctx.createBuffer(1,a.length,48000),s=ctx.createBufferSource();b.copyToChannel(a,0);s.buffer=b;s.connect(ctx.destination);s.start();await new Promise(r=>s.onended=r)}function connectTTS(){return new Promise((resolve,reject)=>{let p=new URLSearchParams({model:$('voice').value,encoding:'linear16',sample_rate:'48000',expressivity:$('express').value}),s=ws('wss://api.deepgram.com/v2/speak?'+p),done=false;tts=s;s.binaryType='arraybuffer';s.onopen=()=>{log('Flux TTS connected');if(!done){done=true;resolve()}};s.onmessage=e=>{if(typeof e.data==='string')return;play(e.data,gen)};s.onerror=()=>{if(!done){done=true;reject(Error('TTS connection failed'))}}})}function speak(text){if(!text)return;if(!tts||tts.readyState!==1){status('TTS is not connected. Start live mode first, or wait for the WAV conversion to connect.');return}let out=uwu(text);log('Text: '+text);log('TTS: '+out);status('🎀 Speaking with UwU girl TTS…');tts.send(JSON.stringify({type:'Speak',text:out}));tts.send(JSON.stringify({type:'Flush'}))}async function ensureTTS(){if(tts&&tts.readyState===1)return;if(!key)throw Error('Enter your Deepgram API key first.');gen++;ctx=ctx||new AudioContext({sampleRate:48000});await ctx.resume();await connectTTS()}async function convertWav(){let file=$('wav').files[0];key=$('key').value.trim();if(!key){status('Enter your Deepgram API key first.');return}if(!file){status('Choose a WAV file first.');return}if(!/\.wav$/i.test(file.name)&&file.type!=='audio/wav'){status('Please choose a WAV file.');return}let button=$('convert');button.disabled=true;try{status('📝 Transcribing WAV with Deepgram…');log('WAV: '+file.name+' ('+Math.round(file.size/1024)+' KB)');let r=await fetch('https://api.deepgram.com/v1/listen?model=nova-3&smart_format=true', {method:'POST',headers:{Authorization:'Token '+key,'Content-Type':file.type||'audio/wav'},body:file});if(!r.ok){let msg=await r.text();throw Error('Deepgram STT '+r.status+': '+msg.slice(0,300))}let m=await r.json(),text=m.results?.channels?.[0]?.alternatives?.[0]?.transcript?.trim();if(!text)throw Error('Deepgram returned no transcript.');log('Transcript: '+text);await ensureTTS();speak(text)}catch(e){log(e.message);status('WAV conversion failed: '+e.message)}finally{button.disabled=false}}function connectSTT(){return new Promise((resolve,reject)=>{let p=new URLSearchParams({model:'nova-3',encoding:'linear16',sample_rate:'16000',channels:'1',interim_results:'false',smart_format:'true',endpointing:'800'}),s=ws('wss://api.deepgram.com/v1/listen?'+p),done=false;stt=s;s.onopen=()=>{log('STT connected');if(!done){done=true;resolve()}};s.onmessage=e=>{if(typeof e.data!=='string')return;try{let m=JSON.parse(e.data),t=m.channel?.alternatives?.[0]?.transcript?.trim();if(m.is_final&&t)speak(t)}catch{}};s.onerror=()=>{if(!done){done=true;reject(Error('STT connection failed'))}}})}async function start(){if(running)return;key=$('key').value.trim();if(!key){status('Enter your Deepgram API key first.');return}try{status('Requesting microphone…');stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});ctx=new AudioContext({sampleRate:48000});await ctx.resume();source=ctx.createMediaStreamSource(stream);proc=ctx.createScriptProcessor(4096,1,1);source.connect(proc);proc.connect(ctx.destination);proc.onaudioprocess=e=>{if(!running||!stt||stt.readyState!==1)return;let input=e.inputBuffer.getChannelData(0),out=new Int16Array(Math.floor(input.length*16000/ctx.sampleRate));for(let i=0;i<out.length;i++){let x=input[Math.min(input.length-1,Math.floor(i*ctx.sampleRate/16000))];out[i]=Math.max(-32768,Math.min(32767,x*32767))}stt.send(out.buffer)};running=true;gen++;await Promise.all([connectSTT(),connectTTS()]);$('start').disabled=true;$('stop').disabled=false;status('🎀 Listening — speak normally!');log('Live STT → UwU processing → Flux TTS is LIVE.')}catch(e){log(e.message);status('Could not start: '+e.message);stop()}}function stop(){running=false;gen++;try{proc?.disconnect()}catch{}try{source?.disconnect()}catch{}try{stt?.close()}catch{}try{tts?.close()}catch{}try{stream?.getTracks().forEach(t=>t.stop())}catch{}try{ctx?.close()}catch{}stt=tts=stream=ctx=source=proc=null;$('start').disabled=false;$('stop').disabled=true;status('Stopped — ready to start again.')}$('wav').onchange=()=>{$('fileName').textContent=$('wav').files[0]?.name||'No WAV selected.'};$('convert').onclick=convertWav;$('start').onclick=start;$('stop').onclick=stop;$('uwu').oninput=()=>$('uwuVal').textContent=$('uwu').value;$('express').oninput=()=>{let x=+$('express').value;$('expressVal').textContent=x>0?'+'+x:x};window.addEventListener('beforeunload',stop)</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Python WAV Voice Synthesizer</title>
+  <style>
+    :root{color-scheme:dark;font-family:Inter,system-ui,sans-serif}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090811;color:#f7f3ff}
+    .app{width:min(760px,94vw);padding:28px;border:1px solid #43284e;border-radius:22px;background:#15111b;box-shadow:0 20px 80px #000b}
+    h1{margin:0 0 8px;font-size:clamp(24px,5vw,36px)}
+    .sub{color:#bcb2c8;margin-bottom:20px;line-height:1.5}
+    .card{padding:18px;border:1px solid #3b2948;border-radius:14px;background:#1b1622;margin-bottom:12px}
+    label{display:block;color:#c8bfd0;font-size:13px;margin-bottom:8px}
+    input,button{width:100%;border:1px solid #493552;background:#211a29;color:#fff;border-radius:10px;padding:12px}
+    input{font-family:monospace}
+    button{cursor:pointer;font-weight:700}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    .primary{background:#d35cff;border-color:#d35cff;color:#160b1c;font-weight:800}
+    .status{margin-top:14px;padding:13px;border-radius:10px;background:#201925;color:#ddd3e5;line-height:1.45}
+    .hint{font-size:12px;color:#93879c;line-height:1.5;margin-top:9px}
+    .fileName{margin-top:8px;color:#d8c8e0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .transcript{white-space:pre-wrap;line-height:1.55;color:#eee5f2;min-height:28px}
+    audio{width:100%;margin-top:8px}
+    .pill{display:inline-block;padding:5px 9px;border:1px solid #6d3b7d;border-radius:999px;background:#24162c;color:#f0c9ff;font-size:12px;margin-bottom:14px}
+    .log{margin-top:12px;font:11px ui-monospace,monospace;color:#91849b;max-height:160px;overflow:auto;white-space:pre-wrap}
+  </style>
+</head>
+<body>
+  <main class="app">
+    <h1>🎀 Python WAV Voice Synthesizer</h1>
+    <div class="sub">Choose a WAV → Python transcribes it → XTTS-v2 synthesizes the speech using that WAV as the speaker reference → play the new WAV.</div>
+
+    <div class="pill">🐍 100% Python STT + TTS • No Flux • No Deepgram</div>
+
+    <div class="card">
+      <label for="wav">Choose a WAV voice sample</label>
+      <input id="wav" type="file" accept="audio/wav,.wav">
+      <div class="fileName" id="fileName">No WAV selected.</div>
+      <div class="hint">Use a clear voice recording. XTTS-v2 uses this recording as the speaker reference for the synthesized voice.</div>
+      <button class="primary" id="convert" style="margin-top:14px">▶️ Synthesize with Python</button>
+    </div>
+
+    <div class="card">
+      <label>📝 Python transcription</label>
+      <div class="transcript" id="transcript">Your transcript will appear here.</div>
+    </div>
+
+    <div class="card">
+      <label>🔊 Synthesized WAV</label>
+      <audio id="audio" controls></audio>
+      <div class="hint">This is newly generated speech from XTTS-v2, conditioned on the selected WAV voice.</div>
+    </div>
+
+    <div class="status" id="status">Ready — start the Python TTS server, then choose a WAV.</div>
+    <div class="log" id="log"></div>
+  </main>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const PYTHON_URL = 'http://127.0.0.1:8787';
+    let audioUrl = null;
+
+    function status(text){ $('status').textContent = text; }
+    function log(text){
+      $('log').textContent = (new Date().toLocaleTimeString() + ' ' + text + '\n' + $('log').textContent).slice(0,9000);
+    }
+
+    async function convertWav(){
+      const file = $('wav').files[0];
+      if(!file){ status('Choose a WAV file first.'); return; }
+      if(!/\.wav$/i.test(file.name) && file.type !== 'audio/wav'){
+        status('Please choose a WAV file.');
+        return;
+      }
+
+      const button = $('convert');
+      button.disabled = true;
+      $('audio').removeAttribute('src');
+      $('transcript').textContent = 'Transcribing…';
+
+      try{
+        status('📝 Python is transcribing the WAV with Faster-Whisper…');
+        log('WAV: ' + file.name + ' (' + Math.round(file.size / 1024) + ' KB)');
+
+        const form = new FormData();
+        form.append('wav', file, file.name);
+
+        const response = await fetch(PYTHON_URL + '/synthesize', {
+          method: 'POST',
+          body: form
+        });
+
+        if(!response.ok){
+          let message = 'Python server returned HTTP ' + response.status;
+          try{
+            const data = await response.json();
+            if(data.error) message = data.error;
+          }catch{}
+          throw new Error(message);
+        }
+
+        const transcript = response.headers.get('X-Transcript') || '';
+        $('transcript').textContent = transcript || 'Transcript unavailable.';
+        log('Transcript: ' + (transcript || '(empty)'));
+
+        const blob = await response.blob();
+        if(audioUrl) URL.revokeObjectURL(audioUrl);
+        audioUrl = URL.createObjectURL(blob);
+        $('audio').src = audioUrl;
+        $('audio').load();
+
+        status('✅ Done! Python synthesized a new WAV using the selected voice sample.');
+        log('Synthesized WAV ready for playback.');
+      }catch(error){
+        $('transcript').textContent = 'No transcript yet.';
+        log(error.message);
+        status('❌ Synthesis failed: ' + error.message + ' — Is python_tts_server.py running?');
+      }finally{
+        button.disabled = false;
+      }
+    }
+
+    $('wav').addEventListener('change', () => {
+      $('fileName').textContent = $('wav').files[0]?.name || 'No WAV selected.';
+      $('transcript').textContent = 'Your transcript will appear here.';
+      $('audio').removeAttribute('src');
+      status('WAV selected — click Synthesize with Python.');
+    });
+
+    $('convert').addEventListener('click', convertWav);
+    window.addEventListener('beforeunload', () => {
+      if(audioUrl) URL.revokeObjectURL(audioUrl);
+    });
+  </script>
+</body>
+</html>
