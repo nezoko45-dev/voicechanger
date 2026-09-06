@@ -1,4 +1,4 @@
 flask>=3.0,<4
-flask-cors>=5.0,<7
+flask-cors>=6.0,<7
 faster-whisper>=1.1,<2
 coqui-tts>=0.27,<1
