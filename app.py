@@ -1,6 +1,50 @@
 import os
 import sys
+import subprocess
 from pathlib import Path
+
+
+def install_dependencies():
+    packages = [
+        "gradio>=6,<7",
+        "numpy>=1.26,<3",
+        "scipy>=1.11,<2",
+        "soundfile>=0.12,<1",
+        "librosa>=0.10,<1",
+        "transformers>=4.40,<5",
+        "huggingface_hub>=0.34,<2",
+        "torch>=2.2,<3",
+        "torchaudio>=2.2,<3",
+        "torchvision>=0.17,<1",
+        "webrtcvad==2.0.10",
+    ]
+    print("Installing missing VoiceChanger dependencies...")
+    subprocess.check_call([
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--disable-pip-version-check",
+        *packages,
+    ])
+
+
+# Automatically install dependencies when the hosting environment does not
+# already provide them. Existing installations are left untouched.
+try:
+    import gradio
+    import librosa
+    import numpy
+    import scipy
+    import soundfile
+    import torch
+    import torchaudio
+    import torchvision
+    import transformers
+    import huggingface_hub
+    import webrtcvad
+except ImportError:
+    install_dependencies()
 
 import gradio as gr
 import librosa
