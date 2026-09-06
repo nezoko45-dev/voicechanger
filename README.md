@@ -1,5 +1,5 @@
 ---
-title: VoiceChanger OpenVoice V2
+title: VoiceChanger — Direct FreeVC
 emoji: 🎙️
 colorFrom: purple
 colorTo: pink
@@ -10,49 +10,47 @@ python_version: 3.10
 license: mit
 ---
 
-# 🎙️ VoiceChanger — OpenVoice V2
+# 🎙️ VoiceChanger — Direct Voice Conversion
 
-This repository is now primarily set up for **Google Colab + Gradio**, with the app also runnable locally.
+VoiceChanger now uses a **text-free voice-conversion pipeline**:
 
-### Pipeline
+**🎤 Microphone → FreeVC → 🔊 Converted voice**
 
-**Microphone → Gradio streaming audio → SpeechRecognition → OpenVoice V2 → Ava voice clone → audio playback**
+The old SpeechRecognition, MeloTTS, and OpenVoice text-generation pipeline has been removed. FreeVC performs one-shot voice conversion directly from source speech toward a reference speaker. The upstream FreeVC project describes it as text-free one-shot voice conversion and provides pretrained checkpoints. citeturn1search0turn3search2
 
-The repository's Ava WAV is used as the reference voice. The OpenVoice V2 checkpoint is pulled automatically from the public `myshell-ai/OpenVoiceV2` model repository when the app starts.
+## How it works
 
-## 🚀 Google Colab
+1. The browser streams microphone audio into Gradio.
+2. Audio is resampled to 16 kHz when necessary.
+3. WavLM extracts content features from the spoken audio.
+4. FreeVC converts those features using the selected reference voice embedding.
+5. The converted audio is streamed back to the browser.
 
-The easiest way to run the GPU version is the included **`VoiceChanger_Colab.ipynb`** notebook.
+The repository's Ava WAV is selected as the default reference voice. You can replace it with another clean reference recording in the UI.
 
-1. Open `VoiceChanger_Colab.ipynb` in Google Colab.
-2. In Colab, choose **Runtime → Change runtime type → GPU** if a GPU is available.
-3. Run the cells from top to bottom.
-4. The final cell launches Gradio and prints a temporary public URL.
-5. Open that URL and allow microphone access.
+## First startup
 
-Colab provides free access to computing resources including GPUs, but availability and runtime limits vary. citehttps://research.google.com/colaboratory/faq.html
+The app automatically downloads the required FreeVC source files and pretrained checkpoint from the public `OlaWod/FreeVC` Hugging Face Space. The WavLM content model is loaded from `microsoft/wavlm-large`. The FreeVC checkpoint is about 473 MB, so the first startup can take a while. citeturn3search0turn3search6
 
-> **Important:** Colab runtimes are temporary. If the runtime shuts down, the temporary Gradio URL disappears and the model must be loaded again in a new session.
+A GPU is strongly recommended for live conversion.
 
-## Local run
+## Run locally
 
 ```bash
 pip install -r requirements.txt
 python app.py
 ```
 
-Then open the Gradio URL shown in the terminal.
+Then open the Gradio URL printed by the app.
 
-## Hugging Face
+## Important
 
-The repository was previously prepared for Hugging Face Spaces, but ordinary Gradio compute there may require paid hardware. The Colab notebook is the recommended no-card route for GPU testing.
+This is direct **voice conversion**, not speech-to-text followed by text-to-speech. It therefore preserves the source speaker's words, timing, and delivery much more directly than the previous architecture.
 
-## Voice cloning
-
-OpenVoice V2 first generates neutral English speech with MeloTTS, then applies the tone color extracted from the Ava reference WAV. It is not simply replaying the reference WAV.
+Real-time latency depends heavily on the available GPU/CPU. For comparison, established RVC real-time voice-changing software reports end-to-end latency around 170 ms under suitable hardware, but latency varies by model and hardware. citeturn0search1
 
 ## Credits
 
-- OpenVoice V2: MyShell / OpenVoice
-- Speech recognition: SpeechRecognition + Google recognition service
-- UI/runtime: Gradio + Google Colab or local Python
+- FreeVC: OlaWod / FreeVC
+- WavLM: Microsoft
+- UI/runtime: Gradio
