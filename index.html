@@ -1,138 +1,57 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Python WAV Voice Synthesizer</title>
-  <style>
-    :root{color-scheme:dark;font-family:Inter,system-ui,sans-serif}
-    *{box-sizing:border-box}
-    body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090811;color:#f7f3ff}
-    .app{width:min(760px,94vw);padding:28px;border:1px solid #43284e;border-radius:22px;background:#15111b;box-shadow:0 20px 80px #000b}
-    h1{margin:0 0 8px;font-size:clamp(24px,5vw,36px)}
-    .sub{color:#bcb2c8;margin-bottom:20px;line-height:1.5}
-    .card{padding:18px;border:1px solid #3b2948;border-radius:14px;background:#1b1622;margin-bottom:12px}
-    label{display:block;color:#c8bfd0;font-size:13px;margin-bottom:8px}
-    input,button{width:100%;border:1px solid #493552;background:#211a29;color:#fff;border-radius:10px;padding:12px}
-    input{font-family:monospace}
-    button{cursor:pointer;font-weight:700}
-    button:disabled{opacity:.5;cursor:not-allowed}
-    .primary{background:#d35cff;border-color:#d35cff;color:#160b1c;font-weight:800}
-    .status{margin-top:14px;padding:13px;border-radius:10px;background:#201925;color:#ddd3e5;line-height:1.45}
-    .hint{font-size:12px;color:#93879c;line-height:1.5;margin-top:9px}
-    .fileName{margin-top:8px;color:#d8c8e0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .transcript{white-space:pre-wrap;line-height:1.55;color:#eee5f2;min-height:28px}
-    audio{width:100%;margin-top:8px}
-    .pill{display:inline-block;padding:5px 9px;border:1px solid #6d3b7d;border-radius:999px;background:#24162c;color:#f0c9ff;font-size:12px;margin-bottom:14px}
-    .log{margin-top:12px;font:11px ui-monospace,monospace;color:#91849b;max-height:160px;overflow:auto;white-space:pre-wrap}
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Python WAV Voice Synthesizer</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,system-ui,sans-serif}*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090811;color:#f7f3ff}
+.app{width:min(760px,94vw);padding:28px;border:1px solid #43284e;border-radius:22px;background:#15111b;box-shadow:0 20px 80px #000b}
+h1{margin:0 0 8px;font-size:clamp(24px,5vw,36px)}.sub{color:#bcb2c8;margin-bottom:20px;line-height:1.5}
+.card{padding:18px;border:1px solid #3b2948;border-radius:14px;background:#1b1622;margin-bottom:12px}label{display:block;color:#c8bfd0;font-size:13px;margin-bottom:8px}
+input,button{width:100%;border:1px solid #493552;background:#211a29;color:#fff;border-radius:10px;padding:12px}input{font-family:monospace}
+button{cursor:pointer;font-weight:700}button:disabled{opacity:.5;cursor:not-allowed}.primary{background:#d35cff;border-color:#d35cff;color:#160b1c;font-weight:800}
+.status{margin-top:14px;padding:13px;border-radius:10px;background:#201925;color:#ddd3e5;line-height:1.45}.hint{font-size:12px;color:#93879c;line-height:1.5;margin-top:9px}
+.fileName{margin-top:8px;color:#d8c8e0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.transcript{white-space:pre-wrap;line-height:1.55;color:#eee5f2;min-height:28px}
+audio{width:100%;margin-top:8px}.pill{display:inline-block;padding:5px 9px;border:1px solid #6d3b7d;border-radius:999px;background:#24162c;color:#f0c9ff;font-size:12px;margin-bottom:14px}
+.server{display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:13px}.dot{width:9px;height:9px;border-radius:50%;background:#777}.online{background:#5cff9a}.offline{background:#ff657a}
+.log{margin-top:12px;font:11px ui-monospace,monospace;color:#91849b;max-height:160px;overflow:auto;white-space:pre-wrap}
+</style>
 </head>
 <body>
-  <main class="app">
-    <h1>🎀 Python WAV Voice Synthesizer</h1>
-    <div class="sub">Choose a WAV → Python transcribes it → XTTS-v2 synthesizes the speech using that WAV as the speaker reference → play the new WAV.</div>
+<main class="app">
+<h1>🎀 Python WAV Voice Synthesizer</h1>
+<div class="sub">Choose a WAV → Python transcribes it → XTTS-v2 synthesizes new speech using that WAV as the speaker reference → play the synthesized WAV.</div>
+<div class="pill">🐍 Python STT + TTS • No Flux • No Deepgram</div>
+<div class="server"><span class="dot" id="dot"></span><span id="serverStatus">Checking Python server…</span></div>
 
-    <div class="pill">🐍 100% Python STT + TTS • No Flux • No Deepgram</div>
+<div class="card">
+<label for="wav">Choose a WAV voice sample</label>
+<input id="wav" type="file" accept="audio/wav,.wav">
+<div class="fileName" id="fileName">No WAV selected.</div>
+<div class="hint">Use a clear voice recording. XTTS-v2 uses this WAV as the speaker reference.</div>
+<button class="primary" id="convert" style="margin-top:14px" disabled>▶️ Synthesize with Python</button>
+</div>
 
-    <div class="card">
-      <label for="wav">Choose a WAV voice sample</label>
-      <input id="wav" type="file" accept="audio/wav,.wav">
-      <div class="fileName" id="fileName">No WAV selected.</div>
-      <div class="hint">Use a clear voice recording. XTTS-v2 uses this recording as the speaker reference for the synthesized voice.</div>
-      <button class="primary" id="convert" style="margin-top:14px">▶️ Synthesize with Python</button>
-    </div>
-
-    <div class="card">
-      <label>📝 Python transcription</label>
-      <div class="transcript" id="transcript">Your transcript will appear here.</div>
-    </div>
-
-    <div class="card">
-      <label>🔊 Synthesized WAV</label>
-      <audio id="audio" controls></audio>
-      <div class="hint">This is newly generated speech from XTTS-v2, conditioned on the selected WAV voice.</div>
-    </div>
-
-    <div class="status" id="status">Ready — start the Python TTS server, then choose a WAV.</div>
-    <div class="log" id="log"></div>
-  </main>
-
-  <script>
-    const $ = id => document.getElementById(id);
-    const PYTHON_URL = 'http://127.0.0.1:8787';
-    let audioUrl = null;
-
-    function status(text){ $('status').textContent = text; }
-    function log(text){
-      $('log').textContent = (new Date().toLocaleTimeString() + ' ' + text + '\n' + $('log').textContent).slice(0,9000);
-    }
-
-    async function convertWav(){
-      const file = $('wav').files[0];
-      if(!file){ status('Choose a WAV file first.'); return; }
-      if(!/\.wav$/i.test(file.name) && file.type !== 'audio/wav'){
-        status('Please choose a WAV file.');
-        return;
-      }
-
-      const button = $('convert');
-      button.disabled = true;
-      $('audio').removeAttribute('src');
-      $('transcript').textContent = 'Transcribing…';
-
-      try{
-        status('📝 Python is transcribing the WAV with Faster-Whisper…');
-        log('WAV: ' + file.name + ' (' + Math.round(file.size / 1024) + ' KB)');
-
-        const form = new FormData();
-        form.append('wav', file, file.name);
-
-        const response = await fetch(PYTHON_URL + '/synthesize', {
-          method: 'POST',
-          body: form
-        });
-
-        if(!response.ok){
-          let message = 'Python server returned HTTP ' + response.status;
-          try{
-            const data = await response.json();
-            if(data.error) message = data.error;
-          }catch{}
-          throw new Error(message);
-        }
-
-        const transcript = response.headers.get('X-Transcript') || '';
-        $('transcript').textContent = transcript || 'Transcript unavailable.';
-        log('Transcript: ' + (transcript || '(empty)'));
-
-        const blob = await response.blob();
-        if(audioUrl) URL.revokeObjectURL(audioUrl);
-        audioUrl = URL.createObjectURL(blob);
-        $('audio').src = audioUrl;
-        $('audio').load();
-
-        status('✅ Done! Python synthesized a new WAV using the selected voice sample.');
-        log('Synthesized WAV ready for playback.');
-      }catch(error){
-        $('transcript').textContent = 'No transcript yet.';
-        log(error.message);
-        status('❌ Synthesis failed: ' + error.message + ' — Is python_tts_server.py running?');
-      }finally{
-        button.disabled = false;
-      }
-    }
-
-    $('wav').addEventListener('change', () => {
-      $('fileName').textContent = $('wav').files[0]?.name || 'No WAV selected.';
-      $('transcript').textContent = 'Your transcript will appear here.';
-      $('audio').removeAttribute('src');
-      status('WAV selected — click Synthesize with Python.');
-    });
-
-    $('convert').addEventListener('click', convertWav);
-    window.addEventListener('beforeunload', () => {
-      if(audioUrl) URL.revokeObjectURL(audioUrl);
-    });
-  </script>
+<div class="card"><label>📝 Python transcription</label><div class="transcript" id="transcript">Your transcript will appear here.</div></div>
+<div class="card"><label>🔊 Synthesized WAV</label><audio id="audio" controls></audio><div class="hint">This is newly generated speech from XTTS-v2, conditioned on the selected WAV voice.</div></div>
+<div class="status" id="status">Checking whether the Python server is running…</div><div class="log" id="log"></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);const PYTHON_URL='http://127.0.0.1:8787';let audioUrl=null;let serverOnline=false;
+function status(t){$('status').textContent=t}function log(t){$('log').textContent=(new Date().toLocaleTimeString()+' '+t+'\n'+$('log').textContent).slice(0,9000)}
+async function checkServer(){
+ try{const r=await fetch(PYTHON_URL+'/health',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);const data=await r.json();serverOnline=!!data.ok;$('dot').className='dot online';$('serverStatus').textContent='Python TTS server is RUNNING';$('convert').disabled=false;status('✅ Python server is ready — choose a WAV.');log('Server online: '+JSON.stringify(data));}
+ catch(e){serverOnline=false;$('dot').className='dot offline';$('serverStatus').textContent='Python TTS server is NOT running';$('convert').disabled=true;status('⚠️ Start START_PYTHON_TTS.bat, then this page will reconnect automatically.');}
+}
+async function convertWav(){
+ if(!serverOnline){await checkServer();if(!serverOnline)return}const file=$('wav').files[0];if(!file){status('Choose a WAV file first.');return}if(!/\.wav$/i.test(file.name)&&file.type!=='audio/wav'){status('Please choose a WAV file.');return}
+ const button=$('convert');button.disabled=true;$('audio').removeAttribute('src');$('transcript').textContent='Transcribing…';
+ try{status('📝 Python is transcribing the WAV with Faster-Whisper…');log('WAV: '+file.name+' ('+Math.round(file.size/1024)+' KB)');const form=new FormData();form.append('wav',file,file.name);const response=await fetch(PYTHON_URL+'/synthesize',{method:'POST',body:form});if(!response.ok){let message='Python server returned HTTP '+response.status;try{const data=await response.json();if(data.error)message=data.error}catch{}throw Error(message)}const transcript=response.headers.get('X-Transcript')||'';$('transcript').textContent=transcript||'Transcript unavailable.';log('Transcript: '+(transcript||'(empty)'));const blob=await response.blob();if(audioUrl)URL.revokeObjectURL(audioUrl);audioUrl=URL.createObjectURL(blob);$('audio').src=audioUrl;$('audio').load();status('✅ Done! Python synthesized a new WAV using the selected voice sample.');log('Synthesized WAV ready.');}
+ catch(e){$('transcript').textContent='No transcript yet.';log(e.message);status('❌ Synthesis failed: '+e.message);await checkServer();}finally{$('convert').disabled=!serverOnline}
+}
+$('wav').addEventListener('change',()=>{$('fileName').textContent=$('wav').files[0]?.name||'No WAV selected.';$('transcript').textContent='Your transcript will appear here.';$('audio').removeAttribute('src');status(serverOnline?'WAV selected — click Synthesize with Python.':'Start the Python server first.')});$('convert').addEventListener('click',convertWav);checkServer();setInterval(checkServer,5000);window.addEventListener('beforeunload',()=>{if(audioUrl)URL.revokeObjectURL(audioUrl)});
+</script>
 </body>
 </html>
