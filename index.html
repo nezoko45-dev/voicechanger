@@ -3,55 +3,70 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Python WAV Voice Synthesizer</title>
+<title>WAV Voice Changer — No Python</title>
 <style>
 :root{color-scheme:dark;font-family:Inter,system-ui,sans-serif}*{box-sizing:border-box}
 body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090811;color:#f7f3ff}
-.app{width:min(760px,94vw);padding:28px;border:1px solid #43284e;border-radius:22px;background:#15111b;box-shadow:0 20px 80px #000b}
-h1{margin:0 0 8px;font-size:clamp(24px,5vw,36px)}.sub{color:#bcb2c8;margin-bottom:20px;line-height:1.5}
+.app{width:min(800px,94vw);padding:28px;border:1px solid #43284e;border-radius:22px;background:#15111b;box-shadow:0 20px 80px #000b}
+h1{margin:0 0 8px;font-size:clamp(24px,5vw,36px)}.sub{color:#bcb2c8;margin-bottom:20px;line-height:1.5}.pill{display:inline-block;padding:5px 9px;border:1px solid #6d3b7d;border-radius:999px;background:#24162c;color:#f0c9ff;font-size:12px;margin-bottom:14px}
 .card{padding:18px;border:1px solid #3b2948;border-radius:14px;background:#1b1622;margin-bottom:12px}label{display:block;color:#c8bfd0;font-size:13px;margin-bottom:8px}
 input,button{width:100%;border:1px solid #493552;background:#211a29;color:#fff;border-radius:10px;padding:12px}input{font-family:monospace}
-button{cursor:pointer;font-weight:700}button:disabled{opacity:.5;cursor:not-allowed}.primary{background:#d35cff;border-color:#d35cff;color:#160b1c;font-weight:800}
-.status{margin-top:14px;padding:13px;border-radius:10px;background:#201925;color:#ddd3e5;line-height:1.45}.hint{font-size:12px;color:#93879c;line-height:1.5;margin-top:9px}
-.fileName{margin-top:8px;color:#d8c8e0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.transcript{white-space:pre-wrap;line-height:1.55;color:#eee5f2;min-height:28px}
-audio{width:100%;margin-top:8px}.pill{display:inline-block;padding:5px 9px;border:1px solid #6d3b7d;border-radius:999px;background:#24162c;color:#f0c9ff;font-size:12px;margin-bottom:14px}
-.server{display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:13px}.dot{width:9px;height:9px;border-radius:50%;background:#777}.online{background:#5cff9a}.offline{background:#ff657a}
-.log{margin-top:12px;font:11px ui-monospace,monospace;color:#91849b;max-height:160px;overflow:auto;white-space:pre-wrap}
+.steps{display:grid;gap:10px;margin:0;padding:0;list-style:none}.steps li{padding:12px;border-radius:10px;background:#211a29;line-height:1.45}.num{display:inline-grid;place-items:center;width:25px;height:25px;border-radius:50%;background:#d35cff;color:#160b1c;font-weight:900;margin-right:8px}
+.hint{font-size:12px;color:#93879c;line-height:1.5;margin-top:9px}.fileName{margin-top:8px;color:#d8c8e0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.status{margin-top:14px;padding:13px;border-radius:10px;background:#201925;color:#ddd3e5;line-height:1.45}
+a{color:#f0b8ff}.links{display:grid;gap:10px}.linkbtn{display:block;text-decoration:none;text-align:center;border:1px solid #684078;background:#241a2b;color:#fff;border-radius:10px;padding:12px;font-weight:800}.linkbtn:hover{background:#302039}.primary{background:#d35cff;border-color:#d35cff;color:#160b1c}
 </style>
 </head>
 <body>
 <main class="app">
-<h1>🎀 Python WAV Voice Synthesizer</h1>
-<div class="sub">Choose a WAV → Python transcribes it → XTTS-v2 synthesizes new speech using that WAV as the speaker reference → play the synthesized WAV.</div>
-<div class="pill">🐍 Python STT + TTS • No Flux • No Deepgram</div>
-<div class="server"><span class="dot" id="dot"></span><span id="serverStatus">Checking Python server…</span></div>
+<h1>🎀 WAV Voice Changer</h1>
+<div class="sub">No Python. No terminal. No Deepgram Flux. Use your WAV as a voice reference, transcribe it in your browser, then create new speech with a browser-based voice-cloning tool.</div>
+<div class="pill">🌐 Browser-based • No Python server • WAV supported</div>
 
 <div class="card">
-<label for="wav">Choose a WAV voice sample</label>
-<input id="wav" type="file" accept="audio/wav,.wav">
-<div class="fileName" id="fileName">No WAV selected.</div>
-<div class="hint">Use a clear voice recording. XTTS-v2 uses this WAV as the speaker reference.</div>
-<button class="primary" id="convert" style="margin-top:14px" disabled>▶️ Synthesize with Python</button>
+<label>🚀 Recommended no-code workflow</label>
+<ol class="steps">
+<li><span class="num">1</span><b>Transcribe your WAV</b><br>Upload your WAV to a browser STT tool and copy the transcript.</li>
+<li><span class="num">2</span><b>Clone the voice</b><br>Upload the same WAV as the voice sample to a browser voice-cloning tool.</li>
+<li><span class="num">3</span><b>Enter the transcript</b><br>Paste the transcript or type completely new text, then generate speech.</li>
+<li><span class="num">4</span><b>Download WAV</b><br>Play or download the synthesized WAV from the cloning tool.</li>
+</ol>
 </div>
 
-<div class="card"><label>📝 Python transcription</label><div class="transcript" id="transcript">Your transcript will appear here.</div></div>
-<div class="card"><label>🔊 Synthesized WAV</label><audio id="audio" controls></audio><div class="hint">This is newly generated speech from XTTS-v2, conditioned on the selected WAV voice.</div></div>
-<div class="status" id="status">Checking whether the Python server is running…</div><div class="log" id="log"></div>
+<div class="card">
+<label for="wav">🎀 Choose your WAV</label>
+<input id="wav" type="file" accept="audio/wav,.wav">
+<div class="fileName" id="fileName">No WAV selected.</div>
+<div class="hint">The file is selected only in this page. The external tools below handle their own uploads. Only use a voice you own or have permission to clone.</div>
+<div class="status" id="status">Choose a WAV, then open one of the browser tools below.</div>
+</div>
+
+<div class="card">
+<label>📝 Step 1 — WAV → text (STT)</label>
+<div class="links">
+<a class="linkbtn" href="https://www.usewhispy.com/upload" target="_blank" rel="noopener">Open Whispy — private browser STT</a>
+<a class="linkbtn" href="https://whisperweb.dev/wav-to-text" target="_blank" rel="noopener">Open Whisper Web — WAV → text</a>
+</div>
+<div class="hint">Whispy says transcription runs locally in your browser and accepts WAV. Whisper Web also supports WAV and offers local processing for its free workflow.</div>
+</div>
+
+<div class="card">
+<label>🔊 Step 2 — WAV voice sample → cloned TTS</label>
+<div class="links">
+<a class="linkbtn primary" href="https://soundtools.io/voice-cloning/" target="_blank" rel="noopener">Open SoundTools — browser voice cloning</a>
+<a class="linkbtn" href="https://www.tts-free.com/voice-cloning" target="_blank" rel="noopener">Open TTS-Free — browser voice cloning</a>
+<a class="linkbtn" href="https://free.ai/voice/clone/" target="_blank" rel="noopener">Open Free.ai — voice cloning</a>
+</div>
+<div class="hint">These tools let you upload a voice sample, enter text, and generate speech. Availability, limits, and model behavior can change.</div>
+</div>
+
+<div class="card">
+<label>💡 What happened to Python?</label>
+<div class="hint">It's completely removed from the website workflow. The page no longer checks for localhost:8787, no longer asks you to start a Python server, and no longer uses XTTS-v2 or Deepgram Flux.</div>
+</div>
 </main>
 <script>
-const $=id=>document.getElementById(id);const PYTHON_URL='http://127.0.0.1:8787';let audioUrl=null;let serverOnline=false;
-function status(t){$('status').textContent=t}function log(t){$('log').textContent=(new Date().toLocaleTimeString()+' '+t+'\n'+$('log').textContent).slice(0,9000)}
-async function checkServer(){
- try{const r=await fetch(PYTHON_URL+'/health',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);const data=await r.json();serverOnline=!!data.ok;$('dot').className='dot online';$('serverStatus').textContent='Python TTS server is RUNNING';$('convert').disabled=false;status('✅ Python server is ready — choose a WAV.');log('Server online: '+JSON.stringify(data));}
- catch(e){serverOnline=false;$('dot').className='dot offline';$('serverStatus').textContent='Python TTS server is NOT running';$('convert').disabled=true;status('⚠️ Start START_PYTHON_TTS.bat, then this page will reconnect automatically.');}
-}
-async function convertWav(){
- if(!serverOnline){await checkServer();if(!serverOnline)return}const file=$('wav').files[0];if(!file){status('Choose a WAV file first.');return}if(!/\.wav$/i.test(file.name)&&file.type!=='audio/wav'){status('Please choose a WAV file.');return}
- const button=$('convert');button.disabled=true;$('audio').removeAttribute('src');$('transcript').textContent='Transcribing…';
- try{status('📝 Python is transcribing the WAV with Faster-Whisper…');log('WAV: '+file.name+' ('+Math.round(file.size/1024)+' KB)');const form=new FormData();form.append('wav',file,file.name);const response=await fetch(PYTHON_URL+'/synthesize',{method:'POST',body:form});if(!response.ok){let message='Python server returned HTTP '+response.status;try{const data=await response.json();if(data.error)message=data.error}catch{}throw Error(message)}const transcript=response.headers.get('X-Transcript')||'';$('transcript').textContent=transcript||'Transcript unavailable.';log('Transcript: '+(transcript||'(empty)'));const blob=await response.blob();if(audioUrl)URL.revokeObjectURL(audioUrl);audioUrl=URL.createObjectURL(blob);$('audio').src=audioUrl;$('audio').load();status('✅ Done! Python synthesized a new WAV using the selected voice sample.');log('Synthesized WAV ready.');}
- catch(e){$('transcript').textContent='No transcript yet.';log(e.message);status('❌ Synthesis failed: '+e.message);await checkServer();}finally{$('convert').disabled=!serverOnline}
-}
-$('wav').addEventListener('change',()=>{$('fileName').textContent=$('wav').files[0]?.name||'No WAV selected.';$('transcript').textContent='Your transcript will appear here.';$('audio').removeAttribute('src');status(serverOnline?'WAV selected — click Synthesize with Python.':'Start the Python server first.')});$('convert').addEventListener('click',convertWav);checkServer();setInterval(checkServer,5000);window.addEventListener('beforeunload',()=>{if(audioUrl)URL.revokeObjectURL(audioUrl)});
+const wav=document.getElementById('wav'),name=document.getElementById('fileName'),status=document.getElementById('status');
+wav.addEventListener('change',()=>{const f=wav.files[0];name.textContent=f?f.name:'No WAV selected.';status.textContent=f?'✅ WAV selected. Open an STT tool to get its transcript, then use the same WAV as the voice sample in a cloning tool.':'Choose a WAV, then open one of the browser tools below.'});
 </script>
 </body>
 </html>
