@@ -12,28 +12,27 @@ license: mit
 
 # 🎙️ VoiceChanger — OpenVoice V2
 
-This version is refit for **Hugging Face Spaces + Gradio**.
+This repository is now primarily set up for **Google Colab + Gradio**, with the app also runnable locally.
 
 ### Pipeline
 
 **Microphone → Gradio streaming audio → SpeechRecognition → OpenVoice V2 → Ava voice clone → audio playback**
 
-The repository's Ava WAV is used as the reference voice. The OpenVoice V2 checkpoint is pulled automatically from the public `myshell-ai/OpenVoiceV2` model repository when the Space starts.
+The repository's Ava WAV is used as the reference voice. The OpenVoice V2 checkpoint is pulled automatically from the public `myshell-ai/OpenVoiceV2` model repository when the app starts.
 
-## Hugging Face setup
+## 🚀 Google Colab
 
-1. Create a new **Gradio Space** on Hugging Face.
-2. Use the files from this repository, especially `app.py`, `requirements.txt`, and the Ava WAV.
-3. Select **ZeroGPU** if it is available for your account/Space.
-4. Hugging Face will install the dependencies and start `app.py` automatically.
+The easiest way to run the GPU version is the included **`VoiceChanger_Colab.ipynb`** notebook.
 
-The Space does **not** need a separate FastAPI server or a `localhost:8000` backend URL. Gradio handles the microphone UI and app connection directly.
+1. Open `VoiceChanger_Colab.ipynb` in Google Colab.
+2. In Colab, choose **Runtime → Change runtime type → GPU** if a GPU is available.
+3. Run the cells from top to bottom.
+4. The final cell launches Gradio and prints a temporary public URL.
+5. Open that URL and allow microphone access.
 
-## Important hosting note
+Colab provides free access to computing resources including GPUs, but availability and runtime limits vary. citehttps://research.google.com/colaboratory/faq.html
 
-Hugging Face currently allows free personal accounts in good standing to host up to two Gradio Spaces on ZeroGPU; ordinary Gradio/Docker compute Spaces require a paid plan. Availability of ZeroGPU can depend on the account and Space eligibility.
-
-OpenVoice V2 is a large model, so the first startup can take a while while its checkpoint is downloaded.
+> **Important:** Colab runtimes are temporary. If the runtime shuts down, the temporary Gradio URL disappears and the model must be loaded again in a new session.
 
 ## Local run
 
@@ -42,7 +41,11 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Then open the local Gradio URL shown in the terminal.
+Then open the Gradio URL shown in the terminal.
+
+## Hugging Face
+
+The repository was previously prepared for Hugging Face Spaces, but ordinary Gradio compute there may require paid hardware. The Colab notebook is the recommended no-card route for GPU testing.
 
 ## Voice cloning
 
@@ -52,4 +55,4 @@ OpenVoice V2 first generates neutral English speech with MeloTTS, then applies t
 
 - OpenVoice V2: MyShell / OpenVoice
 - Speech recognition: SpeechRecognition + Google recognition service
-- UI/runtime: Gradio + Hugging Face Spaces
+- UI/runtime: Gradio + Google Colab or local Python
