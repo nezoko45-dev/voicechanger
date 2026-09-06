@@ -3,28 +3,96 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VoiceChanger</title>
+<title>VoiceChanger — Live Echo</title>
 <style>
-*{box-sizing:border-box}body{margin:0;min-height:100vh;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:radial-gradient(circle at top,#25143c,#09070d 55%);color:#fff;display:grid;place-items:center;padding:24px}.card{width:min(760px,100%);background:rgba(18,15,25,.94);border:1px solid #3b3048;border-radius:24px;padding:30px;box-shadow:0 20px 70px #0008}.logo{font-size:34px;font-weight:800}.sub{color:#aaa;margin:6px 0 26px}.row{display:flex;gap:12px;flex-wrap:wrap}button{border:0;border-radius:14px;padding:14px 20px;font-size:16px;font-weight:700;cursor:pointer;background:#7c3aed;color:#fff}button.secondary{background:#292330}button:disabled{opacity:.45;cursor:not-allowed}.status{margin-top:18px;padding:12px 14px;border-radius:12px;background:#15121b;color:#bdb5c8}.panel{margin-top:18px;padding:16px;border:1px solid #302837;border-radius:16px;background:#100d15}.label{font-size:12px;color:#8f8799;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}.text{min-height:30px;font-size:18px}.meter{height:8px;background:#28232e;border-radius:99px;overflow:hidden;margin-top:14px}.bar{height:100%;width:0;background:#a855f7;transition:width .08s}.hint{color:#888;font-size:13px;margin-top:18px;line-height:1.5}audio{width:100%;margin-top:12px}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:radial-gradient(circle at top,#32134d,#09070d 58%);color:#fff;display:grid;place-items:center;padding:24px}.card{width:min(780px,100%);background:rgba(18,15,25,.95);border:1px solid #49365a;border-radius:24px;padding:30px;box-shadow:0 20px 80px #0009}.logo{font-size:34px;font-weight:800}.sub{color:#aaa;margin:6px 0 26px}.row{display:flex;gap:12px;flex-wrap:wrap}button{border:0;border-radius:14px;padding:14px 20px;font-size:16px;font-weight:700;cursor:pointer;background:#7c3aed;color:#fff}button.secondary{background:#292330}button:disabled{opacity:.45;cursor:not-allowed}.status{margin-top:18px;padding:12px 14px;border-radius:12px;background:#15121b;color:#c9bfd2}.meter{height:8px;background:#28232e;border-radius:99px;overflow:hidden;margin-top:14px}.bar{height:100%;width:0;background:#a855f7;transition:width .08s}.panel{margin-top:18px;padding:16px;border:1px solid #302837;border-radius:16px;background:#100d15}.label{font-size:12px;color:#8f8799;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}.text{min-height:30px;font-size:18px}.hint{color:#888;font-size:13px;margin-top:18px;line-height:1.5}audio{width:100%;margin-top:12px}
 </style>
 </head>
 <body>
 <main class="card">
 <div class="logo">🎙️ VoiceChanger</div>
-<div class="sub">🎤 Microphone → Deepgram → Fish Audio → 🔊 Voice</div>
-<div class="row"><button id="start">🎤 Start recording</button><button id="stop" class="secondary" disabled>⏹ Stop & convert</button></div>
+<div class="sub">🎤 Live microphone → Deepgram → Fish Audio → 🔊 live voice echo</div>
+<div class="row"><button id="start">🎤 Start live echo</button><button id="stop" class="secondary" disabled>⏹ Stop</button></div>
 <div class="meter"><div id="bar" class="bar"></div></div>
-<div id="status" class="status">Ready.</div>
-<div class="panel"><div class="label">Transcript</div><div id="transcript" class="text">—</div></div>
-<div class="panel"><div class="label">Converted voice</div><audio id="audio" controls></audio></div>
-<div class="hint">The page records your microphone in the browser. A Netlify serverless function securely sends the audio to Deepgram and the text to Fish Audio, so your API keys never appear in the browser.</div>
+<div id="status" class="status">Ready — start the mic and speak.</div>
+<div class="panel"><div class="label">Live transcript</div><div id="transcript" class="text">—</div></div>
+<div class="panel"><div class="label">Latest echoed voice</div><audio id="audio" controls></audio></div>
+<div class="hint">The microphone stays active continuously. Speech is collected until a short pause, then sent to Deepgram and immediately synthesized by Fish Audio. API keys stay on the server.</div>
 </main>
 <script>
-let recorder=null,chunks=[];
+let stream=null,ctx=null,source=null,processor=null,running=false,pcm=[],sampleRate=44100,silenceMs=0,lastSpeech=0,sending=false;
 const start=document.getElementById('start'),stop=document.getElementById('stop'),status=document.getElementById('status'),transcript=document.getElementById('transcript'),audio=document.getElementById('audio'),bar=document.getElementById('bar');
-start.onclick=async()=>{try{const stream=await navigator.mediaDevices.getUserMedia({audio:true});chunks=[];const type=MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':'audio/webm';recorder=new MediaRecorder(stream,{mimeType:type});recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};recorder.onstop=async()=>{stream.getTracks().forEach(t=>t.stop());await convert(new Blob(chunks,{type:recorder.mimeType||'audio/webm'}))};recorder.start();start.disabled=true;stop.disabled=false;status.textContent='🎤 Listening...';bar.style.width='100%'}catch(e){status.textContent='❌ Microphone error: '+e.message}};
-stop.onclick=()=>{if(recorder&&recorder.state!=='inactive'){recorder.stop();stop.disabled=true;start.disabled=false;status.textContent='⏳ Sending to Deepgram...';bar.style.width='55%'}};
-async function convert(blob){try{const r=await fetch('/.netlify/functions/convert',{method:'POST',headers:{'Content-Type':blob.type||'audio/webm'},body:blob});const data=await r.json();if(!r.ok)throw new Error(data.error||'Conversion failed');transcript.textContent=data.transcript||'—';if(data.audio){audio.src='data:audio/mpeg;base64,'+data.audio;audio.play().catch(()=>{});}status.textContent='✅ Voice converted!';bar.style.width='100%'}catch(e){status.textContent='❌ '+e.message;bar.style.width='0%'}}
+
+start.onclick=async()=>{
+  if(running)return;
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+    ctx=new (window.AudioContext||window.webkitAudioContext)();
+    await ctx.resume();
+    sampleRate=ctx.sampleRate;
+    source=ctx.createMediaStreamSource(stream);
+    processor=ctx.createScriptProcessor(4096,1,1);
+    source.connect(processor);
+    processor.connect(ctx.destination);
+    pcm=[];silenceMs=0;lastSpeech=performance.now();running=true;sending=false;
+    processor.onaudioprocess=e=>capture(e.inputBuffer.getChannelData(0));
+    start.disabled=true;stop.disabled=false;status.textContent='🎤 Live — listening continuously...';bar.style.width='100%';
+  }catch(e){status.textContent='❌ Microphone error: '+e.message}
+};
+
+stop.onclick=stopLive;
+function stopLive(){
+  if(!running)return;
+  running=false;
+  if(processor){processor.onaudioprocess=null;processor.disconnect();}
+  if(source)source.disconnect();
+  if(stream)stream.getTracks().forEach(t=>t.stop());
+  if(ctx)ctx.close();
+  processor=source=stream=ctx=null;
+  const remaining=pcm;pcm=[];
+  if(remaining.length>sampleRate*0.25)sendPcm(remaining);
+  start.disabled=false;stop.disabled=true;bar.style.width='0%';status.textContent='⏹ Stopped.';
+}
+
+function capture(input){
+  if(!running)return;
+  let sum=0;
+  for(let i=0;i<input.length;i++){const v=input[i];sum+=v*v;pcm.push(v)}
+  const rms=Math.sqrt(sum/input.length);
+  const now=performance.now();
+  if(rms>0.018){lastSpeech=now;silenceMs=0;status.textContent=sending?'⏳ Echoing previous phrase — keep speaking...':'🎤 Listening...'}
+  else silenceMs=now-lastSpeech;
+  const maxSamples=Math.floor(sampleRate*9);
+  if(silenceMs>520&&pcm.length>sampleRate*0.35&&!sending){const phrase=pcm;pcm=[];sendPcm(phrase)}
+  else if(pcm.length>maxSamples&&!sending){const phrase=pcm;pcm=[];sendPcm(phrase)}
+}
+
+async function sendPcm(samples){
+  if(sending||samples.length<sampleRate*0.2)return;
+  sending=true;status.textContent='⏳ Deepgram → Fish Audio...';bar.style.width='55%';
+  try{
+    const wav=encodeWav(samples,sampleRate);
+    const r=await fetch('/.netlify/functions/convert',{method:'POST',headers:{'Content-Type':'audio/wav'},body:wav});
+    const data=await r.json();
+    if(!r.ok)throw new Error(data.error||'Voice conversion failed');
+    if(data.transcript){transcript.textContent=data.transcript;}
+    if(data.audio){
+      audio.src='data:audio/mpeg;base64,'+data.audio;
+      audio.currentTime=0;
+      await audio.play().catch(()=>{});
+      status.textContent='🔊 Echoing converted voice — keep talking!';
+    }else status.textContent='🎤 Listening...';
+    bar.style.width='100%';
+  }catch(e){status.textContent='❌ '+e.message;bar.style.width='0%'}
+  finally{sending=false;if(running)lastSpeech=performance.now()}
+}
+
+function encodeWav(samples,rate){
+  const buffer=new ArrayBuffer(44+samples.length*2),view=new DataView(buffer);
+  write(view,0,'RIFF');view.setUint32(4,36+samples.length*2,true);write(view,8,'WAVE');write(view,12,'fmt ');view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);view.setUint32(24,rate,true);view.setUint32(28,rate*2,true);view.setUint16(32,2,true);view.setUint16(34,16,true);write(view,36,'data');view.setUint32(40,samples.length*2,true);
+  let o=44;for(const s of samples){const v=Math.max(-1,Math.min(1,s));view.setInt16(o,v<0?v*0x8000:v*0x7fff,true);o+=2}return new Blob([view],{type:'audio/wav'});
+}
+function write(view,offset,text){for(let i=0;i<text.length;i++)view.setUint8(offset+i,text.charCodeAt(i))}
 </script>
 </body>
 </html>
