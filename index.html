@@ -1,67 +1,37 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VoiceChanger — WAV Voice Studio</title>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VoiceChanger — STT + WAV Echo</title>
 <style>
-:root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#f8f5ff;background:#09070d}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 20% 0%,#32124d 0,#09070d 45%),#09070d}.wrap{width:min(980px,94vw);margin:auto;padding:44px 0}.hero{padding:34px;border:1px solid #4b2a60;border-radius:28px;background:linear-gradient(145deg,#1b1024e8,#100d16f5);box-shadow:0 24px 90px #0008}.badge{display:inline-flex;padding:7px 11px;border-radius:999px;border:1px solid #754293;background:#2a1535;color:#efcaff;font-size:12px;font-weight:800}.hero h1{font-size:clamp(32px,7vw,58px);line-height:1;margin:18px 0 12px}.hero p{color:#c8bdd0;line-height:1.6;max-width:720px}.grid{display:grid;grid-template-columns:1.1fr .9fr;gap:16px;margin-top:16px}@media(max-width:760px){.grid{grid-template-columns:1fr}}.card{border:1px solid #3c2948;background:#151019dd;border-radius:20px;padding:22px}.card h2{margin:0 0 8px;font-size:20px}.muted{color:#9e92a8;font-size:13px;line-height:1.5}.drop{margin-top:16px;border:1px dashed #80539a;border-radius:16px;padding:22px;text-align:center;background:#1b1222}.drop input{width:100%}.file{margin-top:10px;color:#e7d8eb;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.status{margin-top:14px;padding:12px;border-radius:12px;background:#211827;color:#ddd1e4;font-size:13px}.transcript{width:100%;min-height:150px;resize:vertical;margin-top:14px;border:1px solid #493653;border-radius:12px;background:#0e0b12;color:#fff;padding:13px;font:inherit}.actions{display:grid;gap:10px;margin-top:14px}.btn{display:block;width:100%;padding:13px 15px;border-radius:12px;border:1px solid #70458a;background:#24162d;color:#fff;text-decoration:none;text-align:center;font-weight:850;cursor:pointer}.btn:hover{background:#32203d}.primary{background:#d95dff;border-color:#d95dff;color:#160a1c}.step{display:flex;gap:12px;align-items:flex-start;padding:13px 0;border-bottom:1px solid #2e2236}.step:last-child{border-bottom:0}.n{min-width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:#d95dff;color:#170a1c;font-weight:900}.tool{padding:14px;border:1px solid #3d2948;border-radius:14px;background:#1a1420;margin-top:10px}.tool strong{display:block}.tool span{display:block;color:#a99caf;font-size:12px;margin:4px 0 10px}.footer{margin-top:16px;text-align:center;color:#776c80;font-size:12px}.hidden{display:none}
-</style>
-</head>
-<body>
-<div class="wrap">
-<section class="hero">
-<span class="badge">🎀 NO PYTHON • NO TERMINAL • NO FLUX</span>
-<h1>WAV VoiceChanger</h1>
-<p>Upload a WAV, get its speech as text, then use the same recording as a voice reference for browser-based voice cloning. Everything on this page is designed around a simple no-code workflow.</p>
-</section>
-
+:root{font-family:Inter,system-ui,sans-serif;color:#f8f5ff;background:#09070d}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 20% 0%,#32124d,#09070d 48%)}.wrap{width:min(980px,94vw);margin:auto;padding:40px 0}.hero,.card{border:1px solid #493052;border-radius:22px;background:#151019ee;box-shadow:0 20px 70px #0007}.hero{padding:32px}.badge{display:inline-block;padding:7px 11px;border:1px solid #754293;border-radius:999px;background:#2a1535;color:#efcaff;font-size:12px;font-weight:800}.hero h1{font-size:clamp(32px,7vw,58px);line-height:1;margin:18px 0 12px}.hero p,.muted{color:#b9adbf;line-height:1.55}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}@media(max-width:760px){.grid{grid-template-columns:1fr}}.card{padding:22px}.card h2{margin:0 0 8px}.drop{margin-top:15px;padding:20px;border:1px dashed #80539a;border-radius:16px;text-align:center;background:#1b1222}.file{margin-top:10px;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.status{margin-top:12px;padding:12px;border-radius:12px;background:#211827;font-size:13px}.transcript{width:100%;min-height:150px;margin-top:12px;resize:vertical;border:1px solid #493653;border-radius:12px;background:#0e0b12;color:#fff;padding:13px;font:inherit}.actions{display:grid;gap:10px;margin-top:13px}.btn{display:block;width:100%;padding:13px 15px;border-radius:12px;border:1px solid #70458a;background:#24162d;color:#fff;text-align:center;font-weight:850;cursor:pointer;text-decoration:none}.btn:hover{background:#32203d}.primary{background:#d95dff;border-color:#d95dff;color:#160a1c}.danger{background:#54203c}.row{display:flex;gap:10px}.row>*{flex:1}.meter{height:8px;border-radius:99px;background:#2a202f;overflow:hidden;margin-top:12px}.meter i{display:block;height:100%;width:0;background:#d95dff;transition:.1s}.footer{text-align:center;color:#776c80;font-size:12px;margin:16px}.note{padding:13px;border-radius:13px;background:#1b1222;border:1px solid #3d2948;margin-top:12px;font-size:13px;line-height:1.5}
+</style></head>
+<body><div class="wrap">
+<section class="hero"><span class="badge">🎙️ BROWSER STT • WAV VOICE • TTS ECHO</span><h1>WAV VoiceChanger</h1><p>Speak into your microphone to create the text, then have the browser TTS read it while your selected WAV voice recording is layered as a soft playback echo/reference.</p></section>
 <div class="grid">
 <section class="card">
-<h2>🎙️ 1. Choose your WAV</h2>
-<p class="muted">Your recording stays selected in this page. External tools handle their own uploads.</p>
-<div class="drop">
-<input id="wav" type="file" accept=".wav,audio/wav">
-<div id="file" class="file">No WAV selected</div>
-</div>
-<div id="status" class="status">Choose a WAV to begin.</div>
-
-<h2 style="margin-top:24px">📝 2. Transcript</h2>
-<p class="muted">Use one of the browser STT tools to transcribe the recording, then paste the result here. You can also replace it with completely new text.</p>
-<textarea id="text" class="transcript" placeholder="Your transcript or new text goes here..."></textarea>
+<h2>🎤 1. Speak → STT</h2><p class="muted">Uses your browser's built-in speech recognition. Chrome/Edge generally provide the best support.</p>
+<div class="actions"><button id="start" class="btn primary">🎤 Start Speaking</button><button id="stop" class="btn danger" disabled>⏹ Stop Listening</button></div>
+<div class="meter"><i id="meter"></i></div><div id="sttStatus" class="status">Ready for speech.</div>
+<h2 style="margin-top:22px">📝 Text</h2><textarea id="text" class="transcript" placeholder="Speak, or type text here..."></textarea>
 </section>
-
 <section class="card">
-<h2>⚡ Quick workflow</h2>
-<div class="step"><div class="n">1</div><div><b>Upload WAV</b><div class="muted">Pick the voice recording you want to use.</div></div></div>
-<div class="step"><div class="n">2</div><div><b>Transcribe</b><div class="muted">Open browser STT and copy the text.</div></div></div>
-<div class="step"><div class="n">3</div><div><b>Clone voice</b><div class="muted">Use the WAV as the reference sample.</div></div></div>
-<div class="step"><div class="n">4</div><div><b>Generate WAV</b><div class="muted">Enter text and download the synthesized audio.</div></div></div>
-
-<div class="actions">
-<a class="btn primary" href="https://www.usewhispy.com/upload" target="_blank" rel="noopener">📝 Open Whispy STT</a>
-<a class="btn" href="https://whisperweb.dev/wav-to-text" target="_blank" rel="noopener">📝 Open Whisper Web STT</a>
-</div>
-</section>
-</div>
-
-<section class="card" style="margin-top:16px">
-<h2>🔊 3. Voice cloning TTS</h2>
-<p class="muted">These browser tools let you upload your WAV as a voice sample, enter the text above, and generate speech. Pick whichever option works best for you.</p>
-<div class="grid" style="margin-top:10px">
-<div class="tool"><strong>SoundTools Voice Cloning</strong><span>Browser-based voice cloning and speech generation.</span><a class="btn primary" href="https://soundtools.io/voice-cloning/" target="_blank" rel="noopener">Open Voice Cloning</a></div>
-<div class="tool"><strong>TTS-Free Voice Cloning</strong><span>Voice sample → generated speech workflow.</span><a class="btn" href="https://www.tts-free.com/voice-cloning" target="_blank" rel="noopener">Open TTS-Free</a></div>
-<div class="tool"><strong>Free.ai Voice Clone</strong><span>Upload a voice sample and generate speech.</span><a class="btn" href="https://free.ai/voice/clone/" target="_blank" rel="noopener">Open Free.ai</a></div>
-<div class="tool"><strong>ElevenLabs</strong><span>Powerful hosted voice cloning/TTS option; account/features may vary.</span><a class="btn" href="https://elevenlabs.io/voice-cloning" target="_blank" rel="noopener">Open ElevenLabs</a></div>
-</div>
-</section>
-
-<div class="footer">Only clone voices you own or have permission to use. This app contains no Python server, no XTTS installer, and no Deepgram Flux runtime.</div>
+<h2>🔊 2. Your WAV voice</h2><p class="muted">Choose the WAV you want available during TTS playback. It is loaded locally by your browser.</p>
+<div class="drop"><input id="wav" type="file" accept=".wav,audio/wav"><div id="file" class="file">No WAV selected</div></div>
+<audio id="voiceAudio" controls style="width:100%;margin-top:14px;display:none"></audio>
+<div class="actions"><button id="speak" class="btn primary">🔊 Speak Text + WAV Echo</button><button id="stopTts" class="btn">⏹ Stop Playback</button></div>
+<div class="note"><b>How the echo works:</b> the browser speaks your STT text with TTS while the selected WAV is played quietly with a short delay. This gives the playback a voice-reference/echo layer without Python or a server.</div>
+</section></div>
+<section class="card" style="margin-top:16px"><h2>⚙️ Playback controls</h2><div class="grid" style="margin-top:10px"><label>WAV echo volume<br><input id="volume" type="range" min="0" max="1" step=".01" value=".28" style="width:100%"></label><label>Echo delay (ms)<br><input id="delay" type="range" min="0" max="1500" step="50" value="350" style="width:100%"></label></div><p class="muted">The WAV is not uploaded anywhere by this page; it stays in your browser.</p></section>
+<div class="footer">For actual voice cloning, a voice-cloning TTS service is still required. This version uses browser STT + browser TTS and your local WAV as the playback echo layer.</div>
 </div>
 <script>
-const wav=document.getElementById('wav');const file=document.getElementById('file');const status=document.getElementById('status');
-const text=document.getElementById('text');
-wav.addEventListener('change',()=>{const f=wav.files[0];if(!f){file.textContent='No WAV selected';status.textContent='Choose a WAV to begin.';return}file.textContent=f.name;status.textContent=`✅ ${f.name} selected. Use an STT button to transcribe it, then use this same WAV as the voice reference in a cloning tool.`});
-</script>
-</body>
-</html>
+const text=document.getElementById('text'),start=document.getElementById('start'),stop=document.getElementById('stop'),sttStatus=document.getElementById('sttStatus'),meter=document.getElementById('meter'),wav=document.getElementById('wav'),file=document.getElementById('file'),audio=document.getElementById('voiceAudio'),speak=document.getElementById('speak'),stopTts=document.getElementById('stopTts'),volume=document.getElementById('volume'),delay=document.getElementById('delay');
+let recognition=null, listening=false, wavUrl=null, echoTimer=null;
+const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(SpeechRecognition){recognition=new SpeechRecognition();recognition.continuous=true;recognition.interimResults=true;recognition.lang='en-US';recognition.onstart=()=>{listening=true;start.disabled=true;stop.disabled=false;sttStatus.textContent='🎤 Listening… speak now.'};recognition.onresult=e=>{let finalText='';let interim='';for(let i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)finalText+=e.results[i][0].transcript+' ';else interim+=e.results[i][0].transcript}if(finalText)text.value+=(text.value?' ':'')+finalText.trim();sttStatus.textContent=interim?'Hearing: '+interim:'Speech recognized.';meter.style.width=Math.min(100,20+interim.length*3)+'%'};recognition.onerror=e=>{sttStatus.textContent='STT error: '+e.error;listening=false;start.disabled=false;stop.disabled=true;meter.style.width='0'};recognition.onend=()=>{if(listening){try{recognition.start()}catch(e){}}else{start.disabled=false;stop.disabled=true;meter.style.width='0';sttStatus.textContent='Ready for speech.'}};start.onclick=()=>{try{recognition.start()}catch(e){}};stop.onclick=()=>{listening=false;recognition.stop()}}else{start.disabled=true;stop.disabled=true;sttStatus.textContent='Your browser does not provide SpeechRecognition. Try Chrome or Edge.'}
+wav.onchange=()=>{const f=wav.files[0];if(wavUrl)URL.revokeObjectURL(wavUrl);if(!f){file.textContent='No WAV selected';audio.style.display='none';return}wavUrl=URL.createObjectURL(f);file.textContent=f.name;audio.src=wavUrl;audio.style.display='block';sttStatus.textContent='WAV loaded locally: '+f.name};
+speak.onclick=()=>{const phrase=text.value.trim();if(!phrase){sttStatus.textContent='Speak something first or type text.';return}speechSynthesis.cancel();if(echoTimer)clearTimeout(echoTimer);const u=new SpeechSynthesisUtterance(phrase);u.rate=1;u.pitch=1;u.volume=1;u.onstart=()=>sttStatus.textContent='🔊 TTS playing…';u.onend=()=>sttStatus.textContent='Playback finished.';speechSynthesis.speak(u);if(wavUrl){echoTimer=setTimeout(()=>{audio.pause();audio.currentTime=0;audio.volume=Number(volume.value);audio.play().catch(()=>{});sttStatus.textContent='🔊 TTS + WAV echo playing…'},Number(delay.value))}};
+stopTts.onclick=()=>{speechSynthesis.cancel();if(echoTimer)clearTimeout(echoTimer);audio.pause();audio.currentTime=0;sttStatus.textContent='Playback stopped.'};
+volume.oninput=()=>{audio.volume=Number(volume.value)};
+</script></body></html>
