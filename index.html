@@ -13,18 +13,18 @@
 <div class="row"><button id="start">🎤 Start Deepgram Flux</button><button id="stop" class="secondary" disabled>⏹ Stop</button></div>
 <div class="meter"><div id="bar" class="bar"></div></div><div id="status" class="status">Ready.</div>
 <div class="panel"><div class="label">Live transcript</div><div id="transcript" class="text">—</div></div>
-<details class="api" id="api"><summary>🔑 API key</summary><div class="api-grid">
+<details class="api" id="api"><summary>🔑 Deepgram API key</summary><div class="api-grid">
 <label>Deepgram API key<input id="deepgramKey" type="password" autocomplete="off" placeholder="Enter Deepgram API key"></label>
 </div><div class="api-actions"><button id="saveKeys" class="small">💾 Save for this session</button><button id="clearKeys" class="secondary small">🗑 Clear</button></div><div id="saved" class="saved">Key is held in this browser session.</div></details>
-<div class="hint">This version uses Deepgram Flux only. No OpenRouter, Fish Audio, or other API is required.</div>
+<div class="hint">Deepgram Flux only. No OpenRouter, Fish Audio, or other API is used.</div>
 </main>
 <script>
 let running=false,stream=null,audioContext=null,processor=null,source=null,fluxSocket=null,reconnectTimer=null,reconnectAttempt=0;
 const $=id=>document.getElementById(id),start=$('start'),stop=$('stop'),status=$('status'),transcript=$('transcript'),bar=$('bar'),deepgramKey=$('deepgramKey'),saved=$('saved'),api=$('api');
 let key='';
-function loadKey(){try{key=sessionStorage.getItem('voicechanger_deepgram')||''}catch{};deepgramKey.value='';saved.textContent=key?'🔒 Session key loaded.':'Key is not saved.'}
+function loadKey(){try{sessionStorage.removeItem('voicechanger_keys');sessionStorage.removeItem('voicechanger_openrouter');sessionStorage.removeItem('voicechanger_fish');key=sessionStorage.getItem('voicechanger_deepgram')||''}catch{};deepgramKey.value='';saved.textContent=key?'🔒 Session key loaded.':'Key is not saved.'}
 $('saveKeys').onclick=()=>{const d=deepgramKey.value.trim();if(!d){saved.textContent='⚠️ Enter your Deepgram API key first.';return}key=d;sessionStorage.setItem('voicechanger_deepgram',d);deepgramKey.value='';saved.textContent='🔒 Saved in session memory. Input cleared.'};
-$('clearKeys').onclick=()=>{key='';sessionStorage.removeItem('voicechanger_deepgram');deepgramKey.value='';saved.textContent='🗑 Session key cleared.'};loadKey();
+$('clearKeys').onclick=()=>{key='';sessionStorage.removeItem('voicechanger_deepgram');sessionStorage.removeItem('voicechanger_keys');sessionStorage.removeItem('voicechanger_openrouter');sessionStorage.removeItem('voicechanger_fish');deepgramKey.value='';saved.textContent='🗑 Session key cleared.'};loadKey();
 function setStatus(t,p=0){status.textContent=t;bar.style.width=p+'%'}
 start.onclick=async()=>{try{if(!key){api.open=true;saved.textContent='⚠️ Save your Deepgram API key first.';return}stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});running=true;reconnectAttempt=0;start.disabled=true;stop.disabled=false;setStatus('🔌 Connecting to Deepgram Flux…',20);connectFlux()}catch(e){stopLive();setStatus('❌ Microphone error: '+e.message,0)}};
 stop.onclick=()=>stopLive();
