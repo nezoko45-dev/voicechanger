@@ -1,6 +1,5 @@
 import os
 import sys
-import tempfile
 from pathlib import Path
 
 import gradio as gr
@@ -8,7 +7,6 @@ import librosa
 import numpy as np
 import torch
 from huggingface_hub import snapshot_download
-from scipy.io.wavfile import write
 from transformers import WavLMModel
 
 APP_DIR = Path(__file__).resolve().parent
@@ -42,7 +40,6 @@ from models import SynthesizerTrn  # noqa: E402
 from speaker_encoder.voice_encoder import SpeakerEncoder  # noqa: E402
 import utils  # noqa: E402
 
-
 CONFIG_PATH = FREEVC_ROOT / "configs" / "freevc.json"
 CHECKPOINT_PATH = FREEVC_ROOT / "checkpoints" / "freevc.pth"
 SPEAKER_ENCODER_PATH = FREEVC_ROOT / "speaker_encoder" / "ckpt" / "pretrained_bak_5805000.pt"
@@ -61,6 +58,7 @@ content_model = WavLMModel.from_pretrained("microsoft/wavlm-large").to(DEVICE)
 content_model.eval()
 
 TARGET_EMBEDDING = None
+
 
 def load_reference(path: str | None):
     global TARGET_EMBEDDING
