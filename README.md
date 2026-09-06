@@ -1,53 +1,55 @@
-# VoiceChanger — Python + OpenVoice V2
+---
+title: VoiceChanger OpenVoice V2
+emoji: 🎙️
+colorFrom: purple
+colorTo: pink
+sdk: gradio
+sdk_version: 6.26.0
+app_file: app.py
+python_version: 3.10
+license: mit
+---
 
-This repo now uses a real backend voice-cloning pipeline:
+# 🎙️ VoiceChanger — OpenVoice V2
 
-**Browser microphone → FastAPI/WebSocket → SpeechRecognition → OpenVoice V2 → generated WAV → browser playback**
+This version is refit for **Hugging Face Spaces + Gradio**.
 
-The repository's Ava WAV is used as the OpenVoice reference voice.
+### Pipeline
 
-## Important
+**Microphone → Gradio streaming audio → SpeechRecognition → OpenVoice V2 → Ava voice clone → audio playback**
 
-GitHub Pages can host the `index.html`, but it cannot run `server.py`. The Python backend must run on a Python-capable host or locally. Enter that backend's URL in the page before pressing **Start VoiceChanger**.
+The repository's Ava WAV is used as the reference voice. The OpenVoice V2 checkpoint is pulled automatically from the public `myshell-ai/OpenVoiceV2` model repository when the Space starts.
 
-## Backend setup
+## Hugging Face setup
 
-OpenVoice's official V2 instructions use Python 3.9 and require the OpenVoice V2 checkpoints plus MeloTTS. See the official OpenVoice documentation for the checkpoint downloads and setup.
+1. Create a new **Gradio Space** on Hugging Face.
+2. Use the files from this repository, especially `app.py`, `requirements.txt`, and the Ava WAV.
+3. Select **ZeroGPU** if it is available for your account/Space.
+4. Hugging Face will install the dependencies and start `app.py` automatically.
 
-Install the dependencies from `requirements.txt`, then make sure these model files/directories exist:
+The Space does **not** need a separate FastAPI server or a `localhost:8000` backend URL. Gradio handles the microphone UI and app connection directly.
 
-```text
-checkpoints_v2/
-  converter/
-    config.json
-    checkpoint.pth
-  base_speakers/
-    ses/
-      en-newest.pth
-```
+## Important hosting note
 
-Then start the backend:
+Hugging Face currently allows free personal accounts in good standing to host up to two Gradio Spaces on ZeroGPU; ordinary Gradio/Docker compute Spaces require a paid plan. Availability of ZeroGPU can depend on the account and Space eligibility.
+
+OpenVoice V2 is a large model, so the first startup can take a while while its checkpoint is downloaded.
+
+## Local run
 
 ```bash
-uvicorn server:app --host 0.0.0.0 --port 8000
+pip install -r requirements.txt
+python app.py
 ```
 
-Health check:
-
-```text
-http://localhost:8000/health
-```
-
-## Frontend
-
-For GitHub Pages, open the deployed page and set **Python backend URL** to your public HTTPS backend URL, for example `https://your-backend.example.com`.
-
-The browser uses a WebSocket (`wss://`) when the backend URL is HTTPS.
+Then open the local Gradio URL shown in the terminal.
 
 ## Voice cloning
 
-OpenVoice V2 performs tone-color cloning from the reference WAV. It is not simply replaying the WAV. The backend first creates source speech with MeloTTS and then converts its tone color using the reference speaker embedding.
+OpenVoice V2 first generates neutral English speech with MeloTTS, then applies the tone color extracted from the Ava reference WAV. It is not simply replaying the reference WAV.
 
-## Current STT behavior
+## Credits
 
-The backend receives approximately two seconds of PCM audio at a time and sends each chunk through `SpeechRecognition`. This keeps the UI responsive while keeping the implementation simple. For lower latency later, the STT layer can be replaced with a streaming recognizer such as Vosk or Whisper.
+- OpenVoice V2: MyShell / OpenVoice
+- Speech recognition: SpeechRecognition + Google recognition service
+- UI/runtime: Gradio + Hugging Face Spaces
