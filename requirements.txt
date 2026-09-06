@@ -1,10 +1,11 @@
-gradio>=4.44,<7
+gradio>=6,<7
 numpy>=1.26,<3
 scipy>=1.11,<2
 soundfile>=0.12,<1
-SpeechRecognition>=3.14,<4
+librosa>=0.10,<1
+transformers>=4.40,<5
 huggingface_hub>=0.34,<2
-torch==2.8.0
-torchaudio==2.8.0
-git+https://github.com/myshell-ai/OpenVoice.git
-git+https://github.com/myshell-ai/MeloTTS.git
+torch>=2.2,<3
+torchaudio>=2.2,<3
+torchvision>=0.17,<1
+webrtcvad==2.0.10
