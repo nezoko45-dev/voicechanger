@@ -1,5 +1,5 @@
 ---
-title: VoiceChanger — Direct FreeVC
+title: VoiceChanger — Deepgram + Fish Audio
 emoji: 🎙️
 colorFrom: purple
 colorTo: pink
@@ -10,29 +10,39 @@ python_version: 3.10
 license: mit
 ---
 
-# 🎙️ VoiceChanger — Direct Voice Conversion
+# 🎙️ VoiceChanger — Deepgram + Fish Audio
 
-VoiceChanger now uses a **text-free voice-conversion pipeline**:
+VoiceChanger now uses a lightweight cloud voice pipeline:
 
-**🎤 Microphone → FreeVC → 🔊 Converted voice**
+**🎤 Microphone → Deepgram STT → Fish Audio TTS → 🔊 Voice**
 
-The old SpeechRecognition, MeloTTS, and OpenVoice text-generation pipeline has been removed. FreeVC performs one-shot voice conversion directly from source speech toward a reference speaker. The upstream FreeVC project describes it as text-free one-shot voice conversion and provides pretrained checkpoints. citeturn1search0turn3search2
+The previous FreeVC/local-model pipeline has been removed in favor of Deepgram for speech recognition and Fish Audio for speech synthesis.
 
 ## How it works
 
-1. The browser streams microphone audio into Gradio.
-2. Audio is resampled to 16 kHz when necessary.
-3. WavLM extracts content features from the spoken audio.
-4. FreeVC converts those features using the selected reference voice embedding.
-5. The converted audio is streamed back to the browser.
+1. The user records speech with the Gradio microphone.
+2. The audio is sent to Deepgram's `/listen` API using the normal `DEEPGRAM_API_KEY` environment variable.
+3. The returned transcript is sent to Fish Audio's `/tts` API.
+4. Fish Audio returns synthesized MP3 audio.
+5. Gradio plays the generated voice automatically.
 
-The repository's Ava WAV is selected as the default reference voice. You can replace it with another clean reference recording in the UI.
+## Environment variables
 
-## First startup
+Set these in your hosting provider's environment-variable settings. **Do not put API keys in GitHub.**
 
-The app automatically downloads the required FreeVC source files and pretrained checkpoint from the public `OlaWod/FreeVC` Hugging Face Space. The WavLM content model is loaded from `microsoft/wavlm-large`. The FreeVC checkpoint is about 473 MB, so the first startup can take a while. citeturn3search0turn3search6
+```text
+DEEPGRAM_API_KEY=your_deepgram_api_key
+FISH_API_KEY=your_fish_api_key
+FISH_REFERENCE_ID=optional_fish_voice_reference_id
+FISH_MODEL=s2.1-pro-free
+DEEPGRAM_MODEL=nova-3
+```
 
-A GPU is strongly recommended for live conversion.
+`FISH_REFERENCE_ID` is optional. Set it when you want Fish Audio to synthesize using a specific voice/reference. `FISH_MODEL` can be changed if your Fish Audio account uses another model.
+
+## Automatic dependencies
+
+`app.py` checks for its required Python packages and installs missing packages automatically. `requirements.txt` is also provided for hosts that install dependencies before launching the app.
 
 ## Run locally
 
@@ -43,14 +53,14 @@ python app.py
 
 Then open the Gradio URL printed by the app.
 
-## Important
+## Notes
 
-This is direct **voice conversion**, not speech-to-text followed by text-to-speech. It therefore preserves the source speaker's words, timing, and delivery much more directly than the previous architecture.
+This version intentionally uses the standard Deepgram API key through an environment variable rather than embedding a credential in the source code. Deepgram authenticates API requests with `Authorization: Token <API_KEY>`. Fish Audio uses `Authorization: Bearer <API_KEY>` for its TTS API.
 
-Real-time latency depends heavily on the available GPU/CPU. For comparison, established RVC real-time voice-changing software reports end-to-end latency around 170 ms under suitable hardware, but latency varies by model and hardware. citeturn0search1
+The current UI uses a push-to-process flow rather than attempting to synthesize every tiny microphone buffer independently. This avoids flooding either API with requests and produces cleaner transcript-to-TTS turns.
 
 ## Credits
 
-- FreeVC: OlaWod / FreeVC
-- WavLM: Microsoft
-- UI/runtime: Gradio
+- Deepgram — speech recognition
+- Fish Audio — text-to-speech
+- Gradio — UI/runtime
