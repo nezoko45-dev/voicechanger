@@ -4,125 +4,68 @@ import subprocess
 from pathlib import Path
 
 
-def install_dependencies():
+def ensure_dependencies():
     packages = [
         "gradio>=6,<7",
         "numpy>=1.26,<3",
-        "scipy>=1.11,<2",
         "soundfile>=0.12,<1",
-        "librosa>=0.10,<1",
-        "transformers>=4.40,<5",
-        "huggingface_hub>=0.34,<2",
-        "torch>=2.2,<3",
-        "torchaudio>=2.2,<3",
-        "torchvision>=0.17,<1",
-        "webrtcvad==2.0.10",
+        "requests>=2.31,<3",
     ]
-    print("Installing missing VoiceChanger dependencies...")
-    subprocess.check_call([
-        sys.executable,
-        "-m",
-        "pip",
-        "install",
-        "--disable-pip-version-check",
-        *packages,
-    ])
+    try:
+        import gradio  # noqa: F401
+        import numpy  # noqa: F401
+        import soundfile  # noqa: F401
+        import requests  # noqa: F401
+    except ImportError:
+        print("Installing VoiceChanger dependencies...")
+        subprocess.check_call([
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            *packages,
+        ])
 
 
-# Automatically install dependencies when the hosting environment does not
-# already provide them. Existing installations are left untouched.
-try:
-    import gradio
-    import librosa
-    import numpy
-    import scipy
-    import soundfile
-    import torch
-    import torchaudio
-    import torchvision
-    import transformers
-    import huggingface_hub
-    import webrtcvad
-except ImportError:
-    install_dependencies()
+ensure_dependencies()
+
+import io
+import tempfile
 
 import gradio as gr
-import librosa
 import numpy as np
-import torch
-from huggingface_hub import snapshot_download
-from transformers import WavLMModel
+import requests
+import soundfile as sf
 
 APP_DIR = Path(__file__).resolve().parent
-REFERENCE_WAV = APP_DIR / "ElevenLabs_2026-08-16T20_54_01_Ava – Natural AI Voice_pvc_sp100_s50_sb75_se36_b_e2.wav"
-MODEL_ROOT = Path(os.environ.get("VOICECHANGER_MODEL_DIR", APP_DIR / ".voicechanger_models"))
-FREEVC_ROOT = MODEL_ROOT / "FreeVC"
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# FreeVC is text-free one-shot voice conversion: source speech is converted directly
-# toward a reference speaker. The model code/checkpoint are downloaded on first run.
-FREEVC_ROOT.mkdir(parents=True, exist_ok=True)
-if not (FREEVC_ROOT / "models.py").exists():
-    snapshot_download(
-        repo_id="OlaWod/FreeVC",
-        repo_type="space",
-        local_dir=str(FREEVC_ROOT),
-        allow_patterns=[
-            "commons.py",
-            "mel_processing.py",
-            "models.py",
-            "modules.py",
-            "utils.py",
-            "configs/freevc.json",
-            "speaker_encoder/*",
-            "checkpoints/freevc.pth",
-        ],
-    )
+DEEPGRAM_API_KEY = os.environ.get("DEEPGRAM_API_KEY", "").strip()
+FISH_API_KEY = os.environ.get("FISH_API_KEY", "").strip()
+FISH_REFERENCE_ID = os.environ.get("FISH_REFERENCE_ID", "").strip()
+FISH_MODEL = os.environ.get("FISH_MODEL", "s2.1-pro-free").strip()
+DEEPGRAM_MODEL = os.environ.get("DEEPGRAM_MODEL", "nova-3").strip()
 
-sys.path.insert(0, str(FREEVC_ROOT))
-from models import SynthesizerTrn  # noqa: E402
-from speaker_encoder.voice_encoder import SpeakerEncoder  # noqa: E402
-import utils  # noqa: E402
-
-CONFIG_PATH = FREEVC_ROOT / "configs" / "freevc.json"
-CHECKPOINT_PATH = FREEVC_ROOT / "checkpoints" / "freevc.pth"
-SPEAKER_ENCODER_PATH = FREEVC_ROOT / "speaker_encoder" / "ckpt" / "pretrained_bak_5805000.pt"
-
-print(f"Loading FreeVC on {DEVICE}...")
-hps = utils.get_hparams_from_file(str(CONFIG_PATH))
-freevc = SynthesizerTrn(
-    hps.data.filter_length // 2 + 1,
-    hps.train.segment_size // hps.data.hop_length,
-    **hps.model,
-).to(DEVICE)
-freevc.eval()
-utils.load_checkpoint(str(CHECKPOINT_PATH), freevc, None)
-speaker_encoder = SpeakerEncoder(str(SPEAKER_ENCODER_PATH), device=str(DEVICE))
-content_model = WavLMModel.from_pretrained("microsoft/wavlm-large").to(DEVICE)
-content_model.eval()
-
-TARGET_EMBEDDING = None
+DEEPGRAM_URL = "https://api.deepgram.com/v1/listen"
+FISH_URL = "https://api.fish.audio/v1/tts"
 
 
-def load_reference(path: str | None):
-    global TARGET_EMBEDDING
-    path = path or str(REFERENCE_WAV)
-    if not Path(path).exists():
-        raise FileNotFoundError(f"Reference voice not found: {path}")
-    wav, _ = librosa.load(path, sr=16000)
-    wav, _ = librosa.effects.trim(wav, top_db=20)
-    if len(wav) < 1600:
-        raise ValueError("Reference voice is too short. Use a clean voice sample of at least a few seconds.")
-    embedding = speaker_encoder.embed_utterance(wav)
-    TARGET_EMBEDDING = torch.from_numpy(embedding).unsqueeze(0).to(DEVICE)
-    return f"✅ Reference loaded: {Path(path).name}"
+def check_configuration():
+    missing = []
+    if not DEEPGRAM_API_KEY:
+        missing.append("DEEPGRAM_API_KEY")
+    if not FISH_API_KEY:
+        missing.append("FISH_API_KEY")
+    if missing:
+        return "⚠️ Missing environment variables: " + ", ".join(missing)
+    return "✅ Deepgram + Fish Audio are configured."
 
 
-def convert_chunk(audio):
+def transcribe_audio(audio):
     if audio is None:
-        return None
-    if TARGET_EMBEDDING is None:
-        load_reference(str(REFERENCE_WAV))
+        return ""
+    if not DEEPGRAM_API_KEY:
+        raise RuntimeError("DEEPGRAM_API_KEY is not configured.")
 
     sample_rate, samples = audio
     samples = np.asarray(samples)
@@ -130,68 +73,116 @@ def convert_chunk(audio):
         samples = samples.mean(axis=1)
     samples = samples.astype(np.float32)
     if samples.size == 0:
+        return ""
+
+    buffer = io.BytesIO()
+    sf.write(buffer, samples, int(sample_rate), format="WAV", subtype="PCM_16")
+    audio_bytes = buffer.getvalue()
+
+    response = requests.post(
+        DEEPGRAM_URL,
+        params={
+            "model": DEEPGRAM_MODEL,
+            "smart_format": "true",
+            "punctuate": "true",
+        },
+        headers={
+            "Authorization": f"Token {DEEPGRAM_API_KEY}",
+            "Content-Type": "audio/wav",
+        },
+        data=audio_bytes,
+        timeout=30,
+    )
+    response.raise_for_status()
+    payload = response.json()
+
+    return (
+        payload.get("results", {})
+        .get("channels", [{}])[0]
+        .get("alternatives", [{}])[0]
+        .get("transcript", "")
+        .strip()
+    )
+
+
+def fish_tts(text):
+    if not text:
         return None
+    if not FISH_API_KEY:
+        raise RuntimeError("FISH_API_KEY is not configured.")
 
-    # FreeVC expects 16 kHz source audio. Short streaming chunks keep latency bounded.
-    if sample_rate != 16000:
-        samples = librosa.resample(samples, orig_sr=sample_rate, target_sr=16000)
+    body = {
+        "text": text,
+        "format": "mp3",
+    }
+    if FISH_REFERENCE_ID:
+        body["reference_id"] = FISH_REFERENCE_ID
 
-    source = torch.from_numpy(samples).unsqueeze(0).to(DEVICE)
-    with torch.inference_mode():
-        content = content_model(source).last_hidden_state.transpose(1, 2)
-        converted = freevc.infer(content, g=TARGET_EMBEDDING)[0][0].float().cpu().numpy()
+    response = requests.post(
+        FISH_URL,
+        headers={
+            "Authorization": f"Bearer {FISH_API_KEY}",
+            "Content-Type": "application/json",
+            "model": FISH_MODEL,
+        },
+        json=body,
+        timeout=60,
+    )
+    response.raise_for_status()
 
-    return (hps.data.sampling_rate, converted.astype(np.float32))
+    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3", dir=APP_DIR)
+    temp.write(response.content)
+    temp.close()
+    return temp.name
 
 
-def reset():
-    return None, "Ready."
+def process_audio(audio):
+    """Microphone -> Deepgram STT -> Fish Audio TTS -> playback."""
+    transcript = transcribe_audio(audio)
+    if not transcript:
+        return None, ""
+
+    output_path = fish_tts(transcript)
+    return output_path, transcript
 
 
-with gr.Blocks(title="VoiceChanger — Direct Voice Conversion") as demo:
+def refresh_status():
+    return check_configuration()
+
+
+with gr.Blocks(title="VoiceChanger — Deepgram + Fish Audio") as demo:
     gr.Markdown(
         "# 🎙️ VoiceChanger\n"
-        "### 🎤 Microphone → FreeVC voice conversion → 🔊 Converted voice\n\n"
-        "No speech recognition. No text generation. Your spoken audio is converted directly toward the selected reference voice."
+        "### 🎤 Microphone → Deepgram STT → Fish Audio TTS → 🔊 Voice\n\n"
+        "Speak into the microphone. Deepgram transcribes your speech, then Fish Audio immediately synthesizes the transcript into speech."
     )
 
     with gr.Row():
         with gr.Column():
-            reference = gr.Audio(
-                value=str(REFERENCE_WAV) if REFERENCE_WAV.exists() else None,
-                type="filepath",
-                label="🎯 Target voice reference",
-            )
-            load_button = gr.Button("Load reference voice")
             mic = gr.Audio(
                 sources=["microphone"],
                 type="numpy",
-                streaming=True,
                 label="🎤 Microphone",
             )
-            clear = gr.Button("⏹ Reset")
-        with gr.Column():
-            output = gr.Audio(
-                streaming=True,
-                autoplay=True,
-                label="🔊 Converted voice",
-            )
-            status = gr.Textbox(value="Ready.", label="Status")
+            convert = gr.Button("▶️ Convert Voice", variant="primary")
+            status = gr.Textbox(value=check_configuration(), label="Status", interactive=False)
 
-    load_button.click(load_reference, inputs=reference, outputs=status)
-    mic.stream(
-        convert_chunk,
+        with gr.Column():
+            transcript = gr.Textbox(label="📝 Deepgram transcript", interactive=False)
+            output = gr.Audio(label="🔊 Fish Audio output", autoplay=True)
+
+    convert.click(
+        process_audio,
         inputs=mic,
-        outputs=output,
-        stream_every=0.75,
-        concurrency_limit=1,
+        outputs=[output, transcript],
     )
-    clear.click(reset, outputs=[output, status])
+
+    demo.load(refresh_status, outputs=status)
 
     gr.Markdown(
-        "**Engine:** FreeVC (text-free one-shot voice conversion).  "
-        "**Reference:** the Ava WAV included in this repository by default.  "
-        "A GPU is strongly recommended for live conversion."
+        "**Deepgram:** speech recognition via the standard API key in `DEEPGRAM_API_KEY`.  "
+        "**Fish Audio:** TTS via `FISH_API_KEY`; optionally set `FISH_REFERENCE_ID` for a specific Fish voice.  "
+        "API keys are read from environment variables and are never stored in this repository."
     )
 
 
