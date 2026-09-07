@@ -9,19 +9,43 @@
 <body>
   <main class="card">
     <div class="title">🎙️ VoiceChanger</div>
-    <div class="sub">Microphone → AssemblyAI Universal-3.5 Pro WebSocket</div>
+    <div class="sub">Browser-based voice tools with selectable API providers</div>
+
+    <section class="api-box">
+      <div class="label">API Provider</div>
+      <div class="api-row">
+        <select id="provider">
+          <option value="assemblyai">AssemblyAI</option>
+          <option value="deepgram">Deepgram</option>
+          <option value="elevenlabs">ElevenLabs</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="deepseek">DeepSeek</option>
+        </select>
+        <input id="apiKey" type="password" autocomplete="off" placeholder="Paste API key">
+        <button id="saveKey">Save</button>
+      </div>
+      <div class="api-actions">
+        <button id="useKey" class="alt">Use Selected Key</button>
+        <button id="clearKey" class="alt">Clear</button>
+      </div>
+      <div id="keyStatus" class="key-status">No API key selected.</div>
+      <div class="note">Keys are stored only in this browser's local storage and are never committed to GitHub. Do not use this client-side key storage for a public production app.</div>
+    </section>
+
     <div class="controls">
       <button id="start">🎤 Start</button>
       <button id="stop" class="alt" disabled>⏹ Stop</button>
     </div>
+
     <div class="meter"><i id="meter"></i></div>
-    <div id="status" class="status">Ready — press Start.</div>
+    <div id="status" class="status">Ready — choose an API key, then press Start.</div>
+
     <div class="grid">
       <section class="panel"><div class="label">Transcript</div><div id="transcript" class="text">—</div></section>
       <section class="panel"><div class="label">Voice</div><div id="voice" class="text">Waiting…</div></section>
     </div>
+
     <div id="debug" class="debug">WebSocket: idle</div>
-    <div class="note">Uses a short-lived AssemblyAI token from the Supabase Edge Function. Your permanent AssemblyAI API key is never sent to the browser.</div>
   </main>
   <script src="app.js"></script>
 </body>
