@@ -2,9 +2,8 @@ using System;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using MelonLoader;
-using UnityEngine;
 
-[assembly: MelonInfo(typeof(ChilloutVRSizeMod.Main), "ChilloutVR Size Mod", "1.0.2", "nezoko45-dev")]
+[assembly: MelonInfo(typeof(ChilloutVRSizeMod.Main), "ChilloutVR Size Mod", "1.0.3", "nezoko45-dev")]
 
 namespace ChilloutVRSizeMod;
 
@@ -15,45 +14,36 @@ public sealed class Main : MelonMod
     private const float MinScale = 0.1f;
     private const float MaxScale = 5f;
 
-    private static MelonPreferences_Category? _category;
-    private static MelonPreferences_Entry<float>? _scaleEntry;
-    private static Transform? _playerRoot;
-    private static Type? _localPlayerType;
-
+    private static float _scale = DefaultScale;
     private static bool _f7WasDown;
     private static bool _f8WasDown;
     private static bool _f9WasDown;
     private static bool _loggedPlayerFound;
+    private static Type? _localPlayerType;
 
     [DllImport("user32.dll")]
     private static extern short GetAsyncKeyState(int virtualKey);
 
     private static bool IsKeyPressedOnce(int virtualKey, ref bool wasDown)
     {
-        var isDown = (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
-        var pressed = isDown && !wasDown;
+        bool isDown = (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+        bool pressed = isDown && !wasDown;
         wasDown = isDown;
         return pressed;
     }
 
     public override void OnApplicationStart()
     {
-        _category = MelonPreferences.CreateCategory("ChilloutVR Size Mod");
-        _scaleEntry = _category.CreateEntry("Scale", DefaultScale, "Local player scale");
-
         MelonLogger.Msg("ChilloutVR Size Mod loaded.");
         MelonLogger.Msg("F7 = smaller | F8 = larger | F9 = reset");
     }
 
     public override void OnUpdate()
     {
-        if (_scaleEntry == null)
-            return;
-
         if (IsKeyPressedOnce(0x76, ref _f7WasDown))
-            SetScale(_scaleEntry.Value - Step);
+            SetScale(_scale - Step);
         else if (IsKeyPressedOnce(0x77, ref _f8WasDown))
-            SetScale(_scaleEntry.Value + Step);
+            SetScale(_scale + Step);
         else if (IsKeyPressedOnce(0x78, ref _f9WasDown))
             SetScale(DefaultScale);
 
@@ -62,83 +52,75 @@ public sealed class Main : MelonMod
 
     private static void SetScale(float value)
     {
-        if (_scaleEntry == null)
-            return;
-
-        _scaleEntry.Value = Mathf.Clamp(value, MinScale, MaxScale);
-        MelonLogger.Msg($"Player scale: {_scaleEntry.Value:0.0}x");
+        _scale = Math.Clamp(value, MinScale, MaxScale);
+        MelonLogger.Msg($"Player scale: {_scale:0.0}x");
     }
 
     private static void ApplyScale()
     {
-        if (_scaleEntry == null)
-            return;
-
-        if (!TryGetLocalPlayerRoot(out var root))
-            return;
-
-        _playerRoot = root;
-        var target = Vector3.one * _scaleEntry.Value;
-
-        if ((root.localScale - target).sqrMagnitude > 0.000001f)
-            root.localScale = target;
-
-        if (!_loggedPlayerFound)
-        {
-            _loggedPlayerFound = true;
-            MelonLogger.Msg($"Local player found: {root.name}");
-            MelonLogger.Msg($"Applied player scale: {_scaleEntry.Value:0.0}x");
-        }
-    }
-
-    private static bool TryGetLocalPlayerRoot(out Transform root)
-    {
-        root = null!;
-
         try
         {
-            _localPlayerType ??= Type.GetType("CVR.LocalPlayer, Assembly-CSharp");
-            if (_localPlayerType == null)
-            {
-                MelonLogger.Warning("CVR.LocalPlayer type has not loaded yet.");
-                return false;
-            }
+            object? playerObject = GetLocalPlayerObject();
+            if (playerObject == null)
+                return;
 
-            var playerObjectProperty = _localPlayerType.GetProperty(
-                "PlayerObject",
-                BindingFlags.Public | BindingFlags.Static);
-
-            if (playerObjectProperty == null)
-            {
-                MelonLogger.Warning("CVR.LocalPlayer.PlayerObject property was not found.");
-                return false;
-            }
-
-            var player = playerObjectProperty.GetValue(null);
-            if (player == null)
-                return false;
-
-            var gameObjectProperty = player.GetType().GetProperty(
-                "GameObject",
-                BindingFlags.Public | BindingFlags.Instance);
-
-            if (gameObjectProperty == null)
-            {
-                MelonLogger.Warning("CVR.Player.GameObject property was not found.");
-                return false;
-            }
-
-            var gameObject = gameObjectProperty.GetValue(player) as GameObject;
+            object? gameObject = GetProperty(playerObject, "GameObject");
             if (gameObject == null)
-                return false;
+                return;
 
-            root = gameObject.transform;
-            return root != null;
+            object? transform = GetProperty(gameObject, "transform");
+            if (transform == null)
+                return;
+
+            PropertyInfo? localScaleProperty = transform.GetType().GetProperty(
+                "localScale", BindingFlags.Public | BindingFlags.Instance);
+            if (localScaleProperty == null || !localScaleProperty.CanWrite)
+                return;
+
+            Type scaleType = localScaleProperty.PropertyType;
+            object? scaleValue = Activator.CreateInstance(scaleType);
+            if (scaleValue == null)
+                return;
+
+            SetField(scaleType, scaleValue, "x", _scale);
+            SetField(scaleType, scaleValue, "y", _scale);
+            SetField(scaleType, scaleValue, "z", _scale);
+            localScaleProperty.SetValue(transform, scaleValue);
+
+            if (!_loggedPlayerFound)
+            {
+                _loggedPlayerFound = true;
+                MelonLogger.Msg("Local player found and scale applied.");
+            }
         }
         catch (Exception ex)
         {
-            MelonLogger.Warning($"Could not locate the local player yet: {ex.Message}");
-            return false;
+            MelonLogger.Warning($"Could not apply player scale yet: {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    private static object? GetLocalPlayerObject()
+    {
+        _localPlayerType ??= Type.GetType("CVR.LocalPlayer, Assembly-CSharp");
+        if (_localPlayerType == null)
+            return null;
+
+        PropertyInfo? property = _localPlayerType.GetProperty(
+            "PlayerObject", BindingFlags.Public | BindingFlags.Static);
+        return property?.GetValue(null);
+    }
+
+    private static object? GetProperty(object instance, string name)
+    {
+        PropertyInfo? property = instance.GetType().GetProperty(
+            name, BindingFlags.Public | BindingFlags.Instance);
+        return property?.GetValue(instance);
+    }
+
+    private static void SetField(Type type, object instance, string name, float value)
+    {
+        FieldInfo? field = type.GetField(name, BindingFlags.Public | BindingFlags.Instance);
+        if (field != null && field.FieldType == typeof(float))
+            field.SetValue(instance, value);
     }
 }
