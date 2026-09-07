@@ -24,7 +24,7 @@ public sealed class Main : MelonMod
     public override void OnApplicationStart()
     {
         _category = MelonPreferences.CreateCategory("ChilloutVR Size Mod");
-        _scaleEntry = _category.CreateEntry("Scale", DefaultScale, "Avatar/player scale", validator: new MelonLoader.Utils.ValueRange<float>(MinScale, MaxScale));
+        _scaleEntry = _category.CreateEntry("Scale", DefaultScale, "Avatar/player scale");
 
         MelonLogger.Msg("ChilloutVR Size Mod loaded.");
         MelonLogger.Msg("F7 = smaller | F8 = larger | F9 = reset");
@@ -51,7 +51,6 @@ public sealed class Main : MelonMod
             return;
 
         _scaleEntry.Value = Mathf.Clamp(value, MinScale, MaxScale);
-        _category?.SaveToFile(false);
         _lastApplied = -1f;
     }
 
