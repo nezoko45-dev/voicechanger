@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(ChilloutVRSizeMod.Main), "ChilloutVR Size Mod", "1.0.0", "nezoko45-dev")]
+[assembly: MelonInfo(typeof(ChilloutVRSizeMod.Main), "ChilloutVR Size Mod", "1.0.1", "nezoko45-dev")]
 [assembly: MelonGame("Alpha Blend Interactive", "ChilloutVR")]
 
 namespace ChilloutVRSizeMod;
@@ -19,12 +19,12 @@ public sealed class Main : MelonMod
     private static MelonPreferences_Category? _category;
     private static MelonPreferences_Entry<float>? _scaleEntry;
     private static Transform? _playerRoot;
-    private static float _lastApplied = -1f;
     private static Type? _localPlayerType;
 
     private static bool _f7WasDown;
     private static bool _f8WasDown;
     private static bool _f9WasDown;
+    private static bool _loggedPlayerFound;
 
     [DllImport("user32.dll")]
     private static extern short GetAsyncKeyState(int virtualKey);
@@ -40,7 +40,7 @@ public sealed class Main : MelonMod
     public override void OnApplicationStart()
     {
         _category = MelonPreferences.CreateCategory("ChilloutVR Size Mod");
-        _scaleEntry = _category.CreateEntry("Scale", DefaultScale, "Avatar/player scale");
+        _scaleEntry = _category.CreateEntry("Scale", DefaultScale, "Local player scale");
 
         MelonLogger.Msg("ChilloutVR Size Mod loaded.");
         MelonLogger.Msg("F7 = smaller | F8 = larger | F9 = reset");
@@ -58,7 +58,7 @@ public sealed class Main : MelonMod
         else if (IsKeyPressedOnce(0x78, ref _f9WasDown))
             SetScale(DefaultScale);
 
-        ApplyScaleIfNeeded();
+        ApplyScale();
     }
 
     private static void SetScale(float value)
@@ -67,10 +67,10 @@ public sealed class Main : MelonMod
             return;
 
         _scaleEntry.Value = Mathf.Clamp(value, MinScale, MaxScale);
-        _lastApplied = -1f;
+        MelonLogger.Msg($"Player scale: {_scaleEntry.Value:0.0}x");
     }
 
-    private static void ApplyScaleIfNeeded()
+    private static void ApplyScale()
     {
         if (_scaleEntry == null)
             return;
@@ -78,12 +78,20 @@ public sealed class Main : MelonMod
         if (!TryGetLocalPlayerRoot(out var root))
             return;
 
-        if (Mathf.Approximately(_lastApplied, _scaleEntry.Value) && root == _playerRoot)
-            return;
-
         _playerRoot = root;
-        root.localScale = Vector3.one * _scaleEntry.Value;
-        _lastApplied = _scaleEntry.Value;
+        var target = Vector3.one * _scaleEntry.Value;
+
+        // ChilloutVR can rebuild/update the local player hierarchy after loading an avatar.
+        // Re-apply the requested scale whenever the game's transform differs from it.
+        if ((root.localScale - target).sqrMagnitude > 0.000001f)
+            root.localScale = target;
+
+        if (!_loggedPlayerFound)
+        {
+            _loggedPlayerFound = true;
+            MelonLogger.Msg($"Local player found: {root.name}");
+            MelonLogger.Msg($"Applied player scale: {_scaleEntry.Value:0.0}x");
+        }
     }
 
     private static bool TryGetLocalPlayerRoot(out Transform root)
@@ -94,13 +102,22 @@ public sealed class Main : MelonMod
         {
             _localPlayerType ??= Type.GetType("CVR.LocalPlayer, Assembly-CSharp");
             if (_localPlayerType == null)
+            {
+                MelonLogger.Warning("CVR.LocalPlayer type has not loaded yet.");
                 return false;
+            }
 
             var playerObjectProperty = _localPlayerType.GetProperty(
                 "PlayerObject",
                 BindingFlags.Public | BindingFlags.Static);
 
-            var player = playerObjectProperty?.GetValue(null);
+            if (playerObjectProperty == null)
+            {
+                MelonLogger.Warning("CVR.LocalPlayer.PlayerObject property was not found.");
+                return false;
+            }
+
+            var player = playerObjectProperty.GetValue(null);
             if (player == null)
                 return false;
 
@@ -108,7 +125,13 @@ public sealed class Main : MelonMod
                 "GameObject",
                 BindingFlags.Public | BindingFlags.Instance);
 
-            var gameObject = gameObjectProperty?.GetValue(player) as GameObject;
+            if (gameObjectProperty == null)
+            {
+                MelonLogger.Warning("CVR.Player.GameObject property was not found.");
+                return false;
+            }
+
+            var gameObject = gameObjectProperty.GetValue(player) as GameObject;
             if (gameObject == null)
                 return false;
 
