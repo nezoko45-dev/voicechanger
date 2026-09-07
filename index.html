@@ -1,94 +1,43 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VoiceChanger — Deepgram WebSockets</title>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VoiceChanger — AssemblyAI WebSocket</title>
 <style>
 :root{font-family:Inter,system-ui,sans-serif;color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#08070b;color:#f7f3ff}.card{width:min(820px,100%);padding:28px;border:1px solid #30273b;border-radius:22px;background:#121017;box-shadow:0 24px 80px #0009}.title{font-size:32px;font-weight:800}.sub{margin:6px 0 24px;color:#9e96a8}.controls{display:flex;gap:10px;flex-wrap:wrap}button{border:0;border-radius:12px;padding:13px 18px;font-weight:750;font-size:15px;cursor:pointer;background:#8b5cf6;color:white}button.alt{background:#29242f}button:disabled{opacity:.45;cursor:not-allowed}.status{margin-top:16px;padding:13px;border-radius:12px;background:#0c0a0f;color:#c9c1d1}.meter{height:7px;margin-top:10px;border-radius:99px;overflow:hidden;background:#29232f}.meter i{display:block;width:0;height:100%;background:#a78bfa;transition:width .08s}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}@media(max-width:650px){.grid{grid-template-columns:1fr}}.panel{min-height:115px;padding:16px;border:1px solid #30273b;border-radius:15px;background:#0e0c12}.label{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:#817889;margin-bottom:9px}.text{font-size:17px;line-height:1.45;white-space:pre-wrap}.debug{margin-top:14px;font:12px ui-monospace,SFMono-Regular,Consolas,monospace;color:#92899b;white-space:pre-wrap}.keybox{margin-top:18px}.keybox summary{cursor:pointer;font-weight:700}.keybox input{width:100%;margin-top:10px;padding:12px;border-radius:10px;border:1px solid #40364b;background:#09080c;color:#fff}.keyactions{display:flex;gap:8px;margin-top:10px}.note{margin-top:16px;color:#817889;font-size:12px;line-height:1.5}
-</style>
-</head>
-<body>
-<main class="card">
-<div class="title">🎙️ VoiceChanger</div>
-<div class="sub">Microphone → Deepgram Flux STT WebSocket → Flux TTS WebSocket</div>
+</style></head>
+<body><main class="card">
+<div class="title">🎙️ VoiceChanger</div><div class="sub">Microphone → AssemblyAI Universal-3.5 Pro Streaming WebSocket</div>
 <div class="controls"><button id="start">🎤 Start</button><button id="stop" class="alt" disabled>⏹ Stop</button></div>
-<div class="meter"><i id="meter"></i></div><div id="status" class="status">Ready — enter your Deepgram key and press Start.</div>
+<div class="meter"><i id="meter"></i></div><div id="status" class="status">Ready — enter your AssemblyAI key and press Start.</div>
 <div class="grid"><section class="panel"><div class="label">Transcript</div><div id="transcript" class="text">—</div></section><section class="panel"><div class="label">Voice</div><div id="voice" class="text">Waiting for a completed turn…</div></section></div>
-<div id="debug" class="debug">STT: idle\nTTS: idle</div>
-<details class="keybox"><summary>🔑 Deepgram API key</summary><input id="keyInput" type="password" autocomplete="off" placeholder="Paste Deepgram API key"><div class="keyactions"><button id="save">Save for this session</button><button id="clear" class="alt">Clear</button></div></details>
-<div class="note">Browser-only build. STT and TTS both use Deepgram WebSockets directly. No REST TTS, Netlify functions, Python runtime, OpenRouter, or Fish Audio.</div>
+<div id="debug" class="debug">WebSocket: idle</div>
+<details class="keybox"><summary>🔑 AssemblyAI API key</summary><input id="keyInput" type="password" autocomplete="off" placeholder="Paste AssemblyAI API key"><div class="keyactions"><button id="save">Save for this session</button><button id="clear" class="alt">Clear</button></div></details>
+<div class="note">Browser-only build. Uses AssemblyAI's v3 streaming WebSocket with 16 kHz mono PCM16 audio. The API key is kept in this browser session only. Completed transcripts can be spoken with the browser's built-in speech synthesis.</div>
 </main>
 <script>
 'use strict';
-const $=id=>document.getElementById(id);
-const start=$('start'),stop=$('stop'),status=$('status'),meter=$('meter'),transcript=$('transcript'),voice=$('voice'),debug=$('debug'),keyInput=$('keyInput');
-let apiKey=sessionStorage.getItem('vc_dg_key')||'';
-let running=false,stream=null,ctx=null,source=null,processor=null,socket=null;
-let ttsCtx=null,ttsSocket=null,ttsNextTime=0,ttsSources=new Set(),socketStartedAt=0,ttsStartedAt=0;
-keyInput.value='';
-$('save').onclick=()=>{const k=keyInput.value.trim();if(!k){status.textContent='❌ Paste a Deepgram API key first.';return}apiKey=k;sessionStorage.setItem('vc_dg_key',k);keyInput.value='';status.textContent='🔒 Key saved for this browser session.'};
-$('clear').onclick=()=>{apiKey='';sessionStorage.removeItem('vc_dg_key');keyInput.value='';status.textContent='🗑 Key cleared.'};
+const $=id=>document.getElementById(id);const start=$('start'),stop=$('stop'),status=$('status'),meter=$('meter'),transcript=$('transcript'),voice=$('voice'),debug=$('debug'),keyInput=$('keyInput');
+let apiKey=sessionStorage.getItem('vc_aai_key')||'';let running=false,stream=null,ctx=null,source=null,processor=null,socket=null;
+$('save').onclick=()=>{const k=keyInput.value.trim();if(!k){status.textContent='❌ Paste an AssemblyAI API key first.';return}apiKey=k;sessionStorage.setItem('vc_aai_key',k);keyInput.value='';status.textContent='🔒 Key saved for this browser session.'};
+$('clear').onclick=()=>{apiKey='';sessionStorage.removeItem('vc_aai_key');keyInput.value='';status.textContent='🗑 Key cleared.'};
 function setStatus(t,p){status.textContent=t;if(p!==undefined)meter.style.width=p+'%'}
-function diag(stt,tts){debug.textContent='STT: '+stt+'\nTTS: '+tts}
 function stopAudio(){if(processor){try{processor.disconnect()}catch{}processor.onaudioprocess=null;processor=null}if(source){try{source.disconnect()}catch{}source=null}if(ctx){try{ctx.close()}catch{}ctx=null}}
-function stopTts(){for(const s of ttsSources){try{s.stop()}catch{}}ttsSources.clear();ttsNextTime=0;if(ttsSocket){const s=ttsSocket;ttsSocket=null;try{if(s.readyState===WebSocket.OPEN)s.send(JSON.stringify({type:'Close'}))}catch{}try{s.close()}catch{}}if(ttsCtx){try{ttsCtx.close()}catch{}ttsCtx=null}}
-function closeStt(){const s=socket;socket=null;if(s){try{if(s.readyState===WebSocket.OPEN)s.close(1000,'user stopped');else s.close()}catch{}}}
-function stopAll(){running=false;stopAudio();closeStt();stopTts();if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}start.disabled=false;stop.disabled=true;meter.style.width='0%';diag('stopped','stopped');setStatus('Ready.',0)}
+function closeSocket(){const s=socket;socket=null;if(s){try{if(s.readyState===WebSocket.OPEN)s.send(JSON.stringify({type:'Terminate'}))}catch{}try{s.close()}catch{}}}
+function stopAll(){running=false;stopAudio();closeSocket();if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}speechSynthesis.cancel();start.disabled=false;stop.disabled=true;meter.style.width='0';debug.textContent='WebSocket: stopped';setStatus('Ready.',0)}
 stop.onclick=stopAll;
-start.onclick=async()=>{
- if(running)return;
- if(!apiKey){keyInput.focus();setStatus('⚠️ Save your Deepgram API key first.',0);return}
- try{
-  stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
-  running=true;start.disabled=true;stop.disabled=false;transcript.textContent='—';voice.textContent='Listening…';
-  await openFlux();
-  await openTts();
-  setStatus('🎤 STT + TTS WebSockets connected — listening…',100);
- }catch(e){diag('start error: '+e.message,'start error');stopAll();setStatus('❌ '+e.message,0)}
-};
-function openFlux(){return new Promise((resolve,reject)=>{
- const url='wss://api.deepgram.com/v2/listen?model=flux-general-en&encoding=linear16&sample_rate=16000';
- diag('opening…','waiting…');setStatus('🔌 Connecting Deepgram STT…',20);let opened=false;
- try{socket=new WebSocket(url,['token',apiKey])}catch(e){reject(e);return}
- const s=socket;s.binaryType='arraybuffer';socketStartedAt=Date.now();
- const timer=setTimeout(()=>{if(!opened){try{s.close()}catch{}reject(new Error('STT WebSocket timed out. Check the API key and browser network access.'))}},10000);
- s.onopen=()=>{if(s!==socket||!running)return;opened=true;clearTimeout(timer);diag('OPEN','waiting…');startAudio();resolve()};
- s.onmessage=e=>handleFlux(e.data);
- s.onerror=()=>{if(s===socket&&running){diag('WebSocket error','waiting…');setStatus('❌ Deepgram STT WebSocket error.',0)}};
- s.onclose=e=>{clearTimeout(timer);if(s!==socket)return;socket=null;stopAudio();const age=((Date.now()-socketStartedAt)/1000).toFixed(1);diag('CLOSED '+e.code+' '+(e.reason||'(no reason)')+' after '+age+'s',ttsSocket?'OPEN':'closed');if(running){running=false;start.disabled=false;stop.disabled=true;setStatus('❌ STT disconnected ('+e.code+'). Press Start to reconnect.',0)}};
+start.onclick=async()=>{if(running)return;if(!apiKey){keyInput.focus();setStatus('⚠️ Save your AssemblyAI API key first.',0);return}try{stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});running=true;start.disabled=true;stop.disabled=false;transcript.textContent='—';voice.textContent='Listening…';await openAssembly();setStatus('🎤 AssemblyAI WebSocket connected — listening…',100)}catch(e){debug.textContent='WebSocket: '+e.message;stopAll();setStatus('❌ '+e.message,0)}};
+function openAssembly(){return new Promise((resolve,reject)=>{
+const url='wss://streaming.assemblyai.com/v3/ws?sample_rate=16000&speech_model=universal-3-5-pro';let opened=false;setStatus('🔌 Connecting AssemblyAI…',20);debug.textContent='WebSocket: connecting…';
+try{socket=new WebSocket(url)}catch(e){reject(e);return}const s=socket;
+const timer=setTimeout(()=>{if(!opened){try{s.close()}catch{}reject(new Error('AssemblyAI WebSocket timed out.'))}},10000);
+s.onopen=()=>{if(s!==socket||!running)return;opened=true;clearTimeout(timer);debug.textContent='WebSocket: OPEN';startAudio();resolve()};
+s.onmessage=e=>handleMessage(e.data);
+s.onerror=()=>{if(s===socket&&running){debug.textContent='WebSocket: ERROR — browser may be blocking API-key WebSocket auth';setStatus('❌ AssemblyAI WebSocket error.',0)}};
+s.onclose=e=>{clearTimeout(timer);if(s!==socket)return;socket=null;stopAudio();debug.textContent='WebSocket: CLOSED '+e.code+' '+(e.reason||'(no reason)');if(running){running=false;start.disabled=false;stop.disabled=true;setStatus('❌ AssemblyAI disconnected ('+e.code+').',0)}};
 })}
-function openTts(){return new Promise((resolve,reject)=>{
- const url='wss://api.deepgram.com/v2/speak?model=flux-haley-en&encoding=linear16&sample_rate=48000';
- diag(socket?'OPEN':'closed','opening…');let opened=false;
- try{ttsSocket=new WebSocket(url,['token',apiKey])}catch(e){reject(e);return}
- const s=ttsSocket;s.binaryType='arraybuffer';ttsStartedAt=Date.now();
- const timer=setTimeout(()=>{if(!opened){try{s.close()}catch{}reject(new Error('TTS WebSocket timed out.'))}},10000);
- s.onopen=()=>{if(s!==ttsSocket||!running)return;opened=true;clearTimeout(timer);if(!ttsCtx)ttsCtx=new (window.AudioContext||window.webkitAudioContext)();ttsCtx.resume().catch(()=>{});diag('OPEN','OPEN');resolve()};
- s.onmessage=e=>handleTts(e.data);
- s.onerror=()=>{if(s===ttsSocket&&running){diag('OPEN','WebSocket error');voice.textContent='❌ Deepgram TTS WebSocket error'}};
- s.onclose=e=>{clearTimeout(timer);if(s!==ttsSocket)return;ttsSocket=null;const age=((Date.now()-ttsStartedAt)/1000).toFixed(1);diag(socket?'OPEN':'closed','CLOSED '+e.code+' '+(e.reason||'(no reason)')+' after '+age+'s');if(running)voice.textContent='❌ TTS disconnected ('+e.code+'). Press Start again.'};
-})}
-function handleFlux(raw){if(typeof raw!=='string')return;let d;try{d=JSON.parse(raw)}catch{return}
- if(d.type==='Connected'){diag('Connected','OPEN');return}
- if(d.type==='Error'||d.type==='FatalError'){const msg=d.description||d.message||d.code||'Unknown Deepgram error';diag('SERVER ERROR: '+msg,ttsSocket?'OPEN':'closed');setStatus('❌ Flux STT: '+msg,0);return}
- if(d.type!=='TurnInfo')return;
- if(d.transcript)transcript.textContent=d.transcript;
- if(d.event==='StartOfTurn')setStatus('🗣️ Speaking…',100);
- if(d.event==='Update')setStatus('📝 Transcribing…',100);
- if(d.event==='EndOfTurn'){setStatus('🔊 Sending transcript to TTS…',100);if(d.transcript)speak(d.transcript)}
-}
-function startAudio(){if(!running||!stream||!socket||socket.readyState!==WebSocket.OPEN)return;stopAudio();ctx=new (window.AudioContext||window.webkitAudioContext)();source=ctx.createMediaStreamSource(stream);processor=ctx.createScriptProcessor(4096,1,1);const rate=ctx.sampleRate;diag('OPEN @ '+rate+'Hz','OPEN');processor.onaudioprocess=e=>{if(!running||!socket||socket.readyState!==WebSocket.OPEN)return;const input=e.inputBuffer.getChannelData(0);const n=Math.max(1,Math.round(input.length*16000/rate));const pcm=new Int16Array(n);for(let i=0;i<n;i++){const pos=i*rate/16000;const a=Math.floor(pos);const b=Math.min(a+1,input.length-1);const frac=pos-a;const v=input[a]*(1-frac)+input[b]*frac;pcm[i]=Math.max(-32768,Math.min(32767,Math.round(v*32767)))}try{socket.send(pcm.buffer)}catch{}};source.connect(processor);processor.connect(ctx.destination);ctx.resume().catch(()=>{})}
-function speak(text){if(!running||!ttsSocket||ttsSocket.readyState!==WebSocket.OPEN)return;const clean=String(text).trim();if(!clean)return;try{voice.textContent='🔊 Streaming TTS…';ttsSocket.send(JSON.stringify({type:'Speak',text:clean}));ttsSocket.send(JSON.stringify({type:'Flush'}))}catch(e){voice.textContent='❌ TTS send failed: '+e.message}}
-function handleTts(raw){
- if(typeof raw==='string'){let d;try{d=JSON.parse(raw)}catch{return}if(d.type==='SpeechStarted'){voice.textContent='🔊 Speaking…';return}if(d.type==='SpeechMetadata'){voice.textContent='✅ Finished.';return}if(d.type==='Error'||d.type==='FatalError'){voice.textContent='❌ TTS: '+(d.description||d.message||d.code||'Unknown error');return}if(d.type==='Flushed')return;return}
- if(!(raw instanceof ArrayBuffer))return;
- if(!ttsCtx)ttsCtx=new (window.AudioContext||window.webkitAudioContext)();
- const samples=new Int16Array(raw);if(!samples.length)return;
- const buffer=ttsCtx.createBuffer(1,samples.length,48000),out=buffer.getChannelData(0);for(let i=0;i<samples.length;i++)out[i]=samples[i]/32768;
- const node=ttsCtx.createBufferSource();node.buffer=buffer;node.connect(ttsCtx.destination);ttsSources.add(node);const now=ttsCtx.currentTime;ttsNextTime=Math.max(ttsNextTime,now+0.02);node.start(ttsNextTime);ttsNextTime+=buffer.duration;node.onended=()=>ttsSources.delete(node);
-}
-window.addEventListener('beforeunload',()=>{running=false;stopAudio();closeStt();stopTts()});
-</script>
-</body>
-</html>
+function startAudio(){if(!running||!stream||!socket||socket.readyState!==WebSocket.OPEN)return;ctx=new(window.AudioContext||window.webkitAudioContext)();source=ctx.createMediaStreamSource(stream);processor=ctx.createScriptProcessor(4096,1,1);const rate=ctx.sampleRate;processor.onaudioprocess=e=>{if(!running||!socket||socket.readyState!==WebSocket.OPEN)return;const input=e.inputBuffer.getChannelData(0);const n=Math.max(1,Math.round(input.length*16000/rate));const pcm=new Int16Array(n);for(let i=0;i<n;i++){const pos=i*rate/16000,a=Math.floor(pos),b=Math.min(a+1,input.length-1),f=pos-a;const v=input[a]*(1-f)+input[b]*f;pcm[i]=Math.max(-32768,Math.min(32767,Math.round(v*32767)))}try{socket.send(pcm.buffer)}catch{}};source.connect(processor);processor.connect(ctx.destination);ctx.resume().catch(()=>{})}
+function handleMessage(raw){if(typeof raw!=='string')return;let d;try{d=JSON.parse(raw)}catch{return}if(d.type==='Begin'){debug.textContent='WebSocket: OPEN — session '+(d.id||'ready');return}if(d.type==='Turn'){if(d.transcript)transcript.textContent=d.transcript;if(d.end_of_turn){voice.textContent='🔊 Speaking transcript…';speak(d.transcript);setStatus('✅ Turn complete — listening…',100)}else{voice.textContent='Listening…';setStatus('📝 Transcribing…',100)}return}if(d.type==='Termination'){debug.textContent='WebSocket: TERMINATED';return}if(d.type==='Error'){debug.textContent='WebSocket ERROR: '+(d.error||d.message||JSON.stringify(d));setStatus('❌ AssemblyAI: '+(d.error||d.message||'Unknown error'),0)}}
+function speak(text){if(!text)return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.rate=1;u.pitch=1;u.onend=()=>{voice.textContent='✅ Finished.'};speechSynthesis.speak(u)}
+window.addEventListener('beforeunload',()=>{running=false;stopAudio();closeSocket()});
+</script></body></html>
