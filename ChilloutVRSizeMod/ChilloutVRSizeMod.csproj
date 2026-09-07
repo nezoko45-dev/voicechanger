@@ -11,10 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- MelonLoader is the loader API required for a MelonMod DLL. -->
     <PackageReference Include="LavaGang.MelonLoader" Version="0.7.3" PrivateAssets="all" />
-    <!-- UnityEngine.CoreModule 2022.3.58f1 is not published as a matching NuGet package.
-         This compile-time reference is kept at the known working package version; the DLL is
-         loaded by ChilloutVR's own Unity 2022.3.58f1 runtime. -->
-    <PackageReference Include="UnityEngine.CoreModule" Version="2020.3.1" PrivateAssets="all" />
   </ItemGroup>
 </Project>
