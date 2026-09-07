@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VoiceChanger — Deepgram Flux</title>
+<title>VoiceChanger — Deepgram Flux + TTS</title>
 <style>
-:root{color-scheme:dark;font-family:Inter,system-ui,Segoe UI,sans-serif}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090b10;color:#f5f7fb}.card{width:min(760px,94vw);padding:28px;border:1px solid #252b36;border-radius:20px;background:#11151c;box-shadow:0 20px 60px #0008}.title{font-size:30px;font-weight:800}.sub{margin:6px 0 24px;color:#9da7b5}.box{padding:18px;border:1px solid #252b36;border-radius:14px;background:#0d1117}.label{font-size:13px;font-weight:700;color:#aab4c2;margin-bottom:8px;text-transform:uppercase;letter-spacing:.08em}.row{display:flex;gap:10px}.row>*{min-width:0}input{flex:1;padding:12px 14px;border:1px solid #303846;border-radius:10px;background:#080b10;color:#fff}button{border:0;border-radius:10px;padding:12px 16px;background:#6d5dfc;color:#fff;font-weight:700;cursor:pointer}button.alt{background:#252c38}button:disabled{opacity:.45;cursor:not-allowed}.controls{display:flex;gap:10px;margin:18px 0}.status{padding:12px;border-radius:10px;background:#0b0e13;color:#b9c3d0}.meter{height:8px;background:#202632;border-radius:99px;overflow:hidden;margin:18px 0 10px}.meter i{display:block;width:0;height:100%;background:#6d5dfc;transition:width .08s}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}.panel{min-height:130px;padding:16px;border:1px solid #252b36;border-radius:14px;background:#0d1117}.text{white-space:pre-wrap;color:#dce2ea;line-height:1.5}.debug{margin-top:14px;font:12px ui-monospace,monospace;color:#778292;white-space:pre-wrap;max-height:220px;overflow:auto}.warn{margin-top:10px;font-size:12px;color:#f0b36b;line-height:1.45}@media(max-width:650px){.row,.grid{display:grid;grid-template-columns:1fr}.controls{flex-wrap:wrap}}
+:root{color-scheme:dark;font-family:Inter,system-ui,Segoe UI,sans-serif}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090b10;color:#f5f7fb}.card{width:min(760px,94vw);padding:28px;border:1px solid #252b36;border-radius:20px;background:#11151c;box-shadow:0 20px 60px #0008}.title{font-size:30px;font-weight:800}.sub{margin:6px 0 24px;color:#9da7b5}.box{padding:18px;border:1px solid #252b36;border-radius:14px;background:#0d1117}.label{font-size:13px;font-weight:700;color:#aab4c2;margin-bottom:8px;text-transform:uppercase;letter-spacing:.08em}.row{display:flex;gap:10px}.row>*{min-width:0}input,select{flex:1;padding:12px 14px;border:1px solid #303846;border-radius:10px;background:#080b10;color:#fff}select{cursor:pointer}button{border:0;border-radius:10px;padding:12px 16px;background:#6d5dfc;color:#fff;font-weight:700;cursor:pointer}button.alt{background:#252c38}button:disabled{opacity:.45;cursor:not-allowed}.controls{display:flex;gap:10px;margin:18px 0}.status{padding:12px;border-radius:10px;background:#0b0e13;color:#b9c3d0}.meter{height:8px;background:#202632;border-radius:99px;overflow:hidden;margin:18px 0 10px}.meter i{display:block;width:0;height:100%;background:#6d5dfc;transition:width .08s}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}.panel{min-height:130px;padding:16px;border:1px solid #252b36;border-radius:14px;background:#0d1117}.text{white-space:pre-wrap;color:#dce2ea;line-height:1.5}.debug{margin-top:14px;font:12px ui-monospace,monospace;color:#778292;white-space:pre-wrap;max-height:220px;overflow:auto}.warn{margin-top:10px;font-size:12px;color:#f0b36b;line-height:1.45}.voice-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}@media(max-width:650px){.row,.grid,.voice-row{display:grid;grid-template-columns:1fr}.controls{flex-wrap:wrap}}
 </style>
 </head>
 <body>
 <main class="card">
   <div class="title">🎙️ VoiceChanger</div>
-  <div class="sub">Standalone Deepgram Flux browser client</div>
+  <div class="sub">Deepgram Flux speech recognition + Deepgram Aura TTS</div>
 
   <section class="box">
     <div class="label">Deepgram API key</div>
@@ -19,7 +19,29 @@
       <input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your Deepgram API key">
       <button id="save">Save key</button>
     </div>
-    <div class="warn">For this local/demo version the key is used directly by the browser. Do not publish a valuable production key in a public HTML file.</div>
+
+    <div class="voice-row">
+      <div>
+        <div class="label">Deepgram TTS voice</div>
+        <select id="voiceModel">
+          <option value="aura-2-thalia-en">Thalia — Aura-2</option>
+          <option value="aura-2-andromeda-en">Andromeda — Aura-2</option>
+          <option value="aura-2-asteria-en">Asteria — Aura-2</option>
+          <option value="aura-2-luna-en">Luna — Aura-2</option>
+          <option value="aura-2-orion-en">Orion — Aura-2</option>
+        </select>
+      </div>
+      <div>
+        <div class="label">TTS sample rate</div>
+        <select id="ttsRate">
+          <option value="24000">24 kHz</option>
+          <option value="16000">16 kHz</option>
+          <option value="48000">48 kHz</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="warn">The selected voice is generated by Deepgram TTS. Browser speechSynthesis is no longer used. For this local/demo version the API key is used directly by the browser, so do not publish a valuable production key in a public HTML file.</div>
   </section>
 
   <div class="controls">
@@ -32,10 +54,10 @@
 
   <div class="grid">
     <section class="panel"><div class="label">Transcript</div><div id="transcript" class="text">—</div></section>
-    <section class="panel"><div class="label">Voice echo</div><div id="voice" class="text">Browser speech synthesis is ready.</div></section>
+    <section class="panel"><div class="label">Deepgram voice output</div><div id="voice" class="text">Deepgram TTS is ready.</div></section>
   </div>
 
-  <div id="debug" class="debug">WebSocket: idle</div>
+  <div id="debug" class="debug">Flux WebSocket: idle\nTTS WebSocket: idle</div>
 </main>
 
 <script>
@@ -46,6 +68,8 @@
   const FLUX_URL = 'wss://api.deepgram.com/v2/listen?model=flux-general-en&encoding=linear16&sample_rate=16000&eot_timeout_ms=3000';
 
   const apiKey = document.getElementById('apiKey');
+  const voiceModel = document.getElementById('voiceModel');
+  const ttsRate = document.getElementById('ttsRate');
   const start = document.getElementById('start');
   const stop = document.getElementById('stop');
   const save = document.getElementById('save');
@@ -56,21 +80,24 @@
   const meter = document.getElementById('meter');
 
   let socket = null;
+  let ttsSocket = null;
   let stream = null;
   let audioContext = null;
   let source = null;
   let processor = null;
   let running = false;
   let lastSpoken = '';
-  let finalTranscript = '';
+  let ttsPlayTime = 0;
 
   const savedKey = localStorage.getItem(KEY_STORE);
   if (savedKey) apiKey.value = savedKey;
 
   function setStatus(text) { status.textContent = text; }
 
-  function setDebug(text) {
-    debug.textContent = text;
+  function setDebug(text) { debug.textContent = text; }
+
+  function appendDebug(text) {
+    debug.textContent = (debug.textContent + '\n' + text).slice(-5000);
   }
 
   save.addEventListener('click', () => {
@@ -116,20 +143,99 @@
     return result;
   }
 
-  function speak(text) {
+  function pcm16ToAudioBuffer(arrayBuffer, sampleRate) {
+    const pcm = new Int16Array(arrayBuffer);
+    const audioBuffer = audioContext.createBuffer(1, pcm.length, sampleRate);
+    const channel = audioBuffer.getChannelData(0);
+
+    for (let i = 0; i < pcm.length; i++) {
+      channel[i] = pcm[i] / 32768;
+    }
+
+    return audioBuffer;
+  }
+
+  function playTTSBinary(arrayBuffer, sampleRate) {
+    if (!audioContext || audioContext.state === 'closed') return;
+
+    const buffer = pcm16ToAudioBuffer(arrayBuffer, sampleRate);
+    const sourceNode = audioContext.createBufferSource();
+    sourceNode.buffer = buffer;
+    sourceNode.connect(audioContext.destination);
+
+    const now = audioContext.currentTime;
+    if (ttsPlayTime < now + 0.03) ttsPlayTime = now + 0.03;
+
+    sourceNode.start(ttsPlayTime);
+    ttsPlayTime += buffer.duration;
+  }
+
+  function speakWithDeepgram(text) {
     const clean = text.trim();
-    if (!clean || clean === lastSpoken) return;
+    if (!clean || clean === lastSpoken || !audioContext) return;
 
     lastSpoken = clean;
-    voice.textContent = '🔊 ' + clean;
+    voice.textContent = '🔊 Deepgram: ' + clean;
 
-    if ('speechSynthesis' in window) {
-      speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(clean);
-      utterance.rate = 1;
-      utterance.pitch = 1;
-      speechSynthesis.speak(utterance);
+    if (ttsSocket) {
+      try { ttsSocket.close(); } catch {}
+      ttsSocket = null;
     }
+
+    ttsPlayTime = audioContext.currentTime + 0.05;
+
+    const key = apiKey.value.trim() || localStorage.getItem(KEY_STORE) || '';
+    if (!key) return;
+
+    const model = voiceModel.value;
+    const sampleRate = Number(ttsRate.value);
+
+    const url =
+      'wss://api.deepgram.com/v1/speak' +
+      '?model=' + encodeURIComponent(model) +
+      '&encoding=linear16' +
+      '&sample_rate=' + sampleRate;
+
+    ttsSocket = new WebSocket(url, ['token', key]);
+    ttsSocket.binaryType = 'arraybuffer';
+
+    ttsSocket.onopen = () => {
+      appendDebug('TTS WebSocket: connected — ' + model);
+      ttsSocket.send(JSON.stringify({ type: 'Speak', text: clean }));
+      ttsSocket.send(JSON.stringify({ type: 'Flush' }));
+    };
+
+    ttsSocket.onmessage = event => {
+      if (typeof event.data === 'string') {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'Metadata') {
+            appendDebug('TTS Metadata: ' + (msg.model_name || model));
+          } else if (msg.type === 'Flushed') {
+            appendDebug('TTS: Flushed');
+          } else if (msg.type === 'Warning') {
+            appendDebug('TTS Warning: ' + (msg.description || 'unknown'));
+          } else {
+            appendDebug('TTS: ' + JSON.stringify(msg));
+          }
+        } catch {
+          appendDebug('TTS text: ' + event.data);
+        }
+        return;
+      }
+
+      playTTSBinary(event.data, sampleRate);
+    };
+
+    ttsSocket.onerror = error => {
+      console.error('Deepgram TTS error:', error);
+      voice.textContent = '❌ Deepgram TTS connection error.';
+      appendDebug('TTS WebSocket: ERROR');
+    };
+
+    ttsSocket.onclose = event => {
+      appendDebug('TTS WebSocket: closed (' + event.code + ')');
+    };
   }
 
   function handleFluxMessage(event) {
@@ -139,25 +245,22 @@
     try {
       msg = JSON.parse(event.data);
     } catch (error) {
-      setDebug('Received non-JSON text from Flux.\n' + event.data);
+      appendDebug('Flux non-JSON message: ' + event.data);
       return;
     }
 
     if (msg.type === 'Connected') {
       setStatus('🟢 Connected to Deepgram Flux — speak now.');
-      setDebug('WebSocket: connected\n' + JSON.stringify(msg, null, 2));
+      appendDebug('Flux: connected');
       return;
     }
 
     if (msg.type === 'TurnInfo') {
       const text = (msg.transcript || '').trim();
-      if (text) {
-        transcript.textContent = text;
-      }
+      if (text) transcript.textContent = text;
 
       if (msg.event === 'EndOfTurn') {
-        finalTranscript = text;
-        if (finalTranscript) speak(finalTranscript);
+        if (text) speakWithDeepgram(text);
         setStatus('🟢 Turn complete — keep speaking.');
       } else if (msg.event === 'Update') {
         setStatus('🎧 Listening…');
@@ -167,28 +270,17 @@
         setStatus('🎧 Turn resumed…');
       }
 
-      setDebug('Flux: ' + msg.event + '\n' + JSON.stringify(msg, null, 2));
-      return;
-    }
-
-    if (msg.type === 'ConfigureSuccess') {
-      setDebug('Flux ConfigureSuccess\n' + JSON.stringify(msg, null, 2));
-      return;
-    }
-
-    if (msg.type === 'ConfigureFailure') {
-      setStatus('Flux configuration failed.');
-      setDebug('Flux ConfigureFailure\n' + JSON.stringify(msg, null, 2));
+      appendDebug('Flux: ' + (msg.event || 'TurnInfo'));
       return;
     }
 
     if (msg.type === 'Error' || msg.type === 'FatalError') {
       setStatus('❌ Deepgram error: ' + (msg.description || msg.message || 'Unknown error'));
-      setDebug('Flux error\n' + JSON.stringify(msg, null, 2));
+      appendDebug('Flux error: ' + JSON.stringify(msg));
       return;
     }
 
-    setDebug('Flux message\n' + JSON.stringify(msg, null, 2));
+    appendDebug('Flux: ' + JSON.stringify(msg));
   }
 
   async function startFlux() {
@@ -230,14 +322,12 @@
         stop.disabled = false;
 
         setStatus('🟢 Flux connected — speak now.');
-        setDebug('WebSocket: open\nEndpoint: /v2/listen\nModel: flux-general-en\nAudio: linear16 @ 16000 Hz');
+        setDebug('Flux WebSocket: connected\nTTS WebSocket: waiting\nVoice: ' + voiceModel.value);
 
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
         audioContext = new AudioContextClass();
 
-        if (audioContext.state === 'suspended') {
-          await audioContext.resume();
-        }
+        if (audioContext.state === 'suspended') await audioContext.resume();
 
         source = audioContext.createMediaStreamSource(stream);
         processor = audioContext.createScriptProcessor(4096, 1, 1);
@@ -246,28 +336,19 @@
           if (!running || !socket || socket.readyState !== WebSocket.OPEN) return;
 
           const input = event.inputBuffer.getChannelData(0);
-
           let sum = 0;
-          for (let i = 0; i < input.length; i++) {
-            sum += input[i] * input[i];
-          }
+          for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
 
           const rms = Math.min(1, Math.sqrt(sum / input.length) * 4);
           meter.style.width = Math.round(rms * 100) + '%';
 
-          // Browser AudioContext sample rates are often 48000 Hz.
-          // Flux is configured for 16000 Hz, so explicitly resample it.
           const samples16k = downsample(input, audioContext.sampleRate, 16000);
           const pcm = floatToPCM16(samples16k);
-
-          // Flux wants binary raw PCM audio frames.
           socket.send(pcm.buffer);
         };
 
         source.connect(processor);
 
-        // ScriptProcessor needs to be connected to an output to run in
-        // several browsers. Keep its output silent to avoid microphone echo.
         const silentGain = audioContext.createGain();
         silentGain.gain.value = 0;
         processor.connect(silentGain);
@@ -277,20 +358,16 @@
       socket.onmessage = handleFluxMessage;
 
       socket.onerror = error => {
-        console.error('Deepgram WebSocket error:', error);
-        setStatus('❌ Deepgram WebSocket error. Check the API key and console.');
-        setDebug('WebSocket: ERROR\nIf the connection closes immediately, the key may be invalid or expired.');
+        console.error('Deepgram Flux WebSocket error:', error);
+        setStatus('❌ Deepgram Flux WebSocket error. Check the API key and console.');
+        appendDebug('Flux WebSocket: ERROR');
       };
 
       socket.onclose = event => {
         const wasRunning = running;
         cleanup(false);
-
-        if (wasRunning) {
-          setStatus('🔴 Deepgram connection closed (' + event.code + ').');
-        }
-
-        setDebug('WebSocket: closed\nCode: ' + event.code + '\nReason: ' + (event.reason || '(none)'));
+        if (wasRunning) setStatus('🔴 Deepgram Flux connection closed (' + event.code + ').');
+        appendDebug('Flux WebSocket: closed (' + event.code + ')');
       };
 
     } catch (error) {
@@ -328,11 +405,14 @@
 
     if (closeSocket && socket) {
       if (socket.readyState === WebSocket.OPEN) {
-        try {
-          socket.send(JSON.stringify({ type: 'CloseStream' }));
-        } catch {}
+        try { socket.send(JSON.stringify({ type: 'CloseStream' })); } catch {}
       }
       try { socket.close(); } catch {}
+    }
+
+    if (ttsSocket) {
+      try { ttsSocket.close(); } catch {}
+      ttsSocket = null;
     }
 
     socket = null;
