@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using MelonLoader;
 using UnityEngine;
 
@@ -21,6 +22,21 @@ public sealed class Main : MelonMod
     private static float _lastApplied = -1f;
     private static Type? _localPlayerType;
 
+    private static bool _f7WasDown;
+    private static bool _f8WasDown;
+    private static bool _f9WasDown;
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int virtualKey);
+
+    private static bool IsKeyPressedOnce(int virtualKey, ref bool wasDown)
+    {
+        var isDown = (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+        var pressed = isDown && !wasDown;
+        wasDown = isDown;
+        return pressed;
+    }
+
     public override void OnApplicationStart()
     {
         _category = MelonPreferences.CreateCategory("ChilloutVR Size Mod");
@@ -35,11 +51,11 @@ public sealed class Main : MelonMod
         if (_scaleEntry == null)
             return;
 
-        if (Input.GetKeyDown(KeyCode.F7))
+        if (IsKeyPressedOnce(0x76, ref _f7WasDown))
             SetScale(_scaleEntry.Value - Step);
-        else if (Input.GetKeyDown(KeyCode.F8))
+        else if (IsKeyPressedOnce(0x77, ref _f8WasDown))
             SetScale(_scaleEntry.Value + Step);
-        else if (Input.GetKeyDown(KeyCode.F9))
+        else if (IsKeyPressedOnce(0x78, ref _f9WasDown))
             SetScale(DefaultScale);
 
         ApplyScaleIfNeeded();
