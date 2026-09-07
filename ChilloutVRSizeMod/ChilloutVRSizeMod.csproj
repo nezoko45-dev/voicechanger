@@ -11,9 +11,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- MelonLoader package is kept at the latest public package version so CI restore works. -->
     <PackageReference Include="LavaGang.MelonLoader" Version="0.7.3" PrivateAssets="all" />
-    <!-- ChilloutVR uses Unity 2022.3.58f1. This package is only a compile-time UnityEngine reference. -->
-    <PackageReference Include="UnityEngine.CoreModule" Version="2022.3.58" PrivateAssets="all" />
+    <!-- UnityEngine.CoreModule 2022.3.58f1 is not published as a matching NuGet package.
+         This compile-time reference is kept at the known working package version; the DLL is
+         loaded by ChilloutVR's own Unity 2022.3.58f1 runtime. -->
+    <PackageReference Include="UnityEngine.CoreModule" Version="2020.3.1" PrivateAssets="all" />
   </ItemGroup>
 </Project>
