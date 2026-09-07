@@ -1,52 +1,215 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>VoiceChanger</title>
-  <link rel="stylesheet" href="style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VoiceChanger — Deepgram Flux</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,system-ui,Segoe UI,sans-serif}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090b10;color:#f5f7fb}.card{width:min(760px,94vw);padding:28px;border:1px solid #252b36;border-radius:20px;background:#11151c;box-shadow:0 20px 60px #0008}.title{font-size:30px;font-weight:800}.sub{margin:6px 0 24px;color:#9da7b5}.box{padding:18px;border:1px solid #252b36;border-radius:14px;background:#0d1117}.label{font-size:13px;font-weight:700;color:#aab4c2;margin-bottom:8px;text-transform:uppercase;letter-spacing:.08em}.row{display:flex;gap:10px}.row>*{min-width:0}input{flex:1;padding:12px 14px;border:1px solid #303846;border-radius:10px;background:#080b10;color:#fff}button{border:0;border-radius:10px;padding:12px 16px;background:#6d5dfc;color:#fff;font-weight:700;cursor:pointer}button.alt{background:#252c38}button:disabled{opacity:.45;cursor:not-allowed}.controls{display:flex;gap:10px;margin:18px 0}.status{padding:12px;border-radius:10px;background:#0b0e13;color:#b9c3d0}.meter{height:8px;background:#202632;border-radius:99px;overflow:hidden;margin:18px 0 10px}.meter i{display:block;width:0;height:100%;background:#6d5dfc;transition:width .08s}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}.panel{min-height:130px;padding:16px;border:1px solid #252b36;border-radius:14px;background:#0d1117}.text{white-space:pre-wrap;color:#dce2ea;line-height:1.5}.debug{margin-top:14px;font:12px ui-monospace,monospace;color:#778292;white-space:pre-wrap}.warn{margin-top:10px;font-size:12px;color:#f0b36b;line-height:1.45}@media(max-width:650px){.row,.grid{display:grid;grid-template-columns:1fr}.controls{flex-wrap:wrap}}
+</style>
 </head>
 <body>
-  <main class="card">
-    <div class="title">🎙️ VoiceChanger</div>
-    <div class="sub">Browser-based voice tools with selectable API providers</div>
+<main class="card">
+  <div class="title">🎙️ VoiceChanger</div>
+  <div class="sub">Standalone Deepgram Flux browser client</div>
 
-    <section class="api-box">
-      <div class="label">API Provider</div>
-      <div class="api-row">
-        <select id="provider">
-          <option value="assemblyai">AssemblyAI</option>
-          <option value="deepgram">Deepgram</option>
-          <option value="elevenlabs">ElevenLabs</option>
-          <option value="openrouter">OpenRouter</option>
-          <option value="deepseek">DeepSeek</option>
-        </select>
-        <input id="apiKey" type="password" autocomplete="off" placeholder="Paste API key">
-        <button id="saveKey">Save</button>
-      </div>
-      <div class="api-actions">
-        <button id="useKey" class="alt">Use Selected Key</button>
-        <button id="clearKey" class="alt">Clear</button>
-      </div>
-      <div id="keyStatus" class="key-status">No API key selected.</div>
-      <div class="note">Keys are stored only in this browser's local storage and are never committed to GitHub. Do not use this client-side key storage for a public production app.</div>
-    </section>
-
-    <div class="controls">
-      <button id="start">🎤 Start</button>
-      <button id="stop" class="alt" disabled>⏹ Stop</button>
+  <section class="box">
+    <div class="label">Deepgram API key</div>
+    <div class="row">
+      <input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your Deepgram API key">
+      <button id="save">Save key</button>
     </div>
+    <div class="warn">This puts the API key in browser memory/local storage. Anyone using the deployed page can potentially inspect it. For a public production app, use a short-lived token from a server instead.</div>
+  </section>
 
-    <div class="meter"><i id="meter"></i></div>
-    <div id="status" class="status">Ready — choose an API key, then press Start.</div>
+  <div class="controls">
+    <button id="start">🎤 Start Flux</button>
+    <button id="stop" class="alt" disabled>⏹ Stop</button>
+  </div>
 
-    <div class="grid">
-      <section class="panel"><div class="label">Transcript</div><div id="transcript" class="text">—</div></section>
-      <section class="panel"><div class="label">Voice</div><div id="voice" class="text">Waiting…</div></section>
-    </div>
+  <div class="meter"><i id="meter"></i></div>
+  <div id="status" class="status">Ready — enter your Deepgram key and press Start Flux.</div>
 
-    <div id="debug" class="debug">WebSocket: idle</div>
-  </main>
-  <script src="app.js"></script>
+  <div class="grid">
+    <section class="panel"><div class="label">Transcript</div><div id="transcript" class="text">—</div></section>
+    <section class="panel"><div class="label">Voice echo</div><div id="voice" class="text">Browser speech synthesis is ready.</div></section>
+  </div>
+
+  <div id="debug" class="debug">WebSocket: idle</div>
+</main>
+
+<script>
+(() => {
+  const KEY_STORE = 'voicechanger.deepgram.flux.key';
+  const apiKey = document.getElementById('apiKey');
+  const start = document.getElementById('start');
+  const stop = document.getElementById('stop');
+  const save = document.getElementById('save');
+  const status = document.getElementById('status');
+  const transcript = document.getElementById('transcript');
+  const voice = document.getElementById('voice');
+  const debug = document.getElementById('debug');
+  const meter = document.getElementById('meter');
+
+  let socket = null;
+  let stream = null;
+  let audioContext = null;
+  let source = null;
+  let processor = null;
+  let running = false;
+  let finalText = '';
+  let lastSpoken = '';
+
+  const saved = localStorage.getItem(KEY_STORE);
+  if (saved) apiKey.value = saved;
+
+  function setStatus(text) { status.textContent = text; }
+  function setDebug(text) { debug.textContent = text; }
+
+  save.onclick = () => {
+    const key = apiKey.value.trim();
+    if (!key) return setStatus('Enter a Deepgram API key first.');
+    localStorage.setItem(KEY_STORE, key);
+    setStatus('Deepgram API key saved locally in this browser.');
+  };
+
+  function floatTo16BitPCM(float32) {
+    const out = new Int16Array(float32.length);
+    for (let i = 0; i < float32.length; i++) {
+      const s = Math.max(-1, Math.min(1, float32[i]));
+      out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    }
+    return out;
+  }
+
+  function downsample(buffer, inputRate, outputRate) {
+    if (inputRate === outputRate) return buffer;
+    const ratio = inputRate / outputRate;
+    const newLength = Math.round(buffer.length / ratio);
+    const result = new Float32Array(newLength);
+    let offsetResult = 0;
+    let offsetBuffer = 0;
+    while (offsetResult < result.length) {
+      const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio);
+      let accum = 0, count = 0;
+      for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+        accum += buffer[i]; count++;
+      }
+      result[offsetResult++] = count ? accum / count : 0;
+      offsetBuffer = nextOffsetBuffer;
+    }
+    return result;
+  }
+
+  function speak(text) {
+    const clean = text.trim();
+    if (!clean || clean === lastSpoken) return;
+    lastSpoken = clean;
+    voice.textContent = clean;
+    if ('speechSynthesis' in window) {
+      speechSynthesis.cancel();
+      speechSynthesis.speak(new SpeechSynthesisUtterance(clean));
+    }
+  }
+
+  function handleMessage(event) {
+    if (typeof event.data !== 'string') return;
+    let msg;
+    try { msg = JSON.parse(event.data); } catch { return; }
+
+    if (msg.type === 'TurnInfo') {
+      const text = msg.transcript || '';
+      if (!text) return;
+      transcript.textContent = text;
+      if (msg.end_of_turn) {
+        finalText = text;
+        speak(finalText);
+      }
+      setDebug('Flux event: TurnInfo\n' + JSON.stringify(msg, null, 2));
+    } else if (msg.type === 'Connected') {
+      setStatus('Connected to Deepgram Flux. Start talking.');
+      setDebug('WebSocket: connected\n' + JSON.stringify(msg, null, 2));
+    } else if (msg.type === 'Error' || msg.type === 'FatalError') {
+      setStatus('Deepgram error: ' + (msg.description || msg.message || 'Unknown error'));
+      setDebug(JSON.stringify(msg, null, 2));
+    } else {
+      setDebug('Flux event: ' + (msg.type || 'message') + '\n' + JSON.stringify(msg, null, 2));
+    }
+  }
+
+  async function startFlux() {
+    if (running) return;
+    const key = apiKey.value.trim() || localStorage.getItem(KEY_STORE) || '';
+    if (!key) return setStatus('Paste your Deepgram API key first.');
+
+    try {
+      setStatus('Requesting microphone…');
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+
+      // Browsers do not let WebSocket() set Authorization headers. Deepgram supports
+      // the token subprotocol for client-side WebSocket connections.
+      const url = 'wss://api.deepgram.com/v2/listen?model=flux-general-en&encoding=linear16&sample_rate=16000';
+      socket = new WebSocket(url, ['token', key]);
+      socket.binaryType = 'arraybuffer';
+      socket.onopen = async () => {
+        running = true;
+        start.disabled = true;
+        stop.disabled = false;
+        setStatus('Connected — listening for speech…');
+        setDebug('WebSocket: open\nFlux v2 / flux-general-en / linear16 / 16 kHz');
+
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        source = audioContext.createMediaStreamSource(stream);
+        processor = audioContext.createScriptProcessor(4096, 1, 1);
+        processor.onaudioprocess = e => {
+          if (!running || !socket || socket.readyState !== WebSocket.OPEN) return;
+          const input = e.inputBuffer.getChannelData(0);
+          let sum = 0;
+          for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
+          const rms = Math.min(1, Math.sqrt(sum / input.length) * 3);
+          meter.style.width = Math.round(rms * 100) + '%';
+          const down = downsample(input, audioContext.sampleRate, 16000);
+          socket.send(floatTo16BitPCM(down).buffer);
+        };
+        source.connect(processor);
+        processor.connect(audioContext.destination);
+      };
+      socket.onmessage = handleMessage;
+      socket.onerror = () => {
+        setStatus('WebSocket error — check the key and browser console.');
+        setDebug('WebSocket: error');
+      };
+      socket.onclose = e => {
+        setDebug('WebSocket: closed (' + e.code + ') ' + (e.reason || ''));
+        if (running) setStatus('Connection closed.');
+        cleanup(false);
+      };
+    } catch (err) {
+      setStatus('Could not start: ' + err.message);
+      cleanup(false);
+    }
+  }
+
+  function cleanup(closeSocket = true) {
+    running = false;
+    start.disabled = false;
+    stop.disabled = true;
+    if (processor) { processor.disconnect(); processor.onaudioprocess = null; processor = null; }
+    if (source) { source.disconnect(); source = null; }
+    if (audioContext) { audioContext.close().catch(() => {}); audioContext = null; }
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    if (closeSocket && socket && socket.readyState === WebSocket.OPEN) {
+      try { socket.send(JSON.stringify({ type: 'CloseStream' })); } catch {}
+      socket.close();
+    }
+    socket = null;
+    meter.style.width = '0%';
+  }
+
+  start.onclick = startFlux;
+  stop.onclick = () => { cleanup(true); setStatus('Stopped.'); };
+  window.addEventListener('beforeunload', () => cleanup(true));
+})();
+</script>
 </body>
 </html>
