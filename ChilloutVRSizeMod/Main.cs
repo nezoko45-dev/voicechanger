@@ -1,9 +1,8 @@
 using System;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using MelonLoader;
 
-[assembly: MelonInfo(typeof(ChilloutVRSizeMod.Main), "ChilloutVR Size Mod", "1.0.5", "nezoko45-dev")]
+[assembly: MelonInfo(typeof(ChilloutVRSizeMod.Main), "ChilloutVR Size Mod", "1.0.6", "nezoko45-dev")]
 
 namespace ChilloutVRSizeMod;
 
@@ -18,7 +17,8 @@ public sealed class Main : MelonMod
     private static IntPtr _slider;
     private static IntPtr _label;
     private static WndProcDelegate? _wndProc;
-    private static Type? _localPlayerType;
+    private static object? _localPlayer;
+    private static bool _loggedPlayer;
 
     private const int WS_CAPTION = 0x00C00000;
     private const int WS_SYSMENU = 0x00080000;
@@ -33,15 +33,8 @@ public sealed class Main : MelonMod
     private const int TBM_SETPOS = 0x0405;
     private const int TBM_GETPOS = 0x0400;
     private const int TBS_AUTOTICKS = 0x0001;
-    private const int PM_REMOVE = 0x0001;
-    private const int WM_QUIT = 0x0012;
-    private const int SW_SHOW = 5;
-    private const int IDC_ARROW = 32512;
-    private const int VK_F7 = 0x76;
-    private const int VK_F8 = 0x77;
-    private const int VK_F9 = 0x78;
-    private const int VK_F10 = 0x79;
     private const int CW_USEDEFAULT = unchecked((int)0x80000000);
+    private const int PM_REMOVE = 0x0001;
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern IntPtr CreateWindowEx(int exStyle, string className, string windowName, int style,
@@ -55,8 +48,7 @@ public sealed class Main : MelonMod
     [DllImport("user32.dll")] private static extern bool DestroyWindow(IntPtr hWnd);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool SetWindowText(IntPtr hWnd, string text);
     [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr GetModuleHandle(string? name);
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr GetModuleHandleW(string? name);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr GetModuleHandle(string? name);
     [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int key);
     [DllImport("user32.dll")] private static extern bool PeekMessage(out MSG msg, IntPtr hWnd, uint min, uint max, uint remove);
     [DllImport("user32.dll")] private static extern bool TranslateMessage(ref MSG msg);
@@ -93,15 +85,15 @@ public sealed class Main : MelonMod
 
     public override void OnApplicationStart()
     {
-        MelonLogger.Msg("ChilloutVR Size Mod 1.0.5 loaded.");
+        MelonLogger.Msg("ChilloutVR Size Mod 1.0.6 loaded.");
         MelonLogger.Msg("F10 opens the size slider. F7/F8 change size. F9 resets.");
     }
 
     public override void OnUpdate()
     {
-        PumpWindowMessages();
+        PumpMessages();
 
-        bool f10 = (GetAsyncKeyState(VK_F10) & 0x8000) != 0;
+        bool f10 = (GetAsyncKeyState(0x79) & 0x8000) != 0;
         if (f10 && !_f10Down)
         {
             if (_windowCreated) CloseWindow();
@@ -109,22 +101,24 @@ public sealed class Main : MelonMod
         }
         _f10Down = f10;
 
-        if ((GetAsyncKeyState(VK_F7) & 0x0001) != 0) SetScale(_scale - 0.1f);
-        if ((GetAsyncKeyState(VK_F8) & 0x0001) != 0) SetScale(_scale + 0.1f);
-        if ((GetAsyncKeyState(VK_F9) & 0x0001) != 0) SetScale(1.0f);
+        if ((GetAsyncKeyState(0x76) & 0x0001) != 0) SetScale(_scale - 0.1f);
+        if ((GetAsyncKeyState(0x77) & 0x0001) != 0) SetScale(_scale + 0.1f);
+        if ((GetAsyncKeyState(0x78) & 0x0001) != 0) SetScale(1.0f);
 
         ApplyScale();
     }
 
-    private static void PumpWindowMessages()
+    private static void PumpMessages()
     {
-        if (!_windowCreated) return;
-        while (PeekMessage(out MSG msg, IntPtr.Zero, 0, 0, PM_REMOVE))
+        try
         {
-            if (msg.message == WM_QUIT) continue;
-            TranslateMessage(ref msg);
-            DispatchMessage(ref msg);
+            while (PeekMessage(out MSG msg, IntPtr.Zero, 0, 0, PM_REMOVE))
+            {
+                TranslateMessage(ref msg);
+                DispatchMessage(ref msg);
+            }
         }
+        catch { }
     }
 
     private static void CreateSliderWindow()
@@ -132,58 +126,45 @@ public sealed class Main : MelonMod
         try
         {
             _wndProc = WindowProc;
-            IntPtr instance = GetModuleHandleW(null);
-            if (instance == IntPtr.Zero)
-            {
-                MelonLogger.Error("Could not get the game module handle for the size slider.");
-                return;
-            }
-
+            IntPtr instance = GetModuleHandle(null);
             var wc = new WNDCLASS
             {
                 lpfnWndProc = _wndProc,
                 hInstance = instance,
-                hCursor = LoadCursor(IntPtr.Zero, IDC_ARROW),
+                hCursor = LoadCursor(IntPtr.Zero, 32512),
                 lpszClassName = "CVRSizeModSlider"
             };
-
             RegisterClass(ref wc);
 
             _window = CreateWindowEx(WS_EX_TOPMOST, wc.lpszClassName, "ChilloutVR Size",
                 WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE,
                 CW_USEDEFAULT, CW_USEDEFAULT, 430, 125, IntPtr.Zero, IntPtr.Zero, instance, IntPtr.Zero);
-
-            if (_window == IntPtr.Zero)
-            {
-                MelonLogger.Error("Could not create the size slider window.");
-                return;
-            }
+            if (_window == IntPtr.Zero) return;
 
             _label = CreateWindowEx(0, "STATIC", "Size: 1.0x", WS_CHILD | WS_VISIBLE,
                 15, 12, 390, 25, _window, IntPtr.Zero, instance, IntPtr.Zero);
             _slider = CreateWindowEx(0, "msctls_trackbar32", "", WS_CHILD | WS_VISIBLE | TBS_AUTOTICKS,
                 15, 45, 390, 35, _window, IntPtr.Zero, instance, IntPtr.Zero);
 
-            if (_label == IntPtr.Zero || _slider == IntPtr.Zero)
+            if (_slider == IntPtr.Zero)
             {
-                MelonLogger.Error("Could not create the size slider controls.");
                 CloseWindow();
                 return;
             }
 
             SendMessage(_slider, TBM_SETRANGE, IntPtr.Zero, MakeRange(1, 50));
             SendMessage(_slider, TBM_SETPOS, new IntPtr(1), new IntPtr((int)(_scale * 10)));
-            SetWindowText(_label, $"Size: {_scale:0.0}x");
-
             _windowCreated = true;
-            ShowWindow(_window, SW_SHOW);
+            ShowWindow(_window, 5);
             UpdateWindow(_window);
-            MelonLogger.Msg("Size slider opened.");
         }
         catch (Exception ex)
         {
+            MelonLogger.Warning("Slider creation failed: " + ex.GetType().Name + ": " + ex.Message);
             _windowCreated = false;
-            MelonLogger.Error("Size slider error: " + ex.GetType().Name + ": " + ex.Message);
+            _window = IntPtr.Zero;
+            _slider = IntPtr.Zero;
+            _label = IntPtr.Zero;
         }
     }
 
@@ -195,16 +176,13 @@ public sealed class Main : MelonMod
         {
             int pos = SendMessage(_slider, TBM_GETPOS, IntPtr.Zero, IntPtr.Zero).ToInt32();
             SetScale(pos / 10.0f);
-            return IntPtr.Zero;
         }
-
-        if (msg == WM_CLOSE)
+        else if (msg == WM_CLOSE)
         {
             DestroyWindow(hWnd);
             return IntPtr.Zero;
         }
-
-        if (msg == WM_DESTROY)
+        else if (msg == WM_DESTROY)
         {
             _windowCreated = false;
             _window = IntPtr.Zero;
@@ -212,60 +190,50 @@ public sealed class Main : MelonMod
             _label = IntPtr.Zero;
             return IntPtr.Zero;
         }
-
         return DefWindowProc(hWnd, msg, wParam, lParam);
     }
 
     private static void CloseWindow()
     {
-        try
-        {
-            if (_window != IntPtr.Zero) DestroyWindow(_window);
-        }
-        catch (Exception ex)
-        {
-            MelonLogger.Warning("Could not close size slider: " + ex.Message);
-            _windowCreated = false;
-            _window = IntPtr.Zero;
-            _slider = IntPtr.Zero;
-            _label = IntPtr.Zero;
-        }
+        if (_window != IntPtr.Zero) DestroyWindow(_window);
     }
 
     private static void SetScale(float value)
     {
         _scale = Math.Clamp(value, MinScale, MaxScale);
-        if (_slider != IntPtr.Zero)
-            SendMessage(_slider, TBM_SETPOS, new IntPtr(1), new IntPtr((int)Math.Round(_scale * 10.0f)));
-        if (_label != IntPtr.Zero)
-            SetWindowText(_label, $"Size: {_scale:0.0}x");
+        if (_slider != IntPtr.Zero) SendMessage(_slider, TBM_SETPOS, new IntPtr(1), new IntPtr((int)(_scale * 10)));
+        if (_label != IntPtr.Zero) SetWindowText(_label, $"Size: {_scale:0.0}x");
     }
 
     private static void ApplyScale()
     {
         try
         {
-            Type? playerType = FindType("CVR.LocalPlayer");
-            if (playerType == null) return;
-            _localPlayerType = playerType;
-
-            object? player = playerType.GetProperty("PlayerObject", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+            object? player = GetLocalPlayerObject();
             if (player == null) return;
 
-            object? go = GetProperty(player, "GameObject") ?? player;
-            object? transform = GetProperty(go, "transform");
+            object? gameObject = GetMember(player, "GameObject");
+            object? transform = gameObject != null ? GetMember(gameObject, "transform") : null;
+            if (transform == null)
+            {
+                object? directTransform = GetMember(player, "transform");
+                if (directTransform != null) transform = directTransform;
+            }
             if (transform == null) return;
 
-            PropertyInfo? p = transform.GetType().GetProperty("localScale", BindingFlags.Public | BindingFlags.Instance);
-            if (p == null || !p.CanWrite) return;
+            object? currentScale = GetMember(transform, "localScale");
+            if (currentScale == null) return;
 
-            object? value = Activator.CreateInstance(p.PropertyType);
-            if (value == null) return;
+            SetFloatMember(currentScale, "x", _scale);
+            SetFloatMember(currentScale, "y", _scale);
+            SetFloatMember(currentScale, "z", _scale);
+            SetMember(transform, "localScale", currentScale);
 
-            SetField(p.PropertyType, value, "x", _scale);
-            SetField(p.PropertyType, value, "y", _scale);
-            SetField(p.PropertyType, value, "z", _scale);
-            p.SetValue(transform, value);
+            if (!_loggedPlayer)
+            {
+                _loggedPlayer = true;
+                MelonLogger.Msg("Local player found. Scale is being applied.");
+            }
         }
         catch (Exception ex)
         {
@@ -273,33 +241,79 @@ public sealed class Main : MelonMod
         }
     }
 
-    private static Type? FindType(string fullName)
+    private static object? GetLocalPlayerObject()
     {
-        if (_localPlayerType != null) return _localPlayerType;
+        if (_localPlayer != null) return _localPlayer;
 
-        foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
         {
             try
             {
-                Type? type = assembly.GetType(fullName, false);
-                if (type != null) return type;
+                Type? type = assembly.GetType("CVR.LocalPlayer", false);
+                if (type == null) continue;
+                object? value = GetStaticMember(type, "PlayerObject");
+                if (value != null)
+                {
+                    _localPlayer = value;
+                    return value;
+                }
             }
-            catch
-            {
-                // Ignore assemblies that cannot expose their types during startup.
-            }
+            catch { }
         }
-
         return null;
     }
 
-    private static object? GetProperty(object instance, string name) =>
-        instance.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance)?.GetValue(instance);
-
-    private static void SetField(Type type, object instance, string name, float value)
+    private static object? GetStaticMember(Type type, string name)
     {
-        FieldInfo? field = type.GetField(name, BindingFlags.Public | BindingFlags.Instance);
-        if (field != null && field.FieldType == typeof(float))
-            field.SetValue(instance, value);
+        try
+        {
+            return type.GetField(name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)?.GetValue(null);
+        }
+        catch { }
+        try
+        {
+            return type.GetProperty(name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)?.GetValue(null);
+        }
+        catch { }
+        return null;
+    }
+
+    private static object? GetMember(object instance, string name)
+    {
+        try
+        {
+            var flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+            var field = instance.GetType().GetField(name, flags);
+            if (field != null) return field.GetValue(instance);
+            var property = instance.GetType().GetProperty(name, flags);
+            return property?.GetValue(instance);
+        }
+        catch { return null; }
+    }
+
+    private static void SetMember(object instance, string name, object value)
+    {
+        try
+        {
+            var flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+            var field = instance.GetType().GetField(name, flags);
+            if (field != null && !field.IsInitOnly) { field.SetValue(instance, value); return; }
+            var property = instance.GetType().GetProperty(name, flags);
+            if (property != null && property.CanWrite) property.SetValue(instance, value);
+        }
+        catch { }
+    }
+
+    private static void SetFloatMember(object instance, string name, float value)
+    {
+        try
+        {
+            var flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+            var field = instance.GetType().GetField(name, flags);
+            if (field != null && field.FieldType == typeof(float)) { field.SetValue(instance, value); return; }
+            var property = instance.GetType().GetProperty(name, flags);
+            if (property != null && property.CanWrite && property.PropertyType == typeof(float)) property.SetValue(instance, value);
+        }
+        catch { }
     }
 }
