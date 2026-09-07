@@ -4,8 +4,7 @@ using System.Runtime.InteropServices;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(ChilloutVRSizeMod.Main), "ChilloutVR Size Mod", "1.0.1", "nezoko45-dev")]
-[assembly: MelonGame("Alpha Blend Interactive", "ChilloutVR")]
+[assembly: MelonInfo(typeof(ChilloutVRSizeMod.Main), "ChilloutVR Size Mod", "1.0.2", "nezoko45-dev")]
 
 namespace ChilloutVRSizeMod;
 
@@ -81,8 +80,6 @@ public sealed class Main : MelonMod
         _playerRoot = root;
         var target = Vector3.one * _scaleEntry.Value;
 
-        // ChilloutVR can rebuild/update the local player hierarchy after loading an avatar.
-        // Re-apply the requested scale whenever the game's transform differs from it.
         if ((root.localScale - target).sqrMagnitude > 0.000001f)
             root.localScale = target;
 
