@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFramework>net472</TargetFramework>
     <AssemblyName>ChilloutVRSizeMod</AssemblyName>
     <RootNamespace>ChilloutVRSizeMod</RootNamespace>
     <LangVersion>latest</LangVersion>
@@ -11,7 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- MelonLoader is the loader API required for a MelonMod DLL. -->
+    <!-- MelonLoader 0.7.3 provides a .NET Framework 4.7.2-compatible asset. -->
     <PackageReference Include="LavaGang.MelonLoader" Version="0.7.3" PrivateAssets="all" />
   </ItemGroup>
 </Project>
