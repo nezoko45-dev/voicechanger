@@ -1,24 +1,32 @@
 # 🎙️ VoiceChanger
 
-A clean browser-only Deepgram VoiceChanger.
+A static GitHub Pages VoiceChanger using AssemblyAI Universal-3.5 Pro Streaming.
 
 ## Pipeline
 
-**🎤 Microphone → Deepgram Flux STT → 📝 live transcript → 🔊 Deepgram Flux TTS**
+**🎤 Microphone → Cloudflare Worker temporary-token endpoint → AssemblyAI WebSocket → 📝 transcript → 🔊 browser speech**
 
-## Setup
+## Cloudflare Worker setup
 
-1. Open the app over HTTPS.
-2. Open **Deepgram API key**.
-3. Paste a Deepgram API key and choose **Save for this session**.
-4. Press **Start** and allow microphone access.
+The repository includes `cloudflare-worker.js` and `wrangler.jsonc` for the secure AssemblyAI token endpoint.
 
-The key is stored only in browser `sessionStorage`; the input field is cleared after saving.
+1. In Cloudflare Workers & Pages, create/deploy the Worker from this repository.
+2. Use the Worker name `voicechanger-token` (the included `wrangler.jsonc` already sets this name).
+3. Add an encrypted Worker secret named `ASSEMBLYAI_API_KEY` containing your AssemblyAI API key.
+4. Deploy the Worker.
+5. Copy its `workers.dev` URL and replace `TOKEN_ENDPOINT` near the top of `index.html` with that URL followed by `/assembly-token`.
+6. Commit the `index.html` change and open the GitHub Pages site.
+
+Cloudflare Worker secrets keep the permanent AssemblyAI key server-side; it is never placed in the frontend. The Worker only returns a short-lived AssemblyAI token.
+
+## Frontend
+
+The frontend is a single static `index.html` and can be hosted on GitHub Pages. It does not require Netlify.
 
 ## Important
 
-This repository intentionally has no Python app, Netlify function, OpenRouter integration, Fish Audio integration, or build step. The app is a single static `index.html`.
+The old Netlify AssemblyAI function has been removed. No permanent AssemblyAI API key should be committed to this repository.
 
 ## Troubleshooting
 
-The app shows the WebSocket close code, close reason, connection lifetime, and audio sample-rate conversion in its diagnostics area. A normal user stop is code `1000`; an unexpected browser/network/API termination is shown explicitly so it can be diagnosed instead of hidden behind an endless reconnect loop.
+The app shows the WebSocket state, AssemblyAI errors, close code, and token-service errors in its diagnostics area so connection problems are visible instead of hidden behind an endless reconnect loop.
