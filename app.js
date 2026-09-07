@@ -8,6 +8,12 @@ const meter = $('meter');
 const transcript = $('transcript');
 const voice = $('voice');
 const debug = $('debug');
+const provider = $('provider');
+const apiKey = $('apiKey');
+const saveKey = $('saveKey');
+const useKey = $('useKey');
+const clearKey = $('clearKey');
+const keyStatus = $('keyStatus');
 
 let running = false;
 let stream = null;
@@ -15,14 +21,59 @@ let ctx = null;
 let source = null;
 let processor = null;
 let socket = null;
+let activeKey = '';
 
-// Replace this with your real Supabase Edge Function URL.
-const TOKEN_ENDPOINT = 'https://xxxxxxxxxxxx.supabase.co/functions/v1/assembly-token';
+const STORAGE_PREFIX = 'voicechanger.apiKey.';
 
 const setStatus = (text, progress) => {
   status.textContent = text;
   if (progress !== undefined) meter.style.width = progress + '%';
 };
+
+function storageName() {
+  return STORAGE_PREFIX + provider.value;
+}
+
+function refreshKeyStatus() {
+  const saved = localStorage.getItem(storageName());
+  keyStatus.textContent = saved ? provider.options[provider.selectedIndex].text + ' key saved locally.' : 'No API key saved for ' + provider.options[provider.selectedIndex].text + '.';
+  apiKey.value = '';
+}
+
+saveKey.onclick = () => {
+  const value = apiKey.value.trim();
+  if (!value) {
+    keyStatus.textContent = 'Enter an API key first.';
+    return;
+  }
+  localStorage.setItem(storageName(), value);
+  activeKey = value;
+  apiKey.value = '';
+  keyStatus.textContent = provider.options[provider.selectedIndex].text + ' key saved and selected locally.';
+};
+
+useKey.onclick = () => {
+  const value = localStorage.getItem(storageName());
+  if (!value) {
+    keyStatus.textContent = 'No saved key for this provider.';
+    return;
+  }
+  activeKey = value;
+  keyStatus.textContent = provider.options[provider.selectedIndex].text + ' key selected.';
+};
+
+clearKey.onclick = () => {
+  localStorage.removeItem(storageName());
+  activeKey = '';
+  refreshKeyStatus();
+};
+
+provider.onchange = () => {
+  activeKey = '';
+  refreshKeyStatus();
+};
+
+refreshKeyStatus();
 
 function stopAudio() {
   if (processor) {
@@ -45,9 +96,7 @@ function closeSocket() {
   socket = null;
   if (!current) return;
   try {
-    if (current.readyState === WebSocket.OPEN) {
-      current.send(JSON.stringify({ type: 'Terminate' }));
-    }
+    if (current.readyState === WebSocket.OPEN) current.send(JSON.stringify({ type: 'Terminate' }));
   } catch {}
   try { current.close(); } catch {}
 }
@@ -72,24 +121,23 @@ stop.onclick = stopAll;
 
 start.onclick = async () => {
   if (running) return;
+  if (!activeKey) {
+    setStatus('❌ Select an API key first.', 0);
+    return;
+  }
+  if (provider.value !== 'assemblyai') {
+    setStatus('ℹ️ ' + provider.options[provider.selectedIndex].text + ' is saved for the next provider integration.', 0);
+    return;
+  }
 
   try {
     setStatus('🎤 Requesting microphone…', 10);
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
-      }
-    });
-
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     running = true;
     start.disabled = true;
     stop.disabled = false;
     transcript.textContent = '—';
     voice.textContent = 'Listening…';
-
     await openAssembly();
     setStatus('🎤 Connected — listening…', 100);
   } catch (error) {
@@ -99,79 +147,15 @@ start.onclick = async () => {
   }
 };
 
-async function getToken() {
-  setStatus('🔐 Getting temporary AssemblyAI token…', 20);
-  const response = await fetch(TOKEN_ENDPOINT, { cache: 'no-store' }).catch(() => null);
-  if (!response) throw new Error('Could not reach the Supabase Edge Function.');
-  if (!response.ok) {
-    throw new Error('Token service returned HTTP ' + response.status + '. Check the Supabase secret and deployment.');
-  }
-
-  const data = await response.json();
-  if (!data.token) throw new Error(data.error || 'Token service returned no token.');
-  return data.token;
-}
-
 function openAssembly() {
-  return getToken().then(token => new Promise((resolve, reject) => {
-    const url = 'wss://streaming.assemblyai.com/v3/ws?sample_rate=16000&speech_model=universal-3-5-pro&token=' + encodeURIComponent(token);
-    let opened = false;
-    setStatus('🔌 Connecting AssemblyAI…', 35);
-    debug.textContent = 'WebSocket: connecting…';
-
-    let current;
-    try {
-      current = new WebSocket(url);
-      socket = current;
-    } catch (error) {
-      reject(error);
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      if (!opened) {
-        try { current.close(); } catch {}
-        reject(new Error('AssemblyAI WebSocket timed out.'));
-      }
-    }, 10000);
-
-    current.onopen = () => {
-      if (current !== socket || !running) return;
-      opened = true;
-      clearTimeout(timer);
-      debug.textContent = 'WebSocket: OPEN';
-      startAudio();
-      resolve();
-    };
-
-    current.onmessage = event => handleMessage(event.data);
-
-    current.onerror = () => {
-      if (current === socket && running) {
-        debug.textContent = 'WebSocket: ERROR';
-        setStatus('❌ AssemblyAI WebSocket error.', 0);
-      }
-    };
-
-    current.onclose = event => {
-      clearTimeout(timer);
-      if (current !== socket) return;
-      socket = null;
-      stopAudio();
-      debug.textContent = 'WebSocket: CLOSED ' + event.code + ' ' + (event.reason || '(no reason)');
-      if (running) {
-        running = false;
-        start.disabled = false;
-        stop.disabled = true;
-        setStatus('❌ AssemblyAI disconnected (' + event.code + ').', 0);
-      }
-    };
-  }));
+  // Browsers cannot add the required Authorization header to a native WebSocket.
+  // The selected key is therefore kept as the provider-selection interface only;
+  // a server-issued temporary token is required for a real browser connection.
+  return Promise.reject(new Error('AssemblyAI browser connections require a temporary token. No Supabase/backend is configured.'));
 }
 
 function startAudio() {
   if (!running || !stream || !socket || socket.readyState !== WebSocket.OPEN) return;
-
   ctx = new (window.AudioContext || window.webkitAudioContext)();
   source = ctx.createMediaStreamSource(stream);
   processor = ctx.createScriptProcessor(4096, 1, 1);
@@ -179,11 +163,9 @@ function startAudio() {
 
   processor.onaudioprocess = event => {
     if (!running || !socket || socket.readyState !== WebSocket.OPEN) return;
-
     const input = event.inputBuffer.getChannelData(0);
     const count = Math.max(1, Math.round(input.length * 16000 / rate));
     const pcm = new Int16Array(count);
-
     for (let i = 0; i < count; i++) {
       const position = i * rate / 16000;
       const a = Math.floor(position);
@@ -192,10 +174,8 @@ function startAudio() {
       const value = input[a] * (1 - fraction) + input[b] * fraction;
       pcm[i] = Math.max(-32768, Math.min(32767, Math.round(value * 32767)));
     }
-
     try { socket.send(pcm.buffer); } catch {}
   };
-
   source.connect(processor);
   processor.connect(ctx.destination);
   ctx.resume().catch(() => {});
@@ -203,18 +183,14 @@ function startAudio() {
 
 function handleMessage(raw) {
   if (typeof raw !== 'string') return;
-
   let data;
   try { data = JSON.parse(raw); } catch { return; }
-
   if (data.type === 'Begin') {
     debug.textContent = 'WebSocket: OPEN — session ' + (data.id || 'ready');
     return;
   }
-
   if (data.type === 'Turn') {
     if (data.transcript) transcript.textContent = data.transcript;
-
     if (data.end_of_turn) {
       voice.textContent = '🔊 Speaking…';
       speak(data.transcript);
@@ -225,12 +201,10 @@ function handleMessage(raw) {
     }
     return;
   }
-
   if (data.type === 'Termination') {
     debug.textContent = 'WebSocket: TERMINATED';
     return;
   }
-
   if (data.type === 'Error') {
     const message = data.error || data.message || 'AssemblyAI error';
     debug.textContent = 'AssemblyAI ERROR: ' + message;
