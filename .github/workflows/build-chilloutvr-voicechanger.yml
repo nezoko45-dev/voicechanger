@@ -25,8 +25,21 @@ jobs:
       - name: Build DLL
         run: dotnet build VoiceChangerMod/VoiceChangerMod.csproj --configuration Release --no-restore
 
-      - name: Upload DLL
+      - name: Verify runtime dependencies
+        shell: pwsh
+        run: |
+          $out = "VoiceChangerMod/bin/Release/net472"
+          $required = @("VoiceChangerMod.dll", "NAudio.dll", "NAudio.Core.dll", "NAudio.WinMM.dll", "Newtonsoft.Json.dll")
+          foreach ($file in $required) {
+            if (-not (Test-Path (Join-Path $out $file))) {
+              throw "Missing runtime dependency: $file"
+            }
+          }
+          Get-ChildItem $out -Filter *.dll | Select-Object Name,Length
+
+      - name: Upload mod package
         uses: actions/upload-artifact@v4
         with:
           name: ChilloutVRVoiceChangerMod
-          path: VoiceChangerMod/bin/Release/net472/VoiceChangerMod.dll
+          path: VoiceChangerMod/bin/Release/net472/*.dll
+          if-no-files-found: error
