@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
 using System.Net.WebSockets;
@@ -11,7 +10,7 @@ using NAudio.Wave;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(VoiceChangerMod.Main), "ChilloutVR VoiceChanger Mod", "1.1.0", "nezoko45-dev")]
+[assembly: MelonInfo(typeof(VoiceChangerMod.Main), "ChilloutVR VoiceChanger Mod", "1.1.1", "nezoko45-dev")]
 
 namespace VoiceChangerMod;
 
@@ -36,43 +35,41 @@ public sealed class Main : MelonMod
     private static string _lastTranscript = "";
     private static string _status = "Disabled";
     private static int _selectedVoice;
-    private static Vector2 _scroll;
-    private static Rect _window = new(30, 30, 560, 650);
 
     private static readonly (string Name, string Model, string Description)[] Voices =
     {
-        ("Thalia", "aura-2-thalia-en", "Feminine • American • Clear / energetic"),
-        ("Andromeda", "aura-2-andromeda-en", "Feminine • American • Casual / expressive"),
-        ("Helena", "aura-2-helena-en", "Feminine • American • Caring / natural / raspy"),
-        ("Amalthea (Filipino)", "aura-2-amalthea-en", "Feminine • Filipino English • Young adult / cheerful"),
-        ("Luna", "aura-2-luna-en", "Feminine • American • Friendly / natural"),
-        ("Minerva", "aura-2-minerva-en", "Feminine • American • Positive / friendly"),
-        ("Ophelia", "aura-2-ophelia-en", "Feminine • American • Expressive / cheerful"),
-        ("Phoebe", "aura-2-phoebe-en", "Feminine • American • Energetic / warm"),
-        ("Selene", "aura-2-selene-en", "Feminine • American • Expressive / engaging"),
-        ("Theia", "aura-2-theia-en", "Feminine • Australian • Expressive / sincere"),
-        ("Vesta", "aura-2-vesta-en", "Feminine • American • Natural / empathetic"),
-        ("Asteria", "aura-2-asteria-en", "Feminine • American • Confident / energetic"),
-        ("Athena", "aura-2-athena-en", "Feminine • American • Calm / professional"),
-        ("Pandora", "aura-2-pandora-en", "Feminine • British • Smooth / melodic"),
-        ("Apollo", "aura-2-apollo-en", "Masculine • American • Confident / casual"),
-        ("Arcas", "aura-2-arcas-en", "Masculine • American • Natural / smooth"),
-        ("Aries", "aura-2-aries-en", "Masculine • American • Warm / energetic"),
-        ("Jupiter", "aura-2-jupiter-en", "Masculine • American • Expressive / baritone"),
-        ("Mars", "aura-2-mars-en", "Masculine • American • Smooth / baritone"),
-        ("Neptune", "aura-2-neptune-en", "Masculine • American • Professional / patient"),
-        ("Odysseus", "aura-2-odysseus-en", "Masculine • American • Calm / smooth"),
-        ("Orion", "aura-2-orion-en", "Masculine • American • Approachable / calm"),
-        ("Orpheus", "aura-2-orpheus-en", "Masculine • American • Clear / confident"),
-        ("Pluto", "aura-2-pluto-en", "Masculine • American • Calm / empathetic / baritone"),
-        ("Saturn", "aura-2-saturn-en", "Masculine • American • Confident / baritone"),
-        ("Zeus", "aura-2-zeus-en", "Masculine • American • Deep / trustworthy / smooth")
+        ("Thalia", "aura-2-thalia-en", "Feminine - American - Clear / energetic"),
+        ("Andromeda", "aura-2-andromeda-en", "Feminine - American - Casual / expressive"),
+        ("Helena", "aura-2-helena-en", "Feminine - American - Caring / natural / raspy"),
+        ("Amalthea (Filipino)", "aura-2-amalthea-en", "Feminine - Filipino English - Young adult / cheerful"),
+        ("Luna", "aura-2-luna-en", "Feminine - American - Friendly / natural"),
+        ("Minerva", "aura-2-minerva-en", "Feminine - American - Positive / friendly"),
+        ("Ophelia", "aura-2-ophelia-en", "Feminine - American - Expressive / cheerful"),
+        ("Phoebe", "aura-2-phoebe-en", "Feminine - American - Energetic / warm"),
+        ("Selene", "aura-2-selene-en", "Feminine - American - Expressive / engaging"),
+        ("Theia", "aura-2-theia-en", "Feminine - Australian - Expressive / sincere"),
+        ("Vesta", "aura-2-vesta-en", "Feminine - American - Natural / empathetic"),
+        ("Asteria", "aura-2-asteria-en", "Feminine - American - Confident / energetic"),
+        ("Athena", "aura-2-athena-en", "Feminine - American - Calm / professional"),
+        ("Pandora", "aura-2-pandora-en", "Feminine - British - Smooth / melodic"),
+        ("Apollo", "aura-2-apollo-en", "Masculine - American - Confident / casual"),
+        ("Arcas", "aura-2-arcas-en", "Masculine - American - Natural / smooth"),
+        ("Aries", "aura-2-aries-en", "Masculine - American - Warm / energetic"),
+        ("Jupiter", "aura-2-jupiter-en", "Masculine - American - Expressive / baritone"),
+        ("Mars", "aura-2-mars-en", "Masculine - American - Smooth / baritone"),
+        ("Neptune", "aura-2-neptune-en", "Masculine - American - Professional / patient"),
+        ("Odysseus", "aura-2-odysseus-en", "Masculine - American - Calm / smooth"),
+        ("Orion", "aura-2-orion-en", "Masculine - American - Approachable / calm"),
+        ("Orpheus", "aura-2-orpheus-en", "Masculine - American - Clear / confident"),
+        ("Pluto", "aura-2-pluto-en", "Masculine - American - Calm / empathetic / baritone"),
+        ("Saturn", "aura-2-saturn-en", "Masculine - American - Confident / baritone"),
+        ("Zeus", "aura-2-zeus-en", "Masculine - American - Deep / trustworthy / smooth")
     };
 
     public override void OnApplicationStart()
     {
         LoadConfig();
-        MelonLogger.Msg("ChilloutVR VoiceChanger Mod 1.1.0 loaded.");
+        MelonLogger.Msg("ChilloutVR VoiceChanger Mod 1.1.1 loaded.");
         MelonLogger.Msg("F8 = VoiceChanger menu | F10 = toggle | F9 = stop");
     }
 
@@ -96,13 +93,8 @@ public sealed class Main : MelonMod
         if (!_menuOpen)
             return;
 
-        _window = GUI.Window(8472, _window, DrawWindow, "VoiceChanger");
-    }
-
-    private static void DrawWindow(int id)
-    {
-        GUILayout.BeginVertical();
-        GUILayout.Label("ChilloutVR VoiceChanger", GUI.skin.label);
+        GUILayout.BeginVertical(GUI.skin.box, GUILayout.Width(560));
+        GUILayout.Label("ChilloutVR VoiceChanger");
         GUILayout.Label("F8: close menu   F10: toggle   F9: stop");
         GUILayout.Space(8);
 
@@ -115,39 +107,40 @@ public sealed class Main : MelonMod
             _status = string.IsNullOrWhiteSpace(_apiKey) ? "API key cleared" : "API key saved";
         }
 
-        GUILayout.Space(10);
-        GUILayout.Label("Voice");
-        _scroll = GUILayout.BeginScrollView(_scroll, GUILayout.Height(380));
-        for (int i = 0; i < Voices.Length; i++)
+        GUILayout.Space(8);
+        GUILayout.Label("Voice: " + Voices[_selectedVoice].Name);
+        GUILayout.Label(Voices[_selectedVoice].Description);
+        GUILayout.Label("Model: " + Voices[_selectedVoice].Model);
+
+        GUILayout.BeginHorizontal();
+        if (GUILayout.Button("< Previous", GUILayout.Height(34)))
         {
-            bool selected = i == _selectedVoice;
-            string label = (selected ? "▶ " : "   ") + Voices[i].Name + "\n" + Voices[i].Description;
-            if (GUILayout.Button(label, GUILayout.Height(52)))
-            {
-                _selectedVoice = i;
-                _status = "Selected " + Voices[i].Name;
-            }
+            _selectedVoice = (_selectedVoice - 1 + Voices.Length) % Voices.Length;
+            SaveConfig();
+            _status = "Selected " + Voices[_selectedVoice].Name;
         }
-        GUILayout.EndScrollView();
+        if (GUILayout.Button("Next >", GUILayout.Height(34)))
+        {
+            _selectedVoice = (_selectedVoice + 1) % Voices.Length;
+            SaveConfig();
+            _status = "Selected " + Voices[_selectedVoice].Name;
+        }
+        GUILayout.EndHorizontal();
 
         GUILayout.Space(8);
-        GUILayout.Label("Selected model: " + Voices[_selectedVoice].Model);
+        GUILayout.Label("Voice " + (_selectedVoice + 1) + " / " + Voices.Length);
         GUILayout.Label("Status: " + _status);
         if (!string.IsNullOrWhiteSpace(_lastTranscript))
             GUILayout.Label("Last heard: " + _lastTranscript);
 
-        GUILayout.BeginHorizontal();
-        if (GUILayout.Button(_enabled ? "Stop Voice Changer" : "Start Voice Changer", GUILayout.Height(36)))
+        if (GUILayout.Button(_enabled ? "Stop Voice Changer" : "Start Voice Changer", GUILayout.Height(38)))
         {
             if (_enabled) StopVoiceChanger();
             else StartVoiceChanger();
         }
-        if (GUILayout.Button("Close", GUILayout.Height(36)))
+        if (GUILayout.Button("Close", GUILayout.Height(32)))
             _menuOpen = false;
-        GUILayout.EndHorizontal();
         GUILayout.EndVertical();
-
-        GUI.DragWindow(new Rect(0, 0, 10000, 25));
     }
 
     private static short GetAsyncKeyState(int key) => NativeMethods.GetAsyncKeyState(key);
@@ -184,7 +177,6 @@ public sealed class Main : MelonMod
                     }
                 }
             }
-
             _apiKeyInput = _apiKey;
         }
         catch (Exception ex)
@@ -378,7 +370,10 @@ public sealed class Main : MelonMod
             byte[] audio = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
             if (_enabled) PlayMp3(audio);
         }
-        catch (Exception ex) { MelonLogger.Error("Voice conversion playback failed: " + ex.GetType().Name + ": " + ex.Message); }
+        catch (Exception ex)
+        {
+            MelonLogger.Error("Voice conversion playback failed: " + ex.GetType().Name + ": " + ex.Message);
+        }
     }
 
     private static void PlayMp3(byte[] audio)
@@ -393,7 +388,9 @@ public sealed class Main : MelonMod
             try { _speaker?.Dispose(); } catch { }
             try { _reader?.Dispose(); } catch { }
             try { _audioStream?.Dispose(); } catch { }
-            _speaker = null; _reader = null; _audioStream = null;
+            _speaker = null;
+            _reader = null;
+            _audioStream = null;
         };
         _speaker.Play();
     }
@@ -404,7 +401,9 @@ public sealed class Main : MelonMod
         try { _speaker?.Dispose(); } catch { }
         try { _reader?.Dispose(); } catch { }
         try { _audioStream?.Dispose(); } catch { }
-        _speaker = null; _reader = null; _audioStream = null;
+        _speaker = null;
+        _reader = null;
+        _audioStream = null;
     }
 
     private static class NativeMethods
