@@ -8,9 +8,8 @@ using System.Threading.Tasks;
 using MelonLoader;
 using NAudio.Wave;
 using Newtonsoft.Json.Linq;
-using UnityEngine;
 
-[assembly: MelonInfo(typeof(VoiceChangerMod.Main), "ChilloutVR VoiceChanger Mod", "1.1.1", "nezoko45-dev")]
+[assembly: MelonInfo(typeof(VoiceChangerMod.Main), "ChilloutVR VoiceChanger Mod", "1.1.2", "nezoko45-dev")]
 
 namespace VoiceChangerMod;
 
@@ -29,9 +28,7 @@ public sealed class Main : MelonMod
     private static readonly object StateLock = new();
 
     private static bool _enabled;
-    private static bool _menuOpen;
     private static string _apiKey = "";
-    private static string _apiKeyInput = "";
     private static string _lastTranscript = "";
     private static string _status = "Disabled";
     private static int _selectedVoice;
@@ -69,15 +66,13 @@ public sealed class Main : MelonMod
     public override void OnApplicationStart()
     {
         LoadConfig();
-        MelonLogger.Msg("ChilloutVR VoiceChanger Mod 1.1.1 loaded.");
-        MelonLogger.Msg("F8 = VoiceChanger menu | F10 = toggle | F9 = stop");
+        MelonLogger.Msg("ChilloutVR VoiceChanger Mod 1.1.2 loaded.");
+        MelonLogger.Msg("UnityEngine dependency removed.");
+        MelonLogger.Msg("F10 = start/stop | F9 = stop | VoiceModel is configured in UserData/VoiceChangerMod.cfg");
     }
 
     public override void OnUpdate()
     {
-        if ((GetAsyncKeyState(0x77) & 0x0001) != 0)
-            _menuOpen = !_menuOpen;
-
         if ((GetAsyncKeyState(0x79) & 0x0001) != 0)
         {
             if (_enabled) StopVoiceChanger();
@@ -88,67 +83,11 @@ public sealed class Main : MelonMod
             StopVoiceChanger();
     }
 
-    public override void OnGUI()
-    {
-        if (!_menuOpen)
-            return;
-
-        GUILayout.BeginVertical(GUI.skin.box, GUILayout.Width(560));
-        GUILayout.Label("ChilloutVR VoiceChanger");
-        GUILayout.Label("F8: close menu   F10: toggle   F9: stop");
-        GUILayout.Space(8);
-
-        GUILayout.Label("Deepgram API key");
-        _apiKeyInput = GUILayout.PasswordField(_apiKeyInput, '*', GUILayout.Height(28));
-        if (GUILayout.Button("Save API Key", GUILayout.Height(32)))
-        {
-            _apiKey = _apiKeyInput.Trim();
-            SaveConfig();
-            _status = string.IsNullOrWhiteSpace(_apiKey) ? "API key cleared" : "API key saved";
-        }
-
-        GUILayout.Space(8);
-        GUILayout.Label("Voice: " + Voices[_selectedVoice].Name);
-        GUILayout.Label(Voices[_selectedVoice].Description);
-        GUILayout.Label("Model: " + Voices[_selectedVoice].Model);
-
-        GUILayout.BeginHorizontal();
-        if (GUILayout.Button("< Previous", GUILayout.Height(34)))
-        {
-            _selectedVoice = (_selectedVoice - 1 + Voices.Length) % Voices.Length;
-            SaveConfig();
-            _status = "Selected " + Voices[_selectedVoice].Name;
-        }
-        if (GUILayout.Button("Next >", GUILayout.Height(34)))
-        {
-            _selectedVoice = (_selectedVoice + 1) % Voices.Length;
-            SaveConfig();
-            _status = "Selected " + Voices[_selectedVoice].Name;
-        }
-        GUILayout.EndHorizontal();
-
-        GUILayout.Space(8);
-        GUILayout.Label("Voice " + (_selectedVoice + 1) + " / " + Voices.Length);
-        GUILayout.Label("Status: " + _status);
-        if (!string.IsNullOrWhiteSpace(_lastTranscript))
-            GUILayout.Label("Last heard: " + _lastTranscript);
-
-        if (GUILayout.Button(_enabled ? "Stop Voice Changer" : "Start Voice Changer", GUILayout.Height(38)))
-        {
-            if (_enabled) StopVoiceChanger();
-            else StartVoiceChanger();
-        }
-        if (GUILayout.Button("Close", GUILayout.Height(32)))
-            _menuOpen = false;
-        GUILayout.EndVertical();
-    }
-
     private static short GetAsyncKeyState(int key) => NativeMethods.GetAsyncKeyState(key);
 
     private static void LoadConfig()
     {
         _apiKey = Environment.GetEnvironmentVariable("DEEPGRAM_API_KEY")?.Trim() ?? "";
-        _apiKeyInput = _apiKey;
 
         try
         {
@@ -177,7 +116,6 @@ public sealed class Main : MelonMod
                     }
                 }
             }
-            _apiKeyInput = _apiKey;
         }
         catch (Exception ex)
         {
@@ -206,8 +144,7 @@ public sealed class Main : MelonMod
         if (string.IsNullOrWhiteSpace(_apiKey))
         {
             _status = "Missing Deepgram API key";
-            _menuOpen = true;
-            MelonLogger.Error("No Deepgram API key. Open the VoiceChanger menu with F8 and save one.");
+            MelonLogger.Error("No Deepgram API key. Set DEEPGRAM_API_KEY or UserData/VoiceChangerMod.cfg.");
             return;
         }
 
