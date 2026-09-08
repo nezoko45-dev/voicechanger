@@ -200,7 +200,7 @@ public sealed class Main : MelonMod
 
     private static void SetScale(float value)
     {
-        _scale = Math.Clamp(value, MinScale, MaxScale);
+        _scale = Math.Max(MinScale, Math.Min(MaxScale, value));
         if (_slider != IntPtr.Zero) SendMessage(_slider, TBM_SETPOS, new IntPtr(1), new IntPtr((int)(_scale * 10)));
         if (_label != IntPtr.Zero) SetWindowText(_label, $"Size: {_scale:0.0}x");
     }
