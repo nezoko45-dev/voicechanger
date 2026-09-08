@@ -22,14 +22,27 @@ jobs:
       - name: Restore
         run: dotnet restore VoiceChangerMod/VoiceChangerMod.csproj
 
+      - name: Verify Voicemeeter output configuration
+        shell: pwsh
+        run: |
+          $file = 'VoiceChangerMod/Main.cs'
+          $text = Get-Content -Raw -Path $file
+          if ($text -notmatch 'private const int OutputDeviceIndex = 18;') {
+            throw 'Main.cs is not configured to use Voicemeeter AUX output device index 18.'
+          }
+          if ($text -notmatch 'DeviceNumber = OutputDeviceIndex') {
+            throw 'Main.cs is not routing TTS through the configured NAudio output device.'
+          }
+          Write-Host 'Voicemeeter AUX routing verified: NAudio output device index 18.'
+
       - name: Build DLL
         run: dotnet build VoiceChangerMod/VoiceChangerMod.csproj --configuration Release --no-restore
 
       - name: Verify and stage complete mod package
         shell: pwsh
         run: |
-          $out = "VoiceChangerMod/bin/Release/net472"
-          $required = @("VoiceChangerMod.dll", "NAudio.dll", "NAudio.Core.dll", "NAudio.WinMM.dll", "Newtonsoft.Json.dll")
+          $out = 'VoiceChangerMod/bin/Release/net472'
+          $required = @('VoiceChangerMod.dll', 'NAudio.dll', 'NAudio.Core.dll', 'NAudio.WinMM.dll', 'Newtonsoft.Json.dll')
           foreach ($file in $required) {
             $path = Join-Path $out $file
             if (-not (Test-Path $path)) {
