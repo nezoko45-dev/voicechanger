@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
 using System.Net.WebSockets;
@@ -8,15 +9,15 @@ using System.Threading.Tasks;
 using MelonLoader;
 using NAudio.Wave;
 using Newtonsoft.Json.Linq;
+using UnityEngine;
 
-[assembly: MelonInfo(typeof(VoiceChangerMod.Main), "ChilloutVR VoiceChanger Mod", "1.0.0", "nezoko45-dev")]
+[assembly: MelonInfo(typeof(VoiceChangerMod.Main), "ChilloutVR VoiceChanger Mod", "1.1.0", "nezoko45-dev")]
 
 namespace VoiceChangerMod;
 
 public sealed class Main : MelonMod
 {
     private const string FluxUrl = "wss://api.deepgram.com/v2/listen?model=flux-general-en&encoding=linear16&sample_rate=16000&eot_threshold=0.70&eager_eot_threshold=0.50&eot_timeout_ms=7000";
-    private const string TtsModel = "aura-2-thalia-en";
 
     private static readonly HttpClient Http = new();
     private static ClientWebSocket? _socket;
@@ -26,21 +27,60 @@ public sealed class Main : MelonMod
     private static Mp3FileReader? _reader;
     private static MemoryStream? _audioStream;
     private static readonly SemaphoreSlim SendLock = new(1, 1);
-    private static bool _enabled;
-    private static string _apiKey = "";
-    private static string _lastTranscript = "";
     private static readonly object StateLock = new();
+
+    private static bool _enabled;
+    private static bool _menuOpen;
+    private static string _apiKey = "";
+    private static string _apiKeyInput = "";
+    private static string _lastTranscript = "";
+    private static string _status = "Disabled";
+    private static int _selectedVoice;
+    private static Vector2 _scroll;
+    private static Rect _window = new(30, 30, 560, 650);
+
+    private static readonly (string Name, string Model, string Description)[] Voices =
+    {
+        ("Thalia", "aura-2-thalia-en", "Feminine • American • Clear / energetic"),
+        ("Andromeda", "aura-2-andromeda-en", "Feminine • American • Casual / expressive"),
+        ("Helena", "aura-2-helena-en", "Feminine • American • Caring / natural / raspy"),
+        ("Amalthea (Filipino)", "aura-2-amalthea-en", "Feminine • Filipino English • Young adult / cheerful"),
+        ("Luna", "aura-2-luna-en", "Feminine • American • Friendly / natural"),
+        ("Minerva", "aura-2-minerva-en", "Feminine • American • Positive / friendly"),
+        ("Ophelia", "aura-2-ophelia-en", "Feminine • American • Expressive / cheerful"),
+        ("Phoebe", "aura-2-phoebe-en", "Feminine • American • Energetic / warm"),
+        ("Selene", "aura-2-selene-en", "Feminine • American • Expressive / engaging"),
+        ("Theia", "aura-2-theia-en", "Feminine • Australian • Expressive / sincere"),
+        ("Vesta", "aura-2-vesta-en", "Feminine • American • Natural / empathetic"),
+        ("Asteria", "aura-2-asteria-en", "Feminine • American • Confident / energetic"),
+        ("Athena", "aura-2-athena-en", "Feminine • American • Calm / professional"),
+        ("Pandora", "aura-2-pandora-en", "Feminine • British • Smooth / melodic"),
+        ("Apollo", "aura-2-apollo-en", "Masculine • American • Confident / casual"),
+        ("Arcas", "aura-2-arcas-en", "Masculine • American • Natural / smooth"),
+        ("Aries", "aura-2-aries-en", "Masculine • American • Warm / energetic"),
+        ("Jupiter", "aura-2-jupiter-en", "Masculine • American • Expressive / baritone"),
+        ("Mars", "aura-2-mars-en", "Masculine • American • Smooth / baritone"),
+        ("Neptune", "aura-2-neptune-en", "Masculine • American • Professional / patient"),
+        ("Odysseus", "aura-2-odysseus-en", "Masculine • American • Calm / smooth"),
+        ("Orion", "aura-2-orion-en", "Masculine • American • Approachable / calm"),
+        ("Orpheus", "aura-2-orpheus-en", "Masculine • American • Clear / confident"),
+        ("Pluto", "aura-2-pluto-en", "Masculine • American • Calm / empathetic / baritone"),
+        ("Saturn", "aura-2-saturn-en", "Masculine • American • Confident / baritone"),
+        ("Zeus", "aura-2-zeus-en", "Masculine • American • Deep / trustworthy / smooth")
+    };
 
     public override void OnApplicationStart()
     {
-        LoadApiKey();
-        MelonLogger.Msg("ChilloutVR VoiceChanger Mod 1.0.0 loaded.");
-        MelonLogger.Msg("F10 = toggle voice changer | F9 = stop");
-        MelonLogger.Msg("Pipeline: microphone -> Deepgram Flux -> female Aura-2 TTS -> default Windows playback device.");
+        LoadConfig();
+        MelonLogger.Msg("ChilloutVR VoiceChanger Mod 1.1.0 loaded.");
+        MelonLogger.Msg("F8 = VoiceChanger menu | F10 = toggle | F9 = stop");
     }
 
     public override void OnUpdate()
     {
+        if ((GetAsyncKeyState(0x77) & 0x0001) != 0)
+            _menuOpen = !_menuOpen;
+
         if ((GetAsyncKeyState(0x79) & 0x0001) != 0)
         {
             if (_enabled) StopVoiceChanger();
@@ -51,14 +91,71 @@ public sealed class Main : MelonMod
             StopVoiceChanger();
     }
 
-    private static short GetAsyncKeyState(int key)
+    public override void OnGUI()
     {
-        return NativeMethods.GetAsyncKeyState(key);
+        if (!_menuOpen)
+            return;
+
+        _window = GUI.Window(8472, _window, DrawWindow, "VoiceChanger");
     }
 
-    private static void LoadApiKey()
+    private static void DrawWindow(int id)
+    {
+        GUILayout.BeginVertical();
+        GUILayout.Label("ChilloutVR VoiceChanger", GUI.skin.label);
+        GUILayout.Label("F8: close menu   F10: toggle   F9: stop");
+        GUILayout.Space(8);
+
+        GUILayout.Label("Deepgram API key");
+        _apiKeyInput = GUILayout.PasswordField(_apiKeyInput, '*', GUILayout.Height(28));
+        if (GUILayout.Button("Save API Key", GUILayout.Height(32)))
+        {
+            _apiKey = _apiKeyInput.Trim();
+            SaveConfig();
+            _status = string.IsNullOrWhiteSpace(_apiKey) ? "API key cleared" : "API key saved";
+        }
+
+        GUILayout.Space(10);
+        GUILayout.Label("Voice");
+        _scroll = GUILayout.BeginScrollView(_scroll, GUILayout.Height(380));
+        for (int i = 0; i < Voices.Length; i++)
+        {
+            bool selected = i == _selectedVoice;
+            string label = (selected ? "▶ " : "   ") + Voices[i].Name + "\n" + Voices[i].Description;
+            if (GUILayout.Button(label, GUILayout.Height(52)))
+            {
+                _selectedVoice = i;
+                _status = "Selected " + Voices[i].Name;
+            }
+        }
+        GUILayout.EndScrollView();
+
+        GUILayout.Space(8);
+        GUILayout.Label("Selected model: " + Voices[_selectedVoice].Model);
+        GUILayout.Label("Status: " + _status);
+        if (!string.IsNullOrWhiteSpace(_lastTranscript))
+            GUILayout.Label("Last heard: " + _lastTranscript);
+
+        GUILayout.BeginHorizontal();
+        if (GUILayout.Button(_enabled ? "Stop Voice Changer" : "Start Voice Changer", GUILayout.Height(36)))
+        {
+            if (_enabled) StopVoiceChanger();
+            else StartVoiceChanger();
+        }
+        if (GUILayout.Button("Close", GUILayout.Height(36)))
+            _menuOpen = false;
+        GUILayout.EndHorizontal();
+        GUILayout.EndVertical();
+
+        GUI.DragWindow(new Rect(0, 0, 10000, 25));
+    }
+
+    private static short GetAsyncKeyState(int key) => NativeMethods.GetAsyncKeyState(key);
+
+    private static void LoadConfig()
     {
         _apiKey = Environment.GetEnvironmentVariable("DEEPGRAM_API_KEY")?.Trim() ?? "";
+        _apiKeyInput = _apiKey;
 
         try
         {
@@ -66,18 +163,29 @@ public sealed class Main : MelonMod
             if (!File.Exists(path))
             {
                 Directory.CreateDirectory("UserData");
-                File.WriteAllText(path, "# Put your Deepgram API key after the equals sign.\nDeepgramApiKey=\n");
+                File.WriteAllText(path, "# VoiceChanger settings\nDeepgramApiKey=\nVoiceModel=aura-2-thalia-en\n");
                 return;
             }
 
             foreach (string line in File.ReadAllLines(path))
             {
-                if (!line.StartsWith("DeepgramApiKey=", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                _apiKey = line.Substring("DeepgramApiKey=".Length).Trim();
-                break;
+                if (line.StartsWith("DeepgramApiKey=", StringComparison.OrdinalIgnoreCase))
+                    _apiKey = line.Substring("DeepgramApiKey=".Length).Trim();
+                else if (line.StartsWith("VoiceModel=", StringComparison.OrdinalIgnoreCase))
+                {
+                    string model = line.Substring("VoiceModel=".Length).Trim();
+                    for (int i = 0; i < Voices.Length; i++)
+                    {
+                        if (string.Equals(Voices[i].Model, model, StringComparison.OrdinalIgnoreCase))
+                        {
+                            _selectedVoice = i;
+                            break;
+                        }
+                    }
+                }
             }
+
+            _apiKeyInput = _apiKey;
         }
         catch (Exception ex)
         {
@@ -85,11 +193,29 @@ public sealed class Main : MelonMod
         }
     }
 
+    private static void SaveConfig()
+    {
+        try
+        {
+            Directory.CreateDirectory("UserData");
+            File.WriteAllText(Path.Combine("UserData", "VoiceChangerMod.cfg"),
+                "# VoiceChanger settings\n" +
+                "DeepgramApiKey=" + _apiKey + "\n" +
+                "VoiceModel=" + Voices[_selectedVoice].Model + "\n");
+        }
+        catch (Exception ex)
+        {
+            MelonLogger.Warning("Could not save VoiceChangerMod.cfg: " + ex.Message);
+        }
+    }
+
     private static void StartVoiceChanger()
     {
         if (string.IsNullOrWhiteSpace(_apiKey))
         {
-            MelonLogger.Error("No Deepgram API key. Put it in UserData/VoiceChangerMod.cfg or DEEPGRAM_API_KEY.");
+            _status = "Missing Deepgram API key";
+            _menuOpen = true;
+            MelonLogger.Error("No Deepgram API key. Open the VoiceChanger menu with F8 and save one.");
             return;
         }
 
@@ -99,9 +225,10 @@ public sealed class Main : MelonMod
             _enabled = true;
         }
 
+        _status = "Connecting to Deepgram...";
         _cts = new CancellationTokenSource();
         _ = RunFluxAsync(_cts.Token);
-        MelonLogger.Msg("VoiceChanger ENABLED. Speak into your default Windows microphone.");
+        MelonLogger.Msg("VoiceChanger ENABLED using " + Voices[_selectedVoice].Name + ".");
     }
 
     private static void StopVoiceChanger()
@@ -114,15 +241,13 @@ public sealed class Main : MelonMod
 
         try { _cts?.Cancel(); } catch { }
         _cts = null;
-
         try { _mic?.StopRecording(); } catch { }
         try { _mic?.Dispose(); } catch { }
         _mic = null;
-
         try { _socket?.Abort(); _socket?.Dispose(); } catch { }
         _socket = null;
-
         StopPlayback();
+        _status = "Disabled";
         MelonLogger.Msg("VoiceChanger DISABLED.");
     }
 
@@ -133,16 +258,15 @@ public sealed class Main : MelonMod
             using var socket = new ClientWebSocket();
             socket.Options.SetRequestHeader("Authorization", "Token " + _apiKey);
             _socket = socket;
-
             await socket.ConnectAsync(new Uri(FluxUrl), token).ConfigureAwait(false);
-            MelonLogger.Msg("Deepgram Flux connected.");
-
+            _status = "Connected - listening";
             StartMicrophone(token);
             await ReceiveFluxAsync(socket, token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
+            _status = "Connection error";
             MelonLogger.Error("Deepgram connection failed: " + ex.GetType().Name + ": " + ex.Message);
         }
         finally
@@ -162,17 +286,13 @@ public sealed class Main : MelonMod
             BufferMilliseconds = 80,
             NumberOfBuffers = 3
         };
-
         _mic.DataAvailable += (_, e) =>
         {
-            if (!_enabled || token.IsCancellationRequested || _socket?.State != WebSocketState.Open)
-                return;
-
+            if (!_enabled || token.IsCancellationRequested || _socket?.State != WebSocketState.Open) return;
             byte[] copy = new byte[e.BytesRecorded];
             Buffer.BlockCopy(e.Buffer, 0, copy, 0, e.BytesRecorded);
             _ = SendAudioAsync(copy, token);
         };
-
         _mic.RecordingStopped += (_, _) => MelonLogger.Msg("Microphone stopped.");
         _mic.StartRecording();
         MelonLogger.Msg("Microphone capture started at 16 kHz mono PCM.");
@@ -181,7 +301,6 @@ public sealed class Main : MelonMod
     private static async Task SendAudioAsync(byte[] audio, CancellationToken token)
     {
         if (_socket?.State != WebSocketState.Open) return;
-
         await SendLock.WaitAsync(token).ConfigureAwait(false);
         try
         {
@@ -189,38 +308,26 @@ public sealed class Main : MelonMod
                 await _socket.SendAsync(new ArraySegment<byte>(audio), WebSocketMessageType.Binary, true, token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex)
-        {
-            MelonLogger.Warning("Audio send failed: " + ex.Message);
-        }
-        finally
-        {
-            SendLock.Release();
-        }
+        catch (Exception ex) { MelonLogger.Warning("Audio send failed: " + ex.Message); }
+        finally { SendLock.Release(); }
     }
 
     private static async Task ReceiveFluxAsync(ClientWebSocket socket, CancellationToken token)
     {
         byte[] buffer = new byte[16 * 1024];
         using var message = new MemoryStream();
-
         while (!token.IsCancellationRequested && socket.State == WebSocketState.Open)
         {
             message.SetLength(0);
             WebSocketReceiveResult result;
-
             do
             {
                 result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), token).ConfigureAwait(false);
-                if (result.MessageType == WebSocketMessageType.Close)
-                    return;
-                if (result.Count > 0)
-                    message.Write(buffer, 0, result.Count);
+                if (result.MessageType == WebSocketMessageType.Close) return;
+                if (result.Count > 0) message.Write(buffer, 0, result.Count);
             }
             while (!result.EndOfMessage);
-
-            string json = Encoding.UTF8.GetString(message.ToArray());
-            HandleFluxMessage(json);
+            HandleFluxMessage(Encoding.UTF8.GetString(message.ToArray()));
         }
     }
 
@@ -230,69 +337,53 @@ public sealed class Main : MelonMod
         {
             var root = JObject.Parse(json);
             string? type = (string?)root["type"];
-
             if (type == "TurnInfo")
             {
                 string? transcript = (string?)root["transcript"];
                 string? evt = (string?)root["event"];
-
                 if (!string.IsNullOrWhiteSpace(transcript))
-                    MelonLogger.Msg("You said: " + transcript);
-
-                if (evt == "EndOfTurn" && !string.IsNullOrWhiteSpace(transcript) && transcript != _lastTranscript)
                 {
                     _lastTranscript = transcript;
-                    _ = SpeakAsWomanAsync(transcript);
+                    MelonLogger.Msg("You said: " + transcript);
                 }
+                if (evt == "EndOfTurn" && !string.IsNullOrWhiteSpace(transcript))
+                    _ = SpeakAsSelectedVoiceAsync(transcript);
             }
             else if (type == "Error" || type == "FatalError")
-            {
                 MelonLogger.Error("Deepgram Flux error: " + json);
-            }
         }
-        catch (Exception ex)
-        {
-            MelonLogger.Warning("Could not parse Deepgram message: " + ex.Message);
-        }
+        catch (Exception ex) { MelonLogger.Warning("Could not parse Deepgram message: " + ex.Message); }
     }
 
-    private static async Task SpeakAsWomanAsync(string text)
+    private static async Task SpeakAsSelectedVoiceAsync(string text)
     {
         if (!_enabled || string.IsNullOrWhiteSpace(text)) return;
-
         try
         {
-            string url = "https://api.deepgram.com/v1/speak?model=" + Uri.EscapeDataString(TtsModel);
+            string model = Voices[_selectedVoice].Model;
+            string url = "https://api.deepgram.com/v1/speak?model=" + Uri.EscapeDataString(model);
             using var request = new HttpRequestMessage(HttpMethod.Post, url);
             request.Headers.TryAddWithoutValidation("Authorization", "Token " + _apiKey);
             request.Content = new StringContent(
                 JObject.FromObject(new { text = text.Length > 2000 ? text.Substring(0, 2000) : text }).ToString(),
-                Encoding.UTF8,
-                "application/json");
-
+                Encoding.UTF8, "application/json");
             using HttpResponseMessage response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 string error = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                 MelonLogger.Error("Deepgram TTS failed: " + (int)response.StatusCode + " " + error);
+                _status = "TTS error";
                 return;
             }
-
             byte[] audio = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
-            if (!_enabled) return;
-
-            PlayMp3(audio);
+            if (_enabled) PlayMp3(audio);
         }
-        catch (Exception ex)
-        {
-            MelonLogger.Error("Voice conversion playback failed: " + ex.GetType().Name + ": " + ex.Message);
-        }
+        catch (Exception ex) { MelonLogger.Error("Voice conversion playback failed: " + ex.GetType().Name + ": " + ex.Message); }
     }
 
     private static void PlayMp3(byte[] audio)
     {
         StopPlayback();
-
         _audioStream = new MemoryStream(audio, writable: false);
         _reader = new Mp3FileReader(_audioStream);
         _speaker = new WaveOutEvent();
@@ -302,9 +393,7 @@ public sealed class Main : MelonMod
             try { _speaker?.Dispose(); } catch { }
             try { _reader?.Dispose(); } catch { }
             try { _audioStream?.Dispose(); } catch { }
-            _speaker = null;
-            _reader = null;
-            _audioStream = null;
+            _speaker = null; _reader = null; _audioStream = null;
         };
         _speaker.Play();
     }
@@ -315,9 +404,7 @@ public sealed class Main : MelonMod
         try { _speaker?.Dispose(); } catch { }
         try { _reader?.Dispose(); } catch { }
         try { _audioStream?.Dispose(); } catch { }
-        _speaker = null;
-        _reader = null;
-        _audioStream = null;
+        _speaker = null; _reader = null; _audioStream = null;
     }
 
     private static class NativeMethods
