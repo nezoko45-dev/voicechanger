@@ -16,5 +16,7 @@
     <PackageReference Include="LavaGang.MelonLoader" Version="0.7.3" PrivateAssets="all" />
     <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="UnityEngine.CoreModule" Version="2020.3.1" PrivateAssets="all" IncludeAssets="compile;build;analyzers;buildtransitive" />
+    <PackageReference Include="UnityEngine.IMGUIModule" Version="2020.3.1" PrivateAssets="all" IncludeAssets="compile;build;analyzers;buildtransitive" />
   </ItemGroup>
 </Project>
