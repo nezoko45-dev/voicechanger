@@ -1,32 +1,27 @@
 # 🎙️ VoiceChanger
 
-A static GitHub Pages VoiceChanger using AssemblyAI Universal-3.5 Pro Streaming.
+A static browser-based VoiceChanger using Deepgram Flux for real-time speech recognition and Deepgram Aura for speech output.
 
 ## Pipeline
 
-**🎤 Microphone → Cloudflare Worker temporary-token endpoint → AssemblyAI WebSocket → 📝 transcript → 🔊 browser speech**
-
-## Cloudflare Worker setup
-
-The repository includes `cloudflare-worker.js` and `wrangler.jsonc` for the secure AssemblyAI token endpoint.
-
-1. In Cloudflare Workers & Pages, create/deploy the Worker from this repository.
-2. Use the Worker name `voicechanger-token` (the included `wrangler.jsonc` already sets this name).
-3. Add an encrypted Worker secret named `ASSEMBLYAI_API_KEY` containing your AssemblyAI API key.
-4. Deploy the Worker.
-5. Copy its `workers.dev` URL and replace `TOKEN_ENDPOINT` near the top of `index.html` with that URL followed by `/assembly-token`.
-6. Commit the `index.html` change and open the GitHub Pages site.
-
-Cloudflare Worker secrets keep the permanent AssemblyAI key server-side; it is never placed in the frontend. The Worker only returns a short-lived AssemblyAI token.
+**🎤 Microphone → Deepgram Flux WebSocket → 📝 transcript → 🔊 Deepgram Aura TTS**
 
 ## Frontend
 
-The frontend is a single static `index.html` and can be hosted on GitHub Pages. It does not require Netlify.
+The app is a single static `index.html` and can be hosted on GitHub Pages, Netlify, Vercel, or another static host.
 
-## Important
+Enter your Deepgram API key in the app. The current frontend stores it in the browser's local storage so the app can connect directly to Deepgram.
 
-The old Netlify AssemblyAI function has been removed. No permanent AssemblyAI API key should be committed to this repository.
+> For a public production deployment, do not expose a permanent API key in browser code. Use a backend/worker that issues temporary credentials instead.
+
+## Deepgram Flux
+
+The frontend uses Deepgram's current Flux `/v2/listen` WebSocket endpoint with `flux-general-en`, 16 kHz `linear16` audio, Flux turn detection, and periodic keep-alive messages.
+
+## TTS
+
+Deepgram Aura TTS is requested through the Deepgram `/v1/speak` endpoint and played directly in the browser. The selected voice and output sample rate can be changed from the UI.
 
 ## Troubleshooting
 
-The app shows the WebSocket state, AssemblyAI errors, close code, and token-service errors in its diagnostics area so connection problems are visible instead of hidden behind an endless reconnect loop.
+The diagnostics panel reports WebSocket connection state, Flux errors, TTS errors, and close codes. If the microphone does not start, make sure the site is served over HTTPS and that microphone permission is allowed.
