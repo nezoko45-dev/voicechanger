@@ -8,10 +8,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <IsPackable>false</IsPackable>
-    <!-- Keep NuGet runtime dependencies beside the mod DLL. -->
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
   </PropertyGroup>
-
   <ItemGroup>
     <Reference Include="System.Net.Http" />
     <PackageReference Include="LavaGang.MelonLoader" Version="0.7.3" PrivateAssets="all" />
