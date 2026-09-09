@@ -4,7 +4,7 @@ import re
 path = Path('VoiceChangerMod/Main.cs')
 text = path.read_text(encoding='utf-8-sig')
 
-# Send generated TTS to the VB-CABLE playback endpoint. Voicemeeter Banana
+# Send generated TTS to the VB-CABLE playback endpoint. VoiceMeeter Banana
 # should use the matching CABLE Output recording endpoint as its hardware input.
 text = text.replace('using NAudio.Wave;\n', 'using NAudio.Wave;\nusing NAudio.CoreAudioApi;\n', 1)
 text = re.sub(r'private const int OutputDeviceIndex = \d+;', 'private const string CablePlaybackName = "CABLE Input";', text, count=1)
@@ -106,13 +106,14 @@ new = '''    private static void PlayMp3(byte[] audio)
 
             // TTS is intentionally sent into CABLE Input. VoiceMeeter Banana
             // should select CABLE Output as its hardware input and route that
-            // strip to the desired virtual output (for example B1).
+            // strip only to the desired virtual output (for example B1).
             _suppressMicProcessing = true;
             _audioStream = new MemoryStream(audio, false);
             _reader = new Mp3FileReader(_audioStream);
             _speaker = new WasapiOut(device, AudioClientShareMode.Shared, true, 100);
             MelonLogger.Msg("Playing TTS through VB-CABLE Input; VoiceMeeter should receive it on CABLE Output.");
             _speaker.Init(_reader);
+            _speaker.Play();
             _speaker.PlaybackStopped += (_, _) =>
             {
                 try { _speaker?.Dispose(); } catch { }
@@ -125,7 +126,6 @@ new = '''    private static void PlayMp3(byte[] audio)
                 _audioStream = null;
                 _suppressMicProcessing = false;
             };
-            _speaker.Play();
         }
         catch
         {
