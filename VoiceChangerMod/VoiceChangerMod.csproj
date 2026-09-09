@@ -19,4 +19,9 @@
     <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="..\BrowserVoiceChanger\index.html" Link="BrowserVoiceChanger\index.html" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\BrowserVoiceChanger\app.js" Link="BrowserVoiceChanger\app.js" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\BrowserVoiceChanger\style.css" Link="BrowserVoiceChanger\style.css" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
