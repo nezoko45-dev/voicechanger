@@ -4,6 +4,19 @@ import re
 path = Path('VoiceChangerMod/Main.cs')
 text = path.read_text(encoding='utf-8-sig')
 
+# Deepgram Speak defaults are not guaranteed to be MP3. The mod uses
+# Mp3FileReader, so explicitly request MP3 to prevent "playback failed"
+# when the returned bytes are raw/linear PCM.
+text = re.sub(
+    r'"https://api\.deepgram\.com/v1/speak\?model=" \+ Uri\.EscapeDataString\(Voices\[_selectedVoice\]\.Model\)',
+    '"https://api.deepgram.com/v1/speak?model=" + Uri.EscapeDataString(Voices[_selectedVoice].Model) + "&encoding=mp3"',
+    text,
+    count=1,
+)
+
+if '&encoding=mp3' not in text:
+    raise SystemExit('Could not configure Deepgram TTS for MP3 output; refusing to modify source.')
+
 # Keep this patcher resilient to changes in the original PlayMp3 implementation.
 # The mod sends generated TTS to the VB-CABLE playback endpoint (CABLE Input).
 # Windows exposes that audio at CABLE Output, which VoiceMeeter can use as an input.
@@ -29,13 +42,6 @@ text = re.sub(
 
 if 'private static IWavePlayer? _speaker;' not in text:
     raise SystemExit('Could not update the TTS speaker field; refusing to modify source.')
-
-text = re.sub(
-    r'MelonLogger\.Msg\("TTS output device index = " \+ OutputDeviceIndex \+ " \(Voicemeeter Banana target\)"\);',
-    'MelonLogger.Msg("TTS target: VB-CABLE Input playback endpoint -> VoiceMeeter CABLE Output input");',
-    text,
-    count=1,
-)
 
 if 'private static volatile bool _suppressMicProcessing;' not in text:
     text = text.replace(
@@ -84,16 +90,15 @@ new_play = '''    private static void PlayMp3(byte[] audio)
                 return;
             }
 
-            // TTS -> CABLE Input -> CABLE Output -> VoiceMeeter.
-            // Suppress the mod's own transcript handling during TTS so the
-            // generated voice cannot trigger another TTS response.
             _suppressMicProcessing = true;
             _audioStream = new MemoryStream(audio, false);
             _reader = new Mp3FileReader(_audioStream);
             _speaker = new WasapiOut(device, AudioClientShareMode.Shared, true, 100);
             _speaker.Init(_reader);
-            _speaker.PlaybackStopped += (_, _) =>
+            _speaker.PlaybackStopped += (_, e) =>
             {
+                if (e.Exception != null)
+                    MelonLogger.Error("TTS playback stopped with error: " + e.Exception.Message);
                 try { _speaker?.Dispose(); } catch { }
                 try { _reader?.Dispose(); } catch { }
                 try { _audioStream?.Dispose(); } catch { }
@@ -104,22 +109,29 @@ new_play = '''    private static void PlayMp3(byte[] audio)
                 _audioStream = null;
                 _suppressMicProcessing = false;
             };
-            MelonLogger.Msg("Playing TTS through VB-CABLE Input; VoiceMeeter should receive it on CABLE Output.");
+            MelonLogger.Msg("Playing MP3 TTS through VB-CABLE Input; VoiceMeeter should receive it on CABLE Output.");
             _speaker.Play();
         }
-        catch
+        catch (Exception ex)
         {
+            _status = "TTS playback failed";
+            NativeGui.Refresh();
+            MelonLogger.Error("TTS playback failed: " + ex.GetType().Name + ": " + ex.Message);
+            try { _speaker?.Dispose(); } catch { }
+            try { _reader?.Dispose(); } catch { }
+            try { _audioStream?.Dispose(); } catch { }
             try { device?.Dispose(); } catch { }
             try { enumerator.Dispose(); } catch { }
+            _speaker = null;
+            _reader = null;
+            _audioStream = null;
             _suppressMicProcessing = false;
-            throw;
         }
     }
 
 '''
 text = text[:play_start] + new_play + text[stop_start:]
 
-# StopPlayback must also release feedback suppression when manually stopping TTS.
 text = text.replace(
     '        _speaker = null; _reader = null; _audioStream = null;\n    }\n}',
     '        _speaker = null; _reader = null; _audioStream = null;\n        _suppressMicProcessing = false;\n    }\n}',
@@ -127,4 +139,4 @@ text = text.replace(
 )
 
 path.write_text(text, encoding='utf-8')
-print('Configured TTS -> VB-CABLE Input -> CABLE Output -> VoiceMeeter routing with feedback suppression.')
+print('Configured Deepgram MP3 TTS -> VB-CABLE Input -> CABLE Output -> VoiceMeeter routing with feedback suppression.')
