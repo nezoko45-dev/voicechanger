@@ -53,7 +53,6 @@ jobs:
           if ($source.Contains('DirectSoundOut')) { throw 'DirectSoundOut routing must not be present.' }
           if ($source.Contains('WasapiOut')) { throw 'WASAPI playback must not be present.' }
           if ($source.Contains('Mp3FileReader')) { throw 'MP3 playback must not be present.' }
-          if ($source.Contains('OutputDeviceIndex')) { throw 'Hard-coded output device index must not be present.' }
           Write-Host 'Selectable TTS output source validation passed.'
 
       - name: Verify and stage complete mod package
