@@ -7,14 +7,14 @@ using MelonLoader;
 
 namespace VoiceChangerMod;
 
-public sealed class BrowserController : MelonMod
+internal static class BrowserController
 {
     private static readonly string[] AllowedFiles = { "index.html", "app.js", "style.css" };
     private static HttpListener? _server;
     private static Thread? _serverThread;
     private static int _port;
 
-    public override void OnApplicationStart()
+    public static void Start()
     {
         try
         {
@@ -23,11 +23,11 @@ public sealed class BrowserController : MelonMod
         }
         catch (Exception ex)
         {
-            MelonLogger.Error("Browser VoiceChanger startup failed: " + ex.Message);
+            MelonLogger.Error("Browser VoiceChanger startup failed: " + ex);
         }
     }
 
-    public override void OnUpdate()
+    public static void Update()
     {
         if ((GetAsyncKeyState(0x77) & 1) != 0)
             OpenBrowser();
@@ -35,7 +35,12 @@ public sealed class BrowserController : MelonMod
 
     private static void OpenBrowser()
     {
-        if (_port == 0) return;
+        if (_port == 0)
+        {
+            MelonLogger.Error("Browser VoiceChanger is not running; no local port is available.");
+            return;
+        }
+
         try
         {
             Process.Start(new ProcessStartInfo
@@ -43,10 +48,11 @@ public sealed class BrowserController : MelonMod
                 FileName = "http://127.0.0.1:" + _port + "/",
                 UseShellExecute = true
             });
+            MelonLogger.Msg("Opened browser voice changer at http://127.0.0.1:" + _port + "/");
         }
         catch (Exception ex)
         {
-            MelonLogger.Error("Could not open browser: " + ex.Message);
+            MelonLogger.Error("Could not open browser: " + ex);
         }
     }
 
@@ -77,8 +83,9 @@ public sealed class BrowserController : MelonMod
                 MelonLogger.Msg("Browser UI hosted at http://127.0.0.1:" + port + "/");
                 return;
             }
-            catch
+            catch (Exception ex)
             {
+                MelonLogger.Msg("Port " + port + " unavailable: " + ex.Message);
                 try { _server?.Close(); } catch { }
                 _server = null;
             }
@@ -120,8 +127,9 @@ public sealed class BrowserController : MelonMod
                 context.Response.Headers["Cache-Control"] = "no-store";
                 context.Response.OutputStream.Write(data, 0, data.Length);
             }
-            catch
+            catch (Exception ex)
             {
+                MelonLogger.Error("Browser file request failed: " + ex.Message);
                 context.Response.StatusCode = 500;
             }
             finally
