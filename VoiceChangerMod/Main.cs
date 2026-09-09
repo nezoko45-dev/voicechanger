@@ -10,19 +10,19 @@ using MelonLoader;
 using NAudio.Wave;
 using Newtonsoft.Json.Linq;
 
-[assembly: MelonInfo(typeof(VoiceChangerMod.Main), "ChilloutVR VoiceChanger Mod", "1.4.0", "nezoko45-dev")]
+[assembly: MelonInfo(typeof(VoiceChangerMod.Main), "ChilloutVR VoiceChanger Mod", "1.5.0", "nezoko45-dev")]
 
 namespace VoiceChangerMod;
 
 public sealed class Main : MelonMod
 {
     private const string FluxUrl = "wss://api.deepgram.com/v2/listen?model=flux-general-en&encoding=linear16&sample_rate=16000&eot_threshold=0.70&eager_eot_threshold=0.50&eot_timeout_ms=7000";
-    private const string CablePlaybackName = "CABLE Input";
+    private const string VoiceMeeterAuxName = "VoiceMeeter AUX Input";
     private static readonly HttpClient Http = new HttpClient();
     private static ClientWebSocket? _socket;
     private static CancellationTokenSource? _cts;
     private static WaveInEvent? _mic;
-    private static WaveOutEvent? _speaker;
+    private static IWavePlayer? _speaker;
     private static WaveFileReader? _reader;
     private static MemoryStream? _audioStream;
     private static readonly SemaphoreSlim SendLock = new SemaphoreSlim(1, 1);
@@ -67,26 +67,23 @@ public sealed class Main : MelonMod
     public override void OnApplicationStart()
     {
         LoadConfig();
-        MelonLogger.Msg("ChilloutVR VoiceChanger Mod 1.4.0 loaded.");
-        MelonLogger.Msg("F8 = open/close VoiceChanger GUI | F10 = start/stop | F9 = stop");
-        MelonLogger.Msg("TTS route = Deepgram WAV -> CABLE Input -> CABLE Output -> VoiceMeeter");
+        MelonLogger.Msg("ChilloutVR VoiceChanger Mod 1.5.0 loaded.");
+        MelonLogger.Msg("F8 = GUI | F10 = Start/Stop | F9 = Stop");
+        MelonLogger.Msg("TTS route = Deepgram WAV -> VoiceMeeter Banana AUX Input. VB-CABLE is not used.");
     }
 
     public override void OnUpdate()
     {
-        if ((NativeMethods.GetAsyncKeyState(0x77) & 0x0001) != 0) NativeGui.Toggle();
-        if ((NativeMethods.GetAsyncKeyState(0x79) & 0x0001) != 0) { if (_enabled) StopVoiceChanger(); else StartVoiceChanger(); }
-        if ((NativeMethods.GetAsyncKeyState(0x78) & 0x0001) != 0) StopVoiceChanger();
+        if ((NativeMethods.GetAsyncKeyState(0x77) & 1) != 0) NativeGui.Toggle();
+        if ((NativeMethods.GetAsyncKeyState(0x79) & 1) != 0) { if (_enabled) StopVoiceChanger(); else StartVoiceChanger(); }
+        if ((NativeMethods.GetAsyncKeyState(0x78) & 1) != 0) StopVoiceChanger();
     }
 
     internal static string Status => _status;
     internal static string Transcript => _lastTranscript;
     internal static string ApiKey => _apiKey;
     internal static int SelectedVoice => _selectedVoice;
-    internal static string[] VoiceNames
-    {
-        get { var a = new string[Voices.Length]; for (int i = 0; i < Voices.Length; i++) a[i] = Voices[i].Name; return a; }
-    }
+    internal static string[] VoiceNames { get { var a = new string[Voices.Length]; for (int i = 0; i < Voices.Length; i++) a[i] = Voices[i].Name; return a; } }
 
     internal static void SetGuiValues(string apiKey, int voice)
     {
@@ -113,66 +110,42 @@ public sealed class Main : MelonMod
         try
         {
             string path = Path.Combine("UserData", "VoiceChangerMod.cfg");
-            if (!File.Exists(path))
-            {
-                Directory.CreateDirectory("UserData");
-                File.WriteAllText(path, "# VoiceChanger settings\nDeepgramApiKey=\nVoiceModel=aura-2-thalia-en\n");
-                return;
-            }
+            if (!File.Exists(path)) { Directory.CreateDirectory("UserData"); File.WriteAllText(path, "# VoiceChanger settings\nDeepgramApiKey=\nVoiceModel=aura-2-thalia-en\n"); return; }
             foreach (string line in File.ReadAllLines(path))
             {
-                if (line.StartsWith("DeepgramApiKey=", StringComparison.OrdinalIgnoreCase)) _apiKey = line.Substring("DeepgramApiKey=".Length).Trim();
+                if (line.StartsWith("DeepgramApiKey=", StringComparison.OrdinalIgnoreCase)) _apiKey = line.Substring(15).Trim();
                 else if (line.StartsWith("VoiceModel=", StringComparison.OrdinalIgnoreCase))
                 {
-                    string model = line.Substring("VoiceModel=".Length).Trim();
-                    for (int i = 0; i < Voices.Length; i++) if (string.Equals(Voices[i].Model, model, StringComparison.OrdinalIgnoreCase)) { _selectedVoice = i; break; }
+                    string model = line.Substring(11).Trim();
+                    for (int i = 0; i < Voices.Length; i++) if (string.Equals(Voices[i].Model, model, StringComparison.OrdinalIgnoreCase)) _selectedVoice = i;
                 }
             }
         }
-        catch (Exception ex) { MelonLogger.Warning("Could not read VoiceChangerMod.cfg: " + ex.Message); }
+        catch (Exception ex) { MelonLogger.Warning("Config read failed: " + ex.Message); }
     }
 
     private static void SaveConfig()
     {
-        try
-        {
-            Directory.CreateDirectory("UserData");
-            File.WriteAllText(Path.Combine("UserData", "VoiceChangerMod.cfg"), "# VoiceChanger settings\nDeepgramApiKey=" + _apiKey + "\nVoiceModel=" + Voices[_selectedVoice].Model + "\n");
-        }
-        catch (Exception ex) { MelonLogger.Warning("Could not save VoiceChangerMod.cfg: " + ex.Message); }
+        try { Directory.CreateDirectory("UserData"); File.WriteAllText(Path.Combine("UserData", "VoiceChangerMod.cfg"), "# VoiceChanger settings\nDeepgramApiKey=" + _apiKey + "\nVoiceModel=" + Voices[_selectedVoice].Model + "\n"); }
+        catch (Exception ex) { MelonLogger.Warning("Config save failed: " + ex.Message); }
     }
 
     private static void StartVoiceChanger()
     {
-        if (string.IsNullOrWhiteSpace(_apiKey))
-        {
-            _status = "Missing Deepgram API key";
-            MelonLogger.Error("No Deepgram API key. Enter it in the F8 GUI or set DEEPGRAM_API_KEY.");
-            NativeGui.Refresh();
-            return;
-        }
+        if (string.IsNullOrWhiteSpace(_apiKey)) { _status = "Missing Deepgram API key"; MelonLogger.Error("No Deepgram API key. Enter it in the F8 GUI or set DEEPGRAM_API_KEY."); NativeGui.Refresh(); return; }
         lock (StateLock) { if (_enabled) return; _enabled = true; }
-        _status = "Connecting to Deepgram...";
-        NativeGui.Refresh();
-        _cts = new CancellationTokenSource();
-        _ = RunFluxAsync(_cts.Token);
+        _status = "Connecting to Deepgram..."; NativeGui.Refresh();
+        _cts = new CancellationTokenSource(); _ = RunFluxAsync(_cts.Token);
         MelonLogger.Msg("VoiceChanger ENABLED using " + Voices[_selectedVoice].Name + ".");
     }
 
     private static void StopVoiceChanger()
     {
         lock (StateLock) { if (!_enabled && _cts == null) return; _enabled = false; }
-        try { _cts?.Cancel(); } catch { }
-        _cts = null;
-        try { _mic?.StopRecording(); } catch { }
-        try { _mic?.Dispose(); } catch { }
-        _mic = null;
-        try { _socket?.Abort(); _socket?.Dispose(); } catch { }
-        _socket = null;
-        StopPlayback();
-        _status = "Disabled";
-        NativeGui.Refresh();
-        MelonLogger.Msg("VoiceChanger DISABLED.");
+        try { _cts?.Cancel(); } catch { } _cts = null;
+        try { _mic?.StopRecording(); } catch { } try { _mic?.Dispose(); } catch { } _mic = null;
+        try { _socket?.Abort(); _socket?.Dispose(); } catch { } _socket = null;
+        StopPlayback(); _status = "Disabled"; NativeGui.Refresh();
     }
 
     private static async Task RunFluxAsync(CancellationToken token)
@@ -181,29 +154,14 @@ public sealed class Main : MelonMod
         {
             using (var socket = new ClientWebSocket())
             {
-                socket.Options.SetRequestHeader("Authorization", "Token " + _apiKey);
-                _socket = socket;
+                socket.Options.SetRequestHeader("Authorization", "Token " + _apiKey); _socket = socket;
                 await socket.ConnectAsync(new Uri(FluxUrl), token).ConfigureAwait(false);
-                _status = "Connected - listening";
-                NativeGui.Refresh();
-                StartMicrophone(token);
-                await ReceiveFluxAsync(socket, token).ConfigureAwait(false);
+                _status = "Connected - listening"; NativeGui.Refresh(); StartMicrophone(token); await ReceiveFluxAsync(socket, token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex)
-        {
-            _status = "Connection error";
-            NativeGui.Refresh();
-            MelonLogger.Error("Deepgram connection failed: " + ex.GetType().Name + ": " + ex.Message);
-        }
-        finally
-        {
-            try { _mic?.StopRecording(); } catch { }
-            try { _mic?.Dispose(); } catch { }
-            _mic = null;
-            _socket = null;
-        }
+        catch (Exception ex) { _status = "Connection error"; NativeGui.Refresh(); MelonLogger.Error("Deepgram connection failed: " + ex.GetType().Name + ": " + ex.Message); }
+        finally { try { _mic?.StopRecording(); } catch { } try { _mic?.Dispose(); } catch { } _mic = null; _socket = null; }
     }
 
     private static void StartMicrophone(CancellationToken token)
@@ -212,13 +170,9 @@ public sealed class Main : MelonMod
         _mic.DataAvailable += (_, e) =>
         {
             if (_suppressMicProcessing || !_enabled || token.IsCancellationRequested || _socket?.State != WebSocketState.Open) return;
-            byte[] copy = new byte[e.BytesRecorded];
-            Buffer.BlockCopy(e.Buffer, 0, copy, 0, e.BytesRecorded);
-            _ = SendAudioAsync(copy, token);
+            byte[] copy = new byte[e.BytesRecorded]; Buffer.BlockCopy(e.Buffer, 0, copy, 0, e.BytesRecorded); _ = SendAudioAsync(copy, token);
         };
-        _mic.RecordingStopped += (_, _) => MelonLogger.Msg("Microphone stopped.");
-        _mic.StartRecording();
-        MelonLogger.Msg("Microphone capture started at 16 kHz mono PCM.");
+        _mic.StartRecording(); MelonLogger.Msg("Microphone capture started at 16 kHz mono PCM.");
     }
 
     private static async Task SendAudioAsync(byte[] audio, CancellationToken token)
@@ -226,25 +180,18 @@ public sealed class Main : MelonMod
         if (_socket?.State != WebSocketState.Open) return;
         await SendLock.WaitAsync(token).ConfigureAwait(false);
         try { if (_socket?.State == WebSocketState.Open) await _socket.SendAsync(new ArraySegment<byte>(audio), WebSocketMessageType.Binary, true, token).ConfigureAwait(false); }
-        catch (OperationCanceledException) { }
-        catch (Exception ex) { MelonLogger.Warning("Audio send failed: " + ex.Message); }
-        finally { SendLock.Release(); }
+        catch (OperationCanceledException) { } catch (Exception ex) { MelonLogger.Warning("Audio send failed: " + ex.Message); } finally { SendLock.Release(); }
     }
 
     private static async Task ReceiveFluxAsync(ClientWebSocket socket, CancellationToken token)
     {
-        byte[] buffer = new byte[16 * 1024];
+        byte[] buffer = new byte[16384];
         using (var message = new MemoryStream())
         {
             while (!token.IsCancellationRequested && socket.State == WebSocketState.Open)
             {
                 message.SetLength(0); WebSocketReceiveResult result;
-                do
-                {
-                    result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), token).ConfigureAwait(false);
-                    if (result.MessageType == WebSocketMessageType.Close) return;
-                    if (result.Count > 0) message.Write(buffer, 0, result.Count);
-                } while (!result.EndOfMessage);
+                do { result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), token).ConfigureAwait(false); if (result.MessageType == WebSocketMessageType.Close) return; if (result.Count > 0) message.Write(buffer, 0, result.Count); } while (!result.EndOfMessage);
                 HandleFluxMessage(Encoding.UTF8.GetString(message.ToArray()));
             }
         }
@@ -254,17 +201,17 @@ public sealed class Main : MelonMod
     {
         try
         {
-            var root = JObject.Parse(json); string? type = (string?)root["type"];
-            if (type == "TurnInfo")
+            var root = JObject.Parse(json);
+            if ((string?)root["type"] == "TurnInfo")
             {
                 if (_suppressMicProcessing) return;
                 string? transcript = (string?)root["transcript"]; string? evt = (string?)root["event"];
                 if (!string.IsNullOrWhiteSpace(transcript)) { _lastTranscript = transcript; NativeGui.Refresh(); MelonLogger.Msg("You said: " + transcript); }
                 if (evt == "EndOfTurn" && !string.IsNullOrWhiteSpace(transcript)) _ = SpeakAsSelectedVoiceAsync(transcript);
             }
-            else if (type == "Error" || type == "FatalError") MelonLogger.Error("Deepgram Flux error: " + json);
+            else if ((string?)root["type"] == "Error" || (string?)root["type"] == "FatalError") MelonLogger.Error("Deepgram Flux error: " + json);
         }
-        catch (Exception ex) { MelonLogger.Warning("Could not parse Deepgram message: " + ex.Message); }
+        catch (Exception ex) { MelonLogger.Warning("Deepgram message parse failed: " + ex.Message); }
     }
 
     private static async Task SpeakAsSelectedVoiceAsync(string text)
@@ -279,200 +226,95 @@ public sealed class Main : MelonMod
                 request.Content = new StringContent(JObject.FromObject(new { text = text.Length > 2000 ? text.Substring(0, 2000) : text }).ToString(), Encoding.UTF8, "application/json");
                 using (HttpResponseMessage response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false))
                 {
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        string error = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                        MelonLogger.Error("Deepgram TTS failed: " + (int)response.StatusCode + " " + error);
-                        _status = "TTS error";
-                        NativeGui.Refresh();
-                        return;
-                    }
-                    byte[] audio = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
-                    if (_enabled) PlayTtsWav(audio);
+                    if (!response.IsSuccessStatusCode) { string error = await response.Content.ReadAsStringAsync().ConfigureAwait(false); _status = "TTS error"; NativeGui.Refresh(); MelonLogger.Error("Deepgram TTS failed: " + (int)response.StatusCode + " " + error); return; }
+                    byte[] audio = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false); if (_enabled) PlayTtsWav(audio);
                 }
             }
         }
-        catch (Exception ex) { MelonLogger.Error("Voice conversion failed: " + ex.GetType().Name + ": " + ex.Message); }
+        catch (Exception ex) { MelonLogger.Error("TTS request failed: " + ex.GetType().Name + ": " + ex.Message); }
     }
 
-    private static int FindCablePlaybackDevice()
+    private static DirectSoundDeviceInfo? FindVoiceMeeterAux()
     {
-        int count = WaveOut.DeviceCount;
-        int fallback = -1;
-        for (int i = 0; i < count; i++)
+        foreach (DirectSoundDeviceInfo device in DirectSoundOut.Devices)
         {
-            WaveOutCapabilities caps;
-            try { caps = WaveOut.GetCapabilities(i); }
-            catch { continue; }
-            string name = caps.ProductName ?? "";
-            MelonLogger.Msg("WaveOut playback device [" + i + "]: " + name);
-            if (name.IndexOf(CablePlaybackName, StringComparison.OrdinalIgnoreCase) >= 0) return i;
-            if (fallback < 0 && name.IndexOf("CABLE", StringComparison.OrdinalIgnoreCase) >= 0) fallback = i;
+            string name = (device.Description ?? "") + " " + (device.ModuleName ?? "");
+            MelonLogger.Msg("DirectSound playback device: " + name);
+            if (name.IndexOf(VoiceMeeterAuxName, StringComparison.OrdinalIgnoreCase) >= 0) return device;
         }
-        return fallback;
+        return null;
     }
 
     private static void PlayTtsWav(byte[] audio)
     {
-        StopPlayback();
-        int deviceNumber = FindCablePlaybackDevice();
-        if (deviceNumber < 0)
-        {
-            _status = "VB-CABLE Input not found";
-            NativeGui.Refresh();
-            MelonLogger.Error("Could not find VB-CABLE playback device '" + CablePlaybackName + "'.");
-            return;
-        }
-
+        StopPlayback(); DirectSoundDeviceInfo? device = FindVoiceMeeterAux();
+        if (device == null) { _status = "VoiceMeeter AUX Input not found"; NativeGui.Refresh(); MelonLogger.Error("Could not find VoiceMeeter Banana AUX Input. Make sure VoiceMeeter Banana is running and its AUX virtual input is enabled."); return; }
         try
         {
-            _suppressMicProcessing = true;
-            _audioStream = new MemoryStream(audio, false);
-            _reader = new WaveFileReader(_audioStream);
-            _speaker = new WaveOutEvent { DeviceNumber = deviceNumber };
-            _speaker.Init(_reader);
-            _speaker.PlaybackStopped += (_, e) =>
-            {
-                if (e.Exception != null) MelonLogger.Error("TTS playback stopped with error: " + e.Exception.GetType().Name + ": " + e.Exception.Message);
-                CleanupPlayback();
-            };
-            MelonLogger.Msg("Playing Deepgram WAV TTS through CABLE Input [" + deviceNumber + "] -> CABLE Output -> VoiceMeeter.");
-            _speaker.Play();
+            _suppressMicProcessing = true; _audioStream = new MemoryStream(audio, false); _reader = new WaveFileReader(_audioStream);
+            _speaker = new DirectSoundOut(device.Guid, 40);
+            _speaker.PlaybackStopped += (_, e) => { if (e.Exception != null) MelonLogger.Error("TTS playback error: " + e.Exception.GetType().Name + ": " + e.Exception.Message); CleanupPlayback(); };
+            _speaker.Init(_reader); _status = "Speaking through VoiceMeeter Banana"; NativeGui.Refresh();
+            MelonLogger.Msg("Direct TTS route: Deepgram WAV -> " + device.Description + " (VoiceMeeter Banana AUX Input). Latency target: 40 ms."); _speaker.Play();
         }
-        catch (Exception ex)
-        {
-            MelonLogger.Error("TTS playback failed: " + ex.GetType().Name + ": " + ex.Message);
-            CleanupPlayback();
-        }
+        catch (Exception ex) { MelonLogger.Error("TTS playback failed: " + ex.GetType().Name + ": " + ex.Message); CleanupPlayback(); }
     }
 
     private static void CleanupPlayback()
     {
-        try { _speaker?.Dispose(); } catch { }
-        try { _reader?.Dispose(); } catch { }
-        try { _audioStream?.Dispose(); } catch { }
-        _speaker = null;
-        _reader = null;
-        _audioStream = null;
-        _suppressMicProcessing = false;
+        try { _speaker?.Dispose(); } catch { } try { _reader?.Dispose(); } catch { } try { _audioStream?.Dispose(); } catch { }
+        _speaker = null; _reader = null; _audioStream = null; _suppressMicProcessing = false;
     }
 
-    private static void StopPlayback()
-    {
-        try { _speaker?.Stop(); } catch { }
-        CleanupPlayback();
-    }
+    private static void StopPlayback() { try { _speaker?.Stop(); } catch { } CleanupPlayback(); }
 }
 
 internal static class NativeGui
 {
-    private const int WM_CREATE = 0x0001, WM_CLOSE = 0x0010, WM_COMMAND = 0x0111;
-    private const int SW_HIDE = 0, SW_SHOW = 5;
-    private const int WS_OVERLAPPEDWINDOW = 0x00CF0000, WS_VISIBLE = 0x10000000, WS_CHILD = 0x40000000, WS_TABSTOP = 0x00010000;
-    private const int BS_PUSHBUTTON = 0x00000000, CBS_DROPDOWNLIST = 0x0003, ES_PASSWORD = 0x0020, ES_AUTOHSCROLL = 0x0080;
-    private const int WM_SETTEXT = 0x000C, WM_GETTEXT = 0x000D, CB_ADDSTRING = 0x0143, CB_SETCURSEL = 0x014E, CB_GETCURSEL = 0x0147;
-    private const int BN_CLICKED = 0;
-    private static readonly object Lock = new object();
-    private static Thread? _thread;
-    private static IntPtr _window;
-    private static IntPtr _apiEdit, _voiceCombo, _saveButton, _startButton, _stopButton, _statusLabel, _transcriptLabel;
-    private static bool _visible;
-    private static readonly ManualResetEvent Ready = new ManualResetEvent(false);
-
-    public static void Toggle()
-    {
-        EnsureStarted();
-        lock (Lock) _visible = !_visible;
-        if (_window != IntPtr.Zero) NativeMethods.ShowWindow(_window, _visible ? SW_SHOW : SW_HIDE);
-    }
-
-    public static void Refresh()
-    {
-        if (_window == IntPtr.Zero) return;
-        try
-        {
-            NativeMethods.SetWindowText(_statusLabel, "Status: " + Main.Status);
-            NativeMethods.SetWindowText(_transcriptLabel, "Last transcript: " + Main.Transcript);
-        }
-        catch { }
-    }
-
-    private static void EnsureStarted()
-    {
-        if (_thread != null) { Ready.WaitOne(1000); return; }
-        lock (Lock)
-        {
-            if (_thread != null) return;
-            _thread = new Thread(GuiThread) { IsBackground = true, Name = "VoiceChanger GUI" };
-            _thread.SetApartmentState(ApartmentState.STA);
-            _thread.Start();
-        }
-        Ready.WaitOne(3000);
-    }
-
+    private const int WM_COMMAND = 0x0111, WM_CLOSE = 0x0010, SW_HIDE = 0, SW_SHOW = 5;
+    private const int WS_OVERLAPPEDWINDOW = 0x00CF0000, WS_CHILD = 0x40000000, WS_VISIBLE = 0x10000000, WS_TABSTOP = 0x00010000;
+    private const int BS_PUSHBUTTON = 0, CBS_DROPDOWNLIST = 3, ES_PASSWORD = 0x20, ES_AUTOHSCROLL = 0x80;
+    private const int WM_GETTEXT = 0x000D, CB_ADDSTRING = 0x0143, CB_SETCURSEL = 0x014E, CB_GETCURSEL = 0x0147, BN_CLICKED = 0;
+    private static Thread? _thread; private static IntPtr _window, _apiEdit, _voiceCombo, _statusLabel, _transcriptLabel; private static readonly ManualResetEvent Ready = new ManualResetEvent(false); private static bool _visible;
+    public static void Toggle() { EnsureStarted(); _visible = !_visible; if (_window != IntPtr.Zero) NativeMethods.ShowWindow(_window, _visible ? SW_SHOW : SW_HIDE); }
+    public static void Refresh() { if (_window == IntPtr.Zero) return; try { NativeMethods.SetWindowText(_statusLabel, "Status: " + Main.Status); NativeMethods.SetWindowText(_transcriptLabel, "Last transcript: " + Main.Transcript); } catch { } }
+    private static void EnsureStarted() { if (_thread != null) { Ready.WaitOne(1000); return; } _thread = new Thread(GuiThread) { IsBackground = true, Name = "VoiceChanger GUI" }; _thread.SetApartmentState(ApartmentState.STA); _thread.Start(); Ready.WaitOne(3000); }
     private static void GuiThread()
     {
         try
         {
-            string cls = "VoiceChangerNativeWindow" + Environment.TickCount;
-            var wc = new NativeMethods.WNDCLASS { lpfnWndProc = WndProc, lpszClassName = cls, hInstance = NativeMethods.GetModuleHandle(null) };
-            NativeMethods.RegisterClass(ref wc);
+            string cls = "VoiceChangerNativeWindow" + Environment.TickCount; var wc = new NativeMethods.WNDCLASS { lpfnWndProc = WndProc, lpszClassName = cls, hInstance = NativeMethods.GetModuleHandle(null) }; NativeMethods.RegisterClass(ref wc);
             _window = NativeMethods.CreateWindowEx(0, cls, "ChilloutVR VoiceChanger", WS_OVERLAPPEDWINDOW, 120, 120, 520, 360, IntPtr.Zero, IntPtr.Zero, wc.hInstance, IntPtr.Zero);
             _apiEdit = CreateChild("EDIT", "", 20, 35, 460, 28, WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_PASSWORD | ES_AUTOHSCROLL, 1001);
             _voiceCombo = CreateChild("COMBOBOX", "", 20, 90, 300, 300, WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST, 1002);
             for (int i = 0; i < Main.VoiceNames.Length; i++) NativeMethods.SendMessage(_voiceCombo, CB_ADDSTRING, IntPtr.Zero, Main.VoiceNames[i]);
             NativeMethods.SendMessage(_voiceCombo, CB_SETCURSEL, (IntPtr)Main.SelectedVoice, IntPtr.Zero);
-            _saveButton = CreateChild("BUTTON", "Save settings", 330, 90, 150, 32, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 1003);
-            _startButton = CreateChild("BUTTON", "Start", 20, 140, 140, 36, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 1004);
-            _stopButton = CreateChild("BUTTON", "Stop", 180, 140, 140, 36, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 1005);
-            _statusLabel = CreateChild("STATIC", "Status: " + Main.Status, 20, 200, 460, 28, WS_CHILD | WS_VISIBLE, 1006);
-            _transcriptLabel = CreateChild("STATIC", "Last transcript: " + Main.Transcript, 20, 235, 460, 45, WS_CHILD | WS_VISIBLE, 1007);
-            CreateChild("STATIC", "Deepgram API key", 20, 10, 200, 20, WS_CHILD | WS_VISIBLE, 1008);
-            CreateChild("STATIC", "Voice", 20, 70, 200, 20, WS_CHILD | WS_VISIBLE, 1009);
-            CreateChild("STATIC", "F10 = Start/Stop | F9 = Stop | F8 = Show/Hide", 20, 290, 460, 25, WS_CHILD | WS_VISIBLE, 1010);
-            NativeMethods.SetWindowText(_apiEdit, Main.ApiKey);
-            NativeMethods.ShowWindow(_window, SW_HIDE);
-            Ready.Set();
-            while (NativeMethods.GetMessage(out var msg, IntPtr.Zero, 0, 0))
-            {
-                NativeMethods.TranslateMessage(ref msg); NativeMethods.DispatchMessage(ref msg);
-            }
+            CreateChild("BUTTON", "Save settings", 330, 90, 150, 32, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 1003); CreateChild("BUTTON", "Start", 20, 140, 140, 36, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 1004); CreateChild("BUTTON", "Stop", 180, 140, 140, 36, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 1005);
+            _statusLabel = CreateChild("STATIC", "Status: " + Main.Status, 20, 200, 460, 28, WS_CHILD | WS_VISIBLE, 1006); _transcriptLabel = CreateChild("STATIC", "Last transcript: " + Main.Transcript, 20, 235, 460, 45, WS_CHILD | WS_VISIBLE, 1007);
+            CreateChild("STATIC", "Deepgram API key", 20, 10, 200, 20, WS_CHILD | WS_VISIBLE, 1008); CreateChild("STATIC", "Voice", 20, 70, 200, 20, WS_CHILD | WS_VISIBLE, 1009); CreateChild("STATIC", "TTS: VoiceMeeter Banana AUX Input (no VB-CABLE)", 20, 290, 460, 25, WS_CHILD | WS_VISIBLE, 1010);
+            NativeMethods.SetWindowText(_apiEdit, Main.ApiKey); NativeMethods.ShowWindow(_window, SW_HIDE); Ready.Set();
+            while (NativeMethods.GetMessage(out var msg, IntPtr.Zero, 0, 0)) { NativeMethods.TranslateMessage(ref msg); NativeMethods.DispatchMessage(ref msg); }
         }
         catch (Exception ex) { MelonLogger.Error("Native GUI failed: " + ex.Message); Ready.Set(); }
     }
-
-    private static IntPtr CreateChild(string type, string text, int x, int y, int w, int h, int style, int id)
-    {
-        return NativeMethods.CreateWindowEx(0, type, text, style, x, y, w, h, _window, (IntPtr)id, NativeMethods.GetModuleHandle(null), IntPtr.Zero);
-    }
-
+    private static IntPtr CreateChild(string type, string text, int x, int y, int w, int h, int style, int id) => NativeMethods.CreateWindowEx(0, type, text, style, x, y, w, h, _window, (IntPtr)id, NativeMethods.GetModuleHandle(null), IntPtr.Zero);
     private static IntPtr WndProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
         if (msg == WM_COMMAND)
         {
-            int id = unchecked((short)((long)wParam & 0xFFFF));
-            int code = unchecked((short)(((long)wParam >> 16) & 0xFFFF));
-            if (code == BN_CLICKED && id == 1003)
-            {
-                var sb = new StringBuilder(4096); NativeMethods.SendMessage(_apiEdit, WM_GETTEXT, (IntPtr)sb.Capacity, sb); int voice = (int)NativeMethods.SendMessage(_voiceCombo, CB_GETCURSEL, IntPtr.Zero, IntPtr.Zero); Main.SetGuiValues(sb.ToString(), voice); return IntPtr.Zero;
-            }
-            if (code == BN_CLICKED && id == 1004)
-            {
-                var sb = new StringBuilder(4096); NativeMethods.SendMessage(_apiEdit, WM_GETTEXT, (IntPtr)sb.Capacity, sb); int voice = (int)NativeMethods.SendMessage(_voiceCombo, CB_GETCURSEL, IntPtr.Zero, IntPtr.Zero); Main.StartFromGui(sb.ToString(), voice); return IntPtr.Zero;
-            }
+            int id = unchecked((short)((long)wParam & 0xFFFF)); int code = unchecked((short)(((long)wParam >> 16) & 0xFFFF));
+            if (code == BN_CLICKED && (id == 1003 || id == 1004)) { var sb = new StringBuilder(4096); NativeMethods.SendMessage(_apiEdit, WM_GETTEXT, (IntPtr)sb.Capacity, sb); int voice = (int)NativeMethods.SendMessage(_voiceCombo, CB_GETCURSEL, IntPtr.Zero, IntPtr.Zero); if (id == 1003) Main.SetGuiValues(sb.ToString(), voice); else Main.StartFromGui(sb.ToString(), voice); return IntPtr.Zero; }
             if (code == BN_CLICKED && id == 1005) { Main.StopFromGui(); return IntPtr.Zero; }
         }
-        if (msg == WM_CLOSE) { NativeMethods.ShowWindow(hwnd, SW_HIDE); lock (Lock) _visible = false; return IntPtr.Zero; }
+        if (msg == WM_CLOSE) { NativeMethods.ShowWindow(hwnd, SW_HIDE); _visible = false; return IntPtr.Zero; }
         return NativeMethods.DefWindowProc(hwnd, msg, wParam, lParam);
     }
 }
 
 internal static class NativeMethods
 {
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    internal struct WNDCLASS { public uint style; public WndProcDelegate lpfnWndProc; public int cbClsExtra; public int cbWndExtra; public IntPtr hInstance; public IntPtr hIcon; public IntPtr hCursor; public IntPtr hbrBackground; public string lpszMenuName; public string lpszClassName; }
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct MSG { public IntPtr hwnd; public uint message; public IntPtr wParam; public IntPtr lParam; public uint time; public int ptX; public int ptY; }
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] internal struct WNDCLASS { public uint style; public WndProcDelegate lpfnWndProc; public int cbClsExtra; public int cbWndExtra; public IntPtr hInstance; public IntPtr hIcon; public IntPtr hCursor; public IntPtr hbrBackground; public string lpszMenuName; public string lpszClassName; }
+    [StructLayout(LayoutKind.Sequential)] internal struct MSG { public IntPtr hwnd; public uint message; public IntPtr wParam; public IntPtr lParam; public uint time; public int ptX; public int ptY; }
     internal delegate IntPtr WndProcDelegate(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] internal static extern short GetAsyncKeyState(int vKey);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern ushort RegisterClass(ref WNDCLASS lpWndClass);
