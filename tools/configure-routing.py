@@ -7,7 +7,7 @@ text = path.read_text(encoding='utf-8-sig')
 # Deepgram Speak defaults are not guaranteed to be MP3. The mod uses
 # Mp3FileReader, so explicitly request MP3 to prevent playback failures.
 text = re.sub(
-    r'"https://api\.deepgram\.com/v1/speak\?model=" \+ Uri\.EscapeDataString\(Voices\[_selectedVoice\]\.Model\)',
+    r'"https://api\\.deepgram\\.com/v1/speak\\?model=" \\+ Uri\\.EscapeDataString\\(Voices\\[_selectedVoice\\]\\.Model\\)',
     '"https://api.deepgram.com/v1/speak?model=" + Uri.EscapeDataString(Voices[_selectedVoice].Model) + "&encoding=mp3"',
     text,
     count=1,
@@ -17,7 +17,6 @@ if '&encoding=mp3' not in text:
     raise SystemExit('Could not configure Deepgram TTS for MP3 output; refusing to modify source.')
 
 # Route generated TTS through the VB-CABLE playback endpoint (CABLE Input).
-# Windows exposes that signal as CABLE Output for VoiceMeeter to receive.
 if 'using NAudio.CoreAudioApi;' not in text:
     text = text.replace('using NAudio.Wave;\n', 'using NAudio.Wave;\nusing NAudio.CoreAudioApi;\n', 1)
 
@@ -31,14 +30,17 @@ text = re.sub(
 if 'private const string CablePlaybackName' not in text:
     raise SystemExit('Could not locate the TTS output-device constant; refusing to modify source.')
 
-# The startup log used the old numeric output constant. Update it to the
-# new endpoint name so the generated source always compiles.
-text = re.sub(
-    r'TTS output device index = " \+ OutputDeviceIndex \+ " \(Voicemeeter Banana target\)"',
-    'TTS output endpoint = " + CablePlaybackName + " (VB-CABLE -> VoiceMeeter)"',
-    text,
-    count=1,
-)
+# Replace the old startup log directly. The previous regex was too strict and
+# failed to match the actual C# source formatting.
+old_log = '        MelonLogger.Msg("TTS output device index = " + OutputDeviceIndex + " (Voicemeeter Banana target)");'
+new_log = '        MelonLogger.Msg("TTS output endpoint = " + CablePlaybackName + " (VB-CABLE -> VoiceMeeter)");'
+if old_log in text:
+    text = text.replace(old_log, new_log, 1)
+
+# Safety cleanup in case an older source has any remaining identifier use.
+if 'OutputDeviceIndex' in text:
+    text = text.replace('OutputDeviceIndex', 'CablePlaybackName')
+    text = text.replace('private const int CablePlaybackName = 18;', 'private const string CablePlaybackName = "CABLE Input";')
 
 if 'OutputDeviceIndex' in text:
     raise SystemExit('OutputDeviceIndex reference remains after routing patch; refusing to modify source.')
