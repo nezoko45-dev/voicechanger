@@ -24,20 +24,25 @@ internal static class NaturalTtsPatch
         try
         {
             string path = Path.Combine("UserData", "VoiceChangerMod.cfg");
-            if (File.Exists(path))
+            if (!File.Exists(path)) return "";
+
+            // Accept both the new GUI names and the original environment-style names.
+            string[] keys = name switch
             {
-                // Environment variable names and config keys are intentionally different.
-                string configKey = name switch
+                "ELEVENLABS_API_KEY" => new[] { "ElevenLabsApiKey", "ELEVENLABS_API_KEY" },
+                "ELEVENLABS_VOICE_ID" => new[] { "ElevenLabsVoiceId", "ELEVENLABS_VOICE_ID" },
+                _ => new[] { name }
+            };
+
+            string[] lines = File.ReadAllLines(path);
+            foreach (string key in keys)
+            {
+                string prefix = key + "=";
+                foreach (string line in lines)
                 {
-                    "ELEVENLABS_API_KEY" => "ElevenLabsApiKey",
-                    "ELEVENLABS_VOICE_ID" => "ElevenLabsVoiceId",
-                    _ => name
-                };
-                string prefix = configKey + "=";
-                foreach (string line in File.ReadAllLines(path))
-                {
-                    if (line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                        return line.Substring(prefix.Length).Trim();
+                    if (!line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                    string candidate = line.Substring(prefix.Length).Trim();
+                    if (!string.IsNullOrWhiteSpace(candidate)) return candidate;
                 }
             }
         }
@@ -60,13 +65,13 @@ internal static class NaturalTtsPatch
 
         if (string.IsNullOrWhiteSpace(apiKey))
         {
-            MelonLoader.MelonLogger.Error("ElevenLabs voice conversion is not configured. Add ElevenLabsApiKey= to UserData/VoiceChangerMod.cfg or set ELEVENLABS_API_KEY.");
+            MelonLoader.MelonLogger.Error("ElevenLabs voice conversion is not configured. Add ElevenLabsApiKey= or ELEVENLABS_API_KEY to UserData/VoiceChangerMod.cfg.");
             return;
         }
 
         if (string.IsNullOrWhiteSpace(voiceId))
         {
-            MelonLoader.MelonLogger.Error("ElevenLabs target voice is not configured. Add ElevenLabsVoiceId= to UserData/VoiceChangerMod.cfg or set ELEVENLABS_VOICE_ID.");
+            MelonLoader.MelonLogger.Error("ElevenLabs target voice is not configured. Add ElevenLabsVoiceId= or ELEVENLABS_VOICE_ID to UserData/VoiceChangerMod.cfg.");
             return;
         }
 
