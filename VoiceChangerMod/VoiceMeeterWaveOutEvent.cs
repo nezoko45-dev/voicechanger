@@ -5,7 +5,7 @@ using NAudio.Wave;
 namespace VoiceChangerMod;
 
 // Compatibility wrapper: Main.cs still constructs WaveOutEvent, but TTS is redirected
-// from VB-CABLE to VoiceMeeter Potato's Virtual AUX input.
+// directly to VoiceMeeter Banana's AUX virtual input.
 internal sealed class WaveOutEvent : IDisposable
 {
     private static readonly string[] PreferredNames = new[]
@@ -22,19 +22,18 @@ internal sealed class WaveOutEvent : IDisposable
 
     public void Init(IWaveProvider provider)
     {
-        int device = FindVoiceMeeterAuxInput();
+        int device = FindVoiceMeeterBananaAuxInput();
         if (device < 0)
-            throw new InvalidOperationException("Could not find VoiceMeeter AUX Input. Make sure VoiceMeeter Potato is running.");
+            throw new InvalidOperationException("Could not find VoiceMeeter AUX Input. Make sure VoiceMeeter Banana is running.");
 
         _inner.DeviceNumber = device;
-        // NAudio 2.2.1 exposes DesiredLatency on WaveOutEvent rather than
-        // BufferMilliseconds. Keep two small buffers for a low-latency route.
+        // NAudio 2.2.1 exposes DesiredLatency on WaveOutEvent rather than BufferMilliseconds.
         _inner.DesiredLatency = 80;
         _inner.NumberOfBuffers = 2;
         _inner.PlaybackStopped += InnerPlaybackStopped;
 
-        MelonLogger.Msg("Direct TTS route: Deepgram WAV -> VoiceMeeter AUX Input (Potato Virtual AUX / index 18).");
-        MelonLogger.Msg("VoiceMeeter Windows playback device = [" + device + "]");
+        MelonLogger.Msg("Direct TTS route: Deepgram WAV -> VoiceMeeter Banana AUX Input (Virtual Input 7).");
+        MelonLogger.Msg("VoiceMeeter Banana Windows playback device = [" + device + "]");
         MelonLogger.Msg("TTS WaveOut latency target = 80 ms total across 2 buffers.");
         _inner.Init(provider);
     }
@@ -54,7 +53,7 @@ internal sealed class WaveOutEvent : IDisposable
         PlaybackStopped?.Invoke(this, e);
     }
 
-    private static int FindVoiceMeeterAuxInput()
+    private static int FindVoiceMeeterBananaAuxInput()
     {
         for (int i = 0; i < NAudio.Wave.WaveOut.DeviceCount; i++)
         {
