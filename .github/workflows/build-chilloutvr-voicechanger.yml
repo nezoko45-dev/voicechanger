@@ -1,4 +1,4 @@
-name: Build ChilloutVR VoiceChanger Mod
+name: Build ChilloutVR VoiceChanger Browser Mod
 
 on:
   workflow_dispatch:
@@ -29,51 +29,61 @@ jobs:
       - name: Verify browser files
         shell: pwsh
         run: |
-          $required = @('BrowserVoiceChanger/index.html', 'BrowserVoiceChanger/app.js', 'BrowserVoiceChanger/style.css')
+          $required = @(
+            'BrowserVoiceChanger/index.html',
+            'BrowserVoiceChanger/app.js',
+            'BrowserVoiceChanger/style.css',
+            'VoiceChangerMod/BrowserController.cs'
+          )
           foreach ($file in $required) {
             if (-not (Test-Path $file)) { throw "Missing browser file: $file" }
           }
-          Write-Host 'Browser UI files are present.'
+          Write-Host 'Browser UI and launcher files are present.'
 
-      - name: Verify browser launcher source
+      - name: Verify browser-only source
         shell: pwsh
         run: |
           $source = Get-Content 'VoiceChangerMod/BrowserController.cs' -Raw
-          $checks = @('HttpListener', '127.0.0.1:', 'BrowserVoiceChanger', 'ProcessStartInfo', 'UseShellExecute = true')
-          foreach ($check in $checks) {
-            if ($source.IndexOf($check, [StringComparison]::Ordinal) -lt 0) { throw "Browser launcher check failed: $check" }
+          foreach ($check in @('HttpListener', '127.0.0.1:', 'BrowserVoiceChanger', 'ProcessStartInfo', 'UseShellExecute = true')) {
+            if ($source.IndexOf($check, [StringComparison]::Ordinal) -lt 0) {
+              throw "Browser launcher check failed: $check"
+            }
           }
-          Write-Host 'Browser launcher validation passed.'
 
-      - name: Verify source has no obsolete GUI/playback references
-        shell: pwsh
-        run: |
-          $files = Get-ChildItem 'VoiceChangerMod' -Filter *.cs -Recurse
-          $source = ($files | ForEach-Object { Get-Content $_.FullName -Raw }) -join "`n"
-          $forbidden = @('UnityEngine', 'Vector2', 'Rect', 'CABLE Input', 'CABLE Output', 'Virtual Audio Cable Line 1', 'FindCableOutputLine1Device', 'DirectSoundOut', 'WasapiOut', 'Mp3FileReader')
-          foreach ($check in $forbidden) {
-            if ($source.IndexOf($check, [StringComparison]::Ordinal) -ge 0) { throw "Obsolete dependency/reference is present: $check" }
+          $allCs = (Get-ChildItem 'VoiceChangerMod' -Filter *.cs -Recurse | ForEach-Object { Get-Content $_.FullName -Raw }) -join "`n"
+          foreach ($forbidden in @('UnityEngine', 'NAudio', 'Newtonsoft.Json', 'System.Windows.Forms', 'System.Drawing', 'HarmonyLib', 'WaveOutEvent', 'WaveInEvent', 'WaveFileReader')) {
+            if ($allCs.IndexOf($forbidden, [StringComparison]::Ordinal) -ge 0) {
+              throw "Legacy dependency/reference is present: $forbidden"
+            }
           }
-          Write-Host 'Source validation passed.'
+          Write-Host 'Browser-only source validation passed.'
 
-      - name: Stage complete mod package
+      - name: Verify browser assets are copied to build output
         shell: pwsh
         run: |
           $out = 'VoiceChangerMod/bin/Release/net472'
-          $required = @('VoiceChangerMod.dll', 'NAudio.dll', 'NAudio.Core.dll', 'NAudio.WinMM.dll', 'Newtonsoft.Json.dll')
-          foreach ($file in $required) {
+          foreach ($file in @('BrowserVoiceChanger/index.html', 'BrowserVoiceChanger/app.js', 'BrowserVoiceChanger/style.css')) {
             $path = Join-Path $out $file
-            if (-not (Test-Path $path)) { throw "Missing runtime dependency: $file" }
+            if (-not (Test-Path $path)) { throw "Browser asset was not copied to build output: $file" }
+          }
+          Write-Host 'Browser assets are present in the build output.'
+
+      - name: Stage mod package
+        shell: pwsh
+        run: |
+          $out = 'VoiceChangerMod/bin/Release/net472'
+          if (-not (Test-Path (Join-Path $out 'VoiceChangerMod.dll'))) {
+            throw 'Missing VoiceChangerMod.dll'
           }
           New-Item -ItemType Directory -Force -Path package | Out-Null
-          Copy-Item "$out/*.dll" package/ -Force
+          Copy-Item (Join-Path $out 'VoiceChangerMod.dll') package/ -Force
           New-Item -ItemType Directory -Force -Path package/BrowserVoiceChanger | Out-Null
           Copy-Item 'BrowserVoiceChanger/*' package/BrowserVoiceChanger/ -Force
           Get-ChildItem package -Recurse | Select-Object FullName,Length
 
-      - name: Upload complete mod package
+      - name: Upload browser mod package
         uses: actions/upload-artifact@v4
         with:
-          name: ChilloutVRVoiceChangerMod
+          name: ChilloutVRVoiceChangerBrowserMod
           path: package/**
           if-no-files-found: error
