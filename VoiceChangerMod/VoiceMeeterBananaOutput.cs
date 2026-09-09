@@ -47,8 +47,6 @@ internal sealed class DirectSoundOut : IWavePlayer
                         string interfaceName = (device.DeviceFriendlyName ?? string.Empty).Trim();
                         MelonLogger.Msg("CoreAudio render device: " + name + " | " + interfaceName);
 
-                        // Use a private key instead of converting the Windows endpoint ID to a Guid.
-                        // The real MMDevice is retained until playback finishes.
                         Guid key = Guid.NewGuid();
                         lock (DeviceLock)
                         {
@@ -76,7 +74,6 @@ internal sealed class DirectSoundOut : IWavePlayer
         }
 
         _device = selected;
-        // Shared-mode WASAPI lets Windows handle the endpoint's configured mix format.
         _inner = new WasapiOut(_device, AudioClientShareMode.Shared, true, Math.Max(20, latency));
     }
 
@@ -87,6 +84,7 @@ internal sealed class DirectSoundOut : IWavePlayer
     }
 
     public PlaybackState PlaybackState => _inner.PlaybackState;
+    public WaveFormat OutputWaveFormat => _inner.OutputWaveFormat;
     public float Volume { get => _inner.Volume; set => _inner.Volume = value; }
 
     public void Init(IWaveProvider waveProvider) => _inner.Init(waveProvider);
