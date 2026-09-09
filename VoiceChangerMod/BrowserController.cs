@@ -19,7 +19,8 @@ internal static class BrowserController
         try
         {
             StartServer();
-            MelonLogger.Msg("Browser VoiceChanger ready. Press F8 to open the browser tab.");
+            if (_port != 0)
+                MelonLogger.Msg("Browser VoiceChanger ready. Press F8 to open the browser tab.");
         }
         catch (Exception ex)
         {
@@ -58,18 +59,36 @@ internal static class BrowserController
 
     private static void StartServer()
     {
-        string root = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "BrowserVoiceChanger");
-        if (!Directory.Exists(root))
+        string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+        string[] roots =
         {
-            MelonLogger.Error("BrowserVoiceChanger folder was not installed beside the mod DLL: " + root);
+            Path.Combine(baseDir, "BrowserVoiceChanger"),
+            Path.Combine(baseDir, "Mods", "BrowserVoiceChanger"),
+            Path.Combine(Path.GetDirectoryName(typeof(BrowserController).Assembly.Location) ?? baseDir, "BrowserVoiceChanger")
+        };
+
+        string? root = null;
+        foreach (string candidate in roots)
+        {
+            if (File.Exists(Path.Combine(candidate, "index.html")))
+            {
+                root = candidate;
+                break;
+            }
+        }
+
+        if (root == null)
+        {
+            MelonLogger.Error("BrowserVoiceChanger files were not installed with the mod. Checked the mod directory and Mods\\BrowserVoiceChanger.");
             return;
         }
 
         for (int port = 17845; port <= 17855; port++)
         {
+            HttpListener? listener = null;
             try
             {
-                var listener = new HttpListener();
+                listener = new HttpListener();
                 listener.Prefixes.Add("http://127.0.0.1:" + port + "/");
                 listener.Start();
                 _server = listener;
@@ -85,9 +104,8 @@ internal static class BrowserController
             }
             catch (Exception ex)
             {
+                try { listener?.Close(); } catch { }
                 MelonLogger.Msg("Port " + port + " unavailable: " + ex.Message);
-                try { _server?.Close(); } catch { }
-                _server = null;
             }
         }
 
@@ -106,8 +124,7 @@ internal static class BrowserController
             string requested = context.Request.Url?.AbsolutePath?.TrimStart('/') ?? "";
             if (string.IsNullOrEmpty(requested)) requested = "index.html";
 
-            if (requested.IndexOf("..", StringComparison.Ordinal) >= 0 ||
-                Array.IndexOf(AllowedFiles, requested) < 0)
+            if (requested.IndexOf("..", StringComparison.Ordinal) >= 0 || Array.IndexOf(AllowedFiles, requested) < 0)
             {
                 context.Response.StatusCode = 404;
                 context.Response.Close();
@@ -129,7 +146,7 @@ internal static class BrowserController
             }
             catch (Exception ex)
             {
-                MelonLogger.Error("Browser file request failed: " + ex.Message);
+                MelonLogger.Error("Browser file request failed: " + ex);
                 context.Response.StatusCode = 500;
             }
             finally
