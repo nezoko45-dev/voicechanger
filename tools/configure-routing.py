@@ -24,11 +24,11 @@ old = '''    private static void PlayMp3(byte[] audio)
 new = '''    private static int FindVoicemeeterPlaybackDevice()
     {
         int fallback = -1;
-        for (int i = 0; i < WaveOutEvent.DeviceCount; i++)
+        for (int i = 0; i < WaveOut.DeviceCount; i++)
         {
             try
             {
-                var caps = WaveOutEvent.GetCapabilities(i);
+                var caps = WaveOut.GetCapabilities(i);
                 string name = caps.ProductName ?? "";
                 MelonLogger.Msg("Audio output " + i + ": " + name);
                 if (name.IndexOf("Voicemeeter Input", StringComparison.OrdinalIgnoreCase) >= 0) return i;
@@ -74,4 +74,4 @@ if old not in text: raise SystemExit('Expected PlayMp3 block was not found; refu
 text = text.replace(old, new, 1)
 text = text.replace('StopPlayback();\n        _status = "Disabled";', 'StopPlayback();\n        _suppressMicProcessing = false;\n        _status = "Disabled";', 1)
 path.write_text(text, encoding='utf-8')
-print('Configured automatic VoiceMeeter detection and TTS feedback suppression.')
+print('Configured automatic VoiceMeeter detection and TTS feedback suppression using NAudio WaveOut device enumeration.')
