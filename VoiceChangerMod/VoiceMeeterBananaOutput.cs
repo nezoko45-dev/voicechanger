@@ -6,20 +6,18 @@ using NAudio.Wave;
 
 namespace VoiceChangerMod;
 
-// Compatibility wrapper: Main.cs still calls DirectSoundOut, but this implementation
-// uses Windows Core Audio/WASAPI so VoiceMeeter Banana's full virtual endpoint name
-// is visible even when DirectSound does not expose it.
+// Core Audio compatibility layer. Main.cs keeps its existing DirectSoundOut calls,
+// while this implementation enumerates the real Windows render endpoints so the
+// full VoiceMeeter Banana virtual-input name is available.
 internal sealed class DirectSoundDeviceInfo
 {
     internal Guid Guid { get; }
     internal string Description { get; }
     internal string ModuleName { get; }
-    internal MMDevice Device { get; }
 
     internal DirectSoundDeviceInfo(Guid guid, MMDevice device)
     {
         Guid = guid;
-        Device = device;
         Description = device.FriendlyName ?? string.Empty;
         ModuleName = device.DeviceFriendlyName ?? string.Empty;
     }
@@ -42,13 +40,15 @@ internal sealed class DirectSoundOut : IWavePlayer
             {
                 using (var enumerator = new MMDeviceEnumerator())
                 {
-                    foreach (var device in enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.All))
+                    var endpoints = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
+                    foreach (MMDevice device in endpoints)
                     {
                         string name = (device.FriendlyName ?? string.Empty).Trim();
                         string interfaceName = (device.DeviceFriendlyName ?? string.Empty).Trim();
-                        MelonLogger.Msg("CoreAudio render device: " + name + " | " + interfaceName + " | " + device.State);
+                        MelonLogger.Msg("CoreAudio render device: " + name + " | " + interfaceName);
 
-                        // Keep the MMDevice alive because WasapiOut needs the COM endpoint later.
+                        // Use a private key instead of converting the Windows endpoint ID to a Guid.
+                        // The real MMDevice is retained until playback finishes.
                         Guid key = Guid.NewGuid();
                         lock (DeviceLock)
                         {
@@ -68,18 +68,19 @@ internal sealed class DirectSoundOut : IWavePlayer
 
     public DirectSoundOut(Guid deviceGuid, int latency)
     {
+        MMDevice selected;
         lock (DeviceLock)
         {
-            if (!DevicesByGuid.TryGetValue(deviceGuid, out _device!))
+            if (!DevicesByGuid.TryGetValue(deviceGuid, out selected))
                 throw new InvalidOperationException("The selected Core Audio endpoint is no longer available.");
         }
 
-        // Shared-mode WASAPI lets Windows/VoiceMeeter perform normal PCM format conversion.
-        // Event sync avoids the old DirectSound/WaveOut buffering path.
+        _device = selected;
+        // Shared-mode WASAPI lets Windows handle the endpoint's configured mix format.
         _inner = new WasapiOut(_device, AudioClientShareMode.Shared, true, Math.Max(20, latency));
     }
 
-    public event EventHandler<StoppedEventArgs>? PlaybackStopped
+    public event EventHandler<StoppedEventArgs> PlaybackStopped
     {
         add { _inner.PlaybackStopped += value; }
         remove { _inner.PlaybackStopped -= value; }
@@ -99,12 +100,13 @@ internal sealed class DirectSoundOut : IWavePlayer
         _disposed = true;
         try { _inner.Dispose(); } catch { }
         try { _device.Dispose(); } catch { }
+
         lock (DeviceLock)
         {
             var remove = new List<Guid>();
             foreach (var pair in DevicesByGuid)
                 if (ReferenceEquals(pair.Value, _device)) remove.Add(pair.Key);
-            foreach (var key in remove) DevicesByGuid.Remove(key);
+            foreach (Guid key in remove) DevicesByGuid.Remove(key);
         }
     }
 }
