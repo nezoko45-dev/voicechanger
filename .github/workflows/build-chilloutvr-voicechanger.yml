@@ -25,29 +25,31 @@ jobs:
       - name: Build DLL
         run: dotnet build VoiceChangerMod/VoiceChangerMod.csproj --configuration Release --no-restore
 
-      - name: Verify final source
+      - name: Verify direct VoiceMeeter Banana routing
         shell: pwsh
         run: |
           $source = Get-Content 'VoiceChangerMod/Main.cs' -Raw
           $checks = @(
-            'private const string CablePlaybackName = "CABLE Input";',
-            'private static WaveOutEvent? _speaker;',
+            'private const string VoiceMeeterAuxName = "VoiceMeeter AUX Input";',
+            'private static IWavePlayer? _speaker;',
             'private static WaveFileReader? _reader;',
             'encoding=linear16&container=wav',
-            'WaveOut.DeviceCount',
-            'WaveOut.GetCapabilities',
-            'new WaveOutEvent { DeviceNumber = deviceNumber }',
+            'DirectSoundOut.Devices',
+            'new DirectSoundOut(device.Guid, 40)',
+            'VB-CABLE is not used.',
             'if (_suppressMicProcessing || !_enabled'
           )
           foreach ($check in $checks) {
             if ($source.IndexOf($check, [StringComparison]::Ordinal) -lt 0) {
-              throw "Required VoiceChanger code is missing: $check"
+              throw "Required direct VoiceMeeter code is missing: $check"
             }
           }
+          if ($source.Contains('CABLE Input')) { throw 'VB-CABLE playback routing must not be present.' }
+          if ($source.Contains('CABLE Output')) { throw 'VB-CABLE output routing must not be present.' }
           if ($source.Contains('WasapiOut')) { throw 'WASAPI playback must not be present.' }
           if ($source.Contains('Mp3FileReader')) { throw 'MP3 playback must not be present.' }
           if ($source.Contains('OutputDeviceIndex')) { throw 'Hardcoded output device index must not be present.' }
-          Write-Host 'Final source validation passed.'
+          Write-Host 'Direct VoiceMeeter Banana source validation passed.'
 
       - name: Verify and stage complete mod package
         shell: pwsh
