@@ -20,9 +20,37 @@ jobs:
         with:
           dotnet-version: '6.0.x'
 
-      - name: Configure VoiceMeeter WASAPI routing
+      - name: Validate routing script
+        shell: pwsh
+        run: python -m py_compile tools/configure-routing.py
+
+      - name: Configure VB-CABLE routing
         shell: pwsh
         run: python tools/configure-routing.py
+
+      - name: Verify patched source
+        shell: pwsh
+        run: |
+          $source = Get-Content 'VoiceChangerMod/Main.cs' -Raw
+          $checks = @(
+            'private const string CablePlaybackName = "CABLE Input";',
+            'private static IWavePlayer? _speaker;',
+            'new WasapiOut(device, AudioClientShareMode.Shared, true, 100)',
+            '"&encoding=mp3"',
+            'private static volatile bool _suppressMicProcessing;'
+          )
+          foreach ($check in $checks) {
+            if ($source.IndexOf($check, [StringComparison]::Ordinal) -lt 0) {
+              throw "Required routing code is missing: $check"
+            }
+          }
+          if ($source.Contains('OutputDeviceIndex')) {
+            throw 'Old OutputDeviceIndex code is still present.'
+          }
+          if ($source.Contains('new WaveOutEvent')) {
+            throw 'Old WaveOutEvent playback code is still present.'
+          }
+          Write-Host 'Routing source validation passed.'
 
       - name: Restore
         run: dotnet restore VoiceChangerMod/VoiceChangerMod.csproj
