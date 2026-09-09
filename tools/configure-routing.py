@@ -5,8 +5,7 @@ path = Path('VoiceChangerMod/Main.cs')
 text = path.read_text(encoding='utf-8-sig')
 
 # Deepgram Speak defaults are not guaranteed to be MP3. The mod uses
-# Mp3FileReader, so explicitly request MP3 to prevent "playback failed"
-# when the returned bytes are raw/linear PCM.
+# Mp3FileReader, so explicitly request MP3 to prevent playback failures.
 text = re.sub(
     r'"https://api\.deepgram\.com/v1/speak\?model=" \+ Uri\.EscapeDataString\(Voices\[_selectedVoice\]\.Model\)',
     '"https://api.deepgram.com/v1/speak?model=" + Uri.EscapeDataString(Voices[_selectedVoice].Model) + "&encoding=mp3"',
@@ -17,9 +16,8 @@ text = re.sub(
 if '&encoding=mp3' not in text:
     raise SystemExit('Could not configure Deepgram TTS for MP3 output; refusing to modify source.')
 
-# Keep this patcher resilient to changes in the original PlayMp3 implementation.
-# The mod sends generated TTS to the VB-CABLE playback endpoint (CABLE Input).
-# Windows exposes that audio at CABLE Output, which VoiceMeeter can use as an input.
+# Route generated TTS through the VB-CABLE playback endpoint (CABLE Input).
+# Windows exposes that signal as CABLE Output for VoiceMeeter to receive.
 if 'using NAudio.CoreAudioApi;' not in text:
     text = text.replace('using NAudio.Wave;\n', 'using NAudio.Wave;\nusing NAudio.CoreAudioApi;\n', 1)
 
@@ -32,6 +30,18 @@ text = re.sub(
 
 if 'private const string CablePlaybackName' not in text:
     raise SystemExit('Could not locate the TTS output-device constant; refusing to modify source.')
+
+# The startup log used the old numeric output constant. Update it to the
+# new endpoint name so the generated source always compiles.
+text = re.sub(
+    r'TTS output device index = " \+ OutputDeviceIndex \+ " \(Voicemeeter Banana target\)"',
+    'TTS output endpoint = " + CablePlaybackName + " (VB-CABLE -> VoiceMeeter)"',
+    text,
+    count=1,
+)
+
+if 'OutputDeviceIndex' in text:
+    raise SystemExit('OutputDeviceIndex reference remains after routing patch; refusing to modify source.')
 
 text = re.sub(
     r'private static WaveOutEvent\? _speaker;',
