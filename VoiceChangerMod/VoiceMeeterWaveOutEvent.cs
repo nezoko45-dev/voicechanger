@@ -27,12 +27,15 @@ internal sealed class WaveOutEvent : IDisposable
             throw new InvalidOperationException("Could not find VoiceMeeter AUX Input. Make sure VoiceMeeter Potato is running.");
 
         _inner.DeviceNumber = device;
-        _inner.BufferMilliseconds = 40;
+        // NAudio 2.2.1 exposes DesiredLatency on WaveOutEvent rather than
+        // BufferMilliseconds. Keep two small buffers for a low-latency route.
+        _inner.DesiredLatency = 80;
         _inner.NumberOfBuffers = 2;
         _inner.PlaybackStopped += InnerPlaybackStopped;
 
         MelonLogger.Msg("Direct TTS route: Deepgram WAV -> VoiceMeeter AUX Input (Potato Virtual AUX / index 18).");
         MelonLogger.Msg("VoiceMeeter Windows playback device = [" + device + "]");
+        MelonLogger.Msg("TTS WaveOut latency target = 80 ms total across 2 buffers.");
         _inner.Init(provider);
     }
 
