@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Threading;
-using HarmonyLib;
 using MelonLoader;
 
 namespace VoiceChangerMod;
@@ -19,7 +18,6 @@ public sealed class BrowserController : MelonMod
     {
         try
         {
-            new Harmony("nezoko45-dev.voicechanger.browser").PatchAll();
             StartServer();
             MelonLogger.Msg("Browser VoiceChanger ready. Press F8 to open the browser tab.");
         }
@@ -31,7 +29,8 @@ public sealed class BrowserController : MelonMod
 
     public override void OnUpdate()
     {
-        if ((GetAsyncKeyState(0x77) & 1) != 0) OpenBrowser();
+        if ((GetAsyncKeyState(0x77) & 1) != 0)
+            OpenBrowser();
     }
 
     private static void OpenBrowser()
@@ -69,7 +68,11 @@ public sealed class BrowserController : MelonMod
                 listener.Start();
                 _server = listener;
                 _port = port;
-                _serverThread = new Thread(() => ServeLoop(root)) { IsBackground = true, Name = "VoiceChanger Browser Server" };
+                _serverThread = new Thread(() => ServeLoop(root))
+                {
+                    IsBackground = true,
+                    Name = "VoiceChanger Browser Server"
+                };
                 _serverThread.Start();
                 MelonLogger.Msg("Browser UI hosted at http://127.0.0.1:" + port + "/");
                 return;
@@ -95,7 +98,9 @@ public sealed class BrowserController : MelonMod
 
             string requested = context.Request.Url?.AbsolutePath?.TrimStart('/') ?? "";
             if (string.IsNullOrEmpty(requested)) requested = "index.html";
-            if (requested.IndexOf("..", StringComparison.Ordinal) >= 0 || Array.IndexOf(AllowedFiles, requested) < 0)
+
+            if (requested.IndexOf("..", StringComparison.Ordinal) >= 0 ||
+                Array.IndexOf(AllowedFiles, requested) < 0)
             {
                 context.Response.StatusCode = 404;
                 context.Response.Close();
@@ -106,8 +111,11 @@ public sealed class BrowserController : MelonMod
             try
             {
                 byte[] data = File.ReadAllBytes(file);
-                context.Response.ContentType = requested.EndsWith(".html", StringComparison.OrdinalIgnoreCase) ? "text/html; charset=utf-8" :
-                    requested.EndsWith(".css", StringComparison.OrdinalIgnoreCase) ? "text/css; charset=utf-8" : "application/javascript; charset=utf-8";
+                context.Response.ContentType = requested.EndsWith(".html", StringComparison.OrdinalIgnoreCase)
+                    ? "text/html; charset=utf-8"
+                    : requested.EndsWith(".css", StringComparison.OrdinalIgnoreCase)
+                        ? "text/css; charset=utf-8"
+                        : "application/javascript; charset=utf-8";
                 context.Response.ContentLength64 = data.Length;
                 context.Response.Headers["Cache-Control"] = "no-store";
                 context.Response.OutputStream.Write(data, 0, data.Length);
@@ -125,10 +133,4 @@ public sealed class BrowserController : MelonMod
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern short GetAsyncKeyState(int vKey);
-}
-
-[HarmonyPatch(typeof(Main), nameof(Main.OnUpdate))]
-internal static class MainOnUpdateBrowserPatch
-{
-    private static bool Prefix() => false;
 }
