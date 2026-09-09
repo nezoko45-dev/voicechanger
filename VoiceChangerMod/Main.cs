@@ -10,15 +10,14 @@ using MelonLoader;
 using NAudio.Wave;
 using Newtonsoft.Json.Linq;
 
-[assembly: MelonInfo(typeof(VoiceChangerMod.Main), "ChilloutVR VoiceChanger Mod", "1.5.1", "nezoko45-dev")]
+[assembly: MelonInfo(typeof(VoiceChangerMod.Main), "ChilloutVR VoiceChanger Mod", "1.6.0", "nezoko45-dev")]
 
 namespace VoiceChangerMod;
 
 public sealed class Main : MelonMod
 {
     private const string FluxUrl = "wss://api.deepgram.com/v2/listen?model=flux-general-en&encoding=linear16&sample_rate=16000&eot_threshold=0.70&eager_eot_threshold=0.50&eot_timeout_ms=7000";
-    private const string CablePlaybackName = "Line 1";
-    private const int CableDesiredLatencyMs = 20;
+    private const int TtsDesiredLatencyMs = 20;
     private static readonly HttpClient Http = new HttpClient();
     private static ClientWebSocket? _socket;
     private static CancellationTokenSource? _cts;
@@ -34,6 +33,7 @@ public sealed class Main : MelonMod
     private static string _lastTranscript = "";
     private static string _status = "Disabled";
     private static int _selectedVoice;
+    private static string _selectedOutputDevice = "";
 
     private static readonly (string Name, string Model, string Description)[] Voices =
     {
@@ -68,9 +68,9 @@ public sealed class Main : MelonMod
     public override void OnApplicationStart()
     {
         LoadConfig();
-        MelonLogger.Msg("ChilloutVR VoiceChanger Mod 1.5.1 loaded.");
+        MelonLogger.Msg("ChilloutVR VoiceChanger Mod 1.6.0 loaded.");
         MelonLogger.Msg("F8 = GUI | F10 = Start/Stop | F9 = Stop");
-        MelonLogger.Msg("TTS route = Deepgram WAV -> Virtual Audio Cable Line 1. No VB-CABLE or VoiceMeeter reference is used.");
+        MelonLogger.Msg("TTS output is selectable in the F8 GUI. No playback device is hard-coded.");
     }
 
     public override void OnUpdate()
@@ -84,23 +84,56 @@ public sealed class Main : MelonMod
     internal static string Transcript => _lastTranscript;
     internal static string ApiKey => _apiKey;
     internal static int SelectedVoice => _selectedVoice;
+    internal static string SelectedOutputDevice => _selectedOutputDevice;
     internal static string[] VoiceNames { get { var a = new string[Voices.Length]; for (int i = 0; i < Voices.Length; i++) a[i] = Voices[i].Name; return a; } }
+    internal static string[] OutputDeviceNames
+    {
+        get
+        {
+            int count = WaveOut.DeviceCount;
+            var names = new string[count];
+            for (int i = 0; i < count; i++) names[i] = WaveOut.GetCapabilities(i).ProductName ?? ("Audio device " + i);
+            return names;
+        }
+    }
 
-    internal static void SetGuiValues(string apiKey, int voice)
+    internal static int SelectedOutputDeviceIndex
+    {
+        get
+        {
+            string selected = _selectedOutputDevice;
+            for (int i = 0; i < WaveOut.DeviceCount; i++)
+            {
+                string name = WaveOut.GetCapabilities(i).ProductName ?? "";
+                if (!string.IsNullOrWhiteSpace(selected) && string.Equals(name, selected, StringComparison.OrdinalIgnoreCase)) return i;
+            }
+            return WaveOut.DeviceCount > 0 ? 0 : -1;
+        }
+    }
+
+    internal static void SetGuiValues(string apiKey, int voice, int outputDevice)
     {
         _apiKey = (apiKey ?? "").Trim();
         if (voice >= 0 && voice < Voices.Length) _selectedVoice = voice;
+        SetOutputDevice(outputDevice);
         SaveConfig();
         _status = string.IsNullOrWhiteSpace(_apiKey) ? "Missing Deepgram API key" : "Settings saved";
         NativeGui.Refresh();
     }
 
-    internal static void StartFromGui(string apiKey, int voice)
+    internal static void StartFromGui(string apiKey, int voice, int outputDevice)
     {
         _apiKey = (apiKey ?? "").Trim();
         if (voice >= 0 && voice < Voices.Length) _selectedVoice = voice;
+        SetOutputDevice(outputDevice);
         SaveConfig();
         StartVoiceChanger();
+    }
+
+    private static void SetOutputDevice(int index)
+    {
+        if (index < 0 || index >= WaveOut.DeviceCount) return;
+        _selectedOutputDevice = WaveOut.GetCapabilities(index).ProductName ?? "";
     }
 
     internal static void StopFromGui() => StopVoiceChanger();
@@ -111,7 +144,13 @@ public sealed class Main : MelonMod
         try
         {
             string path = Path.Combine("UserData", "VoiceChangerMod.cfg");
-            if (!File.Exists(path)) { Directory.CreateDirectory("UserData"); File.WriteAllText(path, "# VoiceChanger settings\nDeepgramApiKey=\nVoiceModel=aura-2-thalia-en\n"); return; }
+            if (!File.Exists(path))
+            {
+                Directory.CreateDirectory("UserData");
+                if (WaveOut.DeviceCount > 0) _selectedOutputDevice = WaveOut.GetCapabilities(0).ProductName ?? "";
+                SaveConfig();
+                return;
+            }
             foreach (string line in File.ReadAllLines(path))
             {
                 if (line.StartsWith("DeepgramApiKey=", StringComparison.OrdinalIgnoreCase)) _apiKey = line.Substring(15).Trim();
@@ -120,24 +159,31 @@ public sealed class Main : MelonMod
                     string model = line.Substring(11).Trim();
                     for (int i = 0; i < Voices.Length; i++) if (string.Equals(Voices[i].Model, model, StringComparison.OrdinalIgnoreCase)) _selectedVoice = i;
                 }
+                else if (line.StartsWith("OutputDevice=", StringComparison.OrdinalIgnoreCase)) _selectedOutputDevice = line.Substring(13).Trim();
             }
+            if (string.IsNullOrWhiteSpace(_selectedOutputDevice) && WaveOut.DeviceCount > 0) _selectedOutputDevice = WaveOut.GetCapabilities(0).ProductName ?? "";
         }
         catch (Exception ex) { MelonLogger.Warning("Config read failed: " + ex.Message); }
     }
 
     private static void SaveConfig()
     {
-        try { Directory.CreateDirectory("UserData"); File.WriteAllText(Path.Combine("UserData", "VoiceChangerMod.cfg"), "# VoiceChanger settings\nDeepgramApiKey=" + _apiKey + "\nVoiceModel=" + Voices[_selectedVoice].Model + "\n"); }
+        try
+        {
+            Directory.CreateDirectory("UserData");
+            File.WriteAllText(Path.Combine("UserData", "VoiceChangerMod.cfg"), "# VoiceChanger settings\nDeepgramApiKey=" + _apiKey + "\nVoiceModel=" + Voices[_selectedVoice].Model + "\nOutputDevice=" + _selectedOutputDevice.Replace("\r", "").Replace("\n", "") + "\n");
+        }
         catch (Exception ex) { MelonLogger.Warning("Config save failed: " + ex.Message); }
     }
 
     private static void StartVoiceChanger()
     {
         if (string.IsNullOrWhiteSpace(_apiKey)) { _status = "Missing Deepgram API key"; MelonLogger.Error("No Deepgram API key. Enter it in the F8 GUI or set DEEPGRAM_API_KEY."); NativeGui.Refresh(); return; }
+        if (WaveOut.DeviceCount == 0) { _status = "No playback devices found"; MelonLogger.Error("No Windows WaveOut playback devices are available."); NativeGui.Refresh(); return; }
         lock (StateLock) { if (_enabled) return; _enabled = true; }
         _status = "Connecting to Deepgram..."; NativeGui.Refresh();
         _cts = new CancellationTokenSource(); _ = RunFluxAsync(_cts.Token);
-        MelonLogger.Msg("VoiceChanger ENABLED using " + Voices[_selectedVoice].Name + ".");
+        MelonLogger.Msg("VoiceChanger ENABLED using " + Voices[_selectedVoice].Name + ". Output: " + _selectedOutputDevice);
     }
 
     private static void StopVoiceChanger()
@@ -235,14 +281,15 @@ public sealed class Main : MelonMod
         catch (Exception ex) { MelonLogger.Error("TTS request failed: " + ex.GetType().Name + ": " + ex.Message); }
     }
 
-    private static int FindCableOutputLine1Device()
+    private static int FindSelectedOutputDevice()
     {
+        string selected = _selectedOutputDevice;
         for (int i = 0; i < WaveOut.DeviceCount; i++)
         {
             WaveOutCapabilities caps = WaveOut.GetCapabilities(i);
             string name = caps.ProductName ?? string.Empty;
             MelonLogger.Msg("WaveOut playback device " + i + ": " + name);
-            if (name.IndexOf(CablePlaybackName, StringComparison.OrdinalIgnoreCase) >= 0) return i;
+            if (!string.IsNullOrWhiteSpace(selected) && string.Equals(name, selected, StringComparison.OrdinalIgnoreCase)) return i;
         }
         return -1;
     }
@@ -250,11 +297,11 @@ public sealed class Main : MelonMod
     private static void PlayTtsWav(byte[] audio)
     {
         StopPlayback();
-        int deviceNumber = FindCableOutputLine1Device();
+        int deviceNumber = FindSelectedOutputDevice();
         if (deviceNumber < 0)
         {
-            _status = "Virtual Audio Cable Line 1 not found"; NativeGui.Refresh();
-            MelonLogger.Error("Could not find the Virtual Audio Cable playback device 'Line 1'. Make sure Virtual Audio Cable is installed and enabled in Windows Sound settings.");
+            _status = "Selected output device not found"; NativeGui.Refresh();
+            MelonLogger.Error("The selected TTS output device is not available. Open the F8 GUI and choose an available Windows playback device.");
             return;
         }
         try
@@ -262,12 +309,12 @@ public sealed class Main : MelonMod
             _suppressMicProcessing = true;
             _audioStream = new MemoryStream(audio, false);
             _reader = new WaveFileReader(_audioStream);
-            var speaker = new WaveOutEvent { DeviceNumber = deviceNumber, DesiredLatency = CableDesiredLatencyMs, NumberOfBuffers = 2 };
+            var speaker = new WaveOutEvent { DeviceNumber = deviceNumber, DesiredLatency = TtsDesiredLatencyMs, NumberOfBuffers = 2 };
             _speaker = speaker;
             speaker.PlaybackStopped += (_, e) => { if (e.Exception != null) MelonLogger.Error("TTS playback error: " + e.Exception.GetType().Name + ": " + e.Exception.Message); CleanupPlayback(); };
             speaker.Init(_reader);
-            _status = "Speaking through Virtual Audio Cable Line 1"; NativeGui.Refresh();
-            MelonLogger.Msg("TTS route: Deepgram WAV -> Virtual Audio Cable Line 1 (device " + deviceNumber + "). DesiredLatency=" + CableDesiredLatencyMs + "ms, buffers=2.");
+            _status = "Speaking through " + _selectedOutputDevice; NativeGui.Refresh();
+            MelonLogger.Msg("TTS route: Deepgram WAV -> " + _selectedOutputDevice + " (device " + deviceNumber + "). DesiredLatency=" + TtsDesiredLatencyMs + "ms, buffers=2.");
             speaker.Play();
         }
         catch (Exception ex) { MelonLogger.Error("TTS playback failed: " + ex.GetType().Name + ": " + ex.Message); CleanupPlayback(); }
@@ -289,37 +336,97 @@ internal static class NativeGui
     private const int WM_COMMAND = 0x0111, WM_CLOSE = 0x0010, SW_HIDE = 0, SW_SHOW = 5;
     private const int WS_OVERLAPPEDWINDOW = 0x00CF0000, WS_CHILD = 0x40000000, WS_VISIBLE = 0x10000000, WS_TABSTOP = 0x00010000;
     private const int BS_PUSHBUTTON = 0, CBS_DROPDOWNLIST = 3, ES_PASSWORD = 0x20, ES_AUTOHSCROLL = 0x80;
-    private const int WM_GETTEXT = 0x000D, CB_ADDSTRING = 0x0143, CB_SETCURSEL = 0x014E, CB_GETCURSEL = 0x0147, BN_CLICKED = 0;
-    private static Thread? _thread; private static IntPtr _window, _apiEdit, _voiceCombo, _statusLabel, _transcriptLabel; private static readonly ManualResetEvent Ready = new ManualResetEvent(false); private static bool _visible;
+    private const int WM_GETTEXT = 0x000D, CB_ADDSTRING = 0x0143, CB_SETCURSEL = 0x014E, CB_GETCURSEL = 0x0147, CB_RESETCONTENT = 0x014B, BN_CLICKED = 0;
+    private static Thread? _thread;
+    private static IntPtr _window, _apiEdit, _voiceCombo, _outputCombo, _statusLabel, _transcriptLabel;
+    private static readonly ManualResetEvent Ready = new ManualResetEvent(false);
+    private static bool _visible;
+
     public static void Toggle() { EnsureStarted(); _visible = !_visible; if (_window != IntPtr.Zero) NativeMethods.ShowWindow(_window, _visible ? SW_SHOW : SW_HIDE); }
-    public static void Refresh() { if (_window == IntPtr.Zero) return; try { NativeMethods.SetWindowText(_statusLabel, "Status: " + Main.Status); NativeMethods.SetWindowText(_transcriptLabel, "Last transcript: " + Main.Transcript); } catch { } }
-    private static void EnsureStarted() { if (_thread != null) { Ready.WaitOne(1000); return; } _thread = new Thread(GuiThread) { IsBackground = true, Name = "VoiceChanger GUI" }; _thread.SetApartmentState(ApartmentState.STA); _thread.Start(); Ready.WaitOne(3000); }
+
+    public static void Refresh()
+    {
+        if (_window == IntPtr.Zero) return;
+        try
+        {
+            NativeMethods.SetWindowText(_statusLabel, "Status: " + Main.Status);
+            NativeMethods.SetWindowText(_transcriptLabel, "Last transcript: " + Main.Transcript);
+        }
+        catch { }
+    }
+
+    private static void EnsureStarted()
+    {
+        if (_thread != null) { Ready.WaitOne(1000); return; }
+        _thread = new Thread(GuiThread) { IsBackground = true, Name = "VoiceChanger GUI" };
+        _thread.SetApartmentState(ApartmentState.STA);
+        _thread.Start();
+        Ready.WaitOne(3000);
+    }
+
     private static void GuiThread()
     {
         try
         {
-            string cls = "VoiceChangerNativeWindow" + Environment.TickCount; var wc = new NativeMethods.WNDCLASS { lpfnWndProc = WndProc, lpszClassName = cls, hInstance = NativeMethods.GetModuleHandle(null) }; NativeMethods.RegisterClass(ref wc);
-            _window = NativeMethods.CreateWindowEx(0, cls, "ChilloutVR VoiceChanger", WS_OVERLAPPEDWINDOW, 120, 120, 520, 360, IntPtr.Zero, IntPtr.Zero, wc.hInstance, IntPtr.Zero);
-            _apiEdit = CreateChild("EDIT", "", 20, 35, 460, 28, WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_PASSWORD | ES_AUTOHSCROLL, 1001);
-            _voiceCombo = CreateChild("COMBOBOX", "", 20, 90, 300, 300, WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST, 1002);
+            string cls = "VoiceChangerNativeWindow" + Environment.TickCount;
+            var wc = new NativeMethods.WNDCLASS { lpfnWndProc = WndProc, lpszClassName = cls, hInstance = NativeMethods.GetModuleHandle(null) };
+            NativeMethods.RegisterClass(ref wc);
+            _window = NativeMethods.CreateWindowEx(0, cls, "ChilloutVR VoiceChanger", WS_OVERLAPPEDWINDOW, 120, 120, 620, 430, IntPtr.Zero, IntPtr.Zero, wc.hInstance, IntPtr.Zero);
+
+            _apiEdit = CreateChild("EDIT", "", 20, 35, 570, 28, WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_PASSWORD | ES_AUTOHSCROLL, 1001);
+            _voiceCombo = CreateChild("COMBOBOX", "", 20, 90, 280, 300, WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST, 1002);
+            _outputCombo = CreateChild("COMBOBOX", "", 310, 90, 280, 300, WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST, 1003);
+
             for (int i = 0; i < Main.VoiceNames.Length; i++) NativeMethods.SendMessage(_voiceCombo, CB_ADDSTRING, IntPtr.Zero, Main.VoiceNames[i]);
             NativeMethods.SendMessage(_voiceCombo, CB_SETCURSEL, (IntPtr)Main.SelectedVoice, IntPtr.Zero);
-            CreateChild("BUTTON", "Save settings", 330, 90, 150, 32, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 1003); CreateChild("BUTTON", "Start", 20, 140, 140, 36, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 1004); CreateChild("BUTTON", "Stop", 180, 140, 140, 36, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 1005);
-            _statusLabel = CreateChild("STATIC", "Status: " + Main.Status, 20, 200, 460, 28, WS_CHILD | WS_VISIBLE, 1006); _transcriptLabel = CreateChild("STATIC", "Last transcript: " + Main.Transcript, 20, 235, 460, 45, WS_CHILD | WS_VISIBLE, 1007);
-            CreateChild("STATIC", "Deepgram API key", 20, 10, 200, 20, WS_CHILD | WS_VISIBLE, 1008); CreateChild("STATIC", "Voice", 20, 70, 200, 20, WS_CHILD | WS_VISIBLE, 1009); CreateChild("STATIC", "TTS: Virtual Audio Cable Line 1", 20, 290, 460, 25, WS_CHILD | WS_VISIBLE, 1010);
-            NativeMethods.SetWindowText(_apiEdit, Main.ApiKey); NativeMethods.ShowWindow(_window, SW_HIDE); Ready.Set();
+            PopulateOutputDevices();
+
+            CreateChild("BUTTON", "Save settings", 20, 140, 180, 36, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 1004);
+            CreateChild("BUTTON", "Start", 210, 140, 180, 36, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 1005);
+            CreateChild("BUTTON", "Stop", 400, 140, 190, 36, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 1006);
+            _statusLabel = CreateChild("STATIC", "Status: " + Main.Status, 20, 200, 570, 28, WS_CHILD | WS_VISIBLE, 1007);
+            _transcriptLabel = CreateChild("STATIC", "Last transcript: " + Main.Transcript, 20, 235, 570, 45, WS_CHILD | WS_VISIBLE, 1008);
+            CreateChild("STATIC", "Deepgram API key", 20, 10, 250, 20, WS_CHILD | WS_VISIBLE, 1009);
+            CreateChild("STATIC", "Voice", 20, 70, 250, 20, WS_CHILD | WS_VISIBLE, 1010);
+            CreateChild("STATIC", "TTS output device", 310, 70, 250, 20, WS_CHILD | WS_VISIBLE, 1011);
+            CreateChild("STATIC", "Choose any Windows playback endpoint. The selection is saved for the next launch.", 20, 290, 570, 25, WS_CHILD | WS_VISIBLE, 1012);
+            CreateChild("STATIC", "F8 opens this menu | F10 starts/stops | F9 stops", 20, 325, 570, 25, WS_CHILD | WS_VISIBLE, 1013);
+
+            NativeMethods.SetWindowText(_apiEdit, Main.ApiKey);
+            NativeMethods.ShowWindow(_window, SW_HIDE);
+            Ready.Set();
             while (NativeMethods.GetMessage(out var msg, IntPtr.Zero, 0, 0)) { NativeMethods.TranslateMessage(ref msg); NativeMethods.DispatchMessage(ref msg); }
         }
         catch (Exception ex) { MelonLogger.Error("Native GUI failed: " + ex.Message); Ready.Set(); }
     }
+
+    private static void PopulateOutputDevices()
+    {
+        NativeMethods.SendMessage(_outputCombo, CB_RESETCONTENT, IntPtr.Zero, IntPtr.Zero);
+        string[] names = Main.OutputDeviceNames;
+        for (int i = 0; i < names.Length; i++) NativeMethods.SendMessage(_outputCombo, CB_ADDSTRING, IntPtr.Zero, names[i]);
+        int selected = Main.SelectedOutputDeviceIndex;
+        if (selected >= 0 && selected < names.Length) NativeMethods.SendMessage(_outputCombo, CB_SETCURSEL, (IntPtr)selected, IntPtr.Zero);
+    }
+
     private static IntPtr CreateChild(string type, string text, int x, int y, int w, int h, int style, int id) => NativeMethods.CreateWindowEx(0, type, text, style, x, y, w, h, _window, (IntPtr)id, NativeMethods.GetModuleHandle(null), IntPtr.Zero);
+
     private static IntPtr WndProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
         if (msg == WM_COMMAND)
         {
-            int id = unchecked((short)((long)wParam & 0xFFFF)); int code = unchecked((short)(((long)wParam >> 16) & 0xFFFF));
-            if (code == BN_CLICKED && (id == 1003 || id == 1004)) { var sb = new StringBuilder(4096); NativeMethods.SendMessage(_apiEdit, WM_GETTEXT, (IntPtr)sb.Capacity, sb); int voice = (int)NativeMethods.SendMessage(_voiceCombo, CB_GETCURSEL, IntPtr.Zero, IntPtr.Zero); if (id == 1003) Main.SetGuiValues(sb.ToString(), voice); else Main.StartFromGui(sb.ToString(), voice); return IntPtr.Zero; }
-            if (code == BN_CLICKED && id == 1005) { Main.StopFromGui(); return IntPtr.Zero; }
+            int id = unchecked((short)((long)wParam & 0xFFFF));
+            int code = unchecked((short)(((long)wParam >> 16) & 0xFFFF));
+            if (code == BN_CLICKED && (id == 1004 || id == 1005))
+            {
+                var sb = new StringBuilder(4096);
+                NativeMethods.SendMessage(_apiEdit, WM_GETTEXT, (IntPtr)sb.Capacity, sb);
+                int voice = (int)NativeMethods.SendMessage(_voiceCombo, CB_GETCURSEL, IntPtr.Zero, IntPtr.Zero);
+                int output = (int)NativeMethods.SendMessage(_outputCombo, CB_GETCURSEL, IntPtr.Zero, IntPtr.Zero);
+                if (id == 1004) Main.SetGuiValues(sb.ToString(), voice, output); else Main.StartFromGui(sb.ToString(), voice, output);
+                return IntPtr.Zero;
+            }
+            if (code == BN_CLICKED && id == 1006) { Main.StopFromGui(); return IntPtr.Zero; }
         }
         if (msg == WM_CLOSE) { NativeMethods.ShowWindow(hwnd, SW_HIDE); _visible = false; return IntPtr.Zero; }
         return NativeMethods.DefWindowProc(hwnd, msg, wParam, lParam);
@@ -336,9 +443,9 @@ internal static class NativeMethods
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern IntPtr CreateWindowEx(int exStyle, string className, string windowName, int style, int x, int y, int width, int height, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
     [DllImport("user32.dll")] internal static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern bool SetWindowText(IntPtr hWnd, string text);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, StringBuilder lParam);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, string lParam);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern IntPtr SendMessage(IntPtr hWnd, uint wMsg, IntPtr wParam, StringBuilder lParam);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern IntPtr SendMessage(IntPtr hWnd, uint wMsg, IntPtr wParam, string lParam);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern IntPtr SendMessage(IntPtr hWnd, uint wMsg, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] internal static extern bool GetMessage(out MSG lpMsg, IntPtr hWnd, uint minFilter, uint maxFilter);
     [DllImport("user32.dll")] internal static extern bool TranslateMessage(ref MSG lpMsg);
     [DllImport("user32.dll")] internal static extern IntPtr DispatchMessage(ref MSG lpMsg);
