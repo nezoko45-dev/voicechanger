@@ -2,7 +2,6 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
-using System.Text;
 using System.Threading;
 using HarmonyLib;
 using MelonLoader;
@@ -15,7 +14,6 @@ public sealed class BrowserController : MelonMod
     private static HttpListener? _server;
     private static Thread? _serverThread;
     private static int _port;
-    private static bool _browserOpen;
 
     public override void OnApplicationStart()
     {
@@ -46,7 +44,6 @@ public sealed class BrowserController : MelonMod
                 FileName = "http://127.0.0.1:" + _port + "/",
                 UseShellExecute = true
             });
-            _browserOpen = true;
         }
         catch (Exception ex)
         {
@@ -98,7 +95,7 @@ public sealed class BrowserController : MelonMod
 
             string requested = context.Request.Url?.AbsolutePath?.TrimStart('/') ?? "";
             if (string.IsNullOrEmpty(requested)) requested = "index.html";
-            if (requested.Contains("..", StringComparison.Ordinal) || Array.IndexOf(AllowedFiles, requested) < 0)
+            if (requested.IndexOf("..", StringComparison.Ordinal) >= 0 || Array.IndexOf(AllowedFiles, requested) < 0)
             {
                 context.Response.StatusCode = 404;
                 context.Response.Close();
