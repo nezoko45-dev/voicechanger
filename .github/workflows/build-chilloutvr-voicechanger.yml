@@ -25,33 +25,36 @@ jobs:
       - name: Build DLL
         run: dotnet build VoiceChangerMod/VoiceChangerMod.csproj --configuration Release --no-restore
 
-      - name: Verify Virtual Audio Cable Line 1 TTS routing
+      - name: Verify selectable TTS output routing
         shell: pwsh
         run: |
           $source = Get-Content 'VoiceChangerMod/Main.cs' -Raw
           $checks = @(
-            'private const string CablePlaybackName = "Line 1";',
-            'private const int CableDesiredLatencyMs = 20;',
-            'private static IWavePlayer? _speaker;',
-            'private static WaveFileReader? _reader;',
-            'encoding=linear16&container=wav',
+            'private const int TtsDesiredLatencyMs = 20;',
+            'private static string _selectedOutputDevice = "";',
             'WaveOut.DeviceCount',
-            'new WaveOutEvent { DeviceNumber = deviceNumber, DesiredLatency = CableDesiredLatencyMs, NumberOfBuffers = 2 }',
-            'TTS route: Deepgram WAV -> Virtual Audio Cable Line 1',
+            'WaveOut.GetCapabilities(i).ProductName',
+            'internal static string[] OutputDeviceNames',
+            'private static int FindSelectedOutputDevice()',
+            'new WaveOutEvent { DeviceNumber = deviceNumber, DesiredLatency = TtsDesiredLatencyMs, NumberOfBuffers = 2 }',
+            'TTS output device',
+            'OutputDevice=',
             'if (_suppressMicProcessing || !_enabled'
           )
           foreach ($check in $checks) {
             if ($source.IndexOf($check, [StringComparison]::Ordinal) -lt 0) {
-              throw "Required Virtual Audio Cable Line 1 code is missing: $check"
+              throw "Required selectable output code is missing: $check"
             }
           }
+          if ($source.Contains('CABLE Input')) { throw 'Obsolete hard-coded CABLE Input routing must not be present.' }
+          if ($source.Contains('CABLE Output')) { throw 'Obsolete hard-coded CABLE Output routing must not be present.' }
+          if ($source.Contains('Virtual Audio Cable Line 1')) { throw 'Obsolete hard-coded Line 1 routing must not be present.' }
+          if ($source.Contains('FindCableOutputLine1Device')) { throw 'Obsolete hard-coded Line 1 device lookup must not be present.' }
           if ($source.Contains('DirectSoundOut')) { throw 'DirectSoundOut routing must not be present.' }
-          if ($source.Contains('CABLE Input')) { throw 'Obsolete VB-CABLE CABLE Input routing must not be present.' }
-          if ($source.Contains('CABLE Output')) { throw 'CABLE Output routing must not be present in the TTS playback path.' }
           if ($source.Contains('WasapiOut')) { throw 'WASAPI playback must not be present.' }
           if ($source.Contains('Mp3FileReader')) { throw 'MP3 playback must not be present.' }
-          if ($source.Contains('OutputDeviceIndex')) { throw 'Hardcoded output device index must not be present.' }
-          Write-Host 'Virtual Audio Cable Line 1 source validation passed.'
+          if ($source.Contains('OutputDeviceIndex')) { throw 'Hard-coded output device index must not be present.' }
+          Write-Host 'Selectable TTS output source validation passed.'
 
       - name: Verify and stage complete mod package
         shell: pwsh
