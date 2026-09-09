@@ -17,7 +17,8 @@ namespace VoiceChangerMod;
 public sealed class Main : MelonMod
 {
     private const string FluxUrl = "wss://api.deepgram.com/v2/listen?model=flux-general-en&encoding=linear16&sample_rate=16000&eot_threshold=0.70&eager_eot_threshold=0.50&eot_timeout_ms=7000";
-    private const string CablePlaybackName = "CABLE Input";
+    private const string CablePlaybackName = "Line 1";
+    private const int CableDesiredLatencyMs = 20;
     private static readonly HttpClient Http = new HttpClient();
     private static ClientWebSocket? _socket;
     private static CancellationTokenSource? _cts;
@@ -69,7 +70,7 @@ public sealed class Main : MelonMod
         LoadConfig();
         MelonLogger.Msg("ChilloutVR VoiceChanger Mod 1.5.1 loaded.");
         MelonLogger.Msg("F8 = GUI | F10 = Start/Stop | F9 = Stop");
-        MelonLogger.Msg("TTS route = Deepgram WAV -> VB-CABLE CABLE Input. No VoiceMeeter reference is used.");
+        MelonLogger.Msg("TTS route = Deepgram WAV -> Virtual Audio Cable Line 1. No VB-CABLE or VoiceMeeter reference is used.");
     }
 
     public override void OnUpdate()
@@ -234,7 +235,7 @@ public sealed class Main : MelonMod
         catch (Exception ex) { MelonLogger.Error("TTS request failed: " + ex.GetType().Name + ": " + ex.Message); }
     }
 
-    private static int FindCableInputDevice()
+    private static int FindCableOutputLine1Device()
     {
         for (int i = 0; i < WaveOut.DeviceCount; i++)
         {
@@ -249,11 +250,11 @@ public sealed class Main : MelonMod
     private static void PlayTtsWav(byte[] audio)
     {
         StopPlayback();
-        int deviceNumber = FindCableInputDevice();
+        int deviceNumber = FindCableOutputLine1Device();
         if (deviceNumber < 0)
         {
-            _status = "CABLE Input not found"; NativeGui.Refresh();
-            MelonLogger.Error("Could not find VB-CABLE playback device 'CABLE Input'. Make sure VB-CABLE is installed and enabled in Windows Sound settings.");
+            _status = "Virtual Audio Cable Line 1 not found"; NativeGui.Refresh();
+            MelonLogger.Error("Could not find the Virtual Audio Cable playback device 'Line 1'. Make sure Virtual Audio Cable is installed and enabled in Windows Sound settings.");
             return;
         }
         try
@@ -261,12 +262,12 @@ public sealed class Main : MelonMod
             _suppressMicProcessing = true;
             _audioStream = new MemoryStream(audio, false);
             _reader = new WaveFileReader(_audioStream);
-            var speaker = new WaveOutEvent { DeviceNumber = deviceNumber, DesiredLatency = 80, NumberOfBuffers = 2 };
+            var speaker = new WaveOutEvent { DeviceNumber = deviceNumber, DesiredLatency = CableDesiredLatencyMs, NumberOfBuffers = 2 };
             _speaker = speaker;
             speaker.PlaybackStopped += (_, e) => { if (e.Exception != null) MelonLogger.Error("TTS playback error: " + e.Exception.GetType().Name + ": " + e.Exception.Message); CleanupPlayback(); };
             speaker.Init(_reader);
-            _status = "Speaking through VB-CABLE"; NativeGui.Refresh();
-            MelonLogger.Msg("TTS route: Deepgram WAV -> CABLE Input (device " + deviceNumber + "). DesiredLatency=80ms, buffers=2.");
+            _status = "Speaking through Virtual Audio Cable Line 1"; NativeGui.Refresh();
+            MelonLogger.Msg("TTS route: Deepgram WAV -> Virtual Audio Cable Line 1 (device " + deviceNumber + "). DesiredLatency=" + CableDesiredLatencyMs + "ms, buffers=2.");
             speaker.Play();
         }
         catch (Exception ex) { MelonLogger.Error("TTS playback failed: " + ex.GetType().Name + ": " + ex.Message); CleanupPlayback(); }
@@ -305,7 +306,7 @@ internal static class NativeGui
             NativeMethods.SendMessage(_voiceCombo, CB_SETCURSEL, (IntPtr)Main.SelectedVoice, IntPtr.Zero);
             CreateChild("BUTTON", "Save settings", 330, 90, 150, 32, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 1003); CreateChild("BUTTON", "Start", 20, 140, 140, 36, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 1004); CreateChild("BUTTON", "Stop", 180, 140, 140, 36, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 1005);
             _statusLabel = CreateChild("STATIC", "Status: " + Main.Status, 20, 200, 460, 28, WS_CHILD | WS_VISIBLE, 1006); _transcriptLabel = CreateChild("STATIC", "Last transcript: " + Main.Transcript, 20, 235, 460, 45, WS_CHILD | WS_VISIBLE, 1007);
-            CreateChild("STATIC", "Deepgram API key", 20, 10, 200, 20, WS_CHILD | WS_VISIBLE, 1008); CreateChild("STATIC", "Voice", 20, 70, 200, 20, WS_CHILD | WS_VISIBLE, 1009); CreateChild("STATIC", "TTS: VB-CABLE CABLE Input", 20, 290, 460, 25, WS_CHILD | WS_VISIBLE, 1010);
+            CreateChild("STATIC", "Deepgram API key", 20, 10, 200, 20, WS_CHILD | WS_VISIBLE, 1008); CreateChild("STATIC", "Voice", 20, 70, 200, 20, WS_CHILD | WS_VISIBLE, 1009); CreateChild("STATIC", "TTS: Virtual Audio Cable Line 1", 20, 290, 460, 25, WS_CHILD | WS_VISIBLE, 1010);
             NativeMethods.SetWindowText(_apiEdit, Main.ApiKey); NativeMethods.ShowWindow(_window, SW_HIDE); Ready.Set();
             while (NativeMethods.GetMessage(out var msg, IntPtr.Zero, 0, 0)) { NativeMethods.TranslateMessage(ref msg); NativeMethods.DispatchMessage(ref msg); }
         }
