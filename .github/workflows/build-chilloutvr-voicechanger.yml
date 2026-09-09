@@ -25,33 +25,33 @@ jobs:
       - name: Build DLL
         run: dotnet build VoiceChangerMod/VoiceChangerMod.csproj --configuration Release --no-restore
 
-      - name: Verify VB-CABLE TTS routing
+      - name: Verify Virtual Audio Cable Line 1 TTS routing
         shell: pwsh
         run: |
           $source = Get-Content 'VoiceChangerMod/Main.cs' -Raw
           $checks = @(
-            'private const string CablePlaybackName = "CABLE Input";',
+            'private const string CablePlaybackName = "Line 1";',
+            'private const int CableDesiredLatencyMs = 20;',
             'private static IWavePlayer? _speaker;',
             'private static WaveFileReader? _reader;',
             'encoding=linear16&container=wav',
             'WaveOut.DeviceCount',
-            'new WaveOutEvent { DeviceNumber = deviceNumber, DesiredLatency = 80, NumberOfBuffers = 2 }',
-            'TTS route: Deepgram WAV -> CABLE Input',
+            'new WaveOutEvent { DeviceNumber = deviceNumber, DesiredLatency = CableDesiredLatencyMs, NumberOfBuffers = 2 }',
+            'TTS route: Deepgram WAV -> Virtual Audio Cable Line 1',
             'if (_suppressMicProcessing || !_enabled'
           )
           foreach ($check in $checks) {
             if ($source.IndexOf($check, [StringComparison]::Ordinal) -lt 0) {
-              throw "Required VB-CABLE code is missing: $check"
+              throw "Required Virtual Audio Cable Line 1 code is missing: $check"
             }
           }
-          # Only reject actual obsolete playback APIs. Do not reject technology names
-          # appearing in this validation script or comments.
           if ($source.Contains('DirectSoundOut')) { throw 'DirectSoundOut routing must not be present.' }
+          if ($source.Contains('CABLE Input')) { throw 'Obsolete VB-CABLE CABLE Input routing must not be present.' }
           if ($source.Contains('CABLE Output')) { throw 'CABLE Output routing must not be present in the TTS playback path.' }
           if ($source.Contains('WasapiOut')) { throw 'WASAPI playback must not be present.' }
           if ($source.Contains('Mp3FileReader')) { throw 'MP3 playback must not be present.' }
           if ($source.Contains('OutputDeviceIndex')) { throw 'Hardcoded output device index must not be present.' }
-          Write-Host 'VB-CABLE source validation passed.'
+          Write-Host 'Virtual Audio Cable Line 1 source validation passed.'
 
       - name: Verify and stage complete mod package
         shell: pwsh
