@@ -20,7 +20,7 @@ jobs:
         with:
           dotnet-version: '6.0.x'
 
-      - name: Configure VB-CABLE routing
+      - name: Configure VoiceMeeter WASAPI routing
         shell: pwsh
         run: python tools/configure-routing.py
 
@@ -34,7 +34,7 @@ jobs:
         shell: pwsh
         run: |
           $out = 'VoiceChangerMod/bin/Release/net472'
-          $required = @('VoiceChangerMod.dll', 'NAudio.dll', 'NAudio.Core.dll', 'NAudio.WinMM.dll', 'Newtonsoft.Json.dll')
+          $required = @('VoiceChangerMod.dll', 'NAudio.dll', 'NAudio.Core.dll', 'NAudio.Wasapi.dll', 'NAudio.WinMM.dll', 'Newtonsoft.Json.dll')
           foreach ($file in $required) {
             $path = Join-Path $out $file
             if (-not (Test-Path $path)) {
