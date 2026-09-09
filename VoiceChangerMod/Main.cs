@@ -10,24 +10,25 @@ using MelonLoader;
 using NAudio.Wave;
 using Newtonsoft.Json.Linq;
 
-[assembly: MelonInfo(typeof(VoiceChangerMod.Main), "ChilloutVR VoiceChanger Mod", "1.3.1", "nezoko45-dev")]
+[assembly: MelonInfo(typeof(VoiceChangerMod.Main), "ChilloutVR VoiceChanger Mod", "1.4.0", "nezoko45-dev")]
 
 namespace VoiceChangerMod;
 
 public sealed class Main : MelonMod
 {
     private const string FluxUrl = "wss://api.deepgram.com/v2/listen?model=flux-general-en&encoding=linear16&sample_rate=16000&eot_threshold=0.70&eager_eot_threshold=0.50&eot_timeout_ms=7000";
-    private const int OutputDeviceIndex = 18;
+    private const string CablePlaybackName = "CABLE Input";
     private static readonly HttpClient Http = new HttpClient();
     private static ClientWebSocket? _socket;
     private static CancellationTokenSource? _cts;
     private static WaveInEvent? _mic;
     private static WaveOutEvent? _speaker;
-    private static Mp3FileReader? _reader;
+    private static WaveFileReader? _reader;
     private static MemoryStream? _audioStream;
     private static readonly SemaphoreSlim SendLock = new SemaphoreSlim(1, 1);
     private static readonly object StateLock = new object();
     private static bool _enabled;
+    private static volatile bool _suppressMicProcessing;
     private static string _apiKey = "";
     private static string _lastTranscript = "";
     private static string _status = "Disabled";
@@ -66,9 +67,9 @@ public sealed class Main : MelonMod
     public override void OnApplicationStart()
     {
         LoadConfig();
-        MelonLogger.Msg("ChilloutVR VoiceChanger Mod 1.3.1 loaded.");
+        MelonLogger.Msg("ChilloutVR VoiceChanger Mod 1.4.0 loaded.");
         MelonLogger.Msg("F8 = open/close VoiceChanger GUI | F10 = start/stop | F9 = stop");
-        MelonLogger.Msg("TTS output device index = " + OutputDeviceIndex + " (Voicemeeter Banana target)");
+        MelonLogger.Msg("TTS route = Deepgram WAV -> CABLE Input -> CABLE Output -> VoiceMeeter");
     }
 
     public override void OnUpdate()
@@ -210,8 +211,10 @@ public sealed class Main : MelonMod
         _mic = new WaveInEvent { WaveFormat = new WaveFormat(16000, 16, 1), BufferMilliseconds = 80, NumberOfBuffers = 3 };
         _mic.DataAvailable += (_, e) =>
         {
-            if (!_enabled || token.IsCancellationRequested || _socket?.State != WebSocketState.Open) return;
-            byte[] copy = new byte[e.BytesRecorded]; Buffer.BlockCopy(e.Buffer, 0, copy, 0, e.BytesRecorded); _ = SendAudioAsync(copy, token);
+            if (_suppressMicProcessing || !_enabled || token.IsCancellationRequested || _socket?.State != WebSocketState.Open) return;
+            byte[] copy = new byte[e.BytesRecorded];
+            Buffer.BlockCopy(e.Buffer, 0, copy, 0, e.BytesRecorded);
+            _ = SendAudioAsync(copy, token);
         };
         _mic.RecordingStopped += (_, _) => MelonLogger.Msg("Microphone stopped.");
         _mic.StartRecording();
@@ -254,6 +257,7 @@ public sealed class Main : MelonMod
             var root = JObject.Parse(json); string? type = (string?)root["type"];
             if (type == "TurnInfo")
             {
+                if (_suppressMicProcessing) return;
                 string? transcript = (string?)root["transcript"]; string? evt = (string?)root["event"];
                 if (!string.IsNullOrWhiteSpace(transcript)) { _lastTranscript = transcript; NativeGui.Refresh(); MelonLogger.Msg("You said: " + transcript); }
                 if (evt == "EndOfTurn" && !string.IsNullOrWhiteSpace(transcript)) _ = SpeakAsSelectedVoiceAsync(transcript);
@@ -268,7 +272,7 @@ public sealed class Main : MelonMod
         if (!_enabled || string.IsNullOrWhiteSpace(text)) return;
         try
         {
-            string url = "https://api.deepgram.com/v1/speak?model=" + Uri.EscapeDataString(Voices[_selectedVoice].Model);
+            string url = "https://api.deepgram.com/v1/speak?model=" + Uri.EscapeDataString(Voices[_selectedVoice].Model) + "&encoding=linear16&container=wav";
             using (var request = new HttpRequestMessage(HttpMethod.Post, url))
             {
                 request.Headers.TryAddWithoutValidation("Authorization", "Token " + _apiKey);
@@ -278,31 +282,85 @@ public sealed class Main : MelonMod
                     if (!response.IsSuccessStatusCode)
                     {
                         string error = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                        MelonLogger.Error("Deepgram TTS failed: " + (int)response.StatusCode + " " + error); _status = "TTS error"; NativeGui.Refresh(); return;
+                        MelonLogger.Error("Deepgram TTS failed: " + (int)response.StatusCode + " " + error);
+                        _status = "TTS error";
+                        NativeGui.Refresh();
+                        return;
                     }
-                    byte[] audio = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false); if (_enabled) PlayMp3(audio);
+                    byte[] audio = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+                    if (_enabled) PlayTtsWav(audio);
                 }
             }
         }
-        catch (Exception ex) { MelonLogger.Error("Voice conversion playback failed: " + ex.GetType().Name + ": " + ex.Message); }
+        catch (Exception ex) { MelonLogger.Error("Voice conversion failed: " + ex.GetType().Name + ": " + ex.Message); }
     }
 
-    private static void PlayMp3(byte[] audio)
+    private static int FindCablePlaybackDevice()
+    {
+        int count = WaveOut.DeviceCount;
+        int fallback = -1;
+        for (int i = 0; i < count; i++)
+        {
+            WaveOutCapabilities caps;
+            try { caps = WaveOut.GetCapabilities(i); }
+            catch { continue; }
+            string name = caps.ProductName ?? "";
+            MelonLogger.Msg("WaveOut playback device [" + i + "]: " + name);
+            if (name.IndexOf(CablePlaybackName, StringComparison.OrdinalIgnoreCase) >= 0) return i;
+            if (fallback < 0 && name.IndexOf("CABLE", StringComparison.OrdinalIgnoreCase) >= 0) fallback = i;
+        }
+        return fallback;
+    }
+
+    private static void PlayTtsWav(byte[] audio)
     {
         StopPlayback();
-        _audioStream = new MemoryStream(audio, false);
-        _reader = new Mp3FileReader(_audioStream);
-        _speaker = new WaveOutEvent { DeviceNumber = OutputDeviceIndex };
-        MelonLogger.Msg("Playing TTS through audio output device index " + OutputDeviceIndex + ".");
-        _speaker.Init(_reader);
-        _speaker.PlaybackStopped += (_, _) => { try { _speaker?.Dispose(); } catch { } try { _reader?.Dispose(); } catch { } try { _audioStream?.Dispose(); } catch { } _speaker = null; _reader = null; _audioStream = null; };
-        _speaker.Play();
+        int deviceNumber = FindCablePlaybackDevice();
+        if (deviceNumber < 0)
+        {
+            _status = "VB-CABLE Input not found";
+            NativeGui.Refresh();
+            MelonLogger.Error("Could not find VB-CABLE playback device '" + CablePlaybackName + "'.");
+            return;
+        }
+
+        try
+        {
+            _suppressMicProcessing = true;
+            _audioStream = new MemoryStream(audio, false);
+            _reader = new WaveFileReader(_audioStream);
+            _speaker = new WaveOutEvent { DeviceNumber = deviceNumber };
+            _speaker.Init(_reader);
+            _speaker.PlaybackStopped += (_, e) =>
+            {
+                if (e.Exception != null) MelonLogger.Error("TTS playback stopped with error: " + e.Exception.GetType().Name + ": " + e.Exception.Message);
+                CleanupPlayback();
+            };
+            MelonLogger.Msg("Playing Deepgram WAV TTS through CABLE Input [" + deviceNumber + "] -> CABLE Output -> VoiceMeeter.");
+            _speaker.Play();
+        }
+        catch (Exception ex)
+        {
+            MelonLogger.Error("TTS playback failed: " + ex.GetType().Name + ": " + ex.Message);
+            CleanupPlayback();
+        }
+    }
+
+    private static void CleanupPlayback()
+    {
+        try { _speaker?.Dispose(); } catch { }
+        try { _reader?.Dispose(); } catch { }
+        try { _audioStream?.Dispose(); } catch { }
+        _speaker = null;
+        _reader = null;
+        _audioStream = null;
+        _suppressMicProcessing = false;
     }
 
     private static void StopPlayback()
     {
-        try { _speaker?.Stop(); } catch { } try { _speaker?.Dispose(); } catch { } try { _reader?.Dispose(); } catch { } try { _audioStream?.Dispose(); } catch { }
-        _speaker = null; _reader = null; _audioStream = null;
+        try { _speaker?.Stop(); } catch { }
+        CleanupPlayback();
     }
 }
 
@@ -312,7 +370,7 @@ internal static class NativeGui
     private const int SW_HIDE = 0, SW_SHOW = 5;
     private const int WS_OVERLAPPEDWINDOW = 0x00CF0000, WS_VISIBLE = 0x10000000, WS_CHILD = 0x40000000, WS_TABSTOP = 0x00010000;
     private const int BS_PUSHBUTTON = 0x00000000, CBS_DROPDOWNLIST = 0x0003, ES_PASSWORD = 0x0020, ES_AUTOHSCROLL = 0x0080;
-    private const int WM_SETTEXT = 0x000C, WM_GETTEXT = 0x000D, CB_ADDSTRING = 0x0143, CB_SETCURSEL = 0x014E, CB_GETCURSEL = 0x0147, BM_CLICK = 0x00F5;
+    private const int WM_SETTEXT = 0x000C, WM_GETTEXT = 0x000D, CB_ADDSTRING = 0x0143, CB_SETCURSEL = 0x014E, CB_GETCURSEL = 0x0147;
     private const int BN_CLICKED = 0;
     private static readonly object Lock = new object();
     private static Thread? _thread;
@@ -333,7 +391,7 @@ internal static class NativeGui
         if (_window == IntPtr.Zero) return;
         try
         {
-            NativeMethods.SetWindowText(_statusLabel, Main.Status);
+            NativeMethods.SetWindowText(_statusLabel, "Status: " + Main.Status);
             NativeMethods.SetWindowText(_transcriptLabel, "Last transcript: " + Main.Transcript);
         }
         catch { }
