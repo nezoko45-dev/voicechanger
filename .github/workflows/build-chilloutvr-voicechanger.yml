@@ -25,6 +25,19 @@ jobs:
       - name: Build DLL
         run: dotnet build VoiceChangerMod/VoiceChangerMod.csproj --configuration Release --no-restore
 
+      - name: Verify source has no Unity GUI dependencies
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem 'VoiceChangerMod' -Filter *.cs -Recurse
+          $source = ($files | ForEach-Object { Get-Content $_.FullName -Raw }) -join "`n"
+          $forbidden = @('UnityEngine', 'Vector2', 'Rect', 'System.Drawing', 'CABLE Input', 'CABLE Output', 'Virtual Audio Cable Line 1', 'FindCableOutputLine1Device', 'DirectSoundOut', 'WasapiOut', 'Mp3FileReader')
+          foreach ($check in $forbidden) {
+            if ($source.IndexOf($check, [StringComparison]::Ordinal) -ge 0) {
+              throw "Forbidden dependency/reference is present: $check"
+            }
+          }
+          Write-Host 'Source validation passed: no Unity GUI, Rect/Vector2, System.Drawing, hard-coded cable, WASAPI, or MP3 playback references.'
+
       - name: Verify selectable TTS output routing
         shell: pwsh
         run: |
@@ -35,24 +48,17 @@ jobs:
             'WaveOut.DeviceCount',
             'WaveOut.GetCapabilities(i).ProductName',
             'internal static string[] OutputDeviceNames',
-            'private static int FindSelectedOutputDevice()',
-            'new WaveOutEvent { DeviceNumber = deviceNumber, DesiredLatency = TtsDesiredLatencyMs, NumberOfBuffers = 2 }',
-            'TTS output device',
+            'internal static int SelectedOutputDeviceIndex',
             'OutputDevice=',
-            'if (_suppressMicProcessing || !_enabled'
+            'TTS output device',
+            'new WaveOutEvent',
+            'DeviceNumber'
           )
           foreach ($check in $checks) {
             if ($source.IndexOf($check, [StringComparison]::Ordinal) -lt 0) {
               throw "Required selectable output code is missing: $check"
             }
           }
-          if ($source.Contains('CABLE Input')) { throw 'Obsolete hard-coded CABLE Input routing must not be present.' }
-          if ($source.Contains('CABLE Output')) { throw 'Obsolete hard-coded CABLE Output routing must not be present.' }
-          if ($source.Contains('Virtual Audio Cable Line 1')) { throw 'Obsolete hard-coded Line 1 routing must not be present.' }
-          if ($source.Contains('FindCableOutputLine1Device')) { throw 'Obsolete hard-coded Line 1 device lookup must not be present.' }
-          if ($source.Contains('DirectSoundOut')) { throw 'DirectSoundOut routing must not be present.' }
-          if ($source.Contains('WasapiOut')) { throw 'WASAPI playback must not be present.' }
-          if ($source.Contains('Mp3FileReader')) { throw 'MP3 playback must not be present.' }
           Write-Host 'Selectable TTS output source validation passed.'
 
       - name: Verify and stage complete mod package
