@@ -33,6 +33,14 @@ if old in text:
 elif "private static IWavePlayer? _speaker;" not in text:
     fail("speaker declaration not found")
 
+# WAV playback needs a WaveStream-compatible reader rather than Mp3FileReader.
+old = "    private static Mp3FileReader? _reader;"
+new = "    private static WaveFileReader? _reader;"
+if old in text:
+    text = text.replace(old, new, 1)
+elif "private static WaveFileReader? _reader;" not in text:
+    fail("audio reader declaration not found")
+
 # Prevent generated TTS from being treated as microphone input.
 if "private static volatile bool _suppressMicProcessing;" not in text:
     marker = "    private static bool _enabled;\n"
@@ -86,6 +94,7 @@ if old_log in text:
 required = [
     'private const string CablePlaybackName = "CABLE Input";',
     'private static IWavePlayer? _speaker;',
+    'private static WaveFileReader? _reader;',
     'encoding=linear16&container=wav',
     'new WasapiOut(device, AudioClientShareMode.Shared, true, 100)',
     '_reader = new WaveFileReader(_audioStream);',
@@ -99,6 +108,8 @@ if "OutputDeviceIndex" in text:
     fail("old OutputDeviceIndex reference remains")
 if "new WaveOutEvent" in text:
     fail("old WaveOut playback remains")
+if "Mp3FileReader" in text:
+    fail("old MP3 reader declaration remains")
 
 SOURCE.write_text(text, encoding="utf-8")
 print("TTS fixed: Deepgram -> explicit WAV -> WASAPI CABLE Input -> CABLE Output -> VoiceMeeter.")
