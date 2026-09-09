@@ -55,17 +55,14 @@ internal static class NaturalTtsPatch
 
     private static bool IsEnabled() => EnabledField.GetValue(null) is bool enabled && enabled;
 
-    // ElevenLabs currently restricts 44.1 kHz WAV/PCM output to Pro+.
-    // PCM 24 kHz is available on lower tiers, so request raw PCM and wrap it
-    // in a standard WAV container before handing it to Main.PlayTtsWav().
     private static byte[] Pcm16Mono24kToWav(byte[] pcm)
     {
         const int sampleRate = 24000;
         const short channels = 1;
         const short bitsPerSample = 16;
-        const short blockAlign = channels * (bitsPerSample / 8);
-        const int byteRate = sampleRate * blockAlign;
-        const int dataLength = pcm.Length;
+        const short blockAlign = 2;
+        const int byteRate = 48000;
+        int dataLength = pcm.Length;
 
         using var stream = new MemoryStream(44 + dataLength);
         using var writer = new BinaryWriter(stream);
@@ -75,7 +72,7 @@ internal static class NaturalTtsPatch
         writer.Write(new[] { 'W', 'A', 'V', 'E' });
         writer.Write(new[] { 'f', 'm', 't', ' ' });
         writer.Write(16);
-        writer.Write((short)1); // PCM
+        writer.Write((short)1);
         writer.Write(channels);
         writer.Write(sampleRate);
         writer.Write(byteRate);
