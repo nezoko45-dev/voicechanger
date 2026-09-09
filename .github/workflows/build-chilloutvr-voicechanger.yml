@@ -39,7 +39,7 @@ jobs:
         shell: pwsh
         run: |
           $source = Get-Content 'VoiceChangerMod/BrowserController.cs' -Raw
-          $checks = @('HttpListener', '127.0.0.1:', 'BrowserVoiceChanger', 'ProcessStartInfo', 'UseShellExecute = $true')
+          $checks = @('HttpListener', '127.0.0.1:', 'BrowserVoiceChanger', 'ProcessStartInfo', 'UseShellExecute = true')
           foreach ($check in $checks) {
             if ($source.IndexOf($check, [StringComparison]::Ordinal) -lt 0) { throw "Browser launcher check failed: $check" }
           }
