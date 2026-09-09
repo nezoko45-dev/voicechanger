@@ -32,39 +32,48 @@ internal static class ElevenLabsGuiControlsPatch
     private static void Postfix(string type, string text, int x, int y, int w, int h, int style, int id)
     {
         if (_created || id != FinalInstructionId) return;
-        _created = true;
         try
         {
             IntPtr window = GetGuiWindow();
             if (window == IntPtr.Zero) return;
+
             SetWindowPos(window, IntPtr.Zero, 0, 0, 620, 520, SWP_NOMOVE | SWP_NOZORDER | SWP_SHOWWINDOW);
             CreateLabel(window, "ElevenLabs API key", 20, 355, 280, 20, 1201);
             CreateLabel(window, "ElevenLabs target Voice ID", 310, 355, 280, 20, 1202);
             _apiEdit = CreateEdit(window, 20, 380, 280, 28, ES_PASSWORD | ES_AUTOHSCROLL, ApiEditId, ReadSetting("ElevenLabsApiKey"));
             _voiceEdit = CreateEdit(window, 310, 380, 280, 28, ES_AUTOHSCROLL, VoiceEditId, ReadSetting("ElevenLabsVoiceId"));
             CreateLabel(window, "Speech-to-speech preserves your timing and delivery instead of re-speaking the transcript.", 20, 420, 570, 35, 1203);
+            _created = true;
         }
-        catch (Exception ex) { MelonLoader.MelonLogger.Error("ElevenLabs F8 controls failed: " + ex.Message); }
+        catch (Exception ex)
+        {
+            MelonLoader.MelonLogger.Error("ElevenLabs F8 controls failed: " + ex.Message);
+        }
     }
 
     [HarmonyPatch(typeof(NativeGui), "WndProc")]
-    [HarmonyPrefix]
-    private static class SaveCredentialsPatch
+    internal static class SaveCredentialsPatch
     {
+        [HarmonyPrefix]
         private static void Prefix(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
         {
             if (msg != WM_COMMAND) return;
+
             int id = unchecked((short)((long)wParam & 0xFFFF));
             int code = unchecked((short)(((long)wParam >> 16) & 0xFFFF));
             if (code != BN_CLICKED || (id != 1004 && id != 1005)) return;
             if (_apiEdit == IntPtr.Zero || _voiceEdit == IntPtr.Zero) return;
+
             try
             {
                 SaveSetting("ElevenLabsApiKey", ReadEdit(_apiEdit));
                 SaveSetting("ElevenLabsVoiceId", ReadEdit(_voiceEdit));
                 MelonLoader.MelonLogger.Msg("ElevenLabs Voice Changer settings saved.");
             }
-            catch (Exception ex) { MelonLoader.MelonLogger.Error("ElevenLabs settings save failed: " + ex.Message); }
+            catch (Exception ex)
+            {
+                MelonLoader.MelonLogger.Error("ElevenLabs settings save failed: " + ex.Message);
+            }
         }
     }
 
@@ -99,11 +108,14 @@ internal static class ElevenLabsGuiControlsPatch
             string? env = Environment.GetEnvironmentVariable(envName)?.Trim();
             if (!string.IsNullOrWhiteSpace(env)) return env;
             if (!File.Exists(ConfigPath)) return "";
+
             string prefix = key + "=";
             foreach (string line in File.ReadAllLines(ConfigPath))
-                if (line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return line.Substring(prefix.Length).Trim();
+                if (line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    return line.Substring(prefix.Length).Trim();
         }
         catch { }
+
         return "";
     }
 
@@ -113,6 +125,7 @@ internal static class ElevenLabsGuiControlsPatch
         string[] lines = File.Exists(ConfigPath) ? File.ReadAllLines(ConfigPath) : Array.Empty<string>();
         string prefix = key + "=";
         bool replaced = false;
+
         for (int i = 0; i < lines.Length; i++)
         {
             if (!lines[i].StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
@@ -120,12 +133,14 @@ internal static class ElevenLabsGuiControlsPatch
             replaced = true;
             break;
         }
+
         if (!replaced)
         {
             var list = new System.Collections.Generic.List<string>(lines);
             list.Add(prefix + (value ?? "").Replace("\r", "").Replace("\n", ""));
             lines = list.ToArray();
         }
+
         File.WriteAllLines(ConfigPath, lines);
     }
 
