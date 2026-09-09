@@ -5,7 +5,6 @@ on:
   push:
     paths:
       - 'VoiceChangerMod/**'
-      - 'tools/configure-routing.py'
       - '.github/workflows/build-chilloutvr-voicechanger.yml'
 
 jobs:
@@ -20,50 +19,41 @@ jobs:
         with:
           dotnet-version: '6.0.x'
 
-      - name: Validate routing script
-        shell: pwsh
-        run: python -m py_compile tools/configure-routing.py
-
-      - name: Configure VB-CABLE routing
-        shell: pwsh
-        run: python tools/configure-routing.py
-
-      - name: Verify patched source
-        shell: pwsh
-        run: |
-          $source = Get-Content 'VoiceChangerMod/Main.cs' -Raw
-          $checks = @(
-            'private const string CablePlaybackName = "CABLE Input";',
-            'private static IWavePlayer? _speaker;',
-            'new WasapiOut(device, AudioClientShareMode.Shared, true, 100)',
-            'encoding=linear16&container=wav',
-            '_reader = new WaveFileReader(_audioStream);',
-            'private static volatile bool _suppressMicProcessing;'
-          )
-          foreach ($check in $checks) {
-            if ($source.IndexOf($check, [StringComparison]::Ordinal) -lt 0) {
-              throw "Required TTS/routing code is missing: $check"
-            }
-          }
-          if ($source.Contains('OutputDeviceIndex')) {
-            throw 'Old OutputDeviceIndex code is still present.'
-          }
-          if ($source.Contains('new WaveOutEvent')) {
-            throw 'Old WaveOutEvent playback code is still present.'
-          }
-          Write-Host 'TTS/routing source validation passed.'
-
       - name: Restore
         run: dotnet restore VoiceChangerMod/VoiceChangerMod.csproj
 
       - name: Build DLL
         run: dotnet build VoiceChangerMod/VoiceChangerMod.csproj --configuration Release --no-restore
 
+      - name: Verify final source
+        shell: pwsh
+        run: |
+          $source = Get-Content 'VoiceChangerMod/Main.cs' -Raw
+          $checks = @(
+            'private const string CablePlaybackName = "CABLE Input";',
+            'private static WaveOutEvent? _speaker;',
+            'private static WaveFileReader? _reader;',
+            'encoding=linear16&container=wav',
+            'WaveOut.DeviceCount',
+            'WaveOut.GetCapabilities',
+            'new WaveOutEvent { DeviceNumber = deviceNumber }',
+            'if (_suppressMicProcessing || !_enabled'
+          )
+          foreach ($check in $checks) {
+            if ($source.IndexOf($check, [StringComparison]::Ordinal) -lt 0) {
+              throw "Required VoiceChanger code is missing: $check"
+            }
+          }
+          if ($source.Contains('WasapiOut')) { throw 'WASAPI playback must not be present.' }
+          if ($source.Contains('Mp3FileReader')) { throw 'MP3 playback must not be present.' }
+          if ($source.Contains('OutputDeviceIndex')) { throw 'Hardcoded output device index must not be present.' }
+          Write-Host 'Final source validation passed.'
+
       - name: Verify and stage complete mod package
         shell: pwsh
         run: |
           $out = 'VoiceChangerMod/bin/Release/net472'
-          $required = @('VoiceChangerMod.dll', 'NAudio.dll', 'NAudio.Core.dll', 'NAudio.Wasapi.dll', 'NAudio.WinMM.dll', 'Newtonsoft.Json.dll')
+          $required = @('VoiceChangerMod.dll', 'NAudio.dll', 'NAudio.Core.dll', 'NAudio.WinMM.dll', 'Newtonsoft.Json.dll')
           foreach ($file in $required) {
             $path = Join-Path $out $file
             if (-not (Test-Path $path)) {
