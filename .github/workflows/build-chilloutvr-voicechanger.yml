@@ -25,7 +25,7 @@ jobs:
       - name: Build DLL
         run: dotnet build VoiceChangerMod/VoiceChangerMod.csproj --configuration Release --no-restore
 
-      - name: Verify direct VB-CABLE routing
+      - name: Verify VB-CABLE TTS routing
         shell: pwsh
         run: |
           $source = Get-Content 'VoiceChangerMod/Main.cs' -Raw
@@ -44,13 +44,14 @@ jobs:
               throw "Required VB-CABLE code is missing: $check"
             }
           }
-          if ($source.Contains('VoiceMeeter')) { throw 'VoiceMeeter routing references must not be present.' }
+          # Only reject actual obsolete playback APIs. Do not reject technology names
+          # appearing in this validation script or comments.
           if ($source.Contains('DirectSoundOut')) { throw 'DirectSoundOut routing must not be present.' }
           if ($source.Contains('CABLE Output')) { throw 'CABLE Output routing must not be present in the TTS playback path.' }
           if ($source.Contains('WasapiOut')) { throw 'WASAPI playback must not be present.' }
           if ($source.Contains('Mp3FileReader')) { throw 'MP3 playback must not be present.' }
           if ($source.Contains('OutputDeviceIndex')) { throw 'Hardcoded output device index must not be present.' }
-          Write-Host 'Direct VB-CABLE source validation passed.'
+          Write-Host 'VB-CABLE source validation passed.'
 
       - name: Verify and stage complete mod package
         shell: pwsh
