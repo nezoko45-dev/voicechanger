@@ -1,35 +1,32 @@
 using System;
 using System.Collections.Generic;
 using MelonLoader;
-using NAudio.CoreAudioApi;
 using NAudio.Wave;
 
 namespace VoiceChangerMod;
 
-// Core Audio compatibility layer. Main.cs keeps its existing DirectSoundOut calls,
-// while this implementation enumerates the real Windows render endpoints so the
-// full VoiceMeeter Banana virtual-input name is available.
+// Compatibility layer used by Main.cs. It now deliberately targets the free
+// VB-CABLE playback endpoint instead of VoiceMeeter directly. Windows routes
+// audio sent to CABLE Input through VB-CABLE to CABLE Output, which VoiceMeeter
+// Banana can then receive.
 internal sealed class DirectSoundDeviceInfo
 {
-    internal Guid Guid { get; }
+    internal int DeviceNumber { get; }
     internal string Description { get; }
     internal string ModuleName { get; }
+    internal Guid Guid => Guid.Empty;
 
-    internal DirectSoundDeviceInfo(Guid guid, MMDevice device)
+    internal DirectSoundDeviceInfo(int deviceNumber, string description)
     {
-        Guid = guid;
-        Description = device.FriendlyName ?? string.Empty;
-        ModuleName = device.DeviceFriendlyName ?? string.Empty;
+        DeviceNumber = deviceNumber;
+        Description = description;
+        ModuleName = "VB-Audio CABLE";
     }
 }
 
 internal sealed class DirectSoundOut : IWavePlayer
 {
-    private static readonly object DeviceLock = new object();
-    private static readonly Dictionary<Guid, MMDevice> DevicesByGuid = new Dictionary<Guid, MMDevice>();
-    private readonly WasapiOut _inner;
-    private readonly MMDevice _device;
-    private bool _disposed;
+    private readonly WaveOutEvent _inner;
 
     public static IEnumerable<DirectSoundDeviceInfo> Devices
     {
@@ -38,43 +35,56 @@ internal sealed class DirectSoundOut : IWavePlayer
             var result = new List<DirectSoundDeviceInfo>();
             try
             {
-                using (var enumerator = new MMDeviceEnumerator())
+                for (int i = 0; i < WaveOut.DeviceCount; i++)
                 {
-                    var endpoints = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
-                    foreach (MMDevice device in endpoints)
-                    {
-                        string name = (device.FriendlyName ?? string.Empty).Trim();
-                        string interfaceName = (device.DeviceFriendlyName ?? string.Empty).Trim();
-                        MelonLogger.Msg("CoreAudio render device: " + name + " | " + interfaceName);
+                    WaveOutCapabilities caps = WaveOut.GetCapabilities(i);
+                    string name = caps.ProductName ?? string.Empty;
+                    MelonLogger.Msg("VB-CABLE/WaveOut playback device [" + i + "]: " + name);
 
-                        Guid key = Guid.NewGuid();
-                        lock (DeviceLock)
-                        {
-                            DevicesByGuid[key] = device;
-                        }
-                        result.Add(new DirectSoundDeviceInfo(key, device));
+                    // The player endpoint is CABLE Input. CABLE Output is the
+                    // recording endpoint and is not a valid playback target.
+                    if (name.IndexOf("CABLE Input", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        result.Add(new DirectSoundDeviceInfo(i, name));
                     }
                 }
             }
             catch (Exception ex)
             {
-                MelonLogger.Error("CoreAudio device enumeration failed: " + ex.GetType().Name + ": " + ex.Message);
+                MelonLogger.Error("VB-CABLE playback enumeration failed: " + ex.GetType().Name + ": " + ex.Message);
             }
+
             return result;
         }
     }
 
-    public DirectSoundOut(Guid deviceGuid, int latency)
+    public DirectSoundOut(Guid ignoredDeviceGuid, int latency)
     {
-        MMDevice selected;
-        lock (DeviceLock)
+        int deviceNumber = FindCableInputDeviceNumber();
+        if (deviceNumber < 0)
+            throw new InvalidOperationException("VB-CABLE CABLE Input playback endpoint is not available.");
+
+        _inner = new WaveOutEvent
         {
-            if (!DevicesByGuid.TryGetValue(deviceGuid, out selected))
-                throw new InvalidOperationException("The selected Core Audio endpoint is no longer available.");
+            DeviceNumber = deviceNumber,
+            DesiredLatency = Math.Max(20, latency),
+            NumberOfBuffers = 2
+        };
+
+        MelonLogger.Msg("VB-CABLE playback selected: CABLE Input, device " + deviceNumber + ", target latency " + Math.Max(20, latency) + " ms.");
+    }
+
+    private static int FindCableInputDeviceNumber()
+    {
+        for (int i = 0; i < WaveOut.DeviceCount; i++)
+        {
+            WaveOutCapabilities caps = WaveOut.GetCapabilities(i);
+            string name = caps.ProductName ?? string.Empty;
+            if (name.IndexOf("CABLE Input", StringComparison.OrdinalIgnoreCase) >= 0)
+                return i;
         }
 
-        _device = selected;
-        _inner = new WasapiOut(_device, AudioClientShareMode.Shared, true, Math.Max(20, latency));
+        return -1;
     }
 
     public event EventHandler<StoppedEventArgs> PlaybackStopped
@@ -94,17 +104,6 @@ internal sealed class DirectSoundOut : IWavePlayer
 
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
         try { _inner.Dispose(); } catch { }
-        try { _device.Dispose(); } catch { }
-
-        lock (DeviceLock)
-        {
-            var remove = new List<Guid>();
-            foreach (var pair in DevicesByGuid)
-                if (ReferenceEquals(pair.Value, _device)) remove.Add(pair.Key);
-            foreach (Guid key in remove) DevicesByGuid.Remove(key);
-        }
     }
 }
