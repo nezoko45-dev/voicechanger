@@ -36,12 +36,13 @@ jobs:
             'private const string CablePlaybackName = "CABLE Input";',
             'private static IWavePlayer? _speaker;',
             'new WasapiOut(device, AudioClientShareMode.Shared, true, 100)',
-            '"&encoding=mp3"',
+            'encoding=linear16&container=wav',
+            '_reader = new WaveFileReader(_audioStream);',
             'private static volatile bool _suppressMicProcessing;'
           )
           foreach ($check in $checks) {
             if ($source.IndexOf($check, [StringComparison]::Ordinal) -lt 0) {
-              throw "Required routing code is missing: $check"
+              throw "Required TTS/routing code is missing: $check"
             }
           }
           if ($source.Contains('OutputDeviceIndex')) {
@@ -50,7 +51,7 @@ jobs:
           if ($source.Contains('new WaveOutEvent')) {
             throw 'Old WaveOutEvent playback code is still present.'
           }
-          Write-Host 'Routing source validation passed.'
+          Write-Host 'TTS/routing source validation passed.'
 
       - name: Restore
         run: dotnet restore VoiceChangerMod/VoiceChangerMod.csproj
