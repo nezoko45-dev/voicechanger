@@ -8,8 +8,6 @@ using HarmonyLib;
 namespace VoiceChangerMod;
 
 // Replaces transcript -> TTS with actual speech-to-speech voice conversion.
-// The original microphone audio is sent to ElevenLabs Voice Changer so the
-// result preserves the user's timing, emotion, cadence and delivery.
 [HarmonyPatch(typeof(Main), "SpeakAsSelectedVoiceAsync")]
 internal static class NaturalTtsPatch
 {
@@ -28,14 +26,25 @@ internal static class NaturalTtsPatch
             string path = Path.Combine("UserData", "VoiceChangerMod.cfg");
             if (File.Exists(path))
             {
+                // Environment variable names and config keys are intentionally different.
+                string configKey = name switch
+                {
+                    "ELEVENLABS_API_KEY" => "ElevenLabsApiKey",
+                    "ELEVENLABS_VOICE_ID" => "ElevenLabsVoiceId",
+                    _ => name
+                };
+                string prefix = configKey + "=";
                 foreach (string line in File.ReadAllLines(path))
                 {
-                    string prefix = name + "=";
-                    if (line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return line.Substring(prefix.Length).Trim();
+                    if (line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                        return line.Substring(prefix.Length).Trim();
                 }
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            MelonLoader.MelonLogger.Warning("ElevenLabs config read failed: " + ex.Message);
+        }
 
         return "";
     }
@@ -51,13 +60,13 @@ internal static class NaturalTtsPatch
 
         if (string.IsNullOrWhiteSpace(apiKey))
         {
-            MelonLoader.MelonLogger.Error("ElevenLabs voice conversion is not configured. Set ELEVENLABS_API_KEY or add ElevenLabsApiKey= to UserData/VoiceChangerMod.cfg.");
+            MelonLoader.MelonLogger.Error("ElevenLabs voice conversion is not configured. Add ElevenLabsApiKey= to UserData/VoiceChangerMod.cfg or set ELEVENLABS_API_KEY.");
             return;
         }
 
         if (string.IsNullOrWhiteSpace(voiceId))
         {
-            MelonLoader.MelonLogger.Error("ElevenLabs target voice is not configured. Set ELEVENLABS_VOICE_ID or add ElevenLabsVoiceId= to UserData/VoiceChangerMod.cfg.");
+            MelonLoader.MelonLogger.Error("ElevenLabs target voice is not configured. Add ElevenLabsVoiceId= to UserData/VoiceChangerMod.cfg or set ELEVENLABS_VOICE_ID.");
             return;
         }
 
@@ -70,8 +79,6 @@ internal static class NaturalTtsPatch
 
         try
         {
-            // ElevenLabs accepts raw 16 kHz mono PCM when file_format is set.
-            // WAV output keeps the existing NAudio playback path intact.
             string url = "https://api.elevenlabs.io/v1/speech-to-speech/"
                        + Uri.EscapeDataString(voiceId)
                        + "?output_format=wav_44100";
@@ -82,7 +89,6 @@ internal static class NaturalTtsPatch
             {
                 request.Headers.TryAddWithoutValidation("xi-api-key", apiKey);
                 request.Headers.TryAddWithoutValidation("Accept", "audio/wav");
-
                 audio.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
                 form.Add(audio, "audio", "voice-input.pcm");
                 form.Add(new StringContent("eleven_multilingual_sts_v2"), "model_id");
@@ -121,8 +127,6 @@ internal static class NaturalTtsPatch
     }
 }
 
-// Captures the same 16 kHz PCM stream already being sent to Deepgram.
-// This avoids a second microphone device and keeps the original delivery intact.
 [HarmonyPatch(typeof(Main), "StartMicrophone")]
 internal static class VoiceConversionCapture
 {
@@ -137,7 +141,6 @@ internal static class VoiceConversionCapture
         {
             var mic = MicField.GetValue(null) as NAudio.Wave.WaveInEvent;
             if (mic == null || ReferenceEquals(mic, AttachedMic)) return;
-
             if (AttachedMic != null) AttachedMic.DataAvailable -= OnAudio;
             lock (Lock) Buffer.SetLength(0);
             AttachedMic = mic;
