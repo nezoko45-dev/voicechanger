@@ -8,7 +8,7 @@ namespace VoiceChangerMod;
 // from VB-CABLE to VoiceMeeter Potato's Virtual AUX input.
 internal sealed class WaveOutEvent : IDisposable
 {
-    private const string[] PreferredNames = new[]
+    private static readonly string[] PreferredNames = new[]
     {
         "Voicemeeter AUX Input",
         "VoiceMeeter AUX Input"
