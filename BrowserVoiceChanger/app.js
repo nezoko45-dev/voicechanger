@@ -16,7 +16,9 @@ const voices = [
 ];
 for (const [name, model] of voices) voiceSelect.add(new Option(name, model));
 voiceSelect.value = localStorage.getItem('voicechanger.voice') || 'aura-2-thalia-en';
-apiKey.value = sessionStorage.getItem('voicechanger.key') || '';
+
+const savedKey = sessionStorage.getItem('voicechanger.key') || '';
+apiKey.value = savedKey;
 
 let running=false, mediaStream=null, inputContext=null, processor=null, source=null, analyser=null, muteGain=null;
 let stt=null, tts=null, outputContext=null, outputDestination=null, outputElement=null;
@@ -24,6 +26,22 @@ let ttsQueue=[], playing=false, ttsVoice='';
 
 function setStatus(text){statusEl.textContent=text}
 function setRunning(v){running=v;startBtn.disabled=v;stopBtn.disabled=!v}
+function validApiKey(key){
+  if(!key || key.length < 20 || key.length > 500) return false;
+  if(/[\r\n]/.test(key)) return false;
+  if(key.includes('ChilloutVR VoiceChanger Mod') || key.includes('BrowserVoiceChanger folder') || key.includes('C:\\Program Files')) return false;
+  return /^[A-Za-z0-9._~+/=-]+$/.test(key);
+}
+function getApiKey(){
+  const key=apiKey.value.trim();
+  if(!validApiKey(key)){
+    sessionStorage.removeItem('voicechanger.key');
+    apiKey.value='';
+    setStatus('Enter your Deepgram API key');
+    return null;
+  }
+  return key;
+}
 
 async function enumerateAudio(){
   const oldMic=micSelect.value,oldOut=outputSelect.value,devices=await navigator.mediaDevices.enumerateDevices();
@@ -48,19 +66,19 @@ async function ensureOutput(){
   await outputContext.resume();if(outputElement.setSinkId&&outputSelect.value)await outputElement.setSinkId(outputSelect.value);
 }
 
-function openStt(){
+function openStt(key){
   const url='wss://api.deepgram.com/v2/listen?model=flux-general-en&encoding=linear16&sample_rate=16000&eot_threshold=0.70&eager_eot_threshold=0.50&eot_timeout_ms=7000';
-  stt=new WebSocket(url,['token',apiKey.value.trim()]);stt.binaryType='arraybuffer';
+  stt=new WebSocket(url,['token',key]);stt.binaryType='arraybuffer';
   stt.onopen=()=>setStatus('Listening');
   stt.onmessage=e=>{if(typeof e.data!=='string')return;try{const j=JSON.parse(e.data),text=(j.transcript||'').trim();if(text)transcriptEl.textContent=text;if(text&&j.event==='EndOfTurn')sendTts(text)}catch{}};
-  stt.onerror=()=>setStatus('STT connection error');stt.onclose=()=>{if(running)setStatus('STT disconnected')};
+  stt.onerror=()=>setStatus('STT connection error — check the API key');stt.onclose=()=>{if(running)setStatus('STT disconnected')};
 }
-function openTts(){
+function openTts(key){
   if(tts&&tts.readyState<=1&&ttsVoice===voiceSelect.value)return;if(tts){try{tts.close()}catch{}}ttsVoice=voiceSelect.value;
   const url='wss://api.deepgram.com/v1/speak?model='+encodeURIComponent(ttsVoice)+'&encoding=linear16&sample_rate=48000';
-  tts=new WebSocket(url,['token',apiKey.value.trim()]);tts.binaryType='arraybuffer';tts.onmessage=e=>{if(e.data instanceof ArrayBuffer)playTtsChunk(e.data)};tts.onerror=()=>setStatus('TTS connection error');
+  tts=new WebSocket(url,['token',key]);tts.binaryType='arraybuffer';tts.onmessage=e=>{if(e.data instanceof ArrayBuffer)playTtsChunk(e.data)};tts.onerror=()=>setStatus('TTS connection error — check the API key');
 }
-function sendTts(text){if(!text||!running)return;openTts();const send=()=>{if(tts?.readyState===WebSocket.OPEN){tts.send(JSON.stringify({type:'Speak',text:text.slice(0,2000)}));tts.send(JSON.stringify({type:'Flush'}))}};if(tts.readyState===WebSocket.OPEN)send();else tts.addEventListener('open',send,{once:true})}
+function sendTts(text){if(!text||!running)return;const key=getApiKey();if(!key)return;openTts(key);const send=()=>{if(tts?.readyState===WebSocket.OPEN){tts.send(JSON.stringify({type:'Speak',text:text.slice(0,2000)}));tts.send(JSON.stringify({type:'Flush'}))}};if(tts.readyState===WebSocket.OPEN)send();else tts.addEventListener('open',send,{once:true})}
 
 function stopEverything(){
   running=false;try{processor?.disconnect()}catch{}try{source?.disconnect()}catch{}try{analyser?.disconnect()}catch{}try{muteGain?.disconnect()}catch{}processor=source=analyser=muteGain=null;
@@ -68,7 +86,7 @@ function stopEverything(){
 }
 
 async function start(){
-  if(running)return;const key=apiKey.value.trim();if(!key){setStatus('Enter a Deepgram API key');apiKey.focus();return}
+  if(running)return;const key=getApiKey();if(!key){apiKey.focus();return}
   if(!window.isSecureContext&&location.hostname!=='localhost'&&location.hostname!=='127.0.0.1'){setStatus('Use HTTPS or localhost for microphone access');return}
   sessionStorage.setItem('voicechanger.key',key);localStorage.setItem('voicechanger.voice',voiceSelect.value);
   try{
@@ -77,10 +95,10 @@ async function start(){
     source=inputContext.createMediaStreamSource(mediaStream);processor=inputContext.createScriptProcessor(4096,1,1);analyser=inputContext.createAnalyser();analyser.fftSize=256;muteGain=inputContext.createGain();muteGain.gain.value=0;
     source.connect(analyser);source.connect(processor);processor.connect(muteGain);muteGain.connect(inputContext.destination);
     const draw=()=>{if(!running)return;const data=new Uint8Array(analyser.frequencyBinCount);analyser.getByteTimeDomainData(data);let sum=0;for(const x of data){const v=(x-128)/128;sum+=v*v}meterFill.style.width=Math.min(100,Math.sqrt(sum/data.length)*170)+'%';requestAnimationFrame(draw)};
-    running=true;setRunning(true);draw();openStt();openTts();
+    running=true;setRunning(true);draw();openStt(key);openTts(key);
     processor.onaudioprocess=e=>{if(!running||!stt||stt.readyState!==WebSocket.OPEN)return;const pcm=downsampleFloat32(e.inputBuffer.getChannelData(0),inputContext.sampleRate,16000);stt.send(pcm.buffer)};setStatus('Listening');
   }catch(err){console.error(err);stopEverything();setStatus('Microphone error: '+(err.message||err))}
 }
 
-startBtn.onclick=start;stopBtn.onclick=stopEverything;outputSelect.onchange=async()=>{try{await ensureOutput()}catch{setStatus('Output device could not be selected')}};voiceSelect.onchange=()=>{localStorage.setItem('voicechanger.voice',voiceSelect.value);if(running)openTts()};apiKey.onchange=()=>sessionStorage.setItem('voicechanger.key',apiKey.value.trim());navigator.mediaDevices?.addEventListener?.('devicechange',enumerateAudio);
+startBtn.onclick=start;stopBtn.onclick=stopEverything;outputSelect.onchange=async()=>{try{await ensureOutput()}catch{setStatus('Output device could not be selected')}};voiceSelect.onchange=()=>{localStorage.setItem('voicechanger.voice',voiceSelect.value);if(running){const key=getApiKey();if(key)openTts(key)}};apiKey.onchange=()=>{const key=apiKey.value.trim();if(validApiKey(key))sessionStorage.setItem('voicechanger.key',key);else sessionStorage.removeItem('voicechanger.key')};navigator.mediaDevices?.addEventListener?.('devicechange',enumerateAudio);
 (async()=>{try{await navigator.mediaDevices.getUserMedia({audio:true}).then(s=>s.getTracks().forEach(t=>t.stop()))}catch{}try{await enumerateAudio()}catch{}})();
