@@ -37,6 +37,10 @@ internal static class ElevenLabsGuiControlsPatch
             IntPtr window = GetGuiWindow();
             if (window == IntPtr.Zero) return;
 
+            // Make sure the config contains editable ElevenLabs entries.
+            EnsureSetting("ElevenLabsApiKey");
+            EnsureSetting("ElevenLabsVoiceId");
+
             SetWindowPos(window, IntPtr.Zero, 0, 0, 620, 520, SWP_NOMOVE | SWP_NOZORDER | SWP_SHOWWINDOW);
             CreateLabel(window, "ElevenLabs API key", 20, 355, 280, 20, 1201);
             CreateLabel(window, "ElevenLabs target Voice ID", 310, 355, 280, 20, 1202);
@@ -48,6 +52,26 @@ internal static class ElevenLabsGuiControlsPatch
         catch (Exception ex)
         {
             MelonLoader.MelonLogger.Error("ElevenLabs F8 controls failed: " + ex.Message);
+        }
+    }
+
+    // Main.SaveConfig rewrites the config file. Re-add our ElevenLabs entries after it runs
+    // so they remain permanently available in UserData/VoiceChangerMod.cfg.
+    [HarmonyPatch(typeof(Main), "SaveConfig")]
+    internal static class PreserveConfigPatch
+    {
+        [HarmonyPostfix]
+        private static void Postfix()
+        {
+            try
+            {
+                EnsureSetting("ElevenLabsApiKey");
+                EnsureSetting("ElevenLabsVoiceId");
+            }
+            catch (Exception ex)
+            {
+                MelonLoader.MelonLogger.Warning("ElevenLabs config preservation failed: " + ex.Message);
+            }
         }
     }
 
@@ -68,7 +92,7 @@ internal static class ElevenLabsGuiControlsPatch
             {
                 SaveSetting("ElevenLabsApiKey", ReadEdit(_apiEdit));
                 SaveSetting("ElevenLabsVoiceId", ReadEdit(_voiceEdit));
-                MelonLoader.MelonLogger.Msg("ElevenLabs Voice Changer settings saved.");
+                MelonLoader.MelonLogger.Msg("ElevenLabs Voice Changer settings saved to UserData/VoiceChangerMod.cfg.");
             }
             catch (Exception ex)
             {
@@ -117,6 +141,18 @@ internal static class ElevenLabsGuiControlsPatch
         catch { }
 
         return "";
+    }
+
+    private static void EnsureSetting(string key)
+    {
+        Directory.CreateDirectory("UserData");
+        string[] lines = File.Exists(ConfigPath) ? File.ReadAllLines(ConfigPath) : Array.Empty<string>();
+        string prefix = key + "=";
+        foreach (string line in lines)
+            if (line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return;
+
+        using (var writer = new StreamWriter(ConfigPath, append: true))
+            writer.WriteLine(prefix);
     }
 
     private static void SaveSetting(string key, string value)
