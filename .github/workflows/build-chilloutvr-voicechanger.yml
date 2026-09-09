@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - 'VoiceChangerMod/**'
+      - 'tools/configure-routing.py'
       - '.github/workflows/build-chilloutvr-voicechanger.yml'
 
 jobs:
@@ -19,12 +20,12 @@ jobs:
         with:
           dotnet-version: '6.0.x'
 
+      - name: Configure Voicemeeter routing
+        shell: pwsh
+        run: python tools/configure-routing.py
+
       - name: Restore
         run: dotnet restore VoiceChangerMod/VoiceChangerMod.csproj
-
-      - name: Configure Voicemeeter Banana routing
-        shell: pwsh
-        run: ./VoiceChangerMod/configure-routing.ps1
 
       - name: Build DLL
         run: dotnet build VoiceChangerMod/VoiceChangerMod.csproj --configuration Release --no-restore
