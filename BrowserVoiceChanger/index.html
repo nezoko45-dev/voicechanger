@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ChilloutVR VoiceChanger</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <header><h1>VoiceChanger</h1><span id="status" class="status">Ready</span></header>
+    <section class="grid">
+      <label>Deepgram API key<input id="apiKey" type="password" autocomplete="off" placeholder="Paste your Deepgram key"></label>
+      <label>Microphone<select id="mic"></select></label>
+      <label>Output / VAC<select id="output"></select></label>
+      <label>Voice<select id="voice"></select></label>
+    </section>
+    <div class="meter"><div id="meterFill"></div></div>
+    <div class="buttons"><button id="start">Start</button><button id="stop" disabled>Stop</button></div>
+    <section class="transcript"><h2>Transcript</h2><div id="text">Waiting for speech…</div></section>
+    <p class="hint">For ChilloutVR, choose the VAC playback endpoint here, then choose the matching VAC recording/input endpoint as your microphone in ChilloutVR.</p>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
