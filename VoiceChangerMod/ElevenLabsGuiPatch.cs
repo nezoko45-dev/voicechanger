@@ -27,6 +27,8 @@ internal static class ElevenLabsGuiControlsPatch
     private static IntPtr _apiEdit;
     private static IntPtr _voiceEdit;
     private static bool _created;
+    private static string? _cachedApiKey;
+    private static string? _cachedVoiceId;
     private static readonly string ConfigPath = Path.Combine("UserData", "VoiceChangerMod.cfg");
 
     private static void Postfix(string type, string text, int x, int y, int w, int h, int style, int id)
@@ -37,7 +39,7 @@ internal static class ElevenLabsGuiControlsPatch
             IntPtr window = GetGuiWindow();
             if (window == IntPtr.Zero) return;
 
-            // Make sure the config contains editable ElevenLabs entries.
+            MigrateLegacySettings();
             EnsureSetting("ElevenLabsApiKey");
             EnsureSetting("ElevenLabsVoiceId");
 
@@ -55,22 +57,42 @@ internal static class ElevenLabsGuiControlsPatch
         }
     }
 
-    // Main.SaveConfig rewrites the config file. Re-add our ElevenLabs entries after it runs
-    // so they remain permanently available in UserData/VoiceChangerMod.cfg.
+    // Main.SaveConfig rewrites the whole file. Cache our values before that happens,
+    // then restore them after Main finishes writing its own settings.
     [HarmonyPatch(typeof(Main), "SaveConfig")]
     internal static class PreserveConfigPatch
     {
+        [HarmonyPrefix]
+        private static void Prefix()
+        {
+            try
+            {
+                _cachedApiKey = ReadSetting("ElevenLabsApiKey");
+                _cachedVoiceId = ReadSetting("ElevenLabsVoiceId");
+            }
+            catch { }
+        }
+
         [HarmonyPostfix]
         private static void Postfix()
         {
             try
             {
+                if (!string.IsNullOrWhiteSpace(_cachedApiKey))
+                    SaveSetting("ElevenLabsApiKey", _cachedApiKey);
+                if (!string.IsNullOrWhiteSpace(_cachedVoiceId))
+                    SaveSetting("ElevenLabsVoiceId", _cachedVoiceId);
                 EnsureSetting("ElevenLabsApiKey");
                 EnsureSetting("ElevenLabsVoiceId");
             }
             catch (Exception ex)
             {
                 MelonLoader.MelonLogger.Warning("ElevenLabs config preservation failed: " + ex.Message);
+            }
+            finally
+            {
+                _cachedApiKey = null;
+                _cachedVoiceId = null;
             }
         }
     }
@@ -133,13 +155,47 @@ internal static class ElevenLabsGuiControlsPatch
             if (!string.IsNullOrWhiteSpace(env)) return env;
             if (!File.Exists(ConfigPath)) return "";
 
-            string prefix = key + "=";
-            foreach (string line in File.ReadAllLines(ConfigPath))
-                if (line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                    return line.Substring(prefix.Length).Trim();
+            string[] keys = key == "ElevenLabsApiKey"
+                ? new[] { "ElevenLabsApiKey", "ELEVENLABS_API_KEY" }
+                : new[] { "ElevenLabsVoiceId", "ELEVENLABS_VOICE_ID" };
+
+            string[] lines = File.ReadAllLines(ConfigPath);
+            foreach (string candidateKey in keys)
+            {
+                string prefix = candidateKey + "=";
+                foreach (string line in lines)
+                {
+                    if (!line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                    string value = line.Substring(prefix.Length).Trim();
+                    if (!string.IsNullOrWhiteSpace(value)) return value;
+                }
+            }
         }
         catch { }
 
+        return "";
+    }
+
+    private static void MigrateLegacySettings()
+    {
+        string api = ReadSetting("ElevenLabsApiKey");
+        string voice = ReadSetting("ElevenLabsVoiceId");
+        string currentApi = ReadConfigOnly("ElevenLabsApiKey");
+        string currentVoice = ReadConfigOnly("ElevenLabsVoiceId");
+
+        if (string.IsNullOrWhiteSpace(currentApi) && !string.IsNullOrWhiteSpace(api))
+            SaveSetting("ElevenLabsApiKey", api);
+        if (string.IsNullOrWhiteSpace(currentVoice) && !string.IsNullOrWhiteSpace(voice))
+            SaveSetting("ElevenLabsVoiceId", voice);
+    }
+
+    private static string ReadConfigOnly(string key)
+    {
+        if (!File.Exists(ConfigPath)) return "";
+        string prefix = key + "=";
+        foreach (string line in File.ReadAllLines(ConfigPath))
+            if (line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return line.Substring(prefix.Length).Trim();
         return "";
     }
 
