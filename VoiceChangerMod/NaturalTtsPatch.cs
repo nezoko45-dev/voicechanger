@@ -26,7 +26,6 @@ internal static class NaturalTtsPatch
             string path = Path.Combine("UserData", "VoiceChangerMod.cfg");
             if (!File.Exists(path)) return "";
 
-            // Accept both the new GUI names and the original environment-style names.
             string[] keys = name switch
             {
                 "ELEVENLABS_API_KEY" => new[] { "ElevenLabsApiKey", "ELEVENLABS_API_KEY" },
@@ -55,6 +54,39 @@ internal static class NaturalTtsPatch
     }
 
     private static bool IsEnabled() => EnabledField.GetValue(null) is bool enabled && enabled;
+
+    // ElevenLabs currently restricts 44.1 kHz WAV/PCM output to Pro+.
+    // PCM 24 kHz is available on lower tiers, so request raw PCM and wrap it
+    // in a standard WAV container before handing it to Main.PlayTtsWav().
+    private static byte[] Pcm16Mono24kToWav(byte[] pcm)
+    {
+        const int sampleRate = 24000;
+        const short channels = 1;
+        const short bitsPerSample = 16;
+        const short blockAlign = channels * (bitsPerSample / 8);
+        const int byteRate = sampleRate * blockAlign;
+        const int dataLength = pcm.Length;
+
+        using var stream = new MemoryStream(44 + dataLength);
+        using var writer = new BinaryWriter(stream);
+
+        writer.Write(new[] { 'R', 'I', 'F', 'F' });
+        writer.Write(36 + dataLength);
+        writer.Write(new[] { 'W', 'A', 'V', 'E' });
+        writer.Write(new[] { 'f', 'm', 't', ' ' });
+        writer.Write(16);
+        writer.Write((short)1); // PCM
+        writer.Write(channels);
+        writer.Write(sampleRate);
+        writer.Write(byteRate);
+        writer.Write(blockAlign);
+        writer.Write(bitsPerSample);
+        writer.Write(new[] { 'd', 'a', 't', 'a' });
+        writer.Write(dataLength);
+        writer.Write(pcm);
+        writer.Flush();
+        return stream.ToArray();
+    }
 
     private static async Task ConvertAndSpeakAsync(string text)
     {
@@ -86,14 +118,14 @@ internal static class NaturalTtsPatch
         {
             string url = "https://api.elevenlabs.io/v1/speech-to-speech/"
                        + Uri.EscapeDataString(voiceId)
-                       + "?output_format=wav_44100";
+                       + "?output_format=pcm_24000";
 
             using (var request = new HttpRequestMessage(HttpMethod.Post, url))
             using (var form = new MultipartFormDataContent())
             using (var audio = new ByteArrayContent(sourceAudio))
             {
                 request.Headers.TryAddWithoutValidation("xi-api-key", apiKey);
-                request.Headers.TryAddWithoutValidation("Accept", "audio/wav");
+                request.Headers.TryAddWithoutValidation("Accept", "audio/pcm");
                 audio.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
                 form.Add(audio, "audio", "voice-input.pcm");
                 form.Add(new StringContent("eleven_multilingual_sts_v2"), "model_id");
@@ -110,14 +142,25 @@ internal static class NaturalTtsPatch
                         return;
                     }
 
-                    byte[] converted = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
-                    if (converted.Length > 44 && IsEnabled())
+                    byte[] convertedPcm = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+                    if (convertedPcm.Length < 2)
                     {
-                        MelonLoader.MelonLogger.Msg("Voice conversion complete: " + sourceAudio.Length + " bytes in -> " + converted.Length + " bytes out.");
-                        PlayTtsWav.Invoke(null, new object[] { converted });
+                        MelonLoader.MelonLogger.Error("ElevenLabs returned an empty voice-conversion response.");
+                        return;
                     }
+
+                    if (!IsEnabled()) return;
+
+                    byte[] convertedWav = Pcm16Mono24kToWav(convertedPcm);
+                    MelonLoader.MelonLogger.Msg("Voice conversion complete: " + sourceAudio.Length + " bytes in -> " + convertedPcm.Length + " PCM bytes out (24 kHz), wrapped as WAV.");
+                    PlayTtsWav.Invoke(null, new object[] { convertedWav });
                 }
             }
+        }
+        catch (TargetInvocationException ex)
+        {
+            Exception inner = ex.InnerException ?? ex;
+            MelonLoader.MelonLogger.Error("ElevenLabs playback invocation failed: " + inner.GetType().Name + ": " + inner.Message);
         }
         catch (Exception ex)
         {
