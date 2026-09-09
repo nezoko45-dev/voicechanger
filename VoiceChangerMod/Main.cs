@@ -268,7 +268,7 @@ public sealed class Main : MelonMod
         if (!_enabled || string.IsNullOrWhiteSpace(text)) return;
         try
         {
-            string url = "https://api.deepgram.com/v1/speak?model=" + Uri.EscapeDataString(Voices[_selectedVoice].Model);
+            string url = "https://api.deepgram.com/v1/speak?model=" + Uri.EscapeDataString(Voices[_selectedVoice].Model) + "&encoding=mp3";
             using (var request = new HttpRequestMessage(HttpMethod.Post, url))
             {
                 request.Headers.TryAddWithoutValidation("Authorization", "Token " + _apiKey);
@@ -280,11 +280,14 @@ public sealed class Main : MelonMod
                         string error = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                         MelonLogger.Error("Deepgram TTS failed: " + (int)response.StatusCode + " " + error); _status = "TTS error"; NativeGui.Refresh(); return;
                     }
-                    byte[] audio = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false); if (_enabled) PlayMp3(audio);
+                    byte[] audio = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+                    if (audio.Length < 16) throw new InvalidDataException("Deepgram returned an empty or invalid audio response (" + audio.Length + " bytes).");
+                    MelonLogger.Msg("Deepgram TTS returned " + audio.Length + " bytes of MP3 audio.");
+                    if (_enabled) PlayMp3(audio);
                 }
             }
         }
-        catch (Exception ex) { MelonLogger.Error("Voice conversion playback failed: " + ex.GetType().Name + ": " + ex.Message); }
+        catch (Exception ex) { _status = "TTS playback failed"; NativeGui.Refresh(); MelonLogger.Error("Voice conversion playback failed: " + ex.GetType().Name + ": " + ex.Message); }
     }
 
     private static void PlayMp3(byte[] audio)
@@ -309,124 +312,4 @@ public sealed class Main : MelonMod
 internal static class NativeGui
 {
     private const int WM_CREATE = 0x0001, WM_CLOSE = 0x0010, WM_COMMAND = 0x0111;
-    private const int SW_HIDE = 0, SW_SHOW = 5;
-    private const int WS_OVERLAPPEDWINDOW = 0x00CF0000, WS_VISIBLE = 0x10000000, WS_CHILD = 0x40000000, WS_TABSTOP = 0x00010000;
-    private const int BS_PUSHBUTTON = 0x00000000, CBS_DROPDOWNLIST = 0x0003, ES_PASSWORD = 0x0020, ES_AUTOHSCROLL = 0x0080;
-    private const int WM_SETTEXT = 0x000C, WM_GETTEXT = 0x000D, CB_ADDSTRING = 0x0143, CB_SETCURSEL = 0x014E, CB_GETCURSEL = 0x0147, BM_CLICK = 0x00F5;
-    private const int BN_CLICKED = 0;
-    private static readonly object Lock = new object();
-    private static Thread? _thread;
-    private static IntPtr _window;
-    private static IntPtr _apiEdit, _voiceCombo, _saveButton, _startButton, _stopButton, _statusLabel, _transcriptLabel;
-    private static bool _visible;
-    private static readonly ManualResetEvent Ready = new ManualResetEvent(false);
-
-    public static void Toggle()
-    {
-        EnsureStarted();
-        lock (Lock) _visible = !_visible;
-        if (_window != IntPtr.Zero) NativeMethods.ShowWindow(_window, _visible ? SW_SHOW : SW_HIDE);
-    }
-
-    public static void Refresh()
-    {
-        if (_window == IntPtr.Zero) return;
-        try
-        {
-            NativeMethods.SetWindowText(_statusLabel, Main.Status);
-            NativeMethods.SetWindowText(_transcriptLabel, "Last transcript: " + Main.Transcript);
-        }
-        catch { }
-    }
-
-    private static void EnsureStarted()
-    {
-        if (_thread != null) { Ready.WaitOne(1000); return; }
-        lock (Lock)
-        {
-            if (_thread != null) return;
-            _thread = new Thread(GuiThread) { IsBackground = true, Name = "VoiceChanger GUI" };
-            _thread.SetApartmentState(ApartmentState.STA);
-            _thread.Start();
-        }
-        Ready.WaitOne(3000);
-    }
-
-    private static void GuiThread()
-    {
-        try
-        {
-            string cls = "VoiceChangerNativeWindow" + Environment.TickCount;
-            var wc = new NativeMethods.WNDCLASS { lpfnWndProc = WndProc, lpszClassName = cls, hInstance = NativeMethods.GetModuleHandle(null) };
-            NativeMethods.RegisterClass(ref wc);
-            _window = NativeMethods.CreateWindowEx(0, cls, "ChilloutVR VoiceChanger", WS_OVERLAPPEDWINDOW, 120, 120, 520, 360, IntPtr.Zero, IntPtr.Zero, wc.hInstance, IntPtr.Zero);
-            _apiEdit = CreateChild("EDIT", "", 20, 35, 460, 28, WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_PASSWORD | ES_AUTOHSCROLL, 1001);
-            _voiceCombo = CreateChild("COMBOBOX", "", 20, 90, 300, 300, WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST, 1002);
-            for (int i = 0; i < Main.VoiceNames.Length; i++) NativeMethods.SendMessage(_voiceCombo, CB_ADDSTRING, IntPtr.Zero, Main.VoiceNames[i]);
-            NativeMethods.SendMessage(_voiceCombo, CB_SETCURSEL, (IntPtr)Main.SelectedVoice, IntPtr.Zero);
-            _saveButton = CreateChild("BUTTON", "Save settings", 330, 90, 150, 32, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 1003);
-            _startButton = CreateChild("BUTTON", "Start", 20, 140, 140, 36, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 1004);
-            _stopButton = CreateChild("BUTTON", "Stop", 180, 140, 140, 36, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 1005);
-            _statusLabel = CreateChild("STATIC", "Status: " + Main.Status, 20, 200, 460, 28, WS_CHILD | WS_VISIBLE, 1006);
-            _transcriptLabel = CreateChild("STATIC", "Last transcript: " + Main.Transcript, 20, 235, 460, 45, WS_CHILD | WS_VISIBLE, 1007);
-            CreateChild("STATIC", "Deepgram API key", 20, 10, 200, 20, WS_CHILD | WS_VISIBLE, 1008);
-            CreateChild("STATIC", "Voice", 20, 70, 200, 20, WS_CHILD | WS_VISIBLE, 1009);
-            CreateChild("STATIC", "F10 = Start/Stop | F9 = Stop | F8 = Show/Hide", 20, 290, 460, 25, WS_CHILD | WS_VISIBLE, 1010);
-            NativeMethods.SetWindowText(_apiEdit, Main.ApiKey);
-            NativeMethods.ShowWindow(_window, SW_HIDE);
-            Ready.Set();
-            while (NativeMethods.GetMessage(out var msg, IntPtr.Zero, 0, 0))
-            {
-                NativeMethods.TranslateMessage(ref msg); NativeMethods.DispatchMessage(ref msg);
-            }
-        }
-        catch (Exception ex) { MelonLogger.Error("Native GUI failed: " + ex.Message); Ready.Set(); }
-    }
-
-    private static IntPtr CreateChild(string type, string text, int x, int y, int w, int h, int style, int id)
-    {
-        return NativeMethods.CreateWindowEx(0, type, text, style, x, y, w, h, _window, (IntPtr)id, NativeMethods.GetModuleHandle(null), IntPtr.Zero);
-    }
-
-    private static IntPtr WndProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
-    {
-        if (msg == WM_COMMAND)
-        {
-            int id = unchecked((short)((long)wParam & 0xFFFF));
-            int code = unchecked((short)(((long)wParam >> 16) & 0xFFFF));
-            if (code == BN_CLICKED && id == 1003)
-            {
-                var sb = new StringBuilder(4096); NativeMethods.SendMessage(_apiEdit, WM_GETTEXT, (IntPtr)sb.Capacity, sb); int voice = (int)NativeMethods.SendMessage(_voiceCombo, CB_GETCURSEL, IntPtr.Zero, IntPtr.Zero); Main.SetGuiValues(sb.ToString(), voice); return IntPtr.Zero;
-            }
-            if (code == BN_CLICKED && id == 1004)
-            {
-                var sb = new StringBuilder(4096); NativeMethods.SendMessage(_apiEdit, WM_GETTEXT, (IntPtr)sb.Capacity, sb); int voice = (int)NativeMethods.SendMessage(_voiceCombo, CB_GETCURSEL, IntPtr.Zero, IntPtr.Zero); Main.StartFromGui(sb.ToString(), voice); return IntPtr.Zero;
-            }
-            if (code == BN_CLICKED && id == 1005) { Main.StopFromGui(); return IntPtr.Zero; }
-        }
-        if (msg == WM_CLOSE) { NativeMethods.ShowWindow(hwnd, SW_HIDE); lock (Lock) _visible = false; return IntPtr.Zero; }
-        return NativeMethods.DefWindowProc(hwnd, msg, wParam, lParam);
-    }
-}
-
-internal static class NativeMethods
-{
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    internal struct WNDCLASS { public uint style; public WndProcDelegate lpfnWndProc; public int cbClsExtra; public int cbWndExtra; public IntPtr hInstance; public IntPtr hIcon; public IntPtr hCursor; public IntPtr hbrBackground; public string lpszMenuName; public string lpszClassName; }
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct MSG { public IntPtr hwnd; public uint message; public IntPtr wParam; public IntPtr lParam; public uint time; public int ptX; public int ptY; }
-    internal delegate IntPtr WndProcDelegate(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
-    [DllImport("user32.dll")] internal static extern short GetAsyncKeyState(int vKey);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern ushort RegisterClass(ref WNDCLASS lpWndClass);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern IntPtr CreateWindowEx(int exStyle, string className, string windowName, int style, int x, int y, int width, int height, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
-    [DllImport("user32.dll")] internal static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern bool SetWindowText(IntPtr hWnd, string text);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, StringBuilder lParam);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, string lParam);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
-    [DllImport("user32.dll")] internal static extern bool GetMessage(out MSG lpMsg, IntPtr hWnd, uint minFilter, uint maxFilter);
-    [DllImport("user32.dll")] internal static extern bool TranslateMessage(ref MSG lpMsg);
-    [DllImport("user32.dll")] internal static extern IntPtr DispatchMessage(ref MSG lpMsg);
-    [DllImport("user32.dll")] internal static extern IntPtr DefWindowProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] internal static extern IntPtr GetModuleHandle(string? lpModuleName);
-}
+   ... (truncated)
