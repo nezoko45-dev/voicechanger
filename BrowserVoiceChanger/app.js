@@ -1,6 +1,9 @@
 const $ = id => document.getElementById(id);
 const apiKey = $('apiKey');
 const voiceUuid = $('voiceUuid');
+const outputDevice = $('outputDevice');
+const outputStatus = $('outputStatus');
+const refreshAudioBtn = $('refreshAudio');
 const pitch = $('pitch');
 const prompt = $('prompt');
 const statusEl = $('status');
@@ -37,11 +40,38 @@ async function python(path, options = {}){
 async function saveConfig(){
   const payload = {
     voice_uuid: voiceUuid.value.trim(),
+    output_device: outputDevice.value || 'auto',
     pitch: Number(pitch.value || 0),
     prompt: prompt.value.trim()
   };
   if(apiKey.value.trim()) payload.api_key = apiKey.value.trim();
-  await python('/config', {method:'POST', body:JSON.stringify(payload)});
+  return python('/config', {method:'POST', body:JSON.stringify(payload)});
+}
+
+function setOutputStatus(data){
+  const name = data.selected_name || 'Windows default output';
+  const mode = data.selection === 'automatic virtual-cable match'
+    ? 'Automatic virtual-cable match'
+    : data.selection === 'automatic fallback'
+      ? 'Automatic fallback to Windows default'
+      : 'Selected device';
+  outputStatus.textContent = `Current TTS output: ${name} (${mode})`;
+}
+
+async function loadAudioDevices(){
+  const data = await python('/audio-devices');
+  const previous = outputDevice.value || data.preference || 'auto';
+  outputDevice.innerHTML = '';
+  outputDevice.add(new Option('Automatic — prefer Virtual Audio Cable', 'auto'));
+  (data.devices || []).forEach(device => {
+    outputDevice.add(new Option(device.name, device.name));
+  });
+  if(previous && [...outputDevice.options].some(o => o.value === previous)) {
+    outputDevice.value = previous;
+  } else {
+    outputDevice.value = 'auto';
+  }
+  setOutputStatus(data);
 }
 
 async function loadConfig(){
@@ -50,7 +80,9 @@ async function loadConfig(){
     if(data.voice_uuid) voiceUuid.value = data.voice_uuid;
     if(data.pitch !== undefined) pitch.value = data.pitch;
     if(data.prompt) prompt.value = data.prompt;
+    if(data.output_device) outputDevice.dataset.saved = data.output_device;
     if(data.api_key === 'configured') apiKey.placeholder = 'API key already configured locally';
+    setOutputStatus(data);
   }catch{}
 }
 
@@ -76,6 +108,14 @@ async function loadVoices(){
 async function connect(){
   try{
     setRunning(false);
+    setStatus('Detecting Windows audio outputs…');
+    await loadAudioDevices();
+    const savedOutput = outputDevice.dataset.saved;
+    if(savedOutput && [...outputDevice.options].some(o => o.value === savedOutput)) {
+      outputDevice.value = savedOutput;
+    }
+    await saveConfig();
+
     setStatus('Saving Resemble API key…');
     await saveConfig();
 
@@ -86,11 +126,13 @@ async function connect(){
     if(!voiceUuid.value.trim()) throw new Error('No Resemble custom voice is selected.');
 
     setStatus('Starting Resemble STT/TTS…');
-    await python('/start', {method:'POST', body:'{}'});
+    const started = await python('/start', {method:'POST', body:'{}'});
+    if(started.status) setStatus(started.status);
     setRunning(true);
-    transcriptEl.textContent = 'Connected. Your Resemble custom voices are loaded.';
+    transcriptEl.textContent = 'Connected. Resemble voices and Windows audio output are ready.';
     meterFill.style.width = '20%';
-    setStatus('Resemble STT/TTS connected');
+    const status = await python('/status');
+    setOutputStatus(status);
   }catch(err){
     setRunning(false);
     setStatus('Resemble error: ' + err.message);
@@ -129,6 +171,7 @@ async function startVoiceChanger(){
         const data = await response.json().catch(()=>({}));
         if(!response.ok) throw new Error(data.error || `Voice changer HTTP ${response.status}`);
         transcriptEl.textContent = data.text || '(No speech recognized)';
+        if(data.output_device_name) outputStatus.textContent = `Current TTS output: ${data.output_device_name}`;
         meterFill.style.width = '100%';
         setStatus('Custom voice reply complete');
       }catch(err){
@@ -168,11 +211,34 @@ async function stop(){
 startBtn.onclick = connect;
 recordBtn.onclick = () => recording ? stopListening() : startVoiceChanger();
 stopBtn.onclick = stop;
+refreshAudioBtn.onclick = async () => {
+  try{
+    await loadAudioDevices();
+    await saveConfig();
+    setStatus('Audio devices refreshed');
+  }catch(err){
+    setStatus('Audio device error: ' + err.message);
+  }
+};
 voiceUuid.onchange = saveConfig;
+outputDevice.onchange = async () => {
+  try{
+    const data = await saveConfig();
+    setOutputStatus(data);
+    setStatus(`Output selected: ${data.output_device_name}`);
+  }catch(err){
+    setStatus('Output selection error: ' + err.message);
+  }
+};
 pitch.onchange = saveConfig;
 prompt.onchange = saveConfig;
 
 (async()=>{
   setRunning(false);
   await loadConfig();
+  try{
+    await loadAudioDevices();
+  }catch(err){
+    outputStatus.textContent = 'Start the Python bridge to detect Windows audio devices.';
+  }
 })();
