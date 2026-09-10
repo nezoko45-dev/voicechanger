@@ -12,17 +12,15 @@ internal static class BrowserController
     private static readonly string[] AllowedFiles = { "index.html", "app.js", "style.css" };
     private static HttpListener? _server;
     private static Thread? _serverThread;
-    private static Process? _pythonProcess;
     private static int _port;
 
     public static void Start()
     {
         try
         {
-            StartPythonEngine();
             StartServer();
             if (_port != 0)
-                MelonLogger.Msg("Resemble VoiceChanger browser mode ready. Press F8 to open the control panel.");
+                MelonLogger.Msg("Resemble browser voice changer ready. Press F8 to open the control panel.");
         }
         catch (Exception ex)
         {
@@ -34,66 +32,6 @@ internal static class BrowserController
     {
         if ((GetAsyncKeyState(0x77) & 1) != 0)
             OpenBrowser();
-    }
-
-    private static void StartPythonEngine()
-    {
-        string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-        string[] roots =
-        {
-            Path.Combine(baseDir, "PythonVoiceChanger"),
-            Path.Combine(baseDir, "Mods", "PythonVoiceChanger"),
-            Path.Combine(Path.GetDirectoryName(typeof(BrowserController).Assembly.Location) ?? baseDir, "PythonVoiceChanger")
-        };
-
-        string? root = null;
-        foreach (string candidate in roots)
-        {
-            if (File.Exists(Path.Combine(candidate, "voicechanger.py")))
-            {
-                root = candidate;
-                break;
-            }
-        }
-
-        if (root == null)
-        {
-            MelonLogger.Error("PythonVoiceChanger files were not installed with the mod.");
-            return;
-        }
-
-        string script = Path.Combine(root, "voicechanger.py");
-        string quotedScript = "\"" + script.Replace("\"", "\\\"") + "\"";
-        string[] launchers = { "py", "python" };
-
-        foreach (string launcher in launchers)
-        {
-            try
-            {
-                var psi = new ProcessStartInfo
-                {
-                    FileName = launcher,
-                    Arguments = launcher == "py" ? "-3 " + quotedScript : quotedScript,
-                    WorkingDirectory = root,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = false,
-                    RedirectStandardError = false
-                };
-                _pythonProcess = Process.Start(psi);
-                if (_pythonProcess != null)
-                {
-                    MelonLogger.Msg("Resemble Python bridge started using " + launcher + ".");
-                    return;
-                }
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Msg("Python launcher " + launcher + " unavailable: " + ex.Message);
-            }
-        }
-
-        MelonLogger.Error("Python 3 was not found. The Resemble bridge uses only Python's standard library.");
     }
 
     private static void OpenBrowser()
