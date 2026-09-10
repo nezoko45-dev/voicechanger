@@ -1,4 +1,4 @@
-name: Build ChilloutVR VoiceChanger Python Mod
+name: Build ChilloutVR VoiceChanger WAV Mod
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
     paths:
       - 'VoiceChangerMod/**'
       - 'BrowserVoiceChanger/**'
-      - 'PythonVoiceChanger/**'
+      - 'PythonVoiceChanger/voicechanger.py'
       - 'ElevenLabs_2026-08-16T20_54_01_Ava – Natural AI Voice_pvc_sp100_s50_sb75_se36_b_e2.wav'
       - '.github/workflows/build-chilloutvr-voicechanger.yml'
 
@@ -28,23 +28,27 @@ jobs:
       - name: Build DLL
         run: dotnet build VoiceChangerMod/VoiceChangerMod.csproj --configuration Release --no-restore
 
-      - name: Verify Python engine
+      - name: Verify WAV engine
         shell: pwsh
         run: |
           foreach ($file in @(
             'PythonVoiceChanger/voicechanger.py',
-            'PythonVoiceChanger/requirements.txt',
             'ElevenLabs_2026-08-16T20_54_01_Ava – Natural AI Voice_pvc_sp100_s50_sb75_se36_b_e2.wav'
           )) {
-            if (-not (Test-Path $file)) { throw "Missing Python voice conversion asset: $file" }
+            if (-not (Test-Path $file)) { throw "Missing WAV voice conversion asset: $file" }
           }
           $py = Get-Content 'PythonVoiceChanger/voicechanger.py' -Raw
-          foreach ($check in @('/v1/voices/add', '/v1/speech-to-speech/', 'pcm_s16le_16', 'pcm_48000', 'sounddevice')) {
+          foreach ($check in @('/v1/speech-to-speech/', 'live.wav', 'wav_22050', 'winmm.dll', 'wave.open')) {
             if ($py.IndexOf($check, [StringComparison]::Ordinal) -lt 0) {
-              throw "Python engine check failed: $check"
+              throw "WAV engine check failed: $check"
             }
           }
-          Write-Host 'Python live voice conversion engine validation passed.'
+          foreach ($forbidden in @('numpy', 'sounddevice', 'requests', '/v1/voices/add', 'requirements.txt')) {
+            if ($py.IndexOf($forbidden, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+              throw "Forbidden dependency or automatic clone reference is present: $forbidden"
+            }
+          }
+          Write-Host 'Standard-library WAV engine validation passed.'
 
       - name: Verify browser files
         shell: pwsh
@@ -85,13 +89,12 @@ jobs:
             'BrowserVoiceChanger/app.js',
             'BrowserVoiceChanger/style.css',
             'PythonVoiceChanger/voicechanger.py',
-            'PythonVoiceChanger/requirements.txt',
             'ElevenLabs_2026-08-16T20_54_01_Ava – Natural AI Voice_pvc_sp100_s50_sb75_se36_b_e2.wav'
           )) {
             $path = Join-Path $out $file
             if (-not (Test-Path $path)) { throw "Asset was not copied to build output: $file" }
           }
-          Write-Host 'Python, target WAV, and browser assets are present in build output.'
+          Write-Host 'WAV engine, target WAV, and browser assets are present in build output.'
 
       - name: Stage mod package
         shell: pwsh
@@ -107,9 +110,9 @@ jobs:
           Copy-Item 'ElevenLabs_2026-08-16T20_54_01_Ava – Natural AI Voice_pvc_sp100_s50_sb75_se36_b_e2.wav' package/ -Force
           Get-ChildItem package -Recurse | Select-Object FullName,Length
 
-      - name: Upload Python voice changer package
+      - name: Upload WAV voice changer package
         uses: actions/upload-artifact@v4
         with:
-          name: ChilloutVRVoiceChangerPythonMod
+          name: ChilloutVRVoiceChangerWAVMod
           path: package/**
           if-no-files-found: error
