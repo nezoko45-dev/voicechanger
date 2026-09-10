@@ -75,11 +75,19 @@ async function loadVoices(){
 
 async function connect(){
   try{
-    setStatus('Saving Resemble settings…');
+    setRunning(false);
+    setStatus('Saving Resemble API key…');
     await saveConfig();
+
+    // Load the voice library BEFORE starting the engine. The previous order
+    // called /start while voice_uuid was still empty, which made startup fail.
+    await loadVoices();
+
+    if(!voiceUuid.value.trim()) throw new Error('No Resemble custom voice is selected.');
+
+    setStatus('Starting Resemble STT/TTS…');
     await python('/start', {method:'POST', body:'{}'});
     setRunning(true);
-    await loadVoices();
     transcriptEl.textContent = 'Connected. Your Resemble custom voices are loaded.';
     meterFill.style.width = '20%';
     setStatus('Resemble STT/TTS connected');
