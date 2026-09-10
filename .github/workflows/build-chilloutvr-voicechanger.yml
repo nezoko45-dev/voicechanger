@@ -52,14 +52,14 @@ jobs:
             'createScriptProcessor',
             'encodeWav',
             'audio/wav',
-            'api.cartesia.ai',
             '/stt',
             '/tts/bytes',
             'sonic-3.5',
             'speechStarted',
             'silenceMs',
             'transcribeAndSpeak',
-            '/cartesia-token'
+            '/cartesia-stt',
+            '/cartesia-tts'
           )) {
             if ($ui.IndexOf($check, [StringComparison]::Ordinal) -lt 0) {
               throw "Browser Cartesia STT/TTS check failed: $check"
@@ -75,20 +75,21 @@ jobs:
             'fetch(PYTHON',
             'MediaRecorder',
             'elevenlabs.io',
-            'resemble:convert'
+            'resemble:convert',
+            '/cartesia-token'
           )) {
             if ($ui.IndexOf($forbidden, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
               throw "Forbidden/legacy browser reference is present: $forbidden"
             }
           }
 
-          foreach ($check in @('HttpListener', 'HandleCartesiaToken', 'api.cartesia.ai/access-token', 'Cartesia-Version', 'HttpClient')) {
+          foreach ($check in @('HttpListener', 'HandleCartesiaStt', 'HandleCartesiaTts', 'https://api.cartesia.ai/stt', 'https://api.cartesia.ai/tts/bytes', 'Cartesia-Version', 'HttpClient', 'ink-whisper', 'sonic-3.5')) {
             if ($cs.IndexOf($check, [StringComparison]::Ordinal) -lt 0) {
               throw "Cartesia bridge check failed: $check"
             }
           }
 
-          foreach ($forbidden in @('PythonVoiceChanger', 'StartPythonEngine', '_pythonProcess', 'python', 'py -3', 'Resemble')) {
+          foreach ($forbidden in @('PythonVoiceChanger', 'StartPythonEngine', '_pythonProcess', 'py -3', 'Resemble', 'HandleCartesiaToken', 'api.cartesia.ai/access-token')) {
             if ($cs.IndexOf($forbidden, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
               throw "Legacy runtime reference is present in BrowserController: $forbidden"
             }
