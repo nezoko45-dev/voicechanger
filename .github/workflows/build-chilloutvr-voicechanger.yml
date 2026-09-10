@@ -1,4 +1,4 @@
-name: Build ChilloutVR VoiceChanger Resemble Mod
+name: Build ChilloutVR VoiceChanger Browser STT/TTS Mod
 
 on:
   workflow_dispatch:
@@ -6,7 +6,6 @@ on:
     paths:
       - 'VoiceChangerMod/**'
       - 'BrowserVoiceChanger/**'
-      - 'PythonVoiceChanger/**'
       - '.github/workflows/build-chilloutvr-voicechanger.yml'
 
 jobs:
@@ -27,12 +26,10 @@ jobs:
       - name: Build DLL
         run: dotnet build VoiceChangerMod/VoiceChangerMod.csproj --configuration Release --no-restore
 
-      - name: Verify Resemble bridge
+      - name: Verify browser-only STT/TTS
         shell: pwsh
         run: |
           foreach ($file in @(
-            'PythonVoiceChanger/voicechanger.py',
-            'PythonVoiceChanger/config.json',
             'BrowserVoiceChanger/index.html',
             'BrowserVoiceChanger/app.js',
             'BrowserVoiceChanger/style.css',
@@ -40,85 +37,62 @@ jobs:
           )) {
             if (-not (Test-Path $file)) { throw "Missing VoiceChanger asset: $file" }
           }
-          $py = Get-Content 'PythonVoiceChanger/voicechanger.py' -Raw
-          foreach ($check in @(
-            'RESEMBLE_SYNTH',
-            'RESEMBLE_STT',
-            'RESEMBLE_VOICES',
-            'f.cluster.resemble.ai/synthesize',
-            '/api/v2/speech-to-text',
-            '/api/v2/voices',
-            'voice_uuid',
-            'Authorization',
-            '/stt-tts',
-            '/voices'
-          )) {
-            if ($py.IndexOf($check, [StringComparison]::Ordinal) -lt 0) {
-              throw "Resemble STT/TTS bridge check failed: $check"
-            }
-          }
-          foreach ($forbidden in @(
-            'elevenlabs.io',
-            '/v1/speech-to-speech/',
-            '/v1/voices/add',
-            'voice_id',
-            'resemble:convert',
-            'import numpy',
-            'import requests',
-            'import sounddevice',
-            'pitch_shift_chunk',
-            'winmm.dll',
-            'PlaySound'
-          )) {
-            if ($py.IndexOf($forbidden, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
-              throw "Legacy voice-conversion reference is present: $forbidden"
-            }
-          }
-          python -m py_compile PythonVoiceChanger/voicechanger.py
-          Write-Host 'Resemble STT/TTS Python bridge validation passed.'
 
-      - name: Verify browser UI
-        shell: pwsh
-        run: |
           $html = Get-Content 'BrowserVoiceChanger/index.html' -Raw
           $js = Get-Content 'BrowserVoiceChanger/app.js' -Raw
+          $cs = Get-Content 'VoiceChangerMod/BrowserController.cs' -Raw
           $ui = $html + "`n" + $js
+
           foreach ($check in @(
             'Resemble API key',
             'Custom voice',
-            'Start Voice Changer',
-            'Stop',
-            '/voices',
-            '/stt-tts',
+            'Start Automatic Voice Changer',
             'getUserMedia',
             'AudioContext',
             'createScriptProcessor',
             'encodeWav',
-            'audio/wav'
+            'audio/wav',
+            '/speech-to-text',
+            '/voices',
+            'f.cluster.resemble.ai',
+            '/synthesize',
+            'speechStarted',
+            'silenceMs',
+            'transcribeAndSpeak'
           )) {
             if ($ui.IndexOf($check, [StringComparison]::Ordinal) -lt 0) {
-              throw "Browser STT/TTS UI check failed: $check"
+              throw "Browser STT/TTS check failed: $check"
             }
           }
+
           foreach ($forbidden in @(
-            'ElevenLabs API key',
-            'Target Voice ID',
-            'Source WAV URL',
-            'Convert WAV',
-            '/convert',
-            'voice_id'
+            'PythonVoiceChanger',
+            '127.0.0.1:17856',
+            'voicechanger.py',
+            'fetch(PYTHON',
+            'MediaRecorder',
+            'elevenlabs.io',
+            'voice_id',
+            'resemble:convert'
           )) {
             if ($ui.IndexOf($forbidden, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
-              throw "Legacy browser voice-conversion reference is present: $forbidden"
+              throw "Forbidden/legacy browser reference is present: $forbidden"
             }
           }
-          Write-Host 'Resemble STT/TTS browser control panel validation passed.'
+
+          foreach ($forbidden in @('PythonVoiceChanger', 'StartPythonEngine', '_pythonProcess', 'python', 'py -3')) {
+            if ($cs.IndexOf($forbidden, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+              throw "Python runtime reference is present in BrowserController: $forbidden"
+            }
+          }
+
+          Write-Host 'Browser-only automatic Resemble STT/TTS validation passed.'
 
       - name: Verify source
         shell: pwsh
         run: |
           $source = Get-Content 'VoiceChangerMod/BrowserController.cs' -Raw
-          foreach ($check in @('HttpListener', '127.0.0.1:', 'BrowserVoiceChanger', 'PythonVoiceChanger', 'ProcessStartInfo', 'UseShellExecute = true')) {
+          foreach ($check in @('HttpListener', '127.0.0.1:', 'BrowserVoiceChanger', 'ProcessStartInfo', 'UseShellExecute = true')) {
             if ($source.IndexOf($check, [StringComparison]::Ordinal) -lt 0) {
               throw "Launcher check failed: $check"
             }
@@ -138,22 +112,21 @@ jobs:
           $out = 'VoiceChangerMod/bin/Release/net472'
           New-Item -ItemType Directory -Force -Path package | Out-Null
           New-Item -ItemType Directory -Force -Path package/BrowserVoiceChanger | Out-Null
-          New-Item -ItemType Directory -Force -Path package/PythonVoiceChanger | Out-Null
           Copy-Item (Join-Path $out 'VoiceChangerMod.dll') package/VoiceChangerMod.dll.bin -Force
           Copy-Item 'BrowserVoiceChanger/index.html' package/BrowserVoiceChanger/ -Force
           Copy-Item 'BrowserVoiceChanger/app.js' package/BrowserVoiceChanger/ -Force
           Copy-Item 'BrowserVoiceChanger/style.css' package/BrowserVoiceChanger/ -Force
-          Copy-Item 'PythonVoiceChanger/voicechanger.py' package/PythonVoiceChanger/ -Force
-          Copy-Item 'PythonVoiceChanger/config.json' package/PythonVoiceChanger/ -Force
           @'
           INSTALLATION
           ==========
-          This package keeps the Windows DLL as VoiceChangerMod.dll.bin so browsers are less likely to classify the download as a dangerous executable package.
+          This is the browser-only Resemble STT/TTS build. No Python installation is required.
 
-          After extracting the package:
-          1. Rename VoiceChangerMod.dll.bin to VoiceChangerMod.dll
+          1. Rename VoiceChangerMod.dll.bin to VoiceChangerMod.dll.
           2. Place VoiceChangerMod.dll in the ChilloutVR Mods folder.
-          3. Keep BrowserVoiceChanger and PythonVoiceChanger beside the DLL as included.
+          3. Keep BrowserVoiceChanger beside the DLL as included.
+          4. Start ChilloutVR and press F8 to open the browser control panel.
+          5. Enter your Resemble API key, load your custom voice, choose CABLE Input as browser output, and start automatic voice changer.
+          6. Speak normally. Silence detection automatically submits each sentence; the returned Resemble TTS audio is played and the browser immediately listens again.
           '@ | Set-Content package/INSTALL.txt -Encoding UTF8
           Get-ChildItem package -Recurse | Select-Object FullName,Length
 
@@ -164,7 +137,7 @@ jobs:
           Compress-Archive -Path package/* -DestinationPath 'ChilloutVRVoiceChangerResembleMod.zip' -CompressionLevel Optimal
           Get-Item 'ChilloutVRVoiceChangerResembleMod.zip' | Select-Object FullName,Length
 
-      - name: Upload Resemble voice changer package
+      - name: Upload Resemble browser voice changer package
         uses: actions/upload-artifact@v4
         with:
           name: ChilloutVRVoiceChangerResembleMod
