@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-const apiKey = $('apiKey'), outputSelect = $('output');
+const apiKey = $('apiKey'), voiceId = $('voiceId'), outputSelect = $('output');
 const statusEl = $('status'), transcriptEl = $('text'), meterFill = $('meterFill');
 const startBtn = $('start'), stopBtn = $('stop');
 
@@ -9,6 +9,7 @@ const PYTHON = 'http://127.0.0.1:17856';
 function setStatus(text){ statusEl.textContent = text; }
 function setRunning(v){ running = v; startBtn.disabled = v; stopBtn.disabled = !v; }
 function validApiKey(key){ return !!key && key.length >= 20 && key.length <= 500 && !/[\r\n]/.test(key); }
+function validVoiceId(id){ return !!id && id.length >= 8 && id.length <= 200 && !/[\r\n]/.test(id); }
 
 async function python(path, options = {}){
   const response = await fetch(PYTHON + path, {
@@ -40,6 +41,7 @@ async function refreshStatus(){
   try{
     const data = await python('/status');
     setRunning(!!data.running);
+    if(data.voice_id && !voiceId.value) voiceId.value = data.voice_id;
     if(data.error) setStatus(data.error);
     else if(data.status) setStatus(data.status);
   }catch{}
@@ -48,17 +50,23 @@ async function refreshStatus(){
 async function start(){
   if(running) return;
   const key = apiKey.value.trim();
+  const id = voiceId.value.trim();
   if(!validApiKey(key)){ setStatus('Enter your ElevenLabs API key'); apiKey.focus(); return; }
+  if(!validVoiceId(id)){ setStatus('Enter the ElevenLabs Voice ID for your target WAV voice'); voiceId.focus(); return; }
   sessionStorage.setItem('voicechanger.elevenlabs', key);
+  localStorage.setItem('voicechanger.voiceid', id);
   localStorage.setItem('voicechanger.output', outputSelect.value);
   try{
-    setStatus('Starting Python audio engine…');
-    await python('/config', {method:'POST', body:JSON.stringify({output_device: outputSelect.value === '' ? null : Number(outputSelect.value)})});
-    await python('/start', {method:'POST', body:JSON.stringify({api_key:key})});
+    setStatus('Starting Python WAV engine…');
+    await python('/config', {method:'POST', body:JSON.stringify({
+      output_device: outputSelect.value === '' ? null : Number(outputSelect.value),
+      voice_id: id
+    })});
+    await python('/start', {method:'POST', body:JSON.stringify({api_key:key, voice_id:id})});
     setRunning(true);
-    transcriptEl.textContent = 'Live conversion: microphone → ElevenLabs → selected output';
+    transcriptEl.textContent = 'Live conversion: microphone WAV → ElevenLabs → WAV → selected output';
     meterFill.style.width = '100%';
-    setStatus('LIVE — Python is converting your microphone');
+    setStatus('LIVE — WAV conversion running');
   }catch(err){
     setRunning(false);
     setStatus('Python engine error: ' + err.message);
@@ -76,6 +84,7 @@ async function stop(){
 startBtn.onclick = start;
 stopBtn.onclick = stop;
 apiKey.value = sessionStorage.getItem('voicechanger.elevenlabs') || localStorage.getItem('voicechanger.elevenlabs') || '';
+voiceId.value = localStorage.getItem('voicechanger.voiceid') || '';
 outputSelect.onchange = () => localStorage.setItem('voicechanger.output', outputSelect.value);
 
 (async()=>{
