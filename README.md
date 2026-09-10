@@ -1,27 +1,31 @@
 # 🎙️ VoiceChanger
 
-A static browser-based VoiceChanger using Deepgram Flux for real-time speech recognition and Deepgram Aura for speech output.
+A standalone browser voice changer using Cartesia STT and Sonic TTS. There is no MelonLoader DLL, C# bridge, Python runtime, or desktop audio process.
 
 ## Pipeline
 
-**🎤 Microphone → Deepgram Flux WebSocket → 📝 transcript → 🔊 Deepgram Aura TTS**
+**🎤 Microphone → Cartesia STT → 📝 text → Cartesia Sonic TTS → 🔊 browser output → VB-CABLE → ChilloutVR**
 
-## Frontend
+## Run it
 
-The app is a single static `index.html` and can be hosted on GitHub Pages, Netlify, Vercel, or another static host.
+The app is in `web/` and is configured for Netlify with `netlify.toml`.
 
-Enter your Deepgram API key in the app. The current frontend stores it in the browser's local storage so the app can connect directly to Deepgram.
+Serve the `web` folder from a static HTTPS host such as Netlify, Vercel, or GitHub Pages. Microphone access requires a secure browser context (HTTPS, or localhost during local development).
 
-> For a public production deployment, do not expose a permanent API key in browser code. Use a backend/worker that issues temporary credentials instead.
+Enter your Cartesia API key and Cartesia Voice ID in the page. The page requests a short-lived Cartesia access token and keeps it in browser memory.
 
-## Deepgram Flux
+## ChilloutVR audio routing
 
-The frontend uses Deepgram's current Flux `/v2/listen` WebSocket endpoint with `flux-general-en`, 16 kHz `linear16` audio, Flux turn detection, and periodic keep-alive messages.
+1. Set the browser TTS output to **CABLE Input**.
+2. In ChilloutVR, choose **CABLE Output** as the microphone/input device.
+3. Click **Connect**.
+4. Click **Test voice**.
+5. Click **Start automatic mode** and speak normally.
 
-## TTS
+The browser detects pauses, sends each captured sentence to Cartesia STT, sends the resulting text to Cartesia Sonic TTS, then plays the returned WAV through the selected output.
 
-Deepgram Aura TTS is requested through the Deepgram `/v1/speak` endpoint and played directly in the browser. The selected voice and output sample rate can be changed from the UI.
+## Cartesia
 
-## Troubleshooting
+The browser uses Cartesia API version `2026-03-01`, `ink-whisper` for STT, and `sonic-3.5` for TTS.
 
-The diagnostics panel reports WebSocket connection state, Flux errors, TTS errors, and close codes. If the microphone does not start, make sure the site is served over HTTPS and that microphone permission is allowed.
+Never commit an API key to the repository. For a public deployment, remember that browser-side credentials are exposed to the user running the page; use short-lived access tokens and rotate your API key if it is ever exposed.
