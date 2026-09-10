@@ -16,8 +16,11 @@ const recordBtn = $('record');
 const stopBtn = $('stop');
 const player = $('player');
 
-const RESEMBLE_API = 'https://app.resemble.ai/api/v2';
-const RESEMBLE_SYNTH = 'https://f.cluster.resemble.ai';
+const CARTESIA_API = 'https://api.cartesia.ai';
+const CARTESIA_VERSION = '2026-03-01';
+const CARTESIA_MODEL = 'sonic-3.5';
+let cartesiaToken = '';
+let cartesiaTokenExpiresAt = 0;
 let running = false;
 let listening = false;
 let speaking = false;
@@ -45,18 +48,41 @@ function setRunning(v){
 }
 function requireKey(){
   const key = apiKey.value.trim();
-  if(!key) throw new Error('Enter your Resemble API key first.');
+  if(!key) throw new Error('Enter your Cartesia API key first.');
   return key;
 }
-async function resemble(path, options = {}){
-  const key = requireKey();
-  const response = await fetch(RESEMBLE_API + path, {
-    ...options,
-    headers: { Authorization:`Bearer ${key}`, ...(options.headers || {}) }
+function requireVoice(){
+  const id = voiceUuid.value.trim();
+  if(!id) throw new Error('Enter your Cartesia Voice ID first.');
+  return id;
+}
+async function getCartesiaToken(forceRefresh=false){
+  requireKey();
+  if(!forceRefresh && cartesiaToken && Date.now() < cartesiaTokenExpiresAt - 15000) return cartesiaToken;
+  const response = await fetch('/cartesia-token', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({apiKey: apiKey.value.trim()})
   });
   const data = await response.json().catch(() => ({}));
-  if(!response.ok) throw new Error(data.error || data.message || data.detail || `Resemble HTTP ${response.status}`);
-  return data;
+  if(!response.ok || !data.token) throw new Error(data.error || `Cartesia token HTTP ${response.status}`);
+  cartesiaToken = data.token;
+  cartesiaTokenExpiresAt = Date.now() + 5 * 60 * 1000;
+  return cartesiaToken;
+}
+async function cartesiaFetch(path, options={}, retry=true){
+  const token = await getCartesiaToken();
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    'Cartesia-Version': CARTESIA_VERSION,
+    ...(options.headers || {})
+  };
+  const response = await fetch(CARTESIA_API + path, {...options, headers});
+  if(response.status === 401 && retry){
+    await getCartesiaToken(true);
+    return cartesiaFetch(path, options, false);
+  }
+  return response;
 }
 async function loadAudioDevices(){
   if(!navigator.mediaDevices?.enumerateDevices) { outputStatus.textContent='This browser does not expose audio output selection.'; return; }
@@ -93,57 +119,53 @@ async function chooseOutput(){
     if(device?.deviceId){ selectedOutput=device.deviceId; await loadAudioDevices(); outputDevice.value=device.deviceId; await applySink(); setStatus(`Output selected: ${device.label || 'Windows audio device'}`); }
   }catch(err){ setStatus('Output chooser: ' + err.message); }
 }
-function decodeBase64Audio(base64,mime='audio/wav'){
-  if(!base64) throw new Error('Resemble returned no audio data.');
-  const chars=atob(base64), bytes=new Uint8Array(chars.length);
-  for(let i=0;i<chars.length;i++) bytes[i]=chars.charCodeAt(i);
-  return new Blob([bytes],{type:mime});
-}
-async function playResembleAudio(base64,mime='audio/wav'){
-  const blob=decodeBase64Audio(base64,mime), url=URL.createObjectURL(blob);
+async function playAudioBlob(blob){
+  const url=URL.createObjectURL(blob);
   try{
     if(typeof player.setSinkId==='function') await player.setSinkId(selectedOutput==='default'?'':selectedOutput);
     player.src=url; player.currentTime=0; speaking=true; await player.play();
     await new Promise(resolve=>{ const done=()=>{player.removeEventListener('ended',done);resolve();}; player.addEventListener('ended',done); setTimeout(()=>{player.removeEventListener('ended',done);resolve();},30000); });
   }finally{ speaking=false; URL.revokeObjectURL(url); }
 }
-async function loadVoices(){
-  setStatus('Loading your Resemble custom voices…');
-  // Resemble requires pagination to start at page 1. Calling /voices without
-  // an explicit page can produce: "Expected page to be a value >= 1, got 0".
-  const data=await resemble('/voices?page=1'), previous=voiceUuid.value;
-  voiceUuid.innerHTML=''; const voices=data.items || data.voices || [];
-  if(!voices.length) throw new Error('No Resemble voices were returned for this account.');
-  voices.forEach(v=>voiceUuid.add(new Option(`${v.name || 'Unnamed'} — ${v.uuid || ''}`,v.uuid || '')));
-  if(previous && [...voiceUuid.options].some(o=>o.value===previous)) voiceUuid.value=previous;
-  if(!voiceUuid.value && voices[0]?.uuid) voiceUuid.value=voices[0].uuid;
-}
 async function connect(){
   try{
-    requireKey(); setStatus('Requesting browser microphone permission…');
+    requireKey(); requireVoice();
+    setStatus('Checking Cartesia access…');
+    await getCartesiaToken(true);
+    setStatus('Requesting browser microphone permission…');
     const permissionStream=await navigator.mediaDevices.getUserMedia({audio:true}); permissionStream.getTracks().forEach(t=>t.stop());
-    await loadAudioDevices(); await loadVoices(); if(!voiceUuid.value.trim()) throw new Error('No Resemble custom voice is selected.');
-    setRunning(true); setStatus('Resemble browser mode ready');
+    await loadAudioDevices();
+    setRunning(true); setStatus('Cartesia browser mode ready');
     transcriptEl.textContent='Ready. Start the automatic voice changer and just talk — no Stop button is needed between sentences.'; meterFill.style.width='20%';
   }catch(err){ setRunning(false); setStatus('Connection error: '+err.message); transcriptEl.textContent=err.message; }
 }
 async function synthesize(text){
-  const response=await fetch(`${RESEMBLE_SYNTH}/synthesize`,{
-    method:'POST',headers:{Authorization:`Bearer ${requireKey()}`,'Content-Type':'application/json'},
-    body:JSON.stringify({voice_uuid:voiceUuid.value.trim(),data:text,output_format:'wav',sample_rate:48000})
+  const response=await cartesiaFetch('/tts/bytes',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      model_id:CARTESIA_MODEL,
+      transcript:text,
+      voice:{mode:'id',id:requireVoice()},
+      language:'en',
+      output_format:{container:'wav',encoding:'pcm_s16le',sample_rate:48000},
+      generation_config:{volume:1,speed:1}
+    })
   });
-  const data=await response.json().catch(()=>({}));
-  if(!response.ok) throw new Error(data.error || data.message || `Resemble TTS HTTP ${response.status}`);
-  return data;
+  if(!response.ok){
+    const detail=await response.text().catch(()=> '');
+    throw new Error(detail || `Cartesia TTS HTTP ${response.status}`);
+  }
+  return response.blob();
 }
 async function testAudio(){
   if(!running) return;
   try{
-    if(!voiceUuid.value.trim()) throw new Error('Select a Resemble custom voice first.');
-    setStatus('Resemble TTS: generating test voice…'); meterFill.style.width='55%';
-    const data=await synthesize('Hello! This is the Resemble browser voice test.');
-    await playResembleAudio(data.audio_content,'audio/wav'); meterFill.style.width='100%'; setStatus('Test audio played successfully');
-    transcriptEl.textContent='TTS works directly in the browser. If CABLE Input is selected, the audio is routed into VB-CABLE.';
+    requireVoice();
+    setStatus('Cartesia TTS: generating test voice…'); meterFill.style.width='55%';
+    const blob=await synthesize('Hello! This is the Cartesia browser voice test.');
+    await playAudioBlob(blob); meterFill.style.width='100%'; setStatus('Test audio played successfully');
+    transcriptEl.textContent='Cartesia TTS works in the browser. If CABLE Input is selected, the audio is routed into VB-CABLE.';
   }catch(err){ meterFill.style.width='0%'; setStatus('Audio test failed: '+err.message); transcriptEl.textContent=err.message; }
 }
 function mergeFloat32(chunks,length){ const output=new Float32Array(length); let offset=0; for(const chunk of chunks){output.set(chunk,offset);offset+=chunk.length;} return output; }
@@ -154,23 +176,25 @@ function encodeWav(samples,sampleRate){
   let offset=44; for(let i=0;i<samples.length;i++){const sample=Math.max(-1,Math.min(1,samples[i]));view.setInt16(offset,sample<0?sample*0x8000:sample*0x7fff,true);offset+=2;} return new Blob([buffer],{type:'audio/wav'});
 }
 function rms(samples){let sum=0;for(let i=0;i<samples.length;i++)sum+=samples[i]*samples[i];return Math.sqrt(sum/Math.max(1,samples.length));}
+async function transcribe(wav){
+  const form=new FormData(); form.append('file',wav,'voice.wav');
+  const response=await cartesiaFetch('/stt',{method:'POST',body:form});
+  if(!response.ok){
+    const detail=await response.text().catch(()=> '');
+    throw new Error(detail || `Cartesia STT HTTP ${response.status}`);
+  }
+  const data=await response.json();
+  return (data.text || '').trim();
+}
 async function transcribeAndSpeak(wav){
   if(processingPromise)return processingPromise;
   processingPromise=(async()=>{
     try{
-      setStatus('Resemble STT: transcribing…'); transcriptEl.textContent='Speech captured — Resemble is transcribing automatically…'; meterFill.style.width='55%';
-      const form=new FormData();form.append('file',wav,'voice.wav');
-      const created=await resemble('/speech-to-text',{method:'POST',body:form}); const uuid=created.item?.uuid;
-      if(!uuid)throw new Error('Resemble STT did not return a transcript UUID.');
-      let text='';
-      for(let attempt=0;attempt<30;attempt++){
-        await new Promise(r=>setTimeout(r,500)); const result=await resemble(`/speech-to-text/${encodeURIComponent(uuid)}`); const item=result.item||{};
-        if(item.status==='failed'||item.status==='error')throw new Error('Resemble STT failed to process the audio.');
-        if(item.text && item.status==='completed'){text=item.text.trim();break;}
-      }
+      setStatus('Cartesia STT: transcribing…'); transcriptEl.textContent='Speech captured — Cartesia is transcribing automatically…'; meterFill.style.width='55%';
+      const text=await transcribe(wav);
       if(!text){setStatus('Listening again…');return;}
-      transcriptEl.textContent=text; setStatus('Resemble TTS: repeating your speech…');
-      const data=await synthesize(text); await playResembleAudio(data.audio_content,'audio/wav'); meterFill.style.width='100%'; setStatus('Listening again…');
+      transcriptEl.textContent=text; setStatus('Cartesia TTS: repeating your speech…');
+      const blob=await synthesize(text); await playAudioBlob(blob); meterFill.style.width='100%'; setStatus('Listening again…');
     }catch(err){setStatus('Automatic voice error: '+err.message);transcriptEl.textContent=err.message;meterFill.style.width='0%';}
     finally{processingPromise=null;}
   })();
@@ -179,12 +203,12 @@ async function transcribeAndSpeak(wav){
 async function startAutomaticVoiceChanger(){
   if(!running||listening)return;
   try{
-    requireKey();if(!voiceUuid.value.trim())throw new Error('Select a Resemble custom voice first.');
+    requireKey();requireVoice();
     stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
     audioContext=new (window.AudioContext||window.webkitAudioContext)();await audioContext.resume();
     sourceNode=audioContext.createMediaStreamSource(stream);processorNode=audioContext.createScriptProcessor(2048,1,1);silentGain=audioContext.createGain();silentGain.gain.value=0;
     sourceNode.connect(processorNode);processorNode.connect(silentGain);silentGain.connect(audioContext.destination);
-    recordedChunks=[];speechStarted=false;silenceMs=0;speechMs=0;lastProcessTime=performance.now();listening=true;recordBtn.textContent='Automatic Listening…';setStatus('Listening… talk normally');transcriptEl.textContent='Speak naturally. The browser detects when you stop talking and automatically sends the sentence to Resemble.';meterFill.style.width='25%';
+    recordedChunks=[];speechStarted=false;silenceMs=0;speechMs=0;lastProcessTime=performance.now();listening=true;recordBtn.textContent='Automatic Listening…';setStatus('Listening… talk normally');transcriptEl.textContent='Speak naturally. The browser detects when you stop talking and automatically sends the sentence to Cartesia STT.';meterFill.style.width='25%';
     processorNode.onaudioprocess=event=>{
       if(!listening||speaking||processingPromise)return; const input=event.inputBuffer.getChannelData(0),copy=new Float32Array(input.length);copy.set(input);
       const level=rms(input),now=performance.now(),dt=Math.max(1,Math.min(100,now-lastProcessTime));lastProcessTime=now;const threshold=0.018;
