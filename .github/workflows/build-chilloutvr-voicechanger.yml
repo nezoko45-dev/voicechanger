@@ -28,34 +28,30 @@ jobs:
       - name: Build DLL
         run: dotnet build VoiceChangerMod/VoiceChangerMod.csproj --configuration Release --no-restore
 
-      - name: Verify WAV engine
+      - name: Verify WAV-only engine
         shell: pwsh
         run: |
           foreach ($file in @(
             'PythonVoiceChanger/voicechanger.py',
             'ElevenLabs_2026-08-16T20_54_01_Ava – Natural AI Voice_pvc_sp100_s50_sb75_se36_b_e2.wav'
           )) {
-            if (-not (Test-Path $file)) { throw "Missing WAV voice conversion asset: $file" }
+            if (-not (Test-Path $file)) { throw "Missing WAV conversion asset: $file" }
           }
           $py = Get-Content 'PythonVoiceChanger/voicechanger.py' -Raw
-          foreach ($check in @('/v1/speech-to-speech/', 'live.wav', 'wav_22050', 'winmm.dll', 'wave.open')) {
+          foreach ($check in @('winmm.dll', 'wave.open', 'TARGET_WAV', 'estimate_pitch', 'pitch_shift_chunk', 'WAV-only local')) {
             if ($py.IndexOf($check, [StringComparison]::Ordinal) -lt 0) {
-              throw "WAV engine check failed: $check"
+              throw "WAV-only engine check failed: $check"
             }
           }
-          # Validate actual import statements, not comments or explanatory text.
-          foreach ($forbiddenImport in @('import numpy', 'import requests', 'import sounddevice', 'from numpy', 'from requests', 'from sounddevice')) {
-            if ($py.IndexOf($forbiddenImport, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
-              throw "Forbidden third-party Python import is present: $forbiddenImport"
+          foreach ($forbidden in @('elevenlabs.io', '/v1/speech-to-speech/', '/v1/voices/add', 'voice_id', 'import numpy', 'import requests', 'import sounddevice')) {
+            if ($py.IndexOf($forbidden, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+              throw "Cloud voice conversion or third-party dependency reference is present: $forbidden"
             }
-          }
-          if ($py.IndexOf('/v1/voices/add', [StringComparison]::OrdinalIgnoreCase) -ge 0) {
-            throw 'Automatic voice-cloning endpoint is still present.'
           }
           if (Test-Path 'PythonVoiceChanger/requirements.txt') {
             throw 'PythonVoiceChanger/requirements.txt must not exist: the engine is standard-library-only.'
           }
-          Write-Host 'Standard-library WAV engine validation passed.'
+          Write-Host 'WAV-only standard-library engine validation passed.'
 
       - name: Verify browser files
         shell: pwsh
@@ -68,7 +64,14 @@ jobs:
           )) {
             if (-not (Test-Path $file)) { throw "Missing browser file: $file" }
           }
-          Write-Host 'Browser control panel files are present.'
+          $html = Get-Content 'BrowserVoiceChanger/index.html' -Raw
+          $js = Get-Content 'BrowserVoiceChanger/app.js' -Raw
+          foreach ($forbidden in @('ElevenLabs API key', 'Target Voice ID', 'voice_id', 'speech-to-speech')) {
+            if (($html + "`n" + $js).IndexOf($forbidden, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+              throw "Legacy Voice ID UI reference is present: $forbidden"
+            }
+          }
+          Write-Host 'Browser WAV-only control panel validation passed.'
 
       - name: Verify source
         shell: pwsh
