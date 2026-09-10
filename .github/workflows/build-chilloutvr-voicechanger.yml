@@ -82,6 +82,7 @@ jobs:
         run: |
           $html = Get-Content 'BrowserVoiceChanger/index.html' -Raw
           $js = Get-Content 'BrowserVoiceChanger/app.js' -Raw
+          $ui = $html + "`n" + $js
           foreach ($check in @(
             'Resemble API key',
             'Custom voice',
@@ -90,9 +91,12 @@ jobs:
             '/voices',
             '/stt-tts',
             'getUserMedia',
-            'MediaRecorder'
+            'AudioContext',
+            'createScriptProcessor',
+            'encodeWav',
+            'audio/wav'
           )) {
-            if (($html + "`n" + $js).IndexOf($check, [StringComparison]::Ordinal) -lt 0) {
+            if ($ui.IndexOf($check, [StringComparison]::Ordinal) -lt 0) {
               throw "Browser STT/TTS UI check failed: $check"
             }
           }
@@ -104,7 +108,7 @@ jobs:
             '/convert',
             'voice_id'
           )) {
-            if (($html + "`n" + $js).IndexOf($forbidden, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            if ($ui.IndexOf($forbidden, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
               throw "Legacy browser voice-conversion reference is present: $forbidden"
             }
           }
