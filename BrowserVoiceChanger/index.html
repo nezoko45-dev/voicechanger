@@ -3,29 +3,33 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>ChilloutVR VoiceChanger — WAV</title>
+  <title>ChilloutVR VoiceChanger — WAV Only</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="app">
-    <header><h1>VoiceChanger</h1><span id="status" class="status">Python WAV engine ready</span></header>
+    <header><h1>VoiceChanger</h1><span id="status" class="status">WAV engine ready</span></header>
     <section class="grid">
-      <label>ElevenLabs API key<input id="apiKey" type="password" autocomplete="off" placeholder="Paste your ElevenLabs key"></label>
-      <label>Target Voice ID<input id="voiceId" type="text" autocomplete="off" placeholder="Your ElevenLabs voice ID"></label>
+      <label>Target WAV
+        <input id="targetWav" type="text" readonly value="Bundled target WAV">
+      </label>
+      <label>Target effect strength
+        <input id="strength" type="range" min="0" max="100" value="82">
+      </label>
       <label>Output device<select id="output"></select></label>
     </section>
     <div class="meter"><div id="meterFill"></div></div>
     <div class="buttons"><button id="start">Start</button><button id="stop" disabled>Stop</button></div>
-    <section class="transcript"><h2>Engine</h2><div id="text">Waiting for Python audio engine…</div></section>
+    <section class="transcript"><h2>Engine</h2><div id="text">Waiting for the local WAV engine…</div></section>
     <section class="transcript">
       <h2>Target WAV</h2>
-      <div class="hint">The repository WAV is kept as the target reference asset. The live Voice Changer API requires the ElevenLabs Voice ID belonging to the target voice; it does not accept a local WAV as the target voice.</div>
+      <div class="hint">The bundled WAV is loaded locally and analyzed as the target voice profile. No ElevenLabs API key, Voice ID, Voice Library, or cloud conversion is used.</div>
     </section>
     <section class="transcript">
       <h2>Audio route</h2>
-      <div class="hint">Microphone WAV → ElevenLabs Voice Changer → WAV → Windows output → your ChilloutVR input routing.</div>
+      <div class="hint">Microphone WAV → local WAV target profile → WAV output → Windows audio → your ChilloutVR input routing.</div>
     </section>
-    <p class="hint">No Python packages are required. The engine uses only Python's standard library and Windows WinMM. Use only a voice you have permission to use.</p>
+    <p class="hint">No Python packages are required. The engine uses Python's standard library and Windows WinMM only. This is a local DSP voice effect, not neural speaker cloning.</p>
   </main>
   <script src="app.js"></script>
 </body>
