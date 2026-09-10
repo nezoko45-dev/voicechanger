@@ -1,13 +1,26 @@
 const $ = id => document.getElementById(id);
-const strength = $('strength'), outputSelect = $('output');
-const statusEl = $('status'), transcriptEl = $('text'), meterFill = $('meterFill');
-const startBtn = $('start'), stopBtn = $('stop'), targetWav = $('targetWav');
+const apiKey = $('apiKey');
+const voiceUuid = $('voiceUuid');
+const sourceUrl = $('sourceUrl');
+const pitch = $('pitch');
+const prompt = $('prompt');
+const statusEl = $('status');
+const transcriptEl = $('text');
+const meterFill = $('meterFill');
+const startBtn = $('start');
+const convertBtn = $('convert');
+const stopBtn = $('stop');
 
 let running = false;
 const PYTHON = 'http://127.0.0.1:17856';
 
 function setStatus(text){ statusEl.textContent = text; }
-function setRunning(v){ running = v; startBtn.disabled = v; stopBtn.disabled = !v; }
+function setRunning(v){
+  running = v;
+  startBtn.disabled = v;
+  stopBtn.disabled = !v;
+  convertBtn.disabled = !v;
+}
 
 async function python(path, options = {}){
   const response = await fetch(PYTHON + path, {
@@ -15,50 +28,80 @@ async function python(path, options = {}){
     headers: {'Content-Type':'application/json', ...(options.headers || {})}
   });
   const data = await response.json().catch(() => ({}));
-  if(!response.ok) throw new Error(data.error || `WAV engine HTTP ${response.status}`);
+  if(!response.ok) throw new Error(data.error || `Resemble bridge HTTP ${response.status}`);
   return data;
 }
 
-async function enumerateOutputs(){
+async function saveConfig(){
+  const payload = {
+    voice_uuid: voiceUuid.value.trim(),
+    source_url: sourceUrl.value.trim(),
+    pitch: Number(pitch.value || 0),
+    prompt: prompt.value.trim()
+  };
+  if(apiKey.value.trim()) payload.api_key = apiKey.value.trim();
+  await python('/config', {method:'POST', body:JSON.stringify(payload)});
+}
+
+async function loadConfig(){
   try{
-    const devices = await python('/devices');
-    const old = localStorage.getItem('voicechanger.output') || '';
-    outputSelect.replaceChildren();
-    outputSelect.add(new Option('Default Windows output', ''));
-    for(const device of devices) outputSelect.add(new Option(`${device.id}: ${device.name}`, String(device.id)));
-    outputSelect.value = old && [...outputSelect.options].some(o => o.value === old) ? old : '';
-  }catch{
-    outputSelect.replaceChildren(new Option('Default Windows output', ''));
-  }
+    const data = await python('/config');
+    if(data.voice_uuid) voiceUuid.value = data.voice_uuid;
+    if(data.source_url) sourceUrl.value = data.source_url;
+    if(data.pitch !== undefined) pitch.value = data.pitch;
+    if(data.prompt) prompt.value = data.prompt;
+    if(data.api_key === 'configured') apiKey.placeholder = 'API key already configured locally';
+  }catch{}
 }
 
 async function refreshStatus(){
   try{
     const data = await python('/status');
     setRunning(!!data.running);
-    if(data.target_wav) targetWav.value = data.target_wav;
     if(data.error) setStatus(data.error);
     else if(data.status) setStatus(data.status);
-    if(data.target_pitch) transcriptEl.textContent = `Target WAV loaded — estimated target pitch: ${data.target_pitch} Hz`;
-  }catch{}
+    if(data.duration) transcriptEl.textContent = `Last Resemble output: ${Number(data.duration).toFixed(2)} seconds`;
+  }catch{
+    setStatus('Resemble bridge offline — launch the mod first');
+    setRunning(false);
+  }
 }
 
-async function start(){
-  if(running) return;
+async function connect(){
   try{
-    setStatus('Starting local WAV engine…');
-    await python('/config', {method:'POST', body:JSON.stringify({
-      pitch_strength: Number(strength.value) / 100,
-      output_gain: 1.0
-    })});
+    setStatus('Saving Resemble settings…');
+    await saveConfig();
     await python('/start', {method:'POST', body:'{}'});
     setRunning(true);
-    transcriptEl.textContent = 'Live conversion: microphone WAV → local target WAV profile → WAV';
-    meterFill.style.width = '100%';
-    setStatus('LIVE — WAV-only conversion running');
+    transcriptEl.textContent = 'Connected to the local Resemble STS bridge.';
+    meterFill.style.width = '20%';
+    setStatus('Resemble connected');
   }catch(err){
     setRunning(false);
-    setStatus('WAV engine error: ' + err.message);
+    setStatus('Resemble error: ' + err.message);
+  }
+}
+
+async function convert(){
+  if(!running) await connect();
+  if(!running) return;
+  try{
+    await saveConfig();
+    setStatus('Converting with Resemble…');
+    transcriptEl.textContent = 'Uploading/requesting the donor WAV from Resemble and waiting for the converted WAV…';
+    meterFill.style.width = '65%';
+    const data = await python('/convert', {method:'POST', body:JSON.stringify({
+      source_url: sourceUrl.value.trim(),
+      pitch: Number(pitch.value || 0),
+      prompt: prompt.value.trim()
+    })});
+    meterFill.style.width = '100%';
+    transcriptEl.textContent = `Converted ${Number(data.duration || 0).toFixed(2)} seconds of audio in ${Number(data.elapsed || 0).toFixed(2)} seconds.`;
+    setStatus('Conversion complete');
+  }catch(err){
+    meterFill.style.width = '0%';
+    setStatus('Conversion error: ' + err.message);
+    transcriptEl.textContent = err.message;
   }
 }
 
@@ -70,14 +113,13 @@ async function stop(){
   setStatus('Stopped');
 }
 
-startBtn.onclick = start;
+startBtn.onclick = connect;
+convertBtn.onclick = convert;
 stopBtn.onclick = stop;
-strength.oninput = () => localStorage.setItem('voicechanger.strength', strength.value);
-outputSelect.onchange = () => localStorage.setItem('voicechanger.output', outputSelect.value);
-strength.value = localStorage.getItem('voicechanger.strength') || '82';
 
 (async()=>{
-  await enumerateOutputs();
+  setRunning(false);
+  await loadConfig();
   await refreshStatus();
-  setInterval(refreshStatus, 1000);
+  setInterval(refreshStatus, 1500);
 })();
