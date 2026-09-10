@@ -3,25 +3,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>ChilloutVR VoiceChanger — Browser STT/TTS</title>
+  <title>ChilloutVR VoiceChanger — Cartesia Browser STT/TTS</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="app">
     <header>
       <h1>VoiceChanger</h1>
-      <span id="status" class="status">Browser STT/TTS ready</span>
+      <span id="status" class="status">Cartesia browser STT/TTS ready</span>
     </header>
 
     <section class="grid">
-      <label>Resemble API key
-        <input id="apiKey" type="password" autocomplete="off" placeholder="Paste your Resemble API key">
+      <label>Cartesia API key
+        <input id="apiKey" type="password" autocomplete="off" placeholder="Paste your Cartesia API key">
       </label>
 
-      <label>Custom voice
-        <select id="voiceUuid">
-          <option value="">Connect to load your Resemble voices</option>
-        </select>
+      <label>Cartesia Voice ID
+        <input id="voiceUuid" type="text" autocomplete="off" placeholder="Paste your Cartesia voice ID">
       </label>
 
       <label>Browser audio output
@@ -53,30 +51,30 @@
     <div class="meter"><div id="meterFill"></div></div>
 
     <div class="buttons">
-      <button id="start">Connect + Load Voices</button>
-      <button id="testAudio" disabled>Test Resemble Audio</button>
+      <button id="start">Connect to Cartesia</button>
+      <button id="testAudio" disabled>Test Cartesia Audio</button>
       <button id="record" disabled>Start Automatic Voice Changer</button>
       <button id="stop" disabled>Stop</button>
     </div>
 
     <section class="transcript">
       <h2>Recognized speech</h2>
-      <div id="text">Connect first, choose your custom Resemble voice, test the audio, then start automatic listening.</div>
+      <div id="text">Enter your Cartesia API key and Voice ID, choose the output, test the audio, then start automatic listening.</div>
     </section>
 
     <section class="transcript">
       <h2>Hands-free mode</h2>
-      <div class="hint">Microphone stays open while the voice changer is running. Speak normally; the browser detects the end of each sentence, automatically sends the captured WAV to Resemble STT, gets the text, sends it to Resemble TTS, plays the returned WAV, and immediately listens again. You do not press Stop between sentences.</div>
+      <div class="hint">Microphone stays open while the voice changer is running. Speak normally; the browser detects the end of each sentence, sends the captured WAV to Cartesia STT, gets the text, sends it to Cartesia TTS, plays the returned audio, and immediately listens again.</div>
     </section>
 
     <section class="transcript">
       <h2>ChilloutVR routing</h2>
-      <div class="hint">Select CABLE Input as the browser output. Then select CABLE Output as your microphone/input inside ChilloutVR. This version does not start Python and does not use the old WinMM playback path.</div>
+      <div class="hint">Select CABLE Input as the browser output. Then select CABLE Output as your microphone/input inside ChilloutVR. This version is browser-based and does not start Python or use the old WinMM playback path.</div>
     </section>
 
     <section class="transcript">
       <h2>Security</h2>
-      <div class="hint">This is a client-side browser build. Your Resemble API key is kept in the page memory and is sent directly from your browser to Resemble. Do not commit the key to GitHub.</div>
+      <div class="hint">Your Cartesia API key stays in this page's memory and is sent only to the local mod bridge to obtain a short-lived Cartesia access token. The browser uses that temporary token for STT/TTS. Do not commit your API key to GitHub.</div>
     </section>
 
     <audio id="player" preload="auto"></audio>
