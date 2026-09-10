@@ -13,16 +13,14 @@ internal static class BrowserController
     private static HttpListener? _server;
     private static Thread? _serverThread;
     private static int _port;
-    private static Process? _audioBridge;
 
     public static void Start()
     {
         try
         {
-            StartAudioBridge();
             StartServer();
             if (_port != 0)
-                MelonLogger.Msg("VoiceChanger native audio mode ready. Press F8 to open the control panel.");
+                MelonLogger.Msg("VoiceChanger browser mode ready. Press F8 to open the control panel.");
         }
         catch (Exception ex)
         {
@@ -35,63 +33,6 @@ internal static class BrowserController
         if ((GetAsyncKeyState(0x77) & 1) != 0)
             OpenBrowser();
     }
-
-    private static void StartAudioBridge()
-    {
-        string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-        string[] candidates =
-        {
-            Path.Combine(baseDir, "VoiceChangerMod", "audio_bridge.py"),
-            Path.Combine(baseDir, "Mods", "VoiceChangerMod", "audio_bridge.py"),
-            Path.Combine(Path.GetDirectoryName(typeof(BrowserController).Assembly.Location) ?? baseDir, "audio_bridge.py")
-        };
-
-        string? script = null;
-        foreach (string candidate in candidates)
-        {
-            if (File.Exists(candidate))
-            {
-                script = candidate;
-                break;
-            }
-        }
-
-        if (script == null)
-        {
-            MelonLogger.Warning("Native audio bridge script was not installed. Browser fallback remains available.");
-            return;
-        }
-
-        foreach (var launcher in new[] { (File: "python", Args: ""), (File: "py", Args: "-3") })
-        {
-            try
-            {
-                string args = (launcher.Args.Length > 0 ? launcher.Args + " " : "") + Quote(script);
-                _audioBridge = Process.Start(new ProcessStartInfo
-                {
-                    FileName = launcher.File,
-                    Arguments = args,
-                    WorkingDirectory = Path.GetDirectoryName(script) ?? baseDir,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    WindowStyle = ProcessWindowStyle.Hidden
-                });
-                if (_audioBridge != null)
-                {
-                    MelonLogger.Msg("Native Audio Repeater bridge started on localhost:17846.");
-                    return;
-                }
-            }
-            catch
-            {
-                // Try the next Python launcher.
-            }
-        }
-
-        MelonLogger.Error("Could not start the native audio bridge. Install Python 3 and the bridge requirements, then restart ChilloutVR.");
-    }
-
-    private static string Quote(string value) => "\"" + value.Replace("\"", "\\\"") + "\"";
 
     private static void OpenBrowser()
     {
