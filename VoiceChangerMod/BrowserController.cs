@@ -22,7 +22,7 @@ internal static class BrowserController
             StartPythonEngine();
             StartServer();
             if (_port != 0)
-                MelonLogger.Msg("WAV-only VoiceChanger browser mode ready. Press F8 to open the control panel.");
+                MelonLogger.Msg("Resemble VoiceChanger browser mode ready. Press F8 to open the control panel.");
         }
         catch (Exception ex)
         {
@@ -83,7 +83,7 @@ internal static class BrowserController
                 _pythonProcess = Process.Start(psi);
                 if (_pythonProcess != null)
                 {
-                    MelonLogger.Msg("WAV-only Python engine started using " + launcher + ".");
+                    MelonLogger.Msg("Resemble Python bridge started using " + launcher + ".");
                     return;
                 }
             }
@@ -93,7 +93,7 @@ internal static class BrowserController
             }
         }
 
-        MelonLogger.Error("Python 3 was not found. The WAV-only engine requires Python 3, but no pip packages are needed.");
+        MelonLogger.Error("Python 3 was not found. The Resemble bridge uses only Python's standard library.");
     }
 
     private static void OpenBrowser()
