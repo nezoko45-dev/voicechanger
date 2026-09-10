@@ -1,31 +1,35 @@
 # 🎙️ VoiceChanger
 
-A standalone browser voice changer using Cartesia STT and Sonic TTS. There is no MelonLoader DLL, C# bridge, Python runtime, or desktop audio process.
+A standalone browser-based voice changer using **Cartesia STT** and **Cartesia Sonic TTS**.
 
 ## Pipeline
 
-**🎤 Microphone → Cartesia STT → 📝 text → Cartesia Sonic TTS → 🔊 browser output → VB-CABLE → ChilloutVR**
+**🎤 Microphone → Cartesia STT → 📝 transcript → Cartesia Sonic TTS → 🔊 browser output → VB-CABLE → ChilloutVR**
 
-## Run it
+## What this version uses
 
-The app is in `web/` and is configured for Netlify with `netlify.toml`.
+- Cartesia API key
+- Cartesia Voice ID for the voice you want to use
+- Cartesia `ink-whisper` for speech-to-text
+- Cartesia `sonic-3.5` for text-to-speech
+- Browser microphone/audio APIs
+- VB-CABLE for routing the generated voice into ChilloutVR
 
-Serve the `web` folder from a static HTTPS host such as Netlify, Vercel, or GitHub Pages. Microphone access requires a secure browser context (HTTPS, or localhost during local development).
+## What it does NOT use
 
-Enter your Cartesia API key and Cartesia Voice ID in the page. The page requests a short-lived Cartesia access token and keeps it in browser memory.
+- ❌ Deepgram
+- ❌ MelonLoader DLL
+- ❌ C# bridge
+- ❌ Python runtime
+- ❌ Netlify/Vercel backend
 
-## ChilloutVR audio routing
+The app is a static HTML/CSS/JavaScript browser app. Your Cartesia key is kept in the browser page and is never written into the repository.
 
-1. Set the browser TTS output to **CABLE Input**.
-2. In ChilloutVR, choose **CABLE Output** as the microphone/input device.
-3. Click **Connect**.
-4. Click **Test voice**.
-5. Click **Start automatic mode** and speak normally.
+## ChilloutVR routing
 
-The browser detects pauses, sends each captured sentence to Cartesia STT, sends the resulting text to Cartesia Sonic TTS, then plays the returned WAV through the selected output.
+1. In the browser app, use **CABLE Input** as the TTS output.
+2. In ChilloutVR, select **CABLE Output** as the microphone/input device.
+3. Connect the Cartesia API key and Voice ID.
+4. Start automatic mode and speak normally.
 
-## Cartesia
-
-The browser uses Cartesia API version `2026-03-01`, `ink-whisper` for STT, and `sonic-3.5` for TTS.
-
-Never commit an API key to the repository. For a public deployment, remember that browser-side credentials are exposed to the user running the page; use short-lived access tokens and rotate your API key if it is ever exposed.
+The browser detects speech, sends each spoken phrase to Cartesia STT, then sends the transcript to Cartesia TTS and plays the generated WAV through the selected output device.
