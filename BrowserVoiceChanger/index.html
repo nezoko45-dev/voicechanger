@@ -3,33 +3,40 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>ChilloutVR VoiceChanger — WAV Only</title>
+  <title>ChilloutVR VoiceChanger — Resemble</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="app">
-    <header><h1>VoiceChanger</h1><span id="status" class="status">WAV engine ready</span></header>
+    <header><h1>VoiceChanger</h1><span id="status" class="status">Resemble STS ready</span></header>
     <section class="grid">
-      <label>Target WAV
-        <input id="targetWav" type="text" readonly value="Bundled target WAV">
+      <label>Resemble API key
+        <input id="apiKey" type="password" autocomplete="off" placeholder="Paste your Resemble API key">
       </label>
-      <label>Target effect strength
-        <input id="strength" type="range" min="0" max="100" value="82">
+      <label>Target voice UUID
+        <input id="voiceUuid" type="text" placeholder="Resemble voice UUID">
       </label>
-      <label>Output device<select id="output"></select></label>
+      <label>Source WAV URL
+        <input id="sourceUrl" type="url" placeholder="https://.../voice.wav">
+      </label>
+      <label>Pitch
+        <input id="pitch" type="number" min="-10" max="10" step="0.1" value="0">
+      </label>
+      <label>Prompt (optional)
+        <input id="prompt" type="text" placeholder="e.g. Speak with excitement">
+      </label>
     </section>
     <div class="meter"><div id="meterFill"></div></div>
-    <div class="buttons"><button id="start">Start</button><button id="stop" disabled>Stop</button></div>
-    <section class="transcript"><h2>Engine</h2><div id="text">Waiting for the local WAV engine…</div></section>
+    <div class="buttons"><button id="start">Connect</button><button id="convert">Convert WAV</button><button id="stop" disabled>Stop</button></div>
+    <section class="transcript"><h2>Engine</h2><div id="text">Waiting for the local Resemble bridge…</div></section>
     <section class="transcript">
-      <h2>Target WAV</h2>
-      <div class="hint">The bundled WAV is loaded locally and analyzed as the target voice profile. No ElevenLabs API key, Voice ID, Voice Library, or cloud conversion is used.</div>
+      <h2>How this version works</h2>
+      <div class="hint">Source WAV → Resemble Speech-to-Speech → target voice → WAV → Windows audio output. Resemble currently expects the donor WAV to be reachable through a public HTTPS URL, so this first integration is WAV conversion rather than low-latency microphone streaming.</div>
     </section>
     <section class="transcript">
-      <h2>Audio route</h2>
-      <div class="hint">Microphone WAV → local WAV target profile → WAV output → Windows audio → your ChilloutVR input routing.</div>
+      <h2>Security</h2>
+      <div class="hint">The API key is stored only in the local Python config file and is never sent to the browser-hosting server. Do not commit your API key to GitHub.</div>
     </section>
-    <p class="hint">No Python packages are required. The engine uses Python's standard library and Windows WinMM only. This is a local DSP voice effect, not neural speaker cloning.</p>
   </main>
   <script src="app.js"></script>
 </body>
