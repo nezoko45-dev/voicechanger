@@ -3,25 +3,28 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>ChilloutVR VoiceChanger — Windows Audio</title>
+  <title>ChilloutVR VoiceChanger — Python Live</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="app">
-    <header><h1>VoiceChanger</h1><span id="status" class="status">Windows audio mode ready</span></header>
+    <header><h1>VoiceChanger</h1><span id="status" class="status">Python audio engine ready</span></header>
     <section class="grid">
-      <label>Deepgram API key<input id="apiKey" type="password" autocomplete="off" placeholder="Paste your Deepgram key"></label>
-      <label>Microphone<select id="mic"></select></label>
-      <label>Voice<select id="voice"></select></label>
+      <label>ElevenLabs API key<input id="apiKey" type="password" autocomplete="off" placeholder="Paste your ElevenLabs key"></label>
+      <label>Output device<select id="output"></select></label>
     </section>
     <div class="meter"><div id="meterFill"></div></div>
     <div class="buttons"><button id="start">Start</button><button id="stop" disabled>Stop</button></div>
-    <section class="transcript"><h2>Transcript</h2><div id="text">Waiting for speech…</div></section>
+    <section class="transcript"><h2>Engine</h2><div id="text">Waiting for Python audio engine…</div></section>
+    <section class="transcript">
+      <h2>Target voice</h2>
+      <div class="hint">The repo WAV is used as the cloning sample. Python creates an ElevenLabs voice ID once, then uses that voice for live voice conversion.</div>
+    </section>
     <section class="transcript">
       <h2>Audio route</h2>
-      <div class="hint">Microphone → browser STT → Deepgram TTS → normal Windows audio output → Audio Repeater KS → ChilloutVR.</div>
+      <div class="hint">Microphone → Python → ElevenLabs Voice Changer → selected Windows output → your chosen ChilloutVR input routing.</div>
     </section>
-    <p class="hint">The browser no longer selects VB-Cable or Virtual Audio Cable. Set Windows to the speakers/headset you want the browser to play through, then use Audio Repeater Kernel Streaming to capture that playback/loopback source and send it to ChilloutVR.</p>
+    <p class="hint">Use only a voice you have permission to clone. The WAV stays in the repo; the generated ElevenLabs voice ID is saved locally in PythonVoiceChanger/voice_id.txt.</p>
   </main>
   <script src="app.js"></script>
 </body>
