@@ -109,7 +109,9 @@ async function playResembleAudio(base64,mime='audio/wav'){
 }
 async function loadVoices(){
   setStatus('Loading your Resemble custom voices…');
-  const data=await resemble('/voices'), previous=voiceUuid.value;
+  // Resemble requires pagination to start at page 1. Calling /voices without
+  // an explicit page can produce: "Expected page to be a value >= 1, got 0".
+  const data=await resemble('/voices?page=1'), previous=voiceUuid.value;
   voiceUuid.innerHTML=''; const voices=data.items || data.voices || [];
   if(!voices.length) throw new Error('No Resemble voices were returned for this account.');
   voices.forEach(v=>voiceUuid.add(new Option(`${v.name || 'Unnamed'} — ${v.uuid || ''}`,v.uuid || '')));
