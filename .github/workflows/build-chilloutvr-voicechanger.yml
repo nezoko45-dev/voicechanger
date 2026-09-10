@@ -1,4 +1,4 @@
-name: Build ChilloutVR VoiceChanger Browser STT/TTS Mod
+name: Build ChilloutVR VoiceChanger Browser Cartesia STT/TTS Mod
 
 on:
   workflow_dispatch:
@@ -26,7 +26,7 @@ jobs:
       - name: Build DLL
         run: dotnet build VoiceChangerMod/VoiceChangerMod.csproj --configuration Release --no-restore
 
-      - name: Verify browser-only STT/TTS
+      - name: Verify browser-only Cartesia STT/TTS
         shell: pwsh
         run: |
           foreach ($file in @(
@@ -44,35 +44,37 @@ jobs:
           $ui = $html + "`n" + $js
 
           foreach ($check in @(
-            'Resemble API key',
-            'Custom voice',
+            'Cartesia API key',
+            'Cartesia Voice ID',
             'Start Automatic Voice Changer',
             'getUserMedia',
             'AudioContext',
             'createScriptProcessor',
             'encodeWav',
             'audio/wav',
-            '/speech-to-text',
-            '/voices',
-            'f.cluster.resemble.ai',
-            '/synthesize',
+            'api.cartesia.ai',
+            '/stt',
+            '/tts/bytes',
+            'sonic-3.5',
             'speechStarted',
             'silenceMs',
-            'transcribeAndSpeak'
+            'transcribeAndSpeak',
+            '/cartesia-token'
           )) {
             if ($ui.IndexOf($check, [StringComparison]::Ordinal) -lt 0) {
-              throw "Browser STT/TTS check failed: $check"
+              throw "Browser Cartesia STT/TTS check failed: $check"
             }
           }
 
           foreach ($forbidden in @(
+            'Resemble',
+            'resemble.ai',
             'PythonVoiceChanger',
             '127.0.0.1:17856',
             'voicechanger.py',
             'fetch(PYTHON',
             'MediaRecorder',
             'elevenlabs.io',
-            'voice_id',
             'resemble:convert'
           )) {
             if ($ui.IndexOf($forbidden, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
@@ -80,13 +82,19 @@ jobs:
             }
           }
 
-          foreach ($forbidden in @('PythonVoiceChanger', 'StartPythonEngine', '_pythonProcess', 'python', 'py -3')) {
-            if ($cs.IndexOf($forbidden, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
-              throw "Python runtime reference is present in BrowserController: $forbidden"
+          foreach ($check in @('HttpListener', 'HandleCartesiaToken', 'api.cartesia.ai/access-token', 'Cartesia-Version', 'HttpClient')) {
+            if ($cs.IndexOf($check, [StringComparison]::Ordinal) -lt 0) {
+              throw "Cartesia bridge check failed: $check"
             }
           }
 
-          Write-Host 'Browser-only automatic Resemble STT/TTS validation passed.'
+          foreach ($forbidden in @('PythonVoiceChanger', 'StartPythonEngine', '_pythonProcess', 'python', 'py -3', 'Resemble')) {
+            if ($cs.IndexOf($forbidden, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+              throw "Legacy runtime reference is present in BrowserController: $forbidden"
+            }
+          }
+
+          Write-Host 'Browser-only automatic Cartesia STT/TTS validation passed.'
 
       - name: Verify source
         shell: pwsh
@@ -119,27 +127,30 @@ jobs:
           @'
           INSTALLATION
           ==========
-          This is the browser-only Resemble STT/TTS build. No Python installation is required.
+          This is the browser-based Cartesia STT/TTS build. No Python installation is required.
 
           1. Rename VoiceChangerMod.dll.bin to VoiceChangerMod.dll.
           2. Place VoiceChangerMod.dll in the ChilloutVR Mods folder.
           3. Keep BrowserVoiceChanger beside the DLL as included.
           4. Start ChilloutVR and press F8 to open the browser control panel.
-          5. Enter your Resemble API key, load your custom voice, choose CABLE Input as browser output, and start automatic voice changer.
-          6. Speak normally. Silence detection automatically submits each sentence; the returned Resemble TTS audio is played and the browser immediately listens again.
+          5. Enter your Cartesia API key and Cartesia Voice ID.
+          6. Choose CABLE Input as the browser output.
+          7. Select CABLE Output as your microphone/input inside ChilloutVR.
+          8. Click Connect to Cartesia, test the voice, then start the automatic voice changer.
+          9. Speak normally. Silence detection submits each sentence to Cartesia STT; the text is sent to Cartesia Sonic TTS and the browser immediately listens again.
           '@ | Set-Content package/INSTALL.txt -Encoding UTF8
           Get-ChildItem package -Recurse | Select-Object FullName,Length
 
       - name: Create safe-download archive
         shell: pwsh
         run: |
-          if (Test-Path 'ChilloutVRVoiceChangerResembleMod.zip') { Remove-Item 'ChilloutVRVoiceChangerResembleMod.zip' -Force }
-          Compress-Archive -Path package/* -DestinationPath 'ChilloutVRVoiceChangerResembleMod.zip' -CompressionLevel Optimal
-          Get-Item 'ChilloutVRVoiceChangerResembleMod.zip' | Select-Object FullName,Length
+          if (Test-Path 'ChilloutVRVoiceChangerCartesiaMod.zip') { Remove-Item 'ChilloutVRVoiceChangerCartesiaMod.zip' -Force }
+          Compress-Archive -Path package/* -DestinationPath 'ChilloutVRVoiceChangerCartesiaMod.zip' -CompressionLevel Optimal
+          Get-Item 'ChilloutVRVoiceChangerCartesiaMod.zip' | Select-Object FullName,Length
 
-      - name: Upload Resemble browser voice changer package
+      - name: Upload Cartesia browser voice changer package
         uses: actions/upload-artifact@v4
         with:
-          name: ChilloutVRVoiceChangerResembleMod
-          path: ChilloutVRVoiceChangerResembleMod.zip
+          name: ChilloutVRVoiceChangerCartesiaMod
+          path: ChilloutVRVoiceChangerCartesiaMod.zip
           if-no-files-found: error
