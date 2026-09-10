@@ -50,7 +50,6 @@ jobs:
             '/api/v2/voices',
             'voice_uuid',
             'Authorization',
-            'winmm.dll',
             '/stt-tts',
             '/voices'
           )) {
@@ -67,7 +66,9 @@ jobs:
             'import numpy',
             'import requests',
             'import sounddevice',
-            'pitch_shift_chunk'
+            'pitch_shift_chunk',
+            'winmm.dll',
+            'PlaySound'
           )) {
             if ($py.IndexOf($forbidden, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
               throw "Legacy voice-conversion reference is present: $forbidden"
