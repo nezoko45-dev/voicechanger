@@ -3,26 +3,25 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>ChilloutVR VoiceChanger — Audio Repeater</title>
+  <title>ChilloutVR VoiceChanger — Windows Audio</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="app">
-    <header><h1>VoiceChanger</h1><span id="status" class="status">Audio Repeater mode ready</span></header>
+    <header><h1>VoiceChanger</h1><span id="status" class="status">Windows audio mode ready</span></header>
     <section class="grid">
       <label>Deepgram API key<input id="apiKey" type="password" autocomplete="off" placeholder="Paste your Deepgram key"></label>
       <label>Microphone<select id="mic"></select></label>
-      <label>Browser → Repeater<select id="output"></select></label>
       <label>Voice<select id="voice"></select></label>
     </section>
     <div class="meter"><div id="meterFill"></div></div>
     <div class="buttons"><button id="start">Start</button><button id="stop" disabled>Stop</button></div>
     <section class="transcript"><h2>Transcript</h2><div id="text">Waiting for speech…</div></section>
     <section class="transcript">
-      <h2>Audio Repeater KS route</h2>
-      <div class="hint">Browser TTS → selected virtual cable playback → Audio Repeater (Kernel Streaming) Wave In → Audio Repeater Wave Out → second virtual cable → ChilloutVR microphone.</div>
+      <h2>Audio route</h2>
+      <div class="hint">Microphone → browser STT → Deepgram TTS → normal Windows audio output → Audio Repeater KS → ChilloutVR.</div>
     </section>
-    <p class="hint">Set Audio Repeater KS Wave In to the recording side of the virtual cable selected above. Set its Wave Out to the virtual cable you want ChilloutVR to receive. The browser only handles the UI, microphone STT, and Deepgram TTS; Audio Repeater handles the final low-latency audio hop.</p>
+    <p class="hint">The browser no longer selects VB-Cable or Virtual Audio Cable. Set Windows to the speakers/headset you want the browser to play through, then use Audio Repeater Kernel Streaming to capture that playback/loopback source and send it to ChilloutVR.</p>
   </main>
   <script src="app.js"></script>
 </body>
