@@ -131,6 +131,7 @@ internal static class BrowserController
 
             byte[] audio = Convert.FromBase64String(audioBase64);
             using var form = new MultipartFormDataContent();
+            form.Add(new StringContent("ink-whisper"), "model");
             var file = new ByteArrayContent(audio);
             file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("audio/wav");
             form.Add(file, "file", "voice.wav");
@@ -157,7 +158,7 @@ internal static class BrowserController
             string transcript = JsonValue(body, "transcript");
             if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(voiceId) || string.IsNullOrWhiteSpace(transcript)) { WriteJson(context, 400, "{\"error\":\"API key, voice ID and transcript are required.\"}"); return; }
 
-            string payload = "{\"model_id\":\"sonic-3.5\",\"transcript\":\"" + EscapeJson(transcript) + "\",\"voice\":{\"mode\":\"id\",\"id\":\"" + EscapeJson(voiceId) + "\"},\"language\":\"en\",\"output_format\":{\"container\":\"wav\",\"encoding\":\"pcm_s16le\",\"sample_rate\":48000},\"generation_config\":{\"volume\":1,\"speed\":1}}";
+            string payload = "{\"model_id\":\"sonic-3.5\",\"transcript\":\"" + EscapeJson(transcript) + "\",\"voice\":{\"id\":\"" + EscapeJson(voiceId) + "\"},\"language\":\"en\",\"output_format\":{\"container\":\"wav\",\"encoding\":\"pcm_s16le\",\"sample_rate\":48000},\"generation_config\":{\"volume\":1,\"speed\":1}}";
             using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.cartesia.ai/tts/bytes");
             request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + apiKey);
             request.Headers.TryAddWithoutValidation("Cartesia-Version", "2026-03-01");
