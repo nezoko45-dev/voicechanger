@@ -3,22 +3,45 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>ChilloutVR VoiceChanger — Resemble</title>
+  <title>ChilloutVR VoiceChanger — Resemble Audio API</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="app">
-    <header><h1>VoiceChanger</h1><span id="status" class="status">Resemble STT/TTS ready</span></header>
+    <header>
+      <h1>VoiceChanger</h1>
+      <span id="status" class="status">Resemble Audio API ready</span>
+    </header>
+
     <section class="grid">
       <label>Resemble API key
         <input id="apiKey" type="password" autocomplete="off" placeholder="Paste your Resemble API key">
       </label>
+
       <label>Custom voice
-        <select id="voiceUuid"><option value="">Connect to load your Resemble voices</option></select>
+        <select id="voiceUuid">
+          <option value="">Connect to load your Resemble voices</option>
+        </select>
       </label>
-      <label>Output device
-        <select id="outputDevice"><option value="auto">Automatic — prefer Virtual Audio Cable</option></select>
+
+      <label>Browser audio output
+        <select id="outputDevice">
+          <option value="default">Default Windows output</option>
+        </select>
       </label>
+    </section>
+
+    <div class="buttons">
+      <button id="chooseOutput" type="button">Choose Windows Output</button>
+      <button id="refreshAudio" type="button">Refresh Outputs</button>
+    </div>
+
+    <section class="transcript">
+      <h2>Audio output</h2>
+      <div id="outputStatus" class="hint">The Resemble WAV is played by your browser Audio API. Choose CABLE Input here if you want the audio sent into VB-CABLE.</div>
+    </section>
+
+    <section class="grid">
       <label>Pitch
         <input id="pitch" type="number" min="-10" max="10" step="0.1" value="0">
       </label>
@@ -26,30 +49,37 @@
         <input id="prompt" type="text" placeholder="Optional delivery instruction">
       </label>
     </section>
+
     <div class="meter"><div id="meterFill"></div></div>
+
     <div class="buttons">
       <button id="start">Connect + Load Voices</button>
+      <button id="testAudio" disabled>Test Resemble Audio</button>
       <button id="record" disabled>Start Voice Changer</button>
       <button id="stop" disabled>Stop</button>
     </div>
-    <section class="transcript"><h2>Recognized speech</h2><div id="text">Press Connect, choose your custom Resemble voice, then start the voice changer.</div></section>
+
     <section class="transcript">
-      <h2>Audio output</h2>
-      <div id="outputStatus" class="hint">Checking Windows audio devices…</div>
-      <button id="refreshAudio" type="button">Refresh Audio Devices</button>
+      <h2>Recognized speech</h2>
+      <div id="text">Connect first, choose your custom Resemble voice, then test the audio.</div>
     </section>
+
     <section class="transcript">
-      <h2>How it works</h2>
-      <div class="hint">Microphone → Resemble Speech-to-Text → your custom voice → Resemble Text-to-Speech → the selected Windows waveform output device. Automatic mode looks for a virtual audio cable first, then falls back to the Windows default output.</div>
+      <h2>New audio path</h2>
+      <div class="hint">Microphone → Resemble Speech-to-Text → Resemble Audio/TTS API → WAV audio returned to this browser → browser output device. The old Python WinMM playback path is no longer used.</div>
     </section>
+
     <section class="transcript">
-      <h2>Audio routing</h2>
-      <div class="hint">For ChilloutVR, leave Output device on Automatic if you use a virtual cable. The bridge detects the cable playback endpoint and sends the generated TTS WAV there. Then select the cable's recording/capture endpoint as your ChilloutVR microphone.</div>
+      <h2>ChilloutVR routing</h2>
+      <div class="hint">If you use VB-CABLE, select the playback endpoint named CABLE Input as the browser output. Then select CABLE Output as your microphone/input inside ChilloutVR. If you want to hear the converted voice yourself too, use a Windows monitoring/mixer setup; sending only to CABLE Input intentionally routes it into the virtual cable.</div>
     </section>
+
     <section class="transcript">
       <h2>Security</h2>
-      <div class="hint">Your Resemble API key is stored locally by the bridge. Do not commit it to GitHub.</div>
+      <div class="hint">Your Resemble API key is stored locally by the Python bridge. Do not commit the key to GitHub.</div>
     </section>
+
+    <audio id="player" preload="auto"></audio>
   </main>
   <script src="app.js"></script>
 </body>
