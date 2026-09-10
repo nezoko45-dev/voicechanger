@@ -1,8 +1,9 @@
 const $ = id => document.getElementById(id);
-const apiKey = $('apiKey'), micSelect = $('mic'), outputSelect = $('output'), voiceSelect = $('voice');
+const apiKey = $('apiKey'), inputSelect = $('mic'), outputSelect = $('output'), voiceSelect = $('voice');
 const statusEl = $('status'), transcriptEl = $('text'), meterFill = $('meterFill');
 const startBtn = $('start'), stopBtn = $('stop');
 
+const BRIDGE = 'http://127.0.0.1:17846';
 const voices = [
   ['Thalia','aura-2-thalia-en'],['Andromeda','aura-2-andromeda-en'],['Helena','aura-2-helena-en'],
   ['Amalthea (Filipino)','aura-2-amalthea-en'],['Luna','aura-2-luna-en'],['Minerva','aura-2-minerva-en'],
@@ -16,89 +17,83 @@ const voices = [
 ];
 for (const [name, model] of voices) voiceSelect.add(new Option(name, model));
 voiceSelect.value = localStorage.getItem('voicechanger.voice') || 'aura-2-thalia-en';
+apiKey.value = localStorage.getItem('voicechanger.key') || '';
 
-const savedKey = sessionStorage.getItem('voicechanger.key') || '';
-apiKey.value = savedKey;
+let running = false;
 
-let running=false, mediaStream=null, inputContext=null, processor=null, source=null, analyser=null, muteGain=null;
-let stt=null, tts=null, outputContext=null, outputDestination=null, outputElement=null;
-let ttsQueue=[], playing=false, ttsVoice='';
+function setStatus(text){ statusEl.textContent = text; }
+function setRunning(v){ running=v; startBtn.disabled=v; stopBtn.disabled=!v; }
+function validApiKey(key){ return !!key && key.length >= 20 && !/[\r\n]/.test(key); }
 
-function setStatus(text){statusEl.textContent=text}
-function setRunning(v){running=v;startBtn.disabled=v;stopBtn.disabled=!v}
-function validApiKey(key){
-  if(!key || key.length < 20 || key.length > 500) return false;
-  if(/[\r\n]/.test(key)) return false;
-  if(key.includes('ChilloutVR VoiceChanger Mod') || key.includes('BrowserVoiceChanger folder') || key.includes('C:\\Program Files')) return false;
-  return /^[A-Za-z0-9._~+/=-]+$/.test(key);
-}
-function getApiKey(){
-  const key=apiKey.value.trim();
-  if(!validApiKey(key)){
-    sessionStorage.removeItem('voicechanger.key');
-    apiKey.value='';
-    setStatus('Enter your Deepgram API key');
-    return null;
-  }
-  return key;
+async function bridge(path, options = {}) {
+  const response = await fetch(BRIDGE + path, { ...options, cache:'no-store' });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `Bridge HTTP ${response.status}`);
+  return data;
 }
 
 async function enumerateAudio(){
-  const oldMic=micSelect.value,oldOut=outputSelect.value,devices=await navigator.mediaDevices.enumerateDevices();
-  micSelect.replaceChildren();outputSelect.replaceChildren();
-  devices.filter(d=>d.kind==='audioinput').forEach((d,i)=>micSelect.add(new Option(d.label||`Microphone ${i+1}`,d.deviceId)));
-  devices.filter(d=>d.kind==='audiooutput').forEach((d,i)=>outputSelect.add(new Option(d.label||`Output ${i+1}`,d.deviceId)));
-  if(oldMic&&[...micSelect.options].some(o=>o.value===oldMic))micSelect.value=oldMic;
-  if(oldOut&&[...outputSelect.options].some(o=>o.value===oldOut))outputSelect.value=oldOut;
+  try {
+    const data = await bridge('/devices');
+    const devices = data.devices || [];
+    const oldIn=inputSelect.value, oldOut=outputSelect.value;
+    inputSelect.replaceChildren(); outputSelect.replaceChildren();
+    const inputs = devices.filter(d=>d.inputs>0);
+    const outputs = devices.filter(d=>d.outputs>0);
+    for(const d of inputs) inputSelect.add(new Option(`${d.name} [input ${d.index}]`, String(d.index)));
+    for(const d of outputs) outputSelect.add(new Option(`${d.name} [output ${d.index}]`, String(d.index)));
+    const repeater = [...inputSelect.options].find(o=>/audio repeater|kernel streaming|repeater/i.test(o.text));
+    if(repeater) inputSelect.value=repeater.value;
+    else if(oldIn) inputSelect.value=oldIn;
+    const vac = [...outputSelect.options].find(o=>/virtual audio cable|vb-audio|vac/i.test(o.text));
+    if(vac) outputSelect.value=vac.value;
+    else if(oldOut) outputSelect.value=oldOut;
+    setStatus(`Native audio ready — ${inputs.length} inputs / ${outputs.length} outputs`);
+  } catch(err) {
+    setStatus('Native bridge unavailable — install the Python requirements');
+  }
 }
 
-function downsampleFloat32(input,inputRate,outputRate){
-  if(inputRate===outputRate){const out=new Int16Array(input.length);for(let i=0;i<input.length;i++)out[i]=Math.max(-1,Math.min(1,input[i]))*32767;return out}
-  const ratio=inputRate/outputRate,length=Math.round(input.length/ratio),output=new Int16Array(length);
-  for(let i=0;i<length;i++){const start=Math.floor(i*ratio),end=Math.min(Math.floor((i+1)*ratio),input.length);let sum=0,count=0;for(let j=start;j<end;j++){sum+=input[j];count++}const sample=count?sum/count:input[start]||0;output[i]=Math.max(-1,Math.min(1,sample))*32767}return output;
-}
-function pcm16ToFloat32(buffer){const view=new DataView(buffer),out=new Float32Array(Math.floor(buffer.byteLength/2));for(let i=0;i<out.length;i++)out[i]=view.getInt16(i*2,true)/32768;return out}
-function playTtsChunk(arrayBuffer){if(!outputContext||outputContext.state==='closed')return;const pcm=pcm16ToFloat32(arrayBuffer),audio=outputContext.createBuffer(1,pcm.length,outputContext.sampleRate);audio.copyToChannel(pcm,0);ttsQueue.push(audio);pumpTtsQueue()}
-function pumpTtsQueue(){if(playing||!ttsQueue.length||!outputContext)return;playing=true;const buf=ttsQueue.shift(),node=outputContext.createBufferSource();node.buffer=buf;node.connect(outputDestination);node.onended=()=>{playing=false;pumpTtsQueue()};node.start()}
-
-async function ensureOutput(){
-  if(!outputContext){outputContext=new AudioContext({sampleRate:48000,latencyHint:'interactive'});outputDestination=outputContext.createMediaStreamDestination();outputElement=new Audio();outputElement.autoplay=true;outputElement.srcObject=outputDestination.stream;outputElement.style.display='none';document.body.appendChild(outputElement)}
-  await outputContext.resume();if(outputElement.setSinkId&&outputSelect.value)await outputElement.setSinkId(outputSelect.value);
-}
-
-function openStt(key){
-  const url='wss://api.deepgram.com/v2/listen?model=flux-general-en&encoding=linear16&sample_rate=16000&eot_threshold=0.70&eager_eot_threshold=0.50&eot_timeout_ms=7000';
-  stt=new WebSocket(url,['token',key]);stt.binaryType='arraybuffer';
-  stt.onopen=()=>setStatus('Listening');
-  stt.onmessage=e=>{if(typeof e.data!=='string')return;try{const j=JSON.parse(e.data),text=(j.transcript||'').trim();if(text)transcriptEl.textContent=text;if(text&&j.event==='EndOfTurn')sendTts(text)}catch{}};
-  stt.onerror=()=>setStatus('STT connection error — check the API key');stt.onclose=()=>{if(running)setStatus('STT disconnected')};
-}
-function openTts(key){
-  if(tts&&tts.readyState<=1&&ttsVoice===voiceSelect.value)return;if(tts){try{tts.close()}catch{}}ttsVoice=voiceSelect.value;
-  const url='wss://api.deepgram.com/v1/speak?model='+encodeURIComponent(ttsVoice)+'&encoding=linear16&sample_rate=48000';
-  tts=new WebSocket(url,['token',key]);tts.binaryType='arraybuffer';tts.onmessage=e=>{if(e.data instanceof ArrayBuffer)playTtsChunk(e.data)};tts.onerror=()=>setStatus('TTS connection error — check the API key');
-}
-function sendTts(text){if(!text||!running)return;const key=getApiKey();if(!key)return;openTts(key);const send=()=>{if(tts?.readyState===WebSocket.OPEN){tts.send(JSON.stringify({type:'Speak',text:text.slice(0,2000)}));tts.send(JSON.stringify({type:'Flush'}))}};if(tts.readyState===WebSocket.OPEN)send();else tts.addEventListener('open',send,{once:true})}
-
-function stopEverything(){
-  running=false;try{processor?.disconnect()}catch{}try{source?.disconnect()}catch{}try{analyser?.disconnect()}catch{}try{muteGain?.disconnect()}catch{}processor=source=analyser=muteGain=null;
-  try{inputContext?.close()}catch{}inputContext=null;try{mediaStream?.getTracks().forEach(t=>t.stop())}catch{}mediaStream=null;try{stt?.close()}catch{}stt=null;try{tts?.close()}catch{}tts=null;ttsVoice='';ttsQueue=[];playing=false;meterFill.style.width='0%';setRunning(false);setStatus('Stopped');
+async function poll(){
+  try {
+    const s=await bridge('/status');
+    if(s.transcript) transcriptEl.textContent=s.transcript;
+    if(s.error) setStatus(s.error);
+    else if(s.running) setStatus('Listening — native audio');
+    meterFill.style.width=s.running?'70%':'0%';
+    if(s.running!==running) setRunning(s.running);
+  } catch { if(!running) setStatus('Waiting for native audio bridge…'); }
 }
 
 async function start(){
-  if(running)return;const key=getApiKey();if(!key){apiKey.focus();return}
-  if(!window.isSecureContext&&location.hostname!=='localhost'&&location.hostname!=='127.0.0.1'){setStatus('Use HTTPS or localhost for microphone access');return}
-  sessionStorage.setItem('voicechanger.key',key);localStorage.setItem('voicechanger.voice',voiceSelect.value);
-  try{
-    setStatus('Requesting microphone…');mediaStream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:micSelect.value?{exact:micSelect.value}:undefined,channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
-    await enumerateAudio();await ensureOutput();inputContext=new AudioContext({sampleRate:48000,latencyHint:'interactive'});await inputContext.resume();
-    source=inputContext.createMediaStreamSource(mediaStream);processor=inputContext.createScriptProcessor(4096,1,1);analyser=inputContext.createAnalyser();analyser.fftSize=256;muteGain=inputContext.createGain();muteGain.gain.value=0;
-    source.connect(analyser);source.connect(processor);processor.connect(muteGain);muteGain.connect(inputContext.destination);
-    const draw=()=>{if(!running)return;const data=new Uint8Array(analyser.frequencyBinCount);analyser.getByteTimeDomainData(data);let sum=0;for(const x of data){const v=(x-128)/128;sum+=v*v}meterFill.style.width=Math.min(100,Math.sqrt(sum/data.length)*170)+'%';requestAnimationFrame(draw)};
-    running=true;setRunning(true);draw();openStt(key);openTts(key);
-    processor.onaudioprocess=e=>{if(!running||!stt||stt.readyState!==WebSocket.OPEN)return;const pcm=downsampleFloat32(e.inputBuffer.getChannelData(0),inputContext.sampleRate,16000);stt.send(pcm.buffer)};setStatus('Listening');
-  }catch(err){console.error(err);stopEverything();setStatus('Microphone error: '+(err.message||err))}
+  if(running) return;
+  const key=apiKey.value.trim();
+  if(!validApiKey(key)){ setStatus('Enter your Deepgram API key'); apiKey.focus(); return; }
+  if(!inputSelect.value || !outputSelect.value){ await enumerateAudio(); }
+  try {
+    setStatus('Connecting native audio…');
+    await bridge('/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      api_key:key,input_device:inputSelect.value,output_device:outputSelect.value,voice:voiceSelect.value
+    })});
+    await bridge('/start',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    localStorage.setItem('voicechanger.key',key);
+    localStorage.setItem('voicechanger.voice',voiceSelect.value);
+    setRunning(true); setStatus('Listening — Audio Repeater → Deepgram → VAC');
+  } catch(err) {
+    setRunning(false); setStatus(err.message || String(err));
+  }
 }
 
-startBtn.onclick=start;stopBtn.onclick=stopEverything;outputSelect.onchange=async()=>{try{await ensureOutput()}catch{setStatus('Output device could not be selected')}};voiceSelect.onchange=()=>{localStorage.setItem('voicechanger.voice',voiceSelect.value);if(running){const key=getApiKey();if(key)openTts(key)}};apiKey.onchange=()=>{const key=apiKey.value.trim();if(validApiKey(key))sessionStorage.setItem('voicechanger.key',key);else sessionStorage.removeItem('voicechanger.key')};navigator.mediaDevices?.addEventListener?.('devicechange',enumerateAudio);
-(async()=>{try{await navigator.mediaDevices.getUserMedia({audio:true}).then(s=>s.getTracks().forEach(t=>t.stop()))}catch{}try{await enumerateAudio()}catch{}})();
+async function stop(){
+  try { await bridge('/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); } catch {}
+  setRunning(false); meterFill.style.width='0%'; setStatus('Stopped');
+}
+
+startBtn.onclick=start;
+stopBtn.onclick=stop;
+voiceSelect.onchange=()=>localStorage.setItem('voicechanger.voice',voiceSelect.value);
+apiKey.onchange=()=>localStorage.setItem('voicechanger.key',apiKey.value.trim());
+inputSelect.onchange=()=>localStorage.setItem('voicechanger.input',inputSelect.value);
+outputSelect.onchange=()=>localStorage.setItem('voicechanger.output',outputSelect.value);
+
+(async()=>{ await enumerateAudio(); setInterval(poll,500); await poll(); })();
