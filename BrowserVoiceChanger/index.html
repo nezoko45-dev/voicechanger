@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>ChilloutVR VoiceChanger — Resemble Audio API</title>
+  <title>ChilloutVR VoiceChanger — Browser STT/TTS</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="app">
     <header>
       <h1>VoiceChanger</h1>
-      <span id="status" class="status">Resemble Audio API ready</span>
+      <span id="status" class="status">Browser STT/TTS ready</span>
     </header>
 
     <section class="grid">
@@ -38,7 +38,7 @@
 
     <section class="transcript">
       <h2>Audio output</h2>
-      <div id="outputStatus" class="hint">The Resemble WAV is played by your browser Audio API. Choose CABLE Input here if you want the audio sent into VB-CABLE.</div>
+      <div id="outputStatus" class="hint">Choose CABLE Input as the browser output if you want the converted voice routed into VB-CABLE.</div>
     </section>
 
     <section class="grid">
@@ -55,28 +55,28 @@
     <div class="buttons">
       <button id="start">Connect + Load Voices</button>
       <button id="testAudio" disabled>Test Resemble Audio</button>
-      <button id="record" disabled>Start Voice Changer</button>
+      <button id="record" disabled>Start Automatic Voice Changer</button>
       <button id="stop" disabled>Stop</button>
     </div>
 
     <section class="transcript">
       <h2>Recognized speech</h2>
-      <div id="text">Connect first, choose your custom Resemble voice, then test the audio.</div>
+      <div id="text">Connect first, choose your custom Resemble voice, test the audio, then start automatic listening.</div>
     </section>
 
     <section class="transcript">
-      <h2>New audio path</h2>
-      <div class="hint">Microphone → Resemble Speech-to-Text → Resemble Audio/TTS API → WAV audio returned to this browser → browser output device. The old Python WinMM playback path is no longer used.</div>
+      <h2>Hands-free mode</h2>
+      <div class="hint">Microphone stays open while the voice changer is running. Speak normally; the browser detects the end of each sentence, automatically sends the captured WAV to Resemble STT, gets the text, sends it to Resemble TTS, plays the returned WAV, and immediately listens again. You do not press Stop between sentences.</div>
     </section>
 
     <section class="transcript">
       <h2>ChilloutVR routing</h2>
-      <div class="hint">If you use VB-CABLE, select the playback endpoint named CABLE Input as the browser output. Then select CABLE Output as your microphone/input inside ChilloutVR. If you want to hear the converted voice yourself too, use a Windows monitoring/mixer setup; sending only to CABLE Input intentionally routes it into the virtual cable.</div>
+      <div class="hint">Select CABLE Input as the browser output. Then select CABLE Output as your microphone/input inside ChilloutVR. This version does not start Python and does not use the old WinMM playback path.</div>
     </section>
 
     <section class="transcript">
       <h2>Security</h2>
-      <div class="hint">Your Resemble API key is stored locally by the Python bridge. Do not commit the key to GitHub.</div>
+      <div class="hint">This is a client-side browser build. Your Resemble API key is kept in the page memory and is sent directly from your browser to Resemble. Do not commit the key to GitHub.</div>
     </section>
 
     <audio id="player" preload="auto"></audio>
