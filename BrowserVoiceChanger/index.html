@@ -3,22 +3,26 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>ChilloutVR VoiceChanger — Native Audio</title>
+  <title>ChilloutVR VoiceChanger — Audio Repeater</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="app">
-    <header><h1>VoiceChanger</h1><span id="status" class="status">Starting native audio…</span></header>
+    <header><h1>VoiceChanger</h1><span id="status" class="status">Audio Repeater mode ready</span></header>
     <section class="grid">
       <label>Deepgram API key<input id="apiKey" type="password" autocomplete="off" placeholder="Paste your Deepgram key"></label>
-      <label>Audio Repeater output / input<select id="mic"></select></label>
-      <label>VAC / virtual output<select id="output"></select></label>
+      <label>Microphone<select id="mic"></select></label>
+      <label>Browser → Repeater<select id="output"></select></label>
       <label>Voice<select id="voice"></select></label>
     </section>
     <div class="meter"><div id="meterFill"></div></div>
     <div class="buttons"><button id="start">Start</button><button id="stop" disabled>Stop</button></div>
     <section class="transcript"><h2>Transcript</h2><div id="text">Waiting for speech…</div></section>
-    <p class="hint">Native mode: Audio Repeater is captured directly by the local bridge. The browser never requests microphone access and never plays the processed voice. Set Audio Repeater's output as the input above, then send the converted audio to your VAC output and select that VAC recording endpoint in ChilloutVR.</p>
+    <section class="transcript">
+      <h2>Audio Repeater KS route</h2>
+      <div class="hint">Browser TTS → selected virtual cable playback → Audio Repeater (Kernel Streaming) Wave In → Audio Repeater Wave Out → second virtual cable → ChilloutVR microphone.</div>
+    </section>
+    <p class="hint">Set Audio Repeater KS Wave In to the recording side of the virtual cable selected above. Set its Wave Out to the virtual cable you want ChilloutVR to receive. The browser only handles the UI, microphone STT, and Deepgram TTS; Audio Repeater handles the final low-latency audio hop.</p>
   </main>
   <script src="app.js"></script>
 </body>
