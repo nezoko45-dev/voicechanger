@@ -1,20 +1,17 @@
-import base64
-import io
+import ctypes
+import ctypes.wintypes as wintypes
 import json
-import os
 import queue
-import subprocess
-import sys
 import threading
 import time
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
-import numpy as np
-import requests
-import sounddevice as sd
+# Windows-only, standard-library-only audio engine.
+# No pip audio libraries, no NumPy, no Requests, no SoundDevice.
 
 ROOT = Path(__file__).resolve().parent
 REPO_ROOT = ROOT.parent
@@ -24,17 +21,66 @@ CONFIG_FILE = ROOT / "config.json"
 HOST = "127.0.0.1"
 PORT = 17856
 ELEVEN_BASE = "https://api.elevenlabs.io"
-
 SAMPLE_RATE = 16000
 CHANNELS = 1
+BITS = 16
 CHUNK_MS = 1200
-CHUNK_SAMPLES = SAMPLE_RATE * CHUNK_MS // 1000
+CHUNK_BYTES = SAMPLE_RATE * CHUNK_MS // 1000 * 2
 
-mic_queue: queue.Queue[bytes] = queue.Queue(maxsize=12)
-audio_queue: queue.Queue[np.ndarray] = queue.Queue(maxsize=24)
+winmm = ctypes.WinDLL("winmm.dll")
+
+class WAVEFORMATEX(ctypes.Structure):
+    _fields_ = [
+        ("wFormatTag", wintypes.WORD),
+        ("nChannels", wintypes.WORD),
+        ("nSamplesPerSec", wintypes.DWORD),
+        ("nAvgBytesPerSec", wintypes.DWORD),
+        ("nBlockAlign", wintypes.WORD),
+        ("wBitsPerSample", wintypes.WORD),
+        ("cbSize", wintypes.WORD),
+    ]
+
+class WAVEHDR(ctypes.Structure):
+    _fields_ = [
+        ("lpData", ctypes.POINTER(ctypes.c_char)),
+        ("dwBufferLength", wintypes.DWORD),
+        ("dwBytesRecorded", wintypes.DWORD),
+        ("dwUser", ctypes.c_size_t),
+        ("dwFlags", wintypes.DWORD),
+        ("dwLoops", wintypes.DWORD),
+        ("lpNext", ctypes.c_void_p),
+        ("reserved", ctypes.c_size_t),
+    ]
+
+HWAVEIN = wintypes.HANDLE
+HWAVEOUT = wintypes.HANDLE
+WAVE_MAPPER = 0xFFFFFFFF
+CALLBACK_FUNCTION = 0x00030000
+WIM_DATA = 0x3C0
+WHDR_DONE = 0x00000001
+WOM_DONE = 0x3BD
+
+winmm.waveInOpen.argtypes = [ctypes.POINTER(HWAVEIN), wintypes.UINT, ctypes.POINTER(WAVEFORMATEX), ctypes.c_size_t, ctypes.c_size_t, wintypes.DWORD]
+winmm.waveInPrepareHeader.argtypes = [HWAVEIN, ctypes.POINTER(WAVEHDR), wintypes.UINT]
+winmm.waveInAddBuffer.argtypes = [HWAVEIN, ctypes.POINTER(WAVEHDR), wintypes.UINT]
+winmm.waveInStart.argtypes = [HWAVEIN]
+winmm.waveInStop.argtypes = [HWAVEIN]
+winmm.waveInReset.argtypes = [HWAVEIN]
+winmm.waveInUnprepareHeader.argtypes = [HWAVEIN, ctypes.POINTER(WAVEHDR), wintypes.UINT]
+winmm.waveInClose.argtypes = [HWAVEIN]
+
+winmm.waveOutOpen.argtypes = [ctypes.POINTER(HWAVEOUT), wintypes.UINT, ctypes.POINTER(WAVEFORMATEX), ctypes.c_size_t, ctypes.c_size_t, wintypes.DWORD]
+winmm.waveOutPrepareHeader.argtypes = [HWAVEOUT, ctypes.POINTER(WAVEHDR), wintypes.UINT]
+winmm.waveOutWrite.argtypes = [HWAVEOUT, ctypes.POINTER(WAVEHDR), wintypes.UINT]
+winmm.waveOutUnprepareHeader.argtypes = [HWAVEOUT, ctypes.POINTER(WAVEHDR), wintypes.UINT]
+winmm.waveOutReset.argtypes = [HWAVEOUT]
+winmm.waveOutClose.argtypes = [HWAVEOUT]
+
+mic_queue = queue.Queue(maxsize=8)
 running = False
 worker_thread = None
-stream = None
+capture_handle = None
+play_handle = None
 status = "Stopped"
 last_error = ""
 
@@ -45,18 +91,74 @@ def load_config():
             return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
         except Exception:
             pass
-    return {
-        "elevenlabs_api_key": "",
-        "output_device": None,
-        "voice_id": "",
-    }
+    return {"elevenlabs_api_key": "", "voice_id": "", "output_device": None}
 
 
 def save_config(config):
     CONFIG_FILE.write_text(json.dumps(config, indent=2), encoding="utf-8")
 
 
-def get_voice_id(api_key: str) -> str:
+def set_status(value, error=""):
+    global status, last_error
+    status = value
+    last_error = error
+    print("[VoiceChanger] " + value + (": " + error if error else ""), flush=True)
+
+
+def multipart(fields, file_field, filename, data, content_type="audio/wav"):
+    boundary = "----VoiceChangerBoundary7MA4YWxkTrZu0gW"
+    body = bytearray()
+    for name, value in fields.items():
+        body.extend(("--" + boundary + "\r\n").encode())
+        body.extend((f'Content-Disposition: form-data; name="{name}"\r\n\r\n').encode())
+        body.extend(str(value).encode())
+        body.extend(b"\r\n")
+    body.extend(("--" + boundary + "\r\n").encode())
+    body.extend((f'Content-Disposition: form-data; name="{file_field}"; filename="{filename}"\r\n').encode())
+    body.extend((f"Content-Type: {content_type}\r\n\r\n").encode())
+    body.extend(data)
+    body.extend(b"\r\n--" + boundary.encode() + b"--\r\n")
+    return bytes(body), "multipart/form-data; boundary=" + boundary
+
+
+def eleven_post(url, api_key, body, content_type, timeout=60):
+    req = Request(url, data=body, method="POST", headers={
+        "xi-api-key": api_key,
+        "Content-Type": content_type,
+        "Accept": "application/json",
+    })
+    try:
+        with urlopen(req, timeout=timeout) as response:
+            return response.status, response.read()
+    except Exception as exc:
+        if hasattr(exc, "read"):
+            raw = exc.read()
+            raise RuntimeError(f"ElevenLabs request failed: {getattr(exc, 'code', '?')} {raw.decode('utf-8', 'replace')}")
+        raise RuntimeError(str(exc))
+
+
+def wav_bytes(pcm, sample_rate=SAMPLE_RATE):
+    import io
+    out = io.BytesIO()
+    with wave.open(out, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(pcm)
+    return out.getvalue()
+
+
+def normalize_target_wav():
+    # Verify the repository target is a real PCM WAV without using any audio package.
+    if not TARGET_WAV.exists():
+        raise FileNotFoundError(f"Target WAV not found: {TARGET_WAV}")
+    with wave.open(str(TARGET_WAV), "rb") as wf:
+        if wf.getcomptype() != "NONE" or wf.getsampwidth() != 2:
+            raise ValueError("Target WAV must be uncompressed 16-bit PCM WAV")
+        return wf.getnchannels(), wf.getframerate(), wf.getnframes()
+
+
+def get_voice_id(api_key):
     config = load_config()
     configured = str(config.get("voice_id") or "").strip()
     if configured:
@@ -65,186 +167,181 @@ def get_voice_id(api_key: str) -> str:
         saved = VOICE_ID_FILE.read_text(encoding="utf-8").strip()
         if saved:
             return saved
-    if not TARGET_WAV.exists():
-        raise FileNotFoundError(f"Target WAV not found: {TARGET_WAV}")
 
-    # The WAV is used as a cloning sample. ElevenLabs Voice Changer itself
-    # takes a voice_id as its target; it does not accept a local WAV as the
-    # target voice directly.
-    with TARGET_WAV.open("rb") as audio_file:
-        response = requests.post(
-            ELEVEN_BASE + "/v1/voices/add",
-            headers={"xi-api-key": api_key},
-            files={"files[]": (TARGET_WAV.name, audio_file, "audio/wav")},
-            data={
-                "name": "VoiceChanger repo target - Ava",
-                "description": "Created from the repository target WAV for authorized voice conversion.",
-            },
-            timeout=90,
-        )
-    response.raise_for_status()
-    voice_id = response.json()["voice_id"]
+    channels, rate, frames = normalize_target_wav()
+    if channels < 1 or rate < 8000 or frames <= 0:
+        raise ValueError("Target WAV is empty or has an unsupported format")
+
+    # ElevenLabs Voice Changer uses a voice_id as its target. A WAV cannot be
+    # used as the target directly, so this one-time step creates an IVC voice.
+    # If the WAV came from an existing ElevenLabs PVC, enter that original
+    # voice_id in the UI instead and this clone step is skipped.
+    audio = TARGET_WAV.read_bytes()
+    body, content_type = multipart(
+        {"name": "VoiceChanger Ava WAV Target", "description": "Authorized target voice created from the repository WAV."},
+        "files[]",
+        TARGET_WAV.name,
+        audio,
+    )
+    status_code, raw = eleven_post(ELEVEN_BASE + "/v1/voices/add", api_key, body, content_type, 90)
+    if status_code < 200 or status_code >= 300:
+        detail = raw.decode("utf-8", "replace")
+        raise RuntimeError(f"ElevenLabs target WAV clone failed ({status_code}): {detail}")
+    try:
+        voice_id = json.loads(raw.decode("utf-8"))["voice_id"]
+    except Exception:
+        raise RuntimeError("ElevenLabs returned an unexpected clone response: " + raw.decode("utf-8", "replace"))
     VOICE_ID_FILE.write_text(voice_id, encoding="utf-8")
     config["voice_id"] = voice_id
     save_config(config)
     return voice_id
 
 
-def set_status(value: str, error: str = ""):
-    global status, last_error
-    status = value
-    last_error = error
-    print(f"[VoiceChanger] {value}" + (f": {error}" if error else ""), flush=True)
+def wave_format(rate=SAMPLE_RATE):
+    fmt = WAVEFORMATEX()
+    fmt.wFormatTag = 1
+    fmt.nChannels = 1
+    fmt.nSamplesPerSec = rate
+    fmt.wBitsPerSample = 16
+    fmt.nBlockAlign = 2
+    fmt.nAvgBytesPerSec = rate * 2
+    fmt.cbSize = 0
+    return fmt
 
 
-def output_device():
-    config = load_config()
-    selected = config.get("output_device")
-    if selected in (None, "", -1):
-        return None
-    return selected
+def capture_loop():
+    global capture_handle
+    fmt = wave_format()
+    handle = HWAVEIN()
+    callback_type = ctypes.WINFUNCTYPE(None, HWAVEIN, wintypes.UINT, ctypes.c_size_t, ctypes.c_size_t, ctypes.c_size_t)
 
+    buffers = []
+    headers = []
 
-def mic_callback(indata, frames, time_info, flags):
-    if flags:
-        print(f"[VoiceChanger] microphone flags: {flags}", flush=True)
-    raw = np.asarray(indata[:, 0], dtype=np.int16).tobytes()
-    try:
-        mic_queue.put_nowait(raw)
-    except queue.Full:
-        try:
-            mic_queue.get_nowait()
-            mic_queue.put_nowait(raw)
-        except queue.Empty:
-            pass
-
-
-def play_pcm16(data: bytes):
-    pcm = np.frombuffer(data, dtype="<i2").astype(np.float32) / 32768.0
-    if pcm.size == 0:
-        return
-    # ElevenLabs may return another sample rate in unusual configurations.
-    # Voice Changer output is requested at 48 kHz below, so play at 48 kHz.
-    audio_queue.put(pcm)
-
-
-def playback_worker():
-    device = output_device()
-    try:
-        with sd.OutputStream(
-            samplerate=48000,
-            channels=1,
-            dtype="float32",
-            device=device,
-            blocksize=960,
-            latency="low",
-        ) as out:
-            set_status("LIVE — Python → ElevenLabs → selected Windows output")
-            while running:
+    def callback(hwi, msg, instance, param1, param2):
+        if msg == WIM_DATA:
+            hdr = ctypes.cast(param1, ctypes.POINTER(WAVEHDR)).contents
+            if hdr.dwBytesRecorded:
+                raw = ctypes.string_at(hdr.lpData, hdr.dwBytesRecorded)
                 try:
-                    pcm = audio_queue.get(timeout=0.2)
-                except queue.Empty:
-                    continue
-                # The stream is fed in small slices to keep latency bounded.
-                pos = 0
-                while pos < len(pcm) and running:
-                    block = pcm[pos:pos + 960]
-                    if len(block) < 960:
-                        block = np.pad(block, (0, 960 - len(block)))
-                    out.write(block.reshape(-1, 1))
-                    pos += 960
-    except Exception as exc:
-        set_status("Output device error", str(exc))
+                    mic_queue.put_nowait(raw)
+                except queue.Full:
+                    try:
+                        mic_queue.get_nowait()
+                        mic_queue.put_nowait(raw)
+                    except queue.Empty:
+                        pass
+            if running:
+                winmm.waveInAddBuffer(hwi, ctypes.pointer(hdr), ctypes.sizeof(WAVEHDR))
+
+    callback_ref = callback_type(callback)
+    result = winmm.waveInOpen(ctypes.byref(handle), WAVE_MAPPER, ctypes.byref(fmt), ctypes.cast(callback_ref, ctypes.c_void_p).value, 0, CALLBACK_FUNCTION)
+    if result:
+        raise RuntimeError(f"Windows microphone open failed: {result}")
+    capture_handle = handle
+
+    try:
+        for _ in range(4):
+            buf = ctypes.create_string_buffer(CHUNK_BYTES)
+            hdr = WAVEHDR(ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)), CHUNK_BYTES, 0, 0, 0, 0, None, 0)
+            buffers.append(buf)
+            headers.append(hdr)
+            winmm.waveInPrepareHeader(handle, ctypes.pointer(headers[-1]), ctypes.sizeof(WAVEHDR))
+            winmm.waveInAddBuffer(handle, ctypes.pointer(headers[-1]), ctypes.sizeof(WAVEHDR))
+        winmm.waveInStart(handle)
+        while running:
+            time.sleep(0.05)
+    finally:
+        winmm.waveInStop(handle)
+        winmm.waveInReset(handle)
+        for hdr in headers:
+            winmm.waveInUnprepareHeader(handle, ctypes.pointer(hdr), ctypes.sizeof(WAVEHDR))
+        winmm.waveInClose(handle)
+        capture_handle = None
 
 
-def convert_worker(api_key: str, voice_id: str):
+def play_pcm(pcm, rate=48000):
+    global play_handle
+    fmt = wave_format(rate)
+    handle = HWAVEOUT()
+    result = winmm.waveOutOpen(ctypes.byref(handle), WAVE_MAPPER, ctypes.byref(fmt), 0, 0, 0)
+    if result:
+        raise RuntimeError(f"Windows output open failed: {result}")
+    play_handle = handle
+    try:
+        buffer = ctypes.create_string_buffer(pcm)
+        hdr = WAVEHDR(ctypes.cast(buffer, ctypes.POINTER(ctypes.c_char)), len(pcm), 0, 0, 0, 0, None, 0)
+        winmm.waveOutPrepareHeader(handle, ctypes.pointer(hdr), ctypes.sizeof(WAVEHDR))
+        winmm.waveOutWrite(handle, ctypes.pointer(hdr), ctypes.sizeof(WAVEHDR))
+        while running and not (hdr.dwFlags & WHDR_DONE):
+            time.sleep(0.01)
+        winmm.waveOutUnprepareHeader(handle, ctypes.pointer(hdr), ctypes.sizeof(WAVEHDR))
+    finally:
+        winmm.waveOutReset(handle)
+        winmm.waveOutClose(handle)
+        play_handle = None
+
+
+def convert_worker(api_key, voice_id):
     global running
     while running:
         try:
-            first = mic_queue.get(timeout=0.5)
+            audio = mic_queue.get(timeout=0.5)
         except queue.Empty:
             continue
+        if len(audio) < 3200:
+            continue
 
-        chunks = [first]
-        total = len(first)
-        # Build about 1.2 seconds of speech before each conversion request.
-        while total < CHUNK_SAMPLES * 2 and running:
-            try:
-                part = mic_queue.get(timeout=0.15)
-            except queue.Empty:
-                break
-            chunks.append(part)
-            total += len(part) // 2
-
-        audio = b"".join(chunks)
-        files = {"audio": ("live.pcm", audio, "application/octet-stream")}
-        data = {
-            "model_id": "eleven_multilingual_sts_v2",
-            "file_format": "pcm_s16le_16",
-            "output_format": "pcm_48000",
-            "remove_background_noise": "false",
-        }
+        body, content_type = multipart(
+            {
+                "model_id": "eleven_multilingual_sts_v2",
+                "file_format": "pcm_s16le_16",
+                "remove_background_noise": "false",
+            },
+            "audio",
+            "live.wav",
+            audio,
+            "application/octet-stream",
+        )
         try:
-            response = requests.post(
-                f"{ELEVEN_BASE}/v1/speech-to-speech/{voice_id}/stream",
-                params={"output_format": "pcm_48000"},
-                headers={"xi-api-key": api_key},
-                files=files,
-                data=data,
-                stream=True,
-                timeout=(10, 45),
+            # PCM is requested for low latency. The response is raw 48 kHz PCM,
+            # which can be sent straight to the Windows WaveOut API.
+            req = Request(
+                f"{ELEVEN_BASE}/v1/speech-to-speech/{voice_id}?output_format=pcm_48000",
+                data=body,
+                method="POST",
+                headers={"xi-api-key": api_key, "Content-Type": content_type, "Accept": "application/octet-stream"},
             )
-            response.raise_for_status()
-            set_status("LIVE — converting microphone")
-            for part in response.iter_content(chunk_size=9600):
-                if part and running:
-                    play_pcm16(part)
+            with urlopen(req, timeout=45) as response:
+                output = response.read()
+            if running and output:
+                set_status("LIVE — WAV/PCM → ElevenLabs → Windows audio")
+                play_pcm(output, 48000)
         except Exception as exc:
             set_status("Conversion error", str(exc))
             time.sleep(0.5)
 
 
-def start_engine(api_key: str):
-    global running, worker_thread, stream
+def start_engine(api_key):
+    global running, worker_thread
     if running:
         return
     if not api_key:
         raise ValueError("Enter an ElevenLabs API key")
     voice_id = get_voice_id(api_key)
     running = True
-    set_status("Starting microphone and target voice…")
-    stream = sd.InputStream(
-        samplerate=SAMPLE_RATE,
-        channels=1,
-        dtype="int16",
-        blocksize=CHUNK_SAMPLES,
-        latency="low",
-        callback=mic_callback,
-    )
-    stream.start()
+    set_status("Starting Windows microphone…")
+    threading.Thread(target=capture_loop, daemon=True).start()
     worker_thread = threading.Thread(target=convert_worker, args=(api_key, voice_id), daemon=True)
     worker_thread.start()
-    threading.Thread(target=playback_worker, daemon=True).start()
 
 
 def stop_engine():
-    global running, stream
+    global running
     running = False
-    if stream is not None:
-        try:
-            stream.stop()
-            stream.close()
-        except Exception:
-            pass
-        stream = None
     while True:
         try:
             mic_queue.get_nowait()
-        except queue.Empty:
-            break
-    while True:
-        try:
-            audio_queue.get_nowait()
         except queue.Empty:
             break
     set_status("Stopped")
@@ -272,24 +369,10 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/status":
             config = load_config()
-            self._json({
-                "running": running,
-                "status": status,
-                "error": last_error,
-                "voice_id": config.get("voice_id", ""),
-                "target_wav": str(TARGET_WAV.name),
-            })
+            self._json({"running": running, "status": status, "error": last_error, "voice_id": config.get("voice_id", ""), "target_wav": TARGET_WAV.name})
             return
         if path == "/devices":
-            try:
-                devices = sd.query_devices()
-                outputs = [
-                    {"id": i, "name": d["name"], "hostapi": d["hostapi"]}
-                    for i, d in enumerate(devices) if d["max_output_channels"] > 0
-                ]
-                self._json(outputs)
-            except Exception as exc:
-                self._json({"error": str(exc)}, 500)
+            self._json([{"id": -1, "name": "Windows WaveOut default (use Windows Sound settings)", "hostapi": "winmm"}])
             return
         self._json({"error": "not found"}, 404)
 
@@ -299,8 +382,7 @@ class Handler(BaseHTTPRequestHandler):
         payload = json.loads(self.rfile.read(length) or b"{}")
         try:
             if path == "/start":
-                api_key = str(payload.get("api_key", "")).strip()
-                start_engine(api_key)
+                start_engine(str(payload.get("api_key", "")).strip())
                 self._json({"ok": True})
                 return
             if path == "/stop":
@@ -309,8 +391,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/config":
                 config = load_config()
-                if "output_device" in payload:
-                    config["output_device"] = payload["output_device"]
+                if "voice_id" in payload:
+                    config["voice_id"] = str(payload["voice_id"]).strip()
+                    if config["voice_id"]:
+                        VOICE_ID_FILE.write_text(config["voice_id"], encoding="utf-8")
                 save_config(config)
                 self._json({"ok": True})
                 return
@@ -318,8 +402,7 @@ class Handler(BaseHTTPRequestHandler):
                 api_key = str(payload.get("api_key", "")).strip()
                 if not api_key:
                     raise ValueError("Enter an ElevenLabs API key first")
-                voice_id = get_voice_id(api_key)
-                self._json({"ok": True, "voice_id": voice_id})
+                self._json({"ok": True, "voice_id": get_voice_id(api_key)})
                 return
             self._json({"error": "not found"}, 404)
         except Exception as exc:
@@ -332,7 +415,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     server = ThreadingHTTPServer((HOST, PORT), Handler)
-    print(f"[VoiceChanger] Python audio engine listening on http://{HOST}:{PORT}", flush=True)
+    print(f"[VoiceChanger] Python standard-library engine listening on http://{HOST}:{PORT}", flush=True)
     print(f"[VoiceChanger] Target WAV: {TARGET_WAV}", flush=True)
     try:
         server.serve_forever()
