@@ -41,35 +41,73 @@ jobs:
             if (-not (Test-Path $file)) { throw "Missing VoiceChanger asset: $file" }
           }
           $py = Get-Content 'PythonVoiceChanger/voicechanger.py' -Raw
-          foreach ($check in @('f.cluster.resemble.ai/synthesize', 'voice_uuid', 'source_url', 'resemble:convert', 'Authorization', 'winmm.dll')) {
+          foreach ($check in @(
+            'RESEMBLE_SYNTH',
+            'RESEMBLE_STT',
+            'RESEMBLE_VOICES',
+            'f.cluster.resemble.ai/synthesize',
+            '/api/v2/speech-to-text',
+            '/api/v2/voices',
+            'voice_uuid',
+            'Authorization',
+            'winmm.dll',
+            '/stt-tts',
+            '/voices'
+          )) {
             if ($py.IndexOf($check, [StringComparison]::Ordinal) -lt 0) {
-              throw "Resemble bridge check failed: $check"
+              throw "Resemble STT/TTS bridge check failed: $check"
             }
           }
-          foreach ($forbidden in @('elevenlabs.io', '/v1/speech-to-speech/', '/v1/voices/add', 'voice_id', 'import numpy', 'import requests', 'import sounddevice', 'pitch_shift_chunk')) {
+          foreach ($forbidden in @(
+            'elevenlabs.io',
+            '/v1/speech-to-speech/',
+            '/v1/voices/add',
+            'voice_id',
+            'resemble:convert',
+            'import numpy',
+            'import requests',
+            'import sounddevice',
+            'pitch_shift_chunk'
+          )) {
             if ($py.IndexOf($forbidden, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
               throw "Legacy voice-conversion reference is present: $forbidden"
             }
           }
           python -m py_compile PythonVoiceChanger/voicechanger.py
-          Write-Host 'Resemble Python bridge validation passed.'
+          Write-Host 'Resemble STT/TTS Python bridge validation passed.'
 
       - name: Verify browser UI
         shell: pwsh
         run: |
           $html = Get-Content 'BrowserVoiceChanger/index.html' -Raw
           $js = Get-Content 'BrowserVoiceChanger/app.js' -Raw
-          foreach ($check in @('Resemble API key', 'Target voice UUID', 'Source WAV URL', 'Convert WAV', '/convert')) {
+          foreach ($check in @(
+            'Resemble API key',
+            'Custom voice',
+            'Start Voice Changer',
+            'Stop',
+            '/voices',
+            '/stt-tts',
+            'getUserMedia',
+            'MediaRecorder'
+          )) {
             if (($html + "`n" + $js).IndexOf($check, [StringComparison]::Ordinal) -lt 0) {
-              throw "Browser UI check failed: $check"
+              throw "Browser STT/TTS UI check failed: $check"
             }
           }
-          foreach ($forbidden in @('ElevenLabs API key', 'Target Voice ID', 'voice_id')) {
+          foreach ($forbidden in @(
+            'ElevenLabs API key',
+            'Target Voice ID',
+            'Source WAV URL',
+            'Convert WAV',
+            '/convert',
+            'voice_id'
+          )) {
             if (($html + "`n" + $js).IndexOf($forbidden, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
-              throw "Legacy ElevenLabs UI reference is present: $forbidden"
+              throw "Legacy browser voice-conversion reference is present: $forbidden"
             }
           }
-          Write-Host 'Resemble browser control panel validation passed.'
+          Write-Host 'Resemble STT/TTS browser control panel validation passed.'
 
       - name: Verify source
         shell: pwsh
