@@ -1,4 +1,4 @@
-name: Build ChilloutVR VoiceChanger Native Audio Mod
+name: Build ChilloutVR VoiceChanger Browser Mod
 
 on:
   workflow_dispatch:
@@ -20,63 +20,52 @@ jobs:
         with:
           dotnet-version: '6.0.x'
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Verify native bridge syntax
-        shell: pwsh
-        run: python -m py_compile VoiceChangerMod/audio_bridge.py
-
       - name: Restore
         run: dotnet restore VoiceChangerMod/VoiceChangerMod.csproj
 
       - name: Build DLL
         run: dotnet build VoiceChangerMod/VoiceChangerMod.csproj --configuration Release --no-restore
 
-      - name: Verify native bridge files
+      - name: Verify browser files
         shell: pwsh
         run: |
           $required = @(
             'BrowserVoiceChanger/index.html',
             'BrowserVoiceChanger/app.js',
             'BrowserVoiceChanger/style.css',
-            'VoiceChangerMod/BrowserController.cs',
-            'VoiceChangerMod/audio_bridge.py',
-            'VoiceChangerMod/requirements.txt'
+            'VoiceChangerMod/BrowserController.cs'
           )
           foreach ($file in $required) {
-            if (-not (Test-Path $file)) { throw "Missing required file: $file" }
+            if (-not (Test-Path $file)) { throw "Missing browser file: $file" }
           }
-          Write-Host 'Native audio bridge and browser control files are present.'
+          Write-Host 'Browser UI and Audio Repeater routing files are present.'
 
-      - name: Verify source safety
+      - name: Verify browser-only source
         shell: pwsh
         run: |
           $source = Get-Content 'VoiceChangerMod/BrowserController.cs' -Raw
-          foreach ($check in @('HttpListener', '127.0.0.1:', 'BrowserVoiceChanger', 'ProcessStartInfo', 'audio_bridge.py')) {
+          foreach ($check in @('HttpListener', '127.0.0.1:', 'BrowserVoiceChanger', 'ProcessStartInfo', 'UseShellExecute = true')) {
             if ($source.IndexOf($check, [StringComparison]::Ordinal) -lt 0) {
-              throw "Launcher check failed: $check"
+              throw "Browser launcher check failed: $check"
             }
           }
           $allCs = (Get-ChildItem 'VoiceChangerMod' -Filter *.cs -Recurse | ForEach-Object { Get-Content $_.FullName -Raw }) -join "`n"
-          foreach ($forbidden in @('UnityEngine', 'NAudio', 'Newtonsoft.Json', 'System.Windows.Forms', 'System.Drawing', 'HarmonyLib', 'WaveOutEvent', 'WaveInEvent', 'WaveFileReader')) {
+          foreach ($forbidden in @('UnityEngine', 'NAudio', 'Newtonsoft.Json', 'System.Windows.Forms', 'System.Drawing', 'HarmonyLib', 'WaveOutEvent', 'WaveInEvent', 'WaveFileReader', 'audio_bridge.py')) {
             if ($allCs.IndexOf($forbidden, [StringComparison]::Ordinal) -ge 0) {
-              throw "Legacy dependency/reference is present: $forbidden"
+              throw "Legacy/native dependency reference is present: $forbidden"
             }
           }
-          Write-Host 'Native launcher source validation passed.'
+          Write-Host 'Browser-only source validation passed.'
 
       - name: Verify build output
         shell: pwsh
         run: |
           $out = 'VoiceChangerMod/bin/Release/net472'
-          foreach ($file in @('BrowserVoiceChanger/index.html', 'BrowserVoiceChanger/app.js', 'BrowserVoiceChanger/style.css', 'audio_bridge.py', 'requirements.txt')) {
+          foreach ($file in @('BrowserVoiceChanger/index.html', 'BrowserVoiceChanger/app.js', 'BrowserVoiceChanger/style.css')) {
             $path = Join-Path $out $file
-            if (-not (Test-Path $path)) { throw "File was not copied to build output: $file" }
+            if (-not (Test-Path $path)) { throw "Browser asset was not copied to build output: $file" }
           }
-          Write-Host 'Build output contains the native bridge and browser UI.'
+          Write-Host 'Browser assets are present in the build output.'
 
       - name: Stage mod package
         shell: pwsh
@@ -85,15 +74,13 @@ jobs:
           if (-not (Test-Path (Join-Path $out 'VoiceChangerMod.dll'))) { throw 'Missing VoiceChangerMod.dll' }
           New-Item -ItemType Directory -Force -Path package | Out-Null
           Copy-Item (Join-Path $out 'VoiceChangerMod.dll') package/ -Force
-          Copy-Item (Join-Path $out 'audio_bridge.py') package/ -Force
-          Copy-Item (Join-Path $out 'requirements.txt') package/ -Force
           New-Item -ItemType Directory -Force -Path package/BrowserVoiceChanger | Out-Null
           Copy-Item 'BrowserVoiceChanger/*' package/BrowserVoiceChanger/ -Force
           Get-ChildItem package -Recurse | Select-Object FullName,Length
 
-      - name: Upload native audio mod package
+      - name: Upload browser mod package
         uses: actions/upload-artifact@v4
         with:
-          name: ChilloutVRVoiceChangerNativeAudioMod
+          name: ChilloutVRVoiceChangerBrowserMod
           path: package/**
           if-no-files-found: error
