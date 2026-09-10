@@ -43,10 +43,17 @@ jobs:
               throw "WAV engine check failed: $check"
             }
           }
-          foreach ($forbidden in @('numpy', 'sounddevice', 'requests', '/v1/voices/add', 'requirements.txt')) {
-            if ($py.IndexOf($forbidden, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
-              throw "Forbidden dependency or automatic clone reference is present: $forbidden"
+          # Validate actual import statements, not comments or explanatory text.
+          foreach ($forbiddenImport in @('import numpy', 'import requests', 'import sounddevice', 'from numpy', 'from requests', 'from sounddevice')) {
+            if ($py.IndexOf($forbiddenImport, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+              throw "Forbidden third-party Python import is present: $forbiddenImport"
             }
+          }
+          if ($py.IndexOf('/v1/voices/add', [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            throw 'Automatic voice-cloning endpoint is still present.'
+          }
+          if (Test-Path 'PythonVoiceChanger/requirements.txt') {
+            throw 'PythonVoiceChanger/requirements.txt must not exist: the engine is standard-library-only.'
           }
           Write-Host 'Standard-library WAV engine validation passed.'
 
