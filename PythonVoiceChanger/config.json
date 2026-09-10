@@ -1,7 +1,7 @@
 {
   "api_key": "",
   "voice_uuid": "",
-  "source_url": "",
+  "source_url": "https://raw.githubusercontent.com/nezoko45-dev/voicechanger/main/ElevenLabs_2026-08-16T20_54_01_Ava%20%E2%80%93%20Natural%20AI%20Voice_pvc_sp100_s50_sb75_se36_b_e2.wav",
   "pitch": 0,
   "prompt": "",
   "sample_rate": 48000,
