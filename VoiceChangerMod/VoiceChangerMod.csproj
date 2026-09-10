@@ -18,7 +18,5 @@
     <None Include="..\BrowserVoiceChanger\index.html" Link="BrowserVoiceChanger\index.html" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\BrowserVoiceChanger\app.js" Link="BrowserVoiceChanger\app.js" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\BrowserVoiceChanger\style.css" Link="BrowserVoiceChanger\style.css" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="audio_bridge.py" Link="audio_bridge.py" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="requirements.txt" Link="requirements.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
