@@ -19,8 +19,11 @@ const player = $('player');
 const PYTHON = 'http://127.0.0.1:17856';
 let running = false;
 let recording = false;
-let recorder = null;
 let stream = null;
+let audioContext = null;
+let sourceNode = null;
+let processorNode = null;
+let recordedChunks = [];
 let selectedOutput = 'default';
 
 function setStatus(text){ statusEl.textContent = text; }
@@ -87,19 +90,15 @@ async function loadAudioDevices(){
     outputStatus.textContent = 'This browser does not expose audio output selection.';
     return;
   }
-
   const devices = await navigator.mediaDevices.enumerateDevices();
   const outputs = devices.filter(d => d.kind === 'audiooutput');
   const previous = selectedOutput || 'default';
-
   outputDevice.innerHTML = '';
   outputDevice.add(new Option('Default Windows output', 'default'));
-
   outputs.forEach(device => {
     if(!device.deviceId) return;
     outputDevice.add(new Option(labelForDevice(device), device.deviceId));
   });
-
   const cable = outputs.find(d => /cable input|vb-audio cable|virtual audio cable/i.test(d.label || ''));
   if(previous !== 'default' && [...outputDevice.options].some(o => o.value === previous)) {
     outputDevice.value = previous;
@@ -109,7 +108,6 @@ async function loadAudioDevices(){
     outputDevice.value = cable.deviceId;
     selectedOutput = cable.deviceId;
   }
-
   selectedOutput = outputDevice.value || 'default';
   outputStatus.textContent = `Browser TTS output: ${outputDevice.selectedOptions[0]?.text || 'Default Windows output'}`;
   await applySink();
@@ -151,11 +149,9 @@ async function chooseOutput(){
 
 async function playResembleAudio(base64, mime = 'audio/wav'){
   if(!base64) throw new Error('Resemble returned no audio data.');
-
   const byteCharacters = atob(base64);
   const bytes = new Uint8Array(byteCharacters.length);
   for(let i = 0; i < byteCharacters.length; i++) bytes[i] = byteCharacters.charCodeAt(i);
-
   const blob = new Blob([bytes], {type:mime});
   const url = URL.createObjectURL(blob);
   try{
@@ -182,10 +178,7 @@ async function loadVoices(){
   voiceUuid.innerHTML = '';
   const voices = data.voices || [];
   if(!voices.length) throw new Error('No Resemble voices were returned for this account.');
-
-  voices.forEach(v => {
-    voiceUuid.add(new Option(`${v.name || 'Unnamed'} — ${v.uuid || ''}`, v.uuid || ''));
-  });
+  voices.forEach(v => voiceUuid.add(new Option(`${v.name || 'Unnamed'} — ${v.uuid || ''}`, v.uuid || '')));
   if(previous && [...voiceUuid.options].some(o => o.value === previous)) voiceUuid.value = previous;
   if(!voiceUuid.value && voices[0]?.uuid) voiceUuid.value = voices[0].uuid;
   await saveConfig();
@@ -195,24 +188,19 @@ async function connect(){
   try{
     setRunning(false);
     setStatus('Requesting browser audio permission…');
-
-    // Opening the microphone once exposes useful device labels, including virtual cables.
     const permissionStream = await navigator.mediaDevices.getUserMedia({audio:true});
     permissionStream.getTracks().forEach(t => t.stop());
-
     await loadConfig();
     await loadAudioDevices();
     await unlockAudio();
     await saveConfig();
     await loadVoices();
-
     if(!voiceUuid.value.trim()) throw new Error('No Resemble custom voice is selected.');
-
     setStatus('Starting Resemble Audio API…');
     const started = await python('/start', {method:'POST', body:'{}'});
     setRunning(true);
     setStatus(started.status || 'Resemble Audio API ready');
-    transcriptEl.textContent = 'Connected. Press Test Resemble Audio before using the microphone.';
+    transcriptEl.textContent = 'Connected. Press Start Voice Changer and speak a short sentence.';
     meterFill.style.width = '20%';
   }catch(err){
     setRunning(false);
@@ -228,10 +216,7 @@ async function testAudio(){
     await unlockAudio();
     setStatus('Resemble Audio API: generating test voice…');
     meterFill.style.width = '55%';
-    const response = await python('/tts', {
-      method:'POST',
-      body:JSON.stringify({text:'Hello! This is the Resemble audio output test.'})
-    });
+    const response = await python('/tts', {method:'POST', body:JSON.stringify({text:'Hello! This is the Resemble audio output test.'})});
     await playResembleAudio(response.audio_base64, response.mime);
     meterFill.style.width = '100%';
     setStatus('Test audio played successfully');
@@ -243,9 +228,37 @@ async function testAudio(){
   }
 }
 
-function pickMime(){
-  const choices = ['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus'];
-  return choices.find(x => MediaRecorder.isTypeSupported(x)) || '';
+function mergeFloat32(chunks, length){
+  const output = new Float32Array(length);
+  let offset = 0;
+  for(const chunk of chunks){ output.set(chunk, offset); offset += chunk.length; }
+  return output;
+}
+
+function encodeWav(samples, sampleRate){
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+  const writeString = (offset, text) => { for(let i=0;i<text.length;i++) view.setUint8(offset+i, text.charCodeAt(i)); };
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + samples.length * 2, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeString(36, 'data');
+  view.setUint32(40, samples.length * 2, true);
+  let offset = 44;
+  for(let i=0;i<samples.length;i++){
+    const sample = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    offset += 2;
+  }
+  return new Blob([buffer], {type:'audio/wav'});
 }
 
 async function startVoiceChanger(){
@@ -253,66 +266,85 @@ async function startVoiceChanger(){
   try{
     await saveConfig();
     await unlockAudio();
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}
-    });
-
-    const mime = pickMime();
-    recorder = mime ? new MediaRecorder(stream,{mimeType:mime}) : new MediaRecorder(stream);
-    const chunks = [];
-    recorder.ondataavailable = e => { if(e.data.size) chunks.push(e.data); };
-
-    recorder.onstop = async () => {
-      const type = recorder.mimeType || mime || 'audio/webm';
-      const blob = new Blob(chunks,{type});
-      chunks.length = 0;
-      try{
-        setStatus('Resemble STT: transcribing…');
-        transcriptEl.textContent = 'Listening finished — sending your speech to Resemble…';
-        meterFill.style.width = '55%';
-
-        const response = await fetch(PYTHON + '/stt-tts', {
-          method:'POST',
-          headers:{'Content-Type':type,'X-Audio-Type':type},
-          body:blob
-        });
-        const data = await response.json().catch(()=>({}));
-        if(!response.ok) throw new Error(data.error || `Voice changer HTTP ${response.status}`);
-
-        transcriptEl.textContent = data.text || '(No speech recognized)';
-        setStatus('Resemble Audio API: playing converted voice…');
-        await playResembleAudio(data.audio_base64, data.mime || 'audio/wav');
-        meterFill.style.width = '100%';
-        setStatus('Ready — converted voice played');
-      }catch(err){
-        setStatus('Voice changer error: ' + err.message);
-        transcriptEl.textContent = err.message;
-        meterFill.style.width = '0%';
-      }
-      if(recording && running) setStatus('Ready — press Start Voice Changer for the next sentence');
+    stream = await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    await audioContext.resume();
+    sourceNode = audioContext.createMediaStreamSource(stream);
+    processorNode = audioContext.createScriptProcessor(4096, 1, 1);
+    recordedChunks = [];
+    let sampleCount = 0;
+    processorNode.onaudioprocess = event => {
+      if(!recording) return;
+      const input = event.inputBuffer.getChannelData(0);
+      const copy = new Float32Array(input.length);
+      copy.set(input);
+      recordedChunks.push(copy);
+      sampleCount += copy.length;
     };
-
-    recorder.start();
+    // Keep the processor alive without sending microphone audio to the speakers.
+    const silentGain = audioContext.createGain();
+    silentGain.gain.value = 0;
+    sourceNode.connect(processorNode);
+    processorNode.connect(silentGain);
+    silentGain.connect(audioContext.destination);
     recording = true;
     recordBtn.textContent = 'Stop Listening';
     meterFill.style.width = '30%';
     setStatus('Listening… speak now');
     transcriptEl.textContent = 'Listening to your microphone…';
+    processorNode.__sampleCount = () => sampleCount;
   }catch(err){
+    if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+    if(audioContext){ try{ await audioContext.close(); }catch{} audioContext=null; }
     setStatus('Microphone error: ' + err.message);
+    transcriptEl.textContent = err.message;
   }
 }
 
-function stopListening(){
-  if(!recording || !recorder) return;
-  recorder.stop();
+async function stopListening(){
+  if(!recording) return;
   recording = false;
   recordBtn.textContent = 'Start Voice Changer';
-  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+  try{
+    if(processorNode) processorNode.disconnect();
+    if(sourceNode) sourceNode.disconnect();
+    if(stream) stream.getTracks().forEach(t=>t.stop());
+    const ctx = audioContext;
+    const chunks = recordedChunks;
+    recordedChunks = [];
+    stream = null;
+    sourceNode = null;
+    processorNode = null;
+    if(ctx){ try{ await ctx.close(); }catch{} }
+    audioContext = null;
+    const total = chunks.reduce((n, c) => n + c.length, 0);
+    if(total < 1600) throw new Error('No microphone audio was captured. Speak for at least half a second and try again.');
+    const samples = mergeFloat32(chunks, total);
+    const wav = encodeWav(samples, ctx?.sampleRate || 48000);
+    setStatus('Resemble STT: transcribing…');
+    transcriptEl.textContent = 'Listening finished — sending WAV audio to Resemble STT…';
+    meterFill.style.width = '55%';
+    const response = await fetch(PYTHON + '/stt-tts', {
+      method:'POST',
+      headers:{'Content-Type':'audio/wav','X-Audio-Type':'audio/wav'},
+      body:wav
+    });
+    const data = await response.json().catch(()=>({}));
+    if(!response.ok) throw new Error(data.error || `Voice changer HTTP ${response.status}`);
+    transcriptEl.textContent = data.text || '(No speech recognized)';
+    setStatus('Resemble Audio API: playing converted voice…');
+    await playResembleAudio(data.audio_base64, data.mime || 'audio/wav');
+    meterFill.style.width = '100%';
+    setStatus('Ready — converted voice played');
+  }catch(err){
+    setStatus('Voice changer error: ' + err.message);
+    transcriptEl.textContent = err.message;
+    meterFill.style.width = '0%';
+  }
 }
 
 async function stop(){
-  stopListening();
+  await stopListening();
   try{ await python('/stop', {method:'POST', body:'{}'}); }catch(err){ setStatus(err.message); }
   setRunning(false);
   meterFill.style.width = '0%';
@@ -325,12 +357,8 @@ recordBtn.onclick = () => recording ? stopListening() : startVoiceChanger();
 stopBtn.onclick = stop;
 chooseOutputBtn.onclick = chooseOutput;
 refreshAudioBtn.onclick = async () => {
-  try{
-    await loadAudioDevices();
-    setStatus('Browser audio outputs refreshed');
-  }catch(err){
-    setStatus('Audio output error: ' + err.message);
-  }
+  try{ await loadAudioDevices(); setStatus('Browser audio outputs refreshed'); }
+  catch(err){ setStatus('Audio output error: ' + err.message); }
 };
 voiceUuid.onchange = saveConfig;
 outputDevice.onchange = applySink;
