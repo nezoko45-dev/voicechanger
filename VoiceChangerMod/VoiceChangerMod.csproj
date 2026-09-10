@@ -15,6 +15,9 @@
     <PackageReference Include="LavaGang.MelonLoader" Version="0.7.3" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+  <ItemGroup>
     <None Include="..\BrowserVoiceChanger\index.html" Link="BrowserVoiceChanger\index.html" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\BrowserVoiceChanger\app.js" Link="BrowserVoiceChanger\app.js" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\BrowserVoiceChanger\style.css" Link="BrowserVoiceChanger\style.css" CopyToOutputDirectory="PreserveNewest" />
