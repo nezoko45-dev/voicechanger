@@ -1,5 +1,4 @@
 import base64
-import io
 import json
 import os
 import time
@@ -266,7 +265,7 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"error": "Not found"}, 404)
 
     def do_POST(self):
-        global last_duration, last_text
+        global running, last_duration, last_text
         path = urlparse(self.path).path
 
         if path in ("/stt-tts", "/tts"):
@@ -294,9 +293,6 @@ class Handler(BaseHTTPRequestHandler):
                 last_text = text
                 elapsed = time.perf_counter() - started
 
-                # IMPORTANT: do not play through WinMM. The browser receives the actual
-                # Resemble audio bytes and sends them to the user's selected output via
-                # HTMLAudioElement.setSinkId(). This avoids the old robotic/silent path.
                 encoded = base64.b64encode(output).decode("ascii")
                 set_status("Audio ready — browser playback")
                 self._json({
@@ -339,14 +335,12 @@ class Handler(BaseHTTPRequestHandler):
                     raise RuntimeError("Enter your Resemble API key first.")
                 if not str(config.get("voice_uuid") or "").strip():
                     raise RuntimeError("Select a Resemble custom voice first.")
-                global running
                 running = True
                 set_status("Resemble STT/TTS ready — browser audio enabled")
                 self._json({"ok": True, "status": status})
                 return
 
             if path == "/stop":
-                global running
                 running = False
                 set_status("Stopped")
                 self._json({"ok": True})
