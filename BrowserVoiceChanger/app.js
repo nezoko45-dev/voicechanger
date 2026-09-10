@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-const apiKey = $('apiKey'), micSelect = $('mic'), outputSelect = $('output'), voiceSelect = $('voice');
+const apiKey = $('apiKey'), micSelect = $('mic'), voiceSelect = $('voice');
 const statusEl = $('status'), transcriptEl = $('text'), meterFill = $('meterFill');
 const startBtn = $('start'), stopBtn = $('stop');
 
@@ -19,7 +19,7 @@ voiceSelect.value = localStorage.getItem('voicechanger.voice') || 'aura-2-thalia
 apiKey.value = sessionStorage.getItem('voicechanger.key') || localStorage.getItem('voicechanger.key') || '';
 
 let running=false, mediaStream=null, inputContext=null, processor=null, source=null, analyser=null, muteGain=null;
-let outputContext=null, outputDestination=null, outputElement=null;
+let outputContext=null, outputDestination=null;
 let stt=null, tts=null, ttsVoice='';
 let ttsQueue=[], playing=false;
 
@@ -36,15 +36,10 @@ function getApiKey(){
 
 async function enumerateAudio(){
   const oldMic=localStorage.getItem('voicechanger.mic') || micSelect.value;
-  const oldOut=localStorage.getItem('voicechanger.output') || outputSelect.value;
   const devices=await navigator.mediaDevices.enumerateDevices();
-  micSelect.replaceChildren(); outputSelect.replaceChildren();
+  micSelect.replaceChildren();
   devices.filter(d=>d.kind==='audioinput').forEach((d,i)=>micSelect.add(new Option(d.label||`Microphone ${i+1}`,d.deviceId)));
-  devices.filter(d=>d.kind==='audiooutput').forEach((d,i)=>outputSelect.add(new Option(d.label||`Output ${i+1}`,d.deviceId)));
   if(oldMic && [...micSelect.options].some(o=>o.value===oldMic)) micSelect.value=oldMic;
-  if(oldOut && [...outputSelect.options].some(o=>o.value===oldOut)) outputSelect.value=oldOut;
-  const vac=[...outputSelect.options].find(o=>/virtual audio cable|line \d+ \(|vb-audio|vac/i.test(o.text));
-  if(!outputSelect.value && vac) outputSelect.value=vac.value;
 }
 
 function downsampleFloat32(input,inputRate,outputRate){
@@ -70,23 +65,19 @@ function pcm16ToFloat32(buffer){
 }
 
 async function ensureOutput(){
+  // Use the normal Windows/browser default output. JavaScript no longer
+  // selects VB-Cable, VAC, or any other virtual output device.
   if(!outputContext){
     outputContext=new AudioContext({sampleRate:48000,latencyHint:'interactive'});
-    outputDestination=outputContext.createMediaStreamDestination();
-    outputElement=new Audio();
-    outputElement.autoplay=true;
-    outputElement.srcObject=outputDestination.stream;
-    outputElement.style.display='none';
-    document.body.appendChild(outputElement);
+    outputDestination=outputContext.destination;
   }
   await outputContext.resume();
-  if(outputElement.setSinkId && outputSelect.value) await outputElement.setSinkId(outputSelect.value);
 }
 
 function playTtsChunk(arrayBuffer){
   if(!outputContext || outputContext.state==='closed') return;
   const pcm=pcm16ToFloat32(arrayBuffer);
-  const audio=outputContext.createBuffer(1,pcm.length,outputContext.sampleRate);
+  const audio=outputContext.createBuffer(1,pcm.length,48000);
   audio.copyToChannel(pcm,0);
   ttsQueue.push(audio);
   pumpTtsQueue();
@@ -105,7 +96,7 @@ function openStt(key){
   const url='wss://api.deepgram.com/v2/listen?model=flux-general-en&encoding=linear16&sample_rate=16000&eot_threshold=0.70&eager_eot_threshold=0.50&eot_timeout_ms=7000';
   stt=new WebSocket(url,['token',key]);
   stt.binaryType='arraybuffer';
-  stt.onopen=()=>setStatus('Listening — browser → Deepgram → Audio Repeater');
+  stt.onopen=()=>setStatus('Listening — browser → Deepgram → Windows audio');
   stt.onmessage=e=>{
     if(typeof e.data!=='string') return;
     try{
@@ -168,7 +159,6 @@ async function start(){
   }
   localStorage.setItem('voicechanger.voice',voiceSelect.value);
   localStorage.setItem('voicechanger.mic',micSelect.value);
-  localStorage.setItem('voicechanger.output',outputSelect.value);
   try{
     setStatus('Starting browser audio…');
     mediaStream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:micSelect.value?{exact:micSelect.value}:undefined,channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
@@ -195,7 +185,7 @@ async function start(){
       const pcm=downsampleFloat32(e.inputBuffer.getChannelData(0),inputContext.sampleRate,16000);
       stt.send(pcm.buffer);
     };
-    setStatus('LIVE — TTS is routed to Audio Repeater input');
+    setStatus('LIVE — TTS is using the normal Windows audio output');
   }catch(err){
     console.error(err); stopEverything(); setStatus('Audio error: '+(err.message||err));
   }
@@ -203,10 +193,6 @@ async function start(){
 
 startBtn.onclick=start;
 stopBtn.onclick=stopEverything;
-outputSelect.onchange=async()=>{
-  localStorage.setItem('voicechanger.output',outputSelect.value);
-  try{await ensureOutput();setStatus('Output route updated');}catch{setStatus('Could not select the browser output device');}
-};
 voiceSelect.onchange=()=>{localStorage.setItem('voicechanger.voice',voiceSelect.value);if(running){const key=getApiKey();if(key)openTts(key);}};
 apiKey.onchange=()=>{const key=apiKey.value.trim();if(validApiKey(key)){sessionStorage.setItem('voicechanger.key',key);localStorage.setItem('voicechanger.key',key);}};
 micSelect.onchange=()=>localStorage.setItem('voicechanger.mic',micSelect.value);
