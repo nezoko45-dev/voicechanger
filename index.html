@@ -1,16 +1,23 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#09090d">
-<title>VoiceChanger — Cartesia Browser</title><link rel="stylesheet" href="style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VoiceChanger — Cartesia</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:#08090d;color:#f4f4f7;font:15px Arial,sans-serif}main{width:min(900px,94%);margin:40px auto;padding-bottom:40px}h1{margin:0 0 8px;font-size:38px}h2{margin:0 0 18px}.sub{color:#aaa}.status{padding:12px 14px;border:1px solid #30313a;border-radius:10px;background:#11131a;margin:20px 0}.card{background:#11131a;border:1px solid #2b2d37;border-radius:14px;padding:22px;margin:16px 0}label{display:block;color:#bbb;margin-bottom:14px}input,select{display:block;width:100%;margin-top:7px;padding:13px;border-radius:9px;border:1px solid #3a3c47;background:#090a0f;color:#fff;font-size:15px}button{padding:12px 18px;border:1px solid #444754;border-radius:9px;background:#1a1c25;color:#fff;cursor:pointer;font-size:15px;margin:5px}button:hover{background:#292c38}button:disabled{opacity:.45;cursor:not-allowed}.primary{background:#7c3aed;border-color:#8b5cf6}.row{display:grid;grid-template-columns:1fr 1fr;gap:15px}.meter{height:10px;background:#252733;border-radius:99px;overflow:hidden;margin-top:18px}.meter div{height:100%;width:0;background:#8b5cf6;transition:width .1s}.hint{color:#999;font-size:13px}.transcript{min-height:45px;padding:12px;background:#090a0f;border-radius:9px;color:#ddd}@media(max-width:650px){.row{grid-template-columns:1fr}h1{font-size:30px}}
+</style>
 </head>
 <body>
-<main class="app">
-<header><div><div class="eyebrow">BROWSER VOICE CHANGER</div><h1>VoiceChanger</h1><p>Cartesia STT → voice cloning TTS → VB-CABLE</p></div><div id="status" class="status">Ready</div></header>
-<section class="card"><h2>Cartesia</h2><div class="grid"><label>API key<input id="apiKey" type="password" autocomplete="off" placeholder="Paste your Cartesia API key"></label><label>Voice ID<input id="voiceId" autocomplete="off" placeholder="Paste your Cartesia voice ID"></label></div><p class="hint">The key only lives in this browser tab. Never put it in GitHub.</p></section>
-<section class="card"><h2>Audio routing</h2><div class="grid"><label>Microphone<select id="inputDevice"><option value="">Default microphone</option></select></label><label>TTS output<select id="outputDevice"><option value="default">Default Windows output</option></select></label></div><div class="buttons"><button id="refreshDevices">Refresh devices</button><button id="chooseOutput">Choose output</button></div><p id="routingStatus" class="hint">ChilloutVR: browser output = CABLE Input. ChilloutVR microphone = CABLE Output.</p></section>
-<section class="card"><h2>Voice changer</h2><div class="buttons"><button id="connect">Connect</button><button id="test" disabled>Test voice</button><button id="start" class="primary" disabled>Start automatic mode</button><button id="stop" disabled>Stop</button></div><div class="meter"><div id="meterFill"></div></div><p id="transcript" class="transcript">Enter your Cartesia credentials, choose devices, then connect.</p></section>
-<section class="card"><h2>How it works</h2><ol><li>Browser microphone stays open.</li><li>Silence detection captures each sentence as WAV.</li><li>Cartesia STT turns speech into text.</li><li>Cartesia TTS speaks it with your selected voice.</li><li>The WAV plays through your selected Windows output.</li></ol><p class="hint">No MelonLoader, DLL, C#, Python, or desktop bridge is used by this app.</p></section>
+<main>
+<h1>VoiceChanger</h1>
+<div class="sub">Cartesia STT → voice cloning TTS → VB-CABLE</div>
+<div id="status" class="status">Ready — enter your Cartesia credentials.</div>
+<section class="card"><h2>Cartesia</h2><div class="row"><label>API key<input id="apiKey" type="password" autocomplete="off" placeholder="Cartesia API key"></label><label>Voice ID<input id="voiceId" autocomplete="off" placeholder="Cartesia Voice ID"></label></div><div class="hint">Your key stays in this browser tab. Do not publish it in GitHub.</div></section>
+<section class="card"><h2>Audio</h2><div class="row"><label>Microphone<select id="inputDevice"><option value="">Default microphone</option></select></label><label>TTS output<select id="outputDevice"><option value="default">Default Windows output</option></select></label></div><button id="refreshDevices" type="button">Refresh devices</button><button id="chooseOutput" type="button">Choose output</button><p id="routingStatus" class="hint">For ChilloutVR: set its microphone to CABLE Output.</p></section>
+<section class="card"><h2>Controls</h2><button id="connect" type="button" class="primary">Connect</button><button id="test" type="button" disabled>Test voice</button><button id="start" type="button" class="primary" disabled>Start automatic mode</button><button id="stop" type="button" disabled>Stop</button><div class="meter"><div id="meterFill"></div></div><p id="transcript" class="transcript">Nothing captured yet.</p></section>
+<section class="card"><h2>Setup</h2><ol><li>Enter Cartesia API key and Voice ID.</li><li>Press Connect.</li><li>Press Start automatic mode.</li><li>Allow microphone access.</li><li>Set ChilloutVR microphone to CABLE Output.</li></ol><p class="hint">This is a standalone HTML/JavaScript app. No MelonLoader, DLL, C#, Python, or Deepgram code is required.</p></section>
 <audio id="player" preload="auto"></audio>
-</main><script src="app.js"></script>
+</main>
+<script src="app.js"></script>
 </body></html>
