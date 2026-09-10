@@ -2,6 +2,9 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
+using System.Net.Http;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using MelonLoader;
 
@@ -10,6 +13,7 @@ namespace VoiceChangerMod;
 internal static class BrowserController
 {
     private static readonly string[] AllowedFiles = { "index.html", "app.js", "style.css" };
+    private static readonly HttpClient Http = new HttpClient();
     private static HttpListener? _server;
     private static Thread? _serverThread;
     private static int _port;
@@ -20,7 +24,7 @@ internal static class BrowserController
         {
             StartServer();
             if (_port != 0)
-                MelonLogger.Msg("Resemble browser voice changer ready. Press F8 to open the control panel.");
+                MelonLogger.Msg("Cartesia browser voice changer ready. Press F8 to open the control panel.");
         }
         catch (Exception ex)
         {
@@ -124,6 +128,12 @@ internal static class BrowserController
             string requested = context.Request.Url?.AbsolutePath?.TrimStart('/') ?? "";
             if (string.IsNullOrEmpty(requested)) requested = "index.html";
 
+            if (requested.Equals("cartesia-token", StringComparison.OrdinalIgnoreCase))
+            {
+                HandleCartesiaToken(context);
+                continue;
+            }
+
             if (requested.IndexOf("..", StringComparison.Ordinal) >= 0 || Array.IndexOf(AllowedFiles, requested) < 0)
             {
                 context.Response.StatusCode = 404;
@@ -154,6 +164,71 @@ internal static class BrowserController
                 try { context.Response.OutputStream.Close(); } catch { }
             }
         }
+    }
+
+    private static void HandleCartesiaToken(HttpListenerContext context)
+    {
+        try
+        {
+            if (!string.Equals(context.Request.HttpMethod, "POST", StringComparison.OrdinalIgnoreCase))
+            {
+                context.Response.StatusCode = 405;
+                context.Response.Close();
+                return;
+            }
+
+            using var reader = new StreamReader(context.Request.InputStream, context.Request.ContentEncoding ?? Encoding.UTF8);
+            string body = reader.ReadToEnd();
+            Match keyMatch = Regex.Match(body, "\\\"apiKey\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"", RegexOptions.CultureInvariant);
+            if (!keyMatch.Success)
+            {
+                WriteJson(context, 400, "{\"error\":\"Cartesia API key is required.\"}");
+                return;
+            }
+
+            string apiKey = keyMatch.Groups[1].Value;
+            using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.cartesia.ai/access-token");
+            request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + apiKey);
+            request.Headers.TryAddWithoutValidation("Cartesia-Version", "2026-03-01");
+            request.Content = new StringContent(
+                "{\"grants\":{\"tts\":true,\"stt\":true},\"expires_in\":300}",
+                Encoding.UTF8,
+                "application/json");
+
+            using HttpResponseMessage response = Http.SendAsync(request).GetAwaiter().GetResult();
+            string responseBody = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+            {
+                WriteJson(context, (int)response.StatusCode, "{\"error\":\"Cartesia token request failed.\"}");
+                MelonLogger.Warning("Cartesia token request failed with HTTP " + (int)response.StatusCode + ".");
+                return;
+            }
+
+            Match tokenMatch = Regex.Match(responseBody, "\\\"token\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"", RegexOptions.CultureInvariant);
+            if (!tokenMatch.Success)
+            {
+                WriteJson(context, 502, "{\"error\":\"Cartesia returned no access token.\"}");
+                return;
+            }
+
+            WriteJson(context, 200, "{\"token\":\"" + tokenMatch.Groups[1].Value + "\"}");
+        }
+        catch (Exception ex)
+        {
+            MelonLogger.Error("Cartesia token bridge failed: " + ex);
+            WriteJson(context, 500, "{\"error\":\"Local Cartesia token bridge failed.\"}");
+        }
+    }
+
+    private static void WriteJson(HttpListenerContext context, int statusCode, string json)
+    {
+        byte[] data = Encoding.UTF8.GetBytes(json);
+        context.Response.StatusCode = statusCode;
+        context.Response.ContentType = "application/json; charset=utf-8";
+        context.Response.ContentLength64 = data.Length;
+        context.Response.Headers["Cache-Control"] = "no-store";
+        try { context.Response.OutputStream.Write(data, 0, data.Length); }
+        finally { try { context.Response.OutputStream.Close(); } catch { } }
     }
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
