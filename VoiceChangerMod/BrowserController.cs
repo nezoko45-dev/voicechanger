@@ -187,37 +187,54 @@ internal static class BrowserController
             }
 
             string apiKey = keyMatch.Groups[1].Value;
-            using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.cartesia.ai/access-token");
-            request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + apiKey);
-            request.Headers.TryAddWithoutValidation("Cartesia-Version", "2026-03-01");
-            request.Content = new StringContent(
-                "{\"grants\":{\"tts\":true,\"stt\":true},\"expires_in\":300}",
-                Encoding.UTF8,
-                "application/json");
+            HttpResponseMessage response = RequestCartesiaToken(apiKey, "https://api.cartesia.ai/access-token");
 
-            using HttpResponseMessage response = Http.SendAsync(request).GetAwaiter().GetResult();
-            string responseBody = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-            if (!response.IsSuccessStatusCode)
+            // Some HTTP stacks/proxies normalize the documented endpoint differently.
+            // If the canonical endpoint returns 404, retry once with a trailing slash.
+            if ((int)response.StatusCode == 404)
             {
-                WriteJson(context, (int)response.StatusCode, "{\"error\":\"Cartesia token request failed.\"}");
-                MelonLogger.Warning("Cartesia token request failed with HTTP " + (int)response.StatusCode + ".");
-                return;
+                response.Dispose();
+                response = RequestCartesiaToken(apiKey, "https://api.cartesia.ai/access-token/");
             }
 
-            Match tokenMatch = Regex.Match(responseBody, "\\\"token\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"", RegexOptions.CultureInvariant);
-            if (!tokenMatch.Success)
+            using (response)
             {
-                WriteJson(context, 502, "{\"error\":\"Cartesia returned no access token.\"}");
-                return;
-            }
+                string responseBody = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                if (!response.IsSuccessStatusCode)
+                {
+                    string detail = responseBody.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", " ").Replace("\n", " ");
+                    WriteJson(context, (int)response.StatusCode, "{\"error\":\"Cartesia token request failed (HTTP " + (int)response.StatusCode + "): " + detail + "\"}");
+                    MelonLogger.Warning("Cartesia token request failed with HTTP " + (int)response.StatusCode + ": " + responseBody);
+                    return;
+                }
 
-            WriteJson(context, 200, "{\"token\":\"" + tokenMatch.Groups[1].Value + "\"}");
+                Match tokenMatch = Regex.Match(responseBody, "\\\"token\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"", RegexOptions.CultureInvariant);
+                if (!tokenMatch.Success)
+                {
+                    WriteJson(context, 502, "{\"error\":\"Cartesia returned no access token.\"}");
+                    return;
+                }
+
+                WriteJson(context, 200, "{\"token\":\"" + tokenMatch.Groups[1].Value + "\"}");
+            }
         }
         catch (Exception ex)
         {
             MelonLogger.Error("Cartesia token bridge failed: " + ex);
             WriteJson(context, 500, "{\"error\":\"Local Cartesia token bridge failed.\"}");
         }
+    }
+
+    private static HttpResponseMessage RequestCartesiaToken(string apiKey, string url)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + apiKey);
+        request.Headers.TryAddWithoutValidation("Cartesia-Version", "2026-03-01");
+        request.Content = new StringContent(
+            "{\"grants\":{\"tts\":true,\"stt\":true},\"expires_in\":300}",
+            Encoding.UTF8,
+            "application/json");
+        return Http.SendAsync(request).GetAwaiter().GetResult();
     }
 
     private static void WriteJson(HttpListenerContext context, int statusCode, string json)
