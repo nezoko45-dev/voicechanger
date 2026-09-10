@@ -16,6 +16,9 @@
       <label>Custom voice
         <select id="voiceUuid"><option value="">Connect to load your Resemble voices</option></select>
       </label>
+      <label>Output device
+        <select id="outputDevice"><option value="auto">Automatic — prefer Virtual Audio Cable</option></select>
+      </label>
       <label>Pitch
         <input id="pitch" type="number" min="-10" max="10" step="0.1" value="0">
       </label>
@@ -31,12 +34,17 @@
     </div>
     <section class="transcript"><h2>Recognized speech</h2><div id="text">Press Connect, choose your custom Resemble voice, then start the voice changer.</div></section>
     <section class="transcript">
+      <h2>Audio output</h2>
+      <div id="outputStatus" class="hint">Checking Windows audio devices…</div>
+      <button id="refreshAudio" type="button">Refresh Audio Devices</button>
+    </section>
+    <section class="transcript">
       <h2>How it works</h2>
-      <div class="hint">Microphone → Resemble Speech-to-Text → your custom voice from the Resemble library → Resemble Text-to-Speech → Windows audio output. The old donor WAV / ElevenLabs conversion path is no longer used for live voice changing.</div>
+      <div class="hint">Microphone → Resemble Speech-to-Text → your custom voice → Resemble Text-to-Speech → the selected Windows waveform output device. Automatic mode looks for a virtual audio cable first, then falls back to the Windows default output.</div>
     </section>
     <section class="transcript">
       <h2>Audio routing</h2>
-      <div class="hint">Set the Windows playback/output device used by this mod to your virtual audio cable, then select that cable as the microphone input in ChilloutVR.</div>
+      <div class="hint">For ChilloutVR, leave Output device on Automatic if you use a virtual cable. The bridge detects the cable playback endpoint and sends the generated TTS WAV there. Then select the cable's recording/capture endpoint as your ChilloutVR microphone.</div>
     </section>
     <section class="transcript">
       <h2>Security</h2>
