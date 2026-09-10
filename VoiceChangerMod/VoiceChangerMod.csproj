@@ -18,5 +18,8 @@
     <None Include="..\BrowserVoiceChanger\index.html" Link="BrowserVoiceChanger\index.html" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\BrowserVoiceChanger\app.js" Link="BrowserVoiceChanger\app.js" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\BrowserVoiceChanger\style.css" Link="BrowserVoiceChanger\style.css" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PythonVoiceChanger\voicechanger.py" Link="PythonVoiceChanger\voicechanger.py" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PythonVoiceChanger\requirements.txt" Link="PythonVoiceChanger\requirements.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\ElevenLabs_2026-08-16T20_54_01_Ava – Natural AI Voice_pvc_sp100_s50_sb75_se36_b_e2.wav" Link="ElevenLabs_2026-08-16T20_54_01_Ava – Natural AI Voice_pvc_sp100_s50_sb75_se36_b_e2.wav" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
