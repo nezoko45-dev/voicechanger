@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#09090d">
+<title>VoiceChanger — Cartesia Browser</title><link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="app">
+<header><div><div class="eyebrow">BROWSER VOICE CHANGER</div><h1>VoiceChanger</h1><p>Cartesia STT → voice cloning TTS → VB-CABLE</p></div><div id="status" class="status">Ready</div></header>
+<section class="card"><h2>Cartesia</h2><div class="grid"><label>API key<input id="apiKey" type="password" autocomplete="off" placeholder="Paste your Cartesia API key"></label><label>Voice ID<input id="voiceId" autocomplete="off" placeholder="Paste your Cartesia voice ID"></label></div><p class="hint">The key only lives in this browser tab. Never put it in GitHub.</p></section>
+<section class="card"><h2>Audio routing</h2><div class="grid"><label>Microphone<select id="inputDevice"><option value="">Default microphone</option></select></label><label>TTS output<select id="outputDevice"><option value="default">Default Windows output</option></select></label></div><div class="buttons"><button id="refreshDevices">Refresh devices</button><button id="chooseOutput">Choose output</button></div><p id="routingStatus" class="hint">ChilloutVR: browser output = CABLE Input. ChilloutVR microphone = CABLE Output.</p></section>
+<section class="card"><h2>Voice changer</h2><div class="buttons"><button id="connect">Connect</button><button id="test" disabled>Test voice</button><button id="start" class="primary" disabled>Start automatic mode</button><button id="stop" disabled>Stop</button></div><div class="meter"><div id="meterFill"></div></div><p id="transcript" class="transcript">Enter your Cartesia credentials, choose devices, then connect.</p></section>
+<section class="card"><h2>How it works</h2><ol><li>Browser microphone stays open.</li><li>Silence detection captures each sentence as WAV.</li><li>Cartesia STT turns speech into text.</li><li>Cartesia TTS speaks it with your selected voice.</li><li>The WAV plays through your selected Windows output.</li></ol><p class="hint">No MelonLoader, DLL, C#, Python, or desktop bridge is used by this app.</p></section>
+<audio id="player" preload="auto"></audio>
+</main><script src="app.js"></script>
+</body></html>
