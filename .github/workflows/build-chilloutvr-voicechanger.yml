@@ -86,29 +86,22 @@ jobs:
         shell: pwsh
         run: |
           $out = 'VoiceChangerMod/bin/Release/net472'
-          foreach ($file in @(
-            'BrowserVoiceChanger/index.html',
-            'BrowserVoiceChanger/app.js',
-            'BrowserVoiceChanger/style.css',
-            'PythonVoiceChanger/voicechanger.py',
-            'PythonVoiceChanger/config.json'
-          )) {
-            $path = Join-Path $out $file
-            if (-not (Test-Path $path)) { throw "Asset was not copied to build output: $file" }
-          }
-          Write-Host 'Resemble bridge and browser assets are present in build output.'
+          if (-not (Test-Path (Join-Path $out 'VoiceChangerMod.dll'))) { throw 'Missing VoiceChangerMod.dll' }
+          Write-Host 'VoiceChangerMod.dll build output is present.'
 
       - name: Stage mod package
         shell: pwsh
         run: |
           $out = 'VoiceChangerMod/bin/Release/net472'
-          if (-not (Test-Path (Join-Path $out 'VoiceChangerMod.dll'))) { throw 'Missing VoiceChangerMod.dll' }
           New-Item -ItemType Directory -Force -Path package | Out-Null
-          Copy-Item (Join-Path $out 'VoiceChangerMod.dll') package/ -Force
           New-Item -ItemType Directory -Force -Path package/BrowserVoiceChanger | Out-Null
           New-Item -ItemType Directory -Force -Path package/PythonVoiceChanger | Out-Null
-          Copy-Item 'BrowserVoiceChanger/*' package/BrowserVoiceChanger/ -Force
-          Copy-Item 'PythonVoiceChanger/*' package/PythonVoiceChanger/ -Force
+          Copy-Item (Join-Path $out 'VoiceChangerMod.dll') package/ -Force
+          Copy-Item 'BrowserVoiceChanger/index.html' package/BrowserVoiceChanger/ -Force
+          Copy-Item 'BrowserVoiceChanger/app.js' package/BrowserVoiceChanger/ -Force
+          Copy-Item 'BrowserVoiceChanger/style.css' package/BrowserVoiceChanger/ -Force
+          Copy-Item 'PythonVoiceChanger/voicechanger.py' package/PythonVoiceChanger/ -Force
+          Copy-Item 'PythonVoiceChanger/config.json' package/PythonVoiceChanger/ -Force
           Get-ChildItem package -Recurse | Select-Object FullName,Length
 
       - name: Upload Resemble voice changer package
