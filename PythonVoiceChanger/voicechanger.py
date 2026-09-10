@@ -6,7 +6,6 @@ import json
 import os
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -61,13 +60,16 @@ def api_key(config):
     return str(config.get("api_key") or os.environ.get("RESEMBLE_API_KEY") or "").strip()
 
 
-def request_json(url, key, payload, method="POST"):
-    body = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=body, method=method, headers={
+def request_json(url, key, payload=None, method="POST"):
+    headers = {
         "Authorization": "Bearer " + key,
-        "Content-Type": "application/json",
         "Accept": "application/json",
-    })
+    }
+    data = None
+    if method.upper() != "GET":
+        data = json.dumps(payload or {}).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=data, method=method, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=120) as response:
             return json.loads(response.read().decode("utf-8"))
@@ -106,6 +108,8 @@ def resemble_stt(audio_data, mime="audio/webm"):
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"Resemble STT HTTP {exc.code}: {detail[:1200]}")
+    except urllib.error.URLError as exc:
+        raise RuntimeError("Could not reach Resemble STT: " + str(exc.reason))
     if not result.get("success"):
         raise RuntimeError(str(result.get("error") or result.get("issues") or "Resemble STT failed"))
     job = result.get("item") or {}
@@ -114,7 +118,7 @@ def resemble_stt(audio_data, mime="audio/webm"):
         raise RuntimeError("Resemble STT returned no transcript UUID")
     for _ in range(120):
         time.sleep(0.25)
-        status_result = request_json(f"https://app.resemble.ai/api/v2/speech-to-text/{job_id}", key, {}, method="GET")
+        status_result = request_json(f"https://app.resemble.ai/api/v2/speech-to-text/{job_id}", key, method="GET")
         item = status_result.get("item") or {}
         state = str(item.get("status") or "").lower()
         if state in ("completed", "complete", "finished", "succeeded", "success"):
@@ -139,7 +143,7 @@ def resemble_tts(text, config):
         "output_format": "wav",
         "precision": "PCM_16",
     }
-    result = request_json(RESEMBLE_SYNTH, key, payload)
+    result = request_json(RESEMBLE_SYNTH, key, payload, method="POST")
     if not result.get("success"):
         raise RuntimeError(str(result.get("issues") or result.get("error") or "Resemble TTS failed"))
     audio = result.get("audio_content")
@@ -163,6 +167,8 @@ def list_voices():
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"Resemble voices HTTP {exc.code}: {detail[:1200]}")
+    except urllib.error.URLError as exc:
+        raise RuntimeError("Could not reach Resemble voices: " + str(exc.reason))
     return result.get("items") or []
 
 
