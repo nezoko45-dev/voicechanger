@@ -90,13 +90,22 @@ def multipart_body(file_name, file_data, content_type):
     return boundary, body
 
 
-def resemble_stt(audio_data, mime="audio/webm"):
+def resemble_stt(audio_data, mime="audio/wav"):
     config = load_config()
     key = api_key(config)
     if not key:
         raise RuntimeError("Missing Resemble API key.")
 
-    boundary, body = multipart_body("microphone.webm", audio_data, mime)
+    normalized_mime = str(mime or "audio/wav").split(";", 1)[0].strip().lower()
+    extension = {
+        "audio/wav": "wav",
+        "audio/x-wav": "wav",
+        "audio/webm": "webm",
+        "audio/ogg": "ogg",
+        "audio/mp4": "m4a",
+        "audio/mpeg": "mp3",
+    }.get(normalized_mime, "wav")
+    boundary, body = multipart_body(f"microphone.{extension}", audio_data, normalized_mime)
     req = urllib.request.Request(
         RESEMBLE_STT,
         data=body,
@@ -139,31 +148,28 @@ def resemble_stt(audio_data, mime="audio/webm"):
                 raise RuntimeError("Resemble STT completed but returned no text")
             return text
         if state in ("failed", "error", "cancelled"):
-            raise RuntimeError("Resemble STT job failed")
+            detail = item.get("error") or item.get("issues") or "Resemble STT job failed"
+            raise RuntimeError(str(detail))
 
-    raise RuntimeError("Resemble STT timed out")
+    raise RuntimeError("Resemble STT timed out after 30 seconds")
 
 
 def resemble_tts(text, config):
     key = api_key(config)
     if not key:
         raise RuntimeError("Missing Resemble API key.")
-
     voice_uuid = str(config.get("voice_uuid") or "").strip()
     if not voice_uuid:
         raise RuntimeError("Select a Resemble custom voice first.")
-
     text = str(text or "").strip()
     if not text:
         raise RuntimeError("There is no text to synthesize.")
     if len(text) > 3000:
         text = text[:3000]
-
     data = text
     prompt = str(config.get("prompt") or "").strip()
     if prompt:
         data = f'<speak prompt="{prompt.replace(chr(34), chr(39))}">{text}</speak>'
-
     payload = {
         "voice_uuid": voice_uuid,
         "data": data,
@@ -171,23 +177,18 @@ def resemble_tts(text, config):
         "output_format": "wav",
         "precision": "PCM_16",
     }
-
     result = request_json(RESEMBLE_SYNTH, key, payload, method="POST")
     if not result.get("success"):
         raise RuntimeError(str(result.get("issues") or result.get("error") or "Resemble TTS failed"))
-
     audio = result.get("audio_content")
     if not audio:
         raise RuntimeError("Resemble TTS returned no audio_content")
-
     try:
         audio_bytes = base64.b64decode(audio)
     except Exception as exc:
         raise RuntimeError("Resemble returned invalid base64 audio: " + str(exc))
-
     if not audio_bytes.startswith(b"RIFF") or b"WAVE" not in audio_bytes[:16]:
         raise RuntimeError("Resemble returned audio that is not a WAV file")
-
     duration = float(result.get("duration") or 0.0)
     return audio_bytes, duration
 
@@ -231,7 +232,6 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
         config = load_config()
-
         if path == "/status":
             self._json({
                 "running": running,
@@ -244,55 +244,48 @@ class Handler(BaseHTTPRequestHandler):
                 "output_device": config.get("browser_output_device", "default"),
             })
             return
-
         if path == "/config":
             safe = dict(config)
             safe["api_key"] = "configured" if api_key(config) else ""
             self._json(safe)
             return
-
         if path == "/audio-devices":
             self._json(audio_devices_note())
             return
-
         if path == "/voices":
             try:
                 self._json({"voices": list_voices()})
             except Exception as exc:
                 self._json({"error": str(exc)}, 500)
             return
-
         self._json({"error": "Not found"}, 404)
 
     def do_POST(self):
         global running, last_duration, last_text
         path = urlparse(self.path).path
-
         if path in ("/stt-tts", "/tts"):
             try:
                 config = load_config()
                 started = time.perf_counter()
-
                 if path == "/stt-tts":
                     length = int(self.headers.get("Content-Length", "0"))
                     audio = self.rfile.read(length)
                     if not audio:
                         raise RuntimeError("No microphone audio received")
+                    mime = self.headers.get("X-Audio-Type") or self.headers.get("Content-Type") or "audio/wav"
                     set_status("Resemble STT: transcribing microphone…")
-                    text = resemble_stt(audio, self.headers.get("X-Audio-Type", "audio/webm"))
+                    text = resemble_stt(audio, mime)
                 else:
                     length = int(self.headers.get("Content-Length", "0"))
                     payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
                     text = str(payload.get("text") or "").strip()
                     if not text:
                         raise RuntimeError("No test text supplied")
-
                 set_status("Resemble Audio API: synthesizing WAV…")
                 output, duration = resemble_tts(text, config)
                 last_duration = duration
                 last_text = text
                 elapsed = time.perf_counter() - started
-
                 encoded = base64.b64encode(output).decode("ascii")
                 set_status("Audio ready — browser playback")
                 self._json({
@@ -310,14 +303,12 @@ class Handler(BaseHTTPRequestHandler):
                 set_status("Error", str(exc))
                 self._json({"error": str(exc)}, 500)
                 return
-
         length = int(self.headers.get("Content-Length", "0"))
         try:
             payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
         except Exception:
             self._json({"error": "Invalid JSON"}, 400)
             return
-
         try:
             if path == "/config":
                 config = load_config()
@@ -328,7 +319,6 @@ class Handler(BaseHTTPRequestHandler):
                 save_config(config)
                 self._json({"ok": True, **audio_devices_note()})
                 return
-
             if path == "/start":
                 config = load_config()
                 if not api_key(config):
@@ -339,13 +329,11 @@ class Handler(BaseHTTPRequestHandler):
                 set_status("Resemble STT/TTS ready — browser audio enabled")
                 self._json({"ok": True, "status": status})
                 return
-
             if path == "/stop":
                 running = False
                 set_status("Stopped")
                 self._json({"ok": True})
                 return
-
             self._json({"error": "Not found"}, 404)
         except Exception as exc:
             set_status("Error", str(exc))
