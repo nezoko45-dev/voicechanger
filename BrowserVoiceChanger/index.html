@@ -8,34 +8,39 @@
 </head>
 <body>
   <main class="app">
-    <header><h1>VoiceChanger</h1><span id="status" class="status">Resemble STS ready</span></header>
+    <header><h1>VoiceChanger</h1><span id="status" class="status">Resemble STT/TTS ready</span></header>
     <section class="grid">
       <label>Resemble API key
         <input id="apiKey" type="password" autocomplete="off" placeholder="Paste your Resemble API key">
       </label>
-      <label>Target voice UUID
-        <input id="voiceUuid" type="text" placeholder="Resemble voice UUID">
-      </label>
-      <label>Source WAV URL
-        <input id="sourceUrl" type="url" placeholder="https://.../voice.wav">
+      <label>Custom voice
+        <select id="voiceUuid"><option value="">Connect to load your Resemble voices</option></select>
       </label>
       <label>Pitch
         <input id="pitch" type="number" min="-10" max="10" step="0.1" value="0">
       </label>
       <label>Prompt (optional)
-        <input id="prompt" type="text" placeholder="e.g. Speak with excitement">
+        <input id="prompt" type="text" placeholder="Optional delivery instruction">
       </label>
     </section>
     <div class="meter"><div id="meterFill"></div></div>
-    <div class="buttons"><button id="start">Connect</button><button id="convert">Convert WAV</button><button id="stop" disabled>Stop</button></div>
-    <section class="transcript"><h2>Engine</h2><div id="text">Waiting for the local Resemble bridge…</div></section>
+    <div class="buttons">
+      <button id="start">Connect + Load Voices</button>
+      <button id="record" disabled>Start Voice Changer</button>
+      <button id="stop" disabled>Stop</button>
+    </div>
+    <section class="transcript"><h2>Recognized speech</h2><div id="text">Press Connect, choose your custom Resemble voice, then start the voice changer.</div></section>
     <section class="transcript">
-      <h2>How this version works</h2>
-      <div class="hint">Source WAV → Resemble Speech-to-Speech → target voice → WAV → Windows audio output. Resemble currently expects the donor WAV to be reachable through a public HTTPS URL, so this first integration is WAV conversion rather than low-latency microphone streaming.</div>
+      <h2>How it works</h2>
+      <div class="hint">Microphone → Resemble Speech-to-Text → your custom voice from the Resemble library → Resemble Text-to-Speech → Windows audio output. The old donor WAV / ElevenLabs conversion path is no longer used for live voice changing.</div>
+    </section>
+    <section class="transcript">
+      <h2>Audio routing</h2>
+      <div class="hint">Set the Windows playback/output device used by this mod to your virtual audio cable, then select that cable as the microphone input in ChilloutVR.</div>
     </section>
     <section class="transcript">
       <h2>Security</h2>
-      <div class="hint">The API key is stored only in the local Python config file and is never sent to the browser-hosting server. Do not commit your API key to GitHub.</div>
+      <div class="hint">Your Resemble API key is stored locally by the bridge. Do not commit it to GitHub.</div>
     </section>
   </main>
   <script src="app.js"></script>
