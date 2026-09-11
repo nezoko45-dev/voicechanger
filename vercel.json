@@ -1,1 +1,8 @@
-{"rewrites":[{"source":"/","destination":"/web/index.html"},{"source":"/app.js","destination":"/web/app.js"},{"source":"/style.css","destination":"/web/style.css"}]}
+{
+  "rewrites": [
+    { "source": "/", "destination": "/web/index.html" },
+    { "source": "/style.css", "destination": "/web/style.css" },
+    { "source": "/app-fixed.js", "destination": "/web/app-fixed.js" },
+    { "source": "/tts.worker.js", "destination": "/web/tts.worker.js" }
+  ]
+}
