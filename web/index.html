@@ -10,66 +10,36 @@
 <body>
 <main class="app">
 <header>
-  <div>
-    <p class="eyebrow">LOCAL BROWSER AI VOICE ECHO</p>
-    <h1>Chatterbox Voice Echo</h1>
-    <p class="subtitle">WAV voice clone → speech recognition → cloned TTS</p>
-  </div>
+  <div><p class="eyebrow">LOCAL BROWSER AI VOICE ECHO</p><h1>Chatterbox Voice Echo</h1><p class="subtitle">WAV voice clone → speech recognition → cloned TTS</p></div>
   <div id="status" class="status">Ready</div>
 </header>
-
 <section class="card">
   <h2>1. Load your voice</h2>
   <input id="voiceFile" type="file" accept=".wav,audio/wav,audio/x-wav">
   <p class="hint">Use a clean 5–15 second English WAV recording. The model runs locally in your browser.</p>
-  <div class="buttons">
-    <button id="clone" class="primary">Clone WAV voice</button>
-    <button id="clearVoice">Clear</button>
-  </div>
+  <div class="buttons"><button id="clone" class="primary">Clone WAV voice</button><button id="clearVoice">Clear</button></div>
   <div id="cloneStatus" class="log">No voice loaded.</div>
 </section>
-
 <section class="card">
   <h2>2. Echo mode</h2>
   <p class="hint">Press Start, speak, and each recognized phrase is spoken back using your cloned voice.</p>
-  <div class="buttons">
-    <button id="start" class="primary">Start voice echo</button>
-    <button id="stop" class="danger">Stop</button>
-  </div>
+  <div class="buttons"><button id="start" class="primary">Start voice echo</button><button id="stop" class="danger">Stop</button></div>
   <div id="transcript" class="transcript">Waiting for speech.</div>
 </section>
-
 <section class="card">
   <h2>3. Test TTS</h2>
   <textarea id="text" placeholder="Type something to test the cloned voice...">Hello! This is my cloned voice.</textarea>
   <div class="buttons"><button id="test" class="primary">Speak test</button></div>
 </section>
-
 <section class="card">
   <h2>Microphone & output</h2>
-  <div class="grid">
-    <label>Microphone<select id="inputDevice"><option value="">Default microphone</option></select></label>
-    <label>Voice output<select id="outputDevice"><option value="default">Default Windows output</option></select></label>
-  </div>
-  <div class="buttons">
-    <button id="refreshDevices">Refresh devices</button>
-    <button id="chooseOutput">Choose output</button>
-  </div>
+  <div class="grid"><label>Microphone<select id="inputDevice"><option value="">Default microphone</option></select></label><label>Voice output<select id="outputDevice"><option value="default">Default Windows output</option></select></label></div>
+  <div class="buttons"><button id="refreshDevices">Refresh devices</button><button id="chooseOutput">Choose output</button></div>
   <p id="routingStatus" class="hint">For VB-CABLE: choose CABLE Input as the voice output, then use CABLE Output as the game's microphone.</p>
 </section>
-
-<section class="card small">
-  <h2>How it works</h2>
-  <ul>
-    <li>Chatterbox + VoxShot performs local WAV voice cloning and TTS.</li>
-    <li>Chrome/Edge Speech Recognition provides live STT.</li>
-    <li>No voice API or API key is required.</li>
-    <li>Chatterbox runs in a Web Worker using WebGPU q4 weights.</li>
-  </ul>
-</section>
-
+<section class="card small"><h2>How it works</h2><ul><li>Chatterbox + VoxShot performs local WAV voice cloning and TTS.</li><li>Chrome/Edge Speech Recognition provides live STT.</li><li>No voice API or API key is required.</li><li>Chatterbox runs in a Web Worker using WebGPU q4 weights.</li></ul></section>
 <audio id="player" preload="auto"></audio>
 </main>
-<script type="module" src="/app.js"></script>
+<script type="module" src="/app-fixed.js"></script>
 </body>
 </html>
