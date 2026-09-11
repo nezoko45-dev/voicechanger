@@ -1,20 +1,75 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VoiceChanger — Chatterbox</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Chatterbox Voice Echo</title>
 <link rel="stylesheet" href="/style.css">
 <script type="importmap">{"imports":{"voxshot":"https://esm.sh/gh/m96-chan/voxshot@main","@huggingface/transformers":"https://esm.sh/@huggingface/transformers"}}</script>
 </head>
 <body>
 <main class="app">
-<header><div><p class="eyebrow">LOCAL BROWSER VOICE CHANGER</p><h1>VoiceChanger</h1><p class="subtitle">Chatterbox voice cloning · continuous speech · VB-CABLE</p></div><div id="status" class="status">Ready</div></header>
-<section class="card"><h2>1. Voice clone</h2><input id="voiceFile" type="file" accept="audio/*"><p class="hint">Use a clean 5–15 second English recording. The heavy model is loaded only when you press Clone, and it stays completely off the page UI.</p><div class="buttons"><button id="clone" class="primary">Clone voice</button><button id="clearVoice">Clear voice</button></div><div id="cloneStatus" class="log">No voice loaded.</div></section>
-<section class="card"><h2>2. Audio routing</h2><div class="grid"><label>Microphone<select id="inputDevice"><option value="">Default microphone</option></select></label><label>TTS output<select id="outputDevice"><option value="default">Default Windows output</option></select></label></div><div class="buttons"><button id="refreshDevices">Refresh devices</button><button id="chooseOutput">Choose output</button></div><p id="routingStatus" class="hint">For ChilloutVR: TTS output = CABLE Input. Game microphone = CABLE Output.</p></section>
-<section class="card"><h2>3. Test cloned voice</h2><textarea id="text">Hello! This is my cloned voice speaking from the browser.</textarea><div class="buttons"><button id="test" class="primary">Speak</button></div></section>
-<section class="card"><h2>4. Continuous mode</h2><div class="buttons"><button id="start" class="primary">Start continuous listening</button><button id="stop" class="danger">Stop</button></div><div id="transcript" class="transcript">Waiting for speech.</div><p class="hint">The microphone is opened once. Chrome/Edge speech recognition is restarted without reopening the microphone. Each final phrase is sent through the cloned TTS queue.</p></section>
-<section class="card"><h2>System</h2><ul><li>No Cartesia or API keys.</li><li>Chatterbox runs in a dedicated worker.</li><li>WebGPU is required so the CPU/WASM fallback cannot lock up the machine.</li><li>No loading/progress bar.</li><li>VB-CABLE output is supported.</li></ul></section>
+<header>
+  <div>
+    <p class="eyebrow">LOCAL BROWSER AI VOICE ECHO</p>
+    <h1>Chatterbox Voice Echo</h1>
+    <p class="subtitle">WAV voice clone → speech recognition → cloned TTS</p>
+  </div>
+  <div id="status" class="status">Ready</div>
+</header>
+
+<section class="card">
+  <h2>1. Load your voice</h2>
+  <input id="voiceFile" type="file" accept=".wav,audio/wav,audio/*">
+  <p class="hint">Choose a clean WAV recording of your voice, ideally 5–15 seconds of English speech.</p>
+  <div class="buttons">
+    <button id="clone" class="primary">Clone WAV voice</button>
+    <button id="clearVoice">Clear</button>
+  </div>
+  <div id="cloneStatus" class="log">No voice loaded.</div>
+</section>
+
+<section class="card">
+  <h2>2. Echo mode</h2>
+  <p class="hint">Press Start, speak into your microphone, and each recognized phrase is immediately spoken back using the cloned WAV voice.</p>
+  <div class="buttons">
+    <button id="start" class="primary">Start voice echo</button>
+    <button id="stop" class="danger">Stop</button>
+  </div>
+  <div id="transcript" class="transcript">Waiting for speech.</div>
+</section>
+
+<section class="card">
+  <h2>3. Test TTS</h2>
+  <textarea id="text" placeholder="Type something to test the cloned voice...">Hello! This is my cloned voice.</textarea>
+  <div class="buttons"><button id="test" class="primary">Speak test</button></div>
+</section>
+
+<section class="card">
+  <h2>Microphone & output</h2>
+  <div class="grid">
+    <label>Microphone<select id="inputDevice"><option value="">Default microphone</option></select></label>
+    <label>Voice output<select id="outputDevice"><option value="default">Default Windows output</option></select></label>
+  </div>
+  <div class="buttons">
+    <button id="refreshDevices">Refresh devices</button>
+    <button id="chooseOutput">Choose output</button>
+  </div>
+  <p id="routingStatus" class="hint">For VB-CABLE: choose CABLE Input as the voice output, then use CABLE Output as the game's microphone.</p>
+</section>
+
+<section class="card small">
+  <h2>How it works</h2>
+  <ul>
+    <li>Chatterbox + VoxShot handles local WAV voice cloning and TTS.</li>
+    <li>Chrome/Edge Speech Recognition handles STT.</li>
+    <li>Nothing is sent to a voice API and no API key is required.</li>
+    <li>The Chatterbox engine runs in a Web Worker with WebGPU.</li>
+  </ul>
+</section>
+
 <audio id="player" preload="auto"></audio>
 </main>
 <script type="module" src="/app.js"></script>
-</body></html>
+</body>
+</html>
