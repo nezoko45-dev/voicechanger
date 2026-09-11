@@ -4,8 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Chatterbox Voice Echo</title>
-<link rel="stylesheet" href="/style.css">
-<script type="importmap">{"imports":{"voxshot":"https://esm.sh/gh/m96-chan/voxshot@main","@huggingface/transformers":"https://esm.sh/@huggingface/transformers@4.2.0"}}</script>
+<link rel="stylesheet" href="./style.css">
 </head>
 <body>
 <main class="app">
@@ -15,7 +14,7 @@
 </header>
 <section class="card">
   <h2>1. Load your voice</h2>
-  <input id="voiceFile" type="file" accept=".wav,audio/wav,audio/x-wav">
+  <input id="voiceFile" type="file" accept=".wav,audio/wav,audio/x-wav,audio/wave">
   <p class="hint">Use a clean 5–15 second English WAV recording. The model runs locally in your browser.</p>
   <div class="buttons"><button id="clone" class="primary">Clone WAV voice</button><button id="clearVoice">Clear</button></div>
   <div id="cloneStatus" class="log">No voice loaded.</div>
@@ -37,9 +36,9 @@
   <div class="buttons"><button id="refreshDevices">Refresh devices</button><button id="chooseOutput">Choose output</button></div>
   <p id="routingStatus" class="hint">For VB-CABLE: choose CABLE Input as the voice output, then use CABLE Output as the game's microphone.</p>
 </section>
-<section class="card small"><h2>How it works</h2><ul><li>Chatterbox + VoxShot performs local WAV voice cloning and TTS.</li><li>Chrome/Edge Speech Recognition provides live STT.</li><li>No voice API or API key is required.</li><li>Chatterbox runs in a Web Worker using WebGPU q4 weights.</li></ul></section>
+<section class="card small"><h2>How it works</h2><ul><li>Chatterbox + VoxShot performs local WAV voice cloning and TTS.</li><li>Chrome/Edge Speech Recognition provides live STT.</li><li>No voice API or API key is required.</li><li>Chatterbox runs in a Web Worker using WebGPU quantized weights.</li></ul></section>
 <audio id="player" preload="auto"></audio>
 </main>
-<script type="module" src="/app-fixed.js"></script>
+<script type="module" src="./app-fixed.js"></script>
 </body>
 </html>
