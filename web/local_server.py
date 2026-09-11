@@ -18,7 +18,7 @@ WHISPER_MODEL_ID = os.getenv("WHISPER_MODEL", "small")
 
 tts_model = None
 whisper_model = None
-voice_ready = False
+voice_ready = REFERENCE_WAV.exists()
 model_lock = threading.Lock()
 startup_error = None
 
@@ -90,8 +90,6 @@ def status():
         cuda = torch.cuda.is_available()
         torch_ok = True
     except Exception as exc:
-        cuda = False
-        torch_ok = False
         return jsonify({
             "ok": True,
             "server": True,
@@ -128,24 +126,13 @@ def clone():
         audio.save(temp_path)
         if temp_path.stat().st_size < 1000:
             return jsonify(error="That WAV file is empty or too small."), 400
-
-        # Keep the user's WAV exactly as supplied. Qwen3-TTS accepts a local WAV path.
         temp_path.replace(REFERENCE_WAV)
-        model = get_tts()
-
-        # Validate the reference now, but do not create/cache a prompt here.
-        # Generation will use this same local WAV directly, which is more compatible
-        # across qwen-tts package versions.
-        model.create_voice_clone_prompt(
-            ref_audio=str(REFERENCE_WAV),
-            x_vector_only_mode=True,
-        )
         voice_ready = True
         startup_error = None
-        return jsonify(ok=True, message="Your WAV voice is ready. Click Speak to test it.")
+        return jsonify(ok=True, message="Your WAV is loaded locally. Click Speak to generate speech from it.")
     except Exception as exc:
         voice_ready = False
-        startup_error = f"Voice clone failed: {type(exc).__name__}: {exc}"
+        startup_error = f"WAV load failed: {type(exc).__name__}: {exc}"
         traceback.print_exc()
         return jsonify(error=startup_error), 500
     finally:
@@ -166,8 +153,6 @@ def tts():
     try:
         import soundfile as sf
         model = get_tts()
-        # Pass the user's WAV directly. This avoids depending on a cached prompt
-        # object format that differs between qwen-tts releases.
         wavs, sample_rate = model.generate_voice_clone(
             text=text[:500],
             language="English",
