@@ -1,10 +1,9 @@
 // Chatterbox worker for the browser voice-clone app.
-// Force the safer WebGPU q4 language model so Chrome does not try to allocate
-// the full fp32 language model during startup.
+// Let VoxShot choose WebGPU q4f16/q4 and fall back to WASM if WebGPU is unavailable.
 import { ChatterboxEngine, exposeEngine } from 'https://esm.sh/gh/m96-chan/voxshot@main';
 
 const engine = new ChatterboxEngine({
-  requiresGpu: true,
+  requiresGpu: false,
   dtype: {
     language_model: 'q4',
     model: 'q4'
