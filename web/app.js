@@ -1,22 +1,263 @@
-const $=id=>document.getElementById(id);
-const apiKey=$('apiKey'),voiceId=$('voiceId'),inputDevice=$('inputDevice'),outputDevice=$('outputDevice'),status=$('status'),routingStatus=$('routingStatus'),transcript=$('transcript'),meter=$('meterFill'),player=$('player');
-let token='',stream=null,ctx=null,source=null,processor=null,sink=null,running=false,listening=false,speaking=false,chunks=[],speechStarted=false,silenceMs=0,speechMs=0,lastTime=0,processing=false,selectedOutput='default';
-const CARTESIA='https://api.cartesia.ai';
-function setStatus(v){status.textContent=v;}
-function key(){if(!apiKey.value.trim())throw Error('Enter your Cartesia API key.');return apiKey.value.trim();}
-function voice(){if(!voiceId.value.trim())throw Error('Enter your Cartesia Voice ID.');return voiceId.value.trim();}
-function b64(buf){const a=new Uint8Array(buf);let s='';for(let i=0;i<a.length;i+=0x8000)s+=String.fromCharCode(...a.subarray(i,i+0x8000));return btoa(s);}
-async function getToken(){const r=await fetch(CARTESIA+'/access-token',{method:'POST',headers:{Authorization:'Bearer '+key(),'Cartesia-Version':'2026-03-01','Content-Type':'application/json'},body:JSON.stringify({expires_in:3600})});const t=await r.text();if(!r.ok)throw Error('Cartesia token HTTP '+r.status+': '+t.slice(0,300));const j=JSON.parse(t);if(!j.token)throw Error('Cartesia did not return an access token.');return j.token;}
-async function tts(text){const r=await fetch(CARTESIA+'/tts/bytes',{method:'POST',headers:{Authorization:'Bearer '+token,'Cartesia-Version':'2026-03-01','Content-Type':'application/json'},body:JSON.stringify({model_id:'sonic-3.5',transcript:text.slice(0,2000),voice:{id:voice()},language:'en',output_format:{container:'wav',encoding:'pcm_s16le',sample_rate:48000},generation_config:{volume:1,speed:1}})});if(!r.ok)throw Error('Cartesia TTS HTTP '+r.status+': '+(await r.text()).slice(0,400));return r.blob();}
-async function stt(wav){const form=new FormData();form.append('file',wav,'voice.wav');form.append('model','ink-whisper');const r=await fetch(CARTESIA+'/stt',{method:'POST',headers:{Authorization:'Bearer '+token,'Cartesia-Version':'2026-03-01'},body:form});if(!r.ok)throw Error('Cartesia STT HTTP '+r.status+': '+(await r.text()).slice(0,400));const j=await r.json();return(j.text||j.transcript||'').trim();}
-async function play(blob){const url=URL.createObjectURL(blob);try{if(typeof player.setSinkId==='function')await player.setSinkId(selectedOutput==='default'?'':selectedOutput);player.src=url;speaking=true;await player.play();await new Promise(resolve=>{const done=()=>{player.removeEventListener('ended',done);resolve();};player.addEventListener('ended',done);setTimeout(done,30000);});}finally{speaking=false;URL.revokeObjectURL(url);}}
-function encodeWav(samples,rate){const b=new ArrayBuffer(44+samples.length*2),v=new DataView(b);const ws=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};ws(0,'RIFF');v.setUint32(4,36+samples.length*2,true);ws(8,'WAVE');ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,rate,true);v.setUint32(28,rate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);ws(36,'data');v.setUint32(40,samples.length*2,true);for(let i=0,o=44;i<samples.length;i++,o+=2){const x=Math.max(-1,Math.min(1,samples[i]));v.setInt16(o,x<0?x*32768:x*32767,true);}return new Blob([b],{type:'audio/wav'});}
-function rms(a){let s=0;for(const x of a)s+=x*x;return Math.sqrt(s/Math.max(1,a.length));}
-async function refresh(){const ds=await navigator.mediaDevices.enumerateDevices();const ins=ds.filter(d=>d.kind==='audioinput'),outs=ds.filter(d=>d.kind==='audiooutput');inputDevice.innerHTML='<option value="">Default microphone</option>';for(const d of ins)if(d.deviceId)inputDevice.add(new Option(d.label||'Microphone',d.deviceId));outputDevice.innerHTML='<option value="default">Default Windows output</option>';for(const d of outs)if(d.deviceId)outputDevice.add(new Option(/cable input|vb-audio cable|virtual audio cable/i.test(d.label||'')?'VB-CABLE — CABLE Input':(d.label||'Audio output'),d.deviceId));const cable=outs.find(d=>/cable input|vb-audio cable|virtual audio cable/i.test(d.label||''));if(cable){outputDevice.value=cable.deviceId;selectedOutput=cable.deviceId;}routingStatus.textContent='TTS output: '+(outputDevice.selectedOptions[0]?.text||'Default Windows output')+'. ChilloutVR should use CABLE Output as its microphone.';}
-async function connect(){try{setStatus('Getting Cartesia access token…');token=await getToken();setStatus('Testing Cartesia voice…');await tts('Voice changer connected.');await refresh();running=true;$('connect').disabled=true;$('test').disabled=false;$('start').disabled=false;$('stop').disabled=false;setStatus('Connected — ready');transcript.textContent='Cartesia is ready. Start automatic mode when you are ready.';}catch(e){running=false;setStatus('Connection error: '+e.message);transcript.textContent=e.message;}}
-async function test(){try{setStatus('Generating test voice…');await play(await tts('Hello! This is your browser voice changer.'));setStatus('Test complete');}catch(e){setStatus('TTS error: '+e.message);transcript.textContent=e.message;}}
-function merge(){let n=chunks.reduce((x,a)=>x+a.length,0),o=new Float32Array(n),p=0;for(const a of chunks){o.set(a,p);p+=a.length;}return o;}
-async function processSpeech(){if(processing||!chunks.length)return;processing=true;const data=merge();chunks=[];try{setStatus('Cartesia STT: transcribing…');meter.style.width='55%';const text=await stt(encodeWav(data,ctx.sampleRate));if(!text){setStatus('Listening…');return;}transcript.textContent=text;setStatus('Cartesia TTS: speaking…');await play(await tts(text));meter.style.width='100%';setStatus('Listening…');}catch(e){setStatus('Voice error: '+e.message);transcript.textContent=e.message;meter.style.width='0%';}finally{processing=false;}}
-async function start(){if(!running||listening)return;try{const constraints={audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}};if(inputDevice.value)constraints.audio.deviceId={exact:inputDevice.value};stream=await navigator.mediaDevices.getUserMedia(constraints);ctx=new(window.AudioContext||window.webkitAudioContext)();await ctx.resume();source=ctx.createMediaStreamSource(stream);processor=ctx.createScriptProcessor(2048,1,1);sink=ctx.createGain();sink.gain.value=0;source.connect(processor);processor.connect(sink);sink.connect(ctx.destination);chunks=[];speechStarted=false;silenceMs=0;speechMs=0;lastTime=performance.now();listening=true;$('start').textContent='Listening…';setStatus('Listening — speak normally');processor.onaudioprocess=e=>{if(!listening||speaking||processing)return;const a=new Float32Array(e.inputBuffer.getChannelData(0));const level=rms(a),now=performance.now(),dt=Math.max(1,Math.min(100,now-lastTime));lastTime=now;const threshold=.018;if(level>threshold){speechStarted=true;speechMs+=dt;silenceMs=0;chunks.push(a);meter.style.width=Math.min(70,20+level*900)+'%';}else if(speechStarted){chunks.push(a);silenceMs+=dt;speechMs+=dt;if(silenceMs>=750&&speechMs>=350){speechStarted=false;silenceMs=0;speechMs=0;processSpeech();}}};}catch(e){await stop();setStatus('Microphone error: '+e.message);}}
-async function stop(){listening=false;speechStarted=false;chunks=[];if(processor)try{processor.disconnect();}catch{}if(source)try{source.disconnect();}catch{}if(sink)try{sink.disconnect();}catch{}if(stream)stream.getTracks().forEach(t=>t.stop());if(ctx)try{await ctx.close();}catch{}processor=source=sink=stream=ctx=null;$('start').textContent='Start automatic mode';if(running)setStatus('Connected — ready');}
-$('connect').onclick=connect;$('test').onclick=test;$('start').onclick=start;$('stop').onclick=stop;$('refreshDevices').onclick=refresh;$('chooseOutput').onclick=async()=>{try{if(navigator.mediaDevices.selectAudioOutput){const d=await navigator.mediaDevices.selectAudioOutput();if(d?.deviceId){selectedOutput=d.deviceId;await refresh();outputDevice.value=d.deviceId;}}else setStatus('Select an output from the list.');}catch(e){setStatus('Output chooser: '+e.message);}};outputDevice.onchange=async()=>{selectedOutput=outputDevice.value||'default';routingStatus.textContent='TTS output: '+(outputDevice.selectedOptions[0]?.text||'Default Windows output')+'. ChilloutVR should use CABLE Output as its microphone.';};refresh().catch(()=>{});
+import { VoxShot, ChatterboxEngine } from 'voxshot';
+
+const $ = id => document.getElementById(id);
+const status = $('status'), modelState = $('modelState'), cloneStatus = $('cloneStatus');
+const voiceFile = $('voiceFile'), backend = $('backend'), inputDevice = $('inputDevice'), outputDevice = $('outputDevice');
+const routingStatus = $('routingStatus'), text = $('text'), test = $('test'), startBtn = $('start'), stopBtn = $('stop');
+const transcript = $('transcript'), meter = $('meterFill'), player = $('player');
+
+let tts = null;
+let engine = null;
+let cloned = false;
+let selectedOutput = 'default';
+let recognition = null;
+let micStream = null;
+let listening = false;
+let restarting = false;
+let queue = [];
+let queueRunning = false;
+
+function setStatus(message, kind = '') {
+  status.textContent = message;
+  status.className = `status ${kind}`;
+}
+function setClone(message) { cloneStatus.textContent = message; }
+function fail(error) {
+  const message = error?.message || String(error);
+  setStatus(message, 'err');
+  transcript.textContent = message;
+}
+
+function progress(event) {
+  if (!event) return;
+  const plan = event.plan ? ` (${event.plan})` : '';
+  if (event.status === 'load-start') setClone(`Loading Chatterbox${plan}…`);
+  else if (event.status === 'load-compiling') setClone(`Model downloaded. Compiling ONNX session${plan}…`);
+  else if (event.status === 'load-fallback') setClone(`Backend fallback: ${event.reason || 'trying another plan'}…`);
+  else if (event.status === 'load-ready') setClone(`Model ready: ${event.plan || 'Chatterbox'}.`);
+  else if (event.status === 'progress' && Number.isFinite(event.progress)) setClone(`Downloading model: ${Math.round(event.progress)}%`);
+  modelState.textContent = event.status || 'Loading';
+}
+
+async function loadModel() {
+  if (tts) return tts;
+  const mode = backend.value;
+  setStatus(mode === 'wasm' ? 'Loading Chatterbox in safe WASM mode…' : 'Loading Chatterbox…');
+  setClone('Starting real Chatterbox model. First load can be about 1.5 GB.');
+  modelState.textContent = 'Loading';
+
+  engine = new ChatterboxEngine({
+    stallTimeoutMs: 300000,
+    onProgress: progress
+  });
+
+  tts = await VoxShot.create({
+    engine,
+    device: mode,
+    minChunkLength: 20
+  });
+
+  setStatus(`Chatterbox ready — ${tts.device}.`, 'ok');
+  setClone(`Real Chatterbox ready (${tts.device}).`);
+  modelState.textContent = tts.device;
+  return tts;
+}
+
+async function cloneVoice() {
+  try {
+    const file = voiceFile.files?.[0];
+    if (!file) throw new Error('Choose a reference recording first.');
+    if (file.size < 10000) throw new Error('Reference recording is too small.');
+    await loadModel();
+    cloned = false;
+    setStatus('Creating voice clone locally…');
+    setClone(`Cloning ${file.name}…`);
+    await tts.cloneVoice(file);
+    await tts.saveVoice('my-voice').catch(() => {});
+    cloned = true;
+    setClone('Voice clone ready.');
+    setStatus('Voice clone ready.', 'ok');
+  } catch (error) {
+    cloned = false;
+    setClone(`Clone error: ${error?.message || error}`);
+    fail(error);
+  }
+}
+
+async function playAudio(audio) {
+  if (selectedOutput !== 'default' && player.setSinkId) {
+    await player.setSinkId(selectedOutput);
+    player.src = URL.createObjectURL(audio.toBlob());
+    try {
+      await player.play();
+      await new Promise(resolve => {
+        const done = () => { player.removeEventListener('ended', done); resolve(); };
+        player.addEventListener('ended', done);
+      });
+    } finally {
+      URL.revokeObjectURL(player.src);
+    }
+  } else {
+    await audio.play();
+  }
+}
+
+async function speak(value) {
+  if (!value.trim()) return;
+  if (!cloned) throw new Error('Clone your voice first.');
+  await loadModel();
+  meter.style.width = '70%';
+  try {
+    for await (const chunk of tts.stream(value.trim().slice(0, 160))) {
+      await playAudio(chunk);
+    }
+  } finally {
+    meter.style.width = '0%';
+  }
+}
+
+async function processQueue() {
+  if (queueRunning) return;
+  queueRunning = true;
+  try {
+    while (queue.length) {
+      const phrase = queue.shift();
+      try {
+        setStatus('Speaking cloned voice…');
+        await speak(phrase);
+      } catch (error) {
+        fail(error);
+      }
+    }
+  } finally {
+    queueRunning = false;
+    if (listening) setStatus('Listening continuously.', 'ok');
+  }
+}
+
+function enqueue(value) {
+  const phrase = value.trim();
+  if (!phrase) return;
+  queue.push(phrase);
+  processQueue();
+}
+
+async function openMic() {
+  if (micStream) return;
+  const audio = inputDevice.value
+    ? { deviceId: { exact: inputDevice.value }, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    : { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+  micStream = await navigator.mediaDevices.getUserMedia({ audio });
+}
+
+function makeRecognition() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) return null;
+  const r = new SpeechRecognition();
+  r.lang = 'en-US';
+  r.continuous = true;
+  r.interimResults = true;
+  r.maxAlternatives = 1;
+  r.onstart = () => {
+    restarting = false;
+    startBtn.textContent = 'Listening continuously…';
+    setStatus('Listening continuously.', 'ok');
+  };
+  r.onresult = event => {
+    let finalText = '';
+    let interim = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const phrase = event.results[i][0]?.transcript || '';
+      if (event.results[i].isFinal) finalText += phrase;
+      else interim += phrase;
+    }
+    if (finalText.trim()) {
+      transcript.textContent = finalText.trim();
+      enqueue(finalText);
+    } else if (interim.trim()) {
+      transcript.textContent = interim.trim();
+    }
+  };
+  r.onerror = event => {
+    if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+      listening = false;
+      setStatus('Microphone permission denied. Allow this site to use the microphone.', 'err');
+    } else if (event.error !== 'aborted') {
+      setStatus(`Speech recognition: ${event.error}`, 'err');
+    }
+  };
+  r.onend = () => {
+    if (!listening || restarting) return;
+    restarting = true;
+    setTimeout(() => {
+      if (!listening) return;
+      try { r.start(); }
+      catch { restarting = false; setTimeout(() => { if (listening) try { r.start(); } catch {} }, 500); }
+    }, 150);
+  };
+  return r;
+}
+
+async function startListening() {
+  try {
+    if (!cloned) throw new Error('Clone your voice first.');
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('Microphone access is unavailable.');
+    await openMic();
+    listening = true;
+    if (!recognition) recognition = makeRecognition();
+    if (!recognition) throw new Error('Chrome or Edge speech recognition is required.');
+    try { recognition.start(); } catch (error) { if (!String(error).includes('InvalidStateError')) throw error; }
+    startBtn.textContent = 'Listening continuously…';
+  } catch (error) {
+    fail(error);
+  }
+}
+
+function stopListening() {
+  listening = false;
+  restarting = false;
+  queue = [];
+  if (recognition) try { recognition.abort(); } catch {}
+  if (micStream) {
+    micStream.getTracks().forEach(track => track.stop());
+    micStream = null;
+  }
+  startBtn.textContent = 'Start continuous listening';
+  meter.style.width = '0%';
+  setStatus(cloned ? 'Voice clone ready.' : 'Ready.');
+}
+
+async function refreshDevices() {
+  if (!navigator.mediaDevices?.enumerateDevices) return;
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  inputDevice.innerHTML = '<option value="">Default microphone</option>';
+  outputDevice.innerHTML = '<option value="default">Default Windows output</option>';
+  for (const device of devices) {
+    if (device.kind === 'audioinput' && device.deviceId) inputDevice.add(new Option(device.label || 'Microphone', device.deviceId));
+    if (device.kind === 'audiooutput' && device.deviceId) {
+      const label = /cable input|vb-audio cable|virtual audio cable/i.test(device.label || '') ? 'VB-CABLE — CABLE Input' : (device.label || 'Audio output');
+      outputDevice.add(new Option(label, device.deviceId));
+    }
+  }
+  routingStatus.textContent = `TTS output → ${outputDevice.selectedOptions[0]?.text || 'Default Windows output'}. ChilloutVR microphone → CABLE Output.`;
+}
+
+voiceFile.addEventListener('change', () => setClone(voiceFile.files?.[0] ? `Selected: ${voiceFile.files[0].name}` : 'No voice loaded.'));
+$('clone').onclick = cloneVoice;
+$('clearVoice').onclick = () => { cloned = false; voiceFile.value = ''; setClone('No voice loaded.'); setStatus('Voice clone cleared.'); };
+test.onclick = async () => { try { setStatus('Generating cloned test voice…'); await speak(text.value); setStatus('Test complete.', 'ok'); } catch (error) { fail(error); } };
+startBtn.onclick = startListening;
+stopBtn.onclick = stopListening;
+$('refreshDevices').onclick = () => refreshDevices().catch(fail);
+$('chooseOutput').onclick = async () => {
+  try {
+    if (!navigator.mediaDevices?.selectAudioOutput) throw new Error('Chrome did not expose the output-device picker. Use the output list instead.');
+    const device = await navigator.mediaDevices.selectAudioOutput();
+    if (device?.deviceId) { selectedOutput = device.deviceId; await refreshDevices(); outputDevice.value = device.deviceId; }
+  } catch (error) { fail(error); }
+};
+outputDevice.onchange = () => { selectedOutput = outputDevice.value || 'default'; };
+backend.onchange = () => { if (tts) setStatus('Backend changed. Clear voice and clone again to use the new backend.'); };
+window.addEventListener('error', event => fail(event.error || new Error(event.message)));
+window.addEventListener('unhandledrejection', event => fail(event.reason || new Error('Unknown error')));
+refreshDevices().catch(() => {});
