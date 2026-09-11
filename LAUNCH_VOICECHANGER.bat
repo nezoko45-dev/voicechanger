@@ -1,14 +1,14 @@
 @echo off
-setlocal
-cd /d "%~dp0web"
+setlocal EnableExtensions
+cd /d "%~dp0"
 
 echo ========================================
 echo   LOCAL VOICECHANGER
- echo ========================================
+echo ========================================
 echo.
 
 where py >nul 2>nul
-if %errorlevel%==0 (set PY=py) else (set PY=python)
+if %errorlevel%==0 (set "PY=py") else (set "PY=python")
 
 %PY% --version >nul 2>&1
 if errorlevel 1 (
@@ -18,10 +18,23 @@ if errorlevel 1 (
     exit /b 1
 )
 
+if not exist "web\local_server.py" (
+    echo ERROR: The web folder is missing.
+    echo.
+    echo This launcher must be run from a copy of the VoiceChanger repository.
+    echo Download the entire repository ZIP from GitHub, extract it, then run:
+    echo LAUNCH_VOICECHANGER.bat
+    echo.
+    pause
+    exit /b 1
+)
+
+cd /d "%~dp0web"
+
 echo Checking required packages...
 %PY% -c "import flask, soundfile, faster_whisper, qwen_tts, torch" >nul 2>&1
 if errorlevel 1 (
-    echo Some packages are missing. Installing them now...
+    echo Installing missing packages...
     %PY% -m pip install flask numpy soundfile faster-whisper qwen-tts "torch>=2.6"
     if errorlevel 1 (
         echo.
@@ -33,16 +46,14 @@ if errorlevel 1 (
 
 echo.
 echo Starting VoiceChanger server...
-echo The server window will stay visible so startup errors can be seen.
-echo.
 start "VoiceChanger Python Server" "%PY%" local_server.py
 
-echo Waiting for http://127.0.0.1:8765/ ...
-set READY=0
-for /l %%N in (1,1,60) do (
+echo Waiting for the local server...
+set "READY=0"
+for /l %%N in (1,1,90) do (
     powershell -NoProfile -Command "try { $r=Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8765/api/status' -TimeoutSec 1; if ($r.StatusCode -eq 200) { exit 0 } } catch {} ; exit 1" >nul 2>&1
     if not errorlevel 1 (
-        set READY=1
+        set "READY=1"
         goto server_ready
     )
     timeout /t 1 /nobreak >nul
@@ -51,8 +62,8 @@ for /l %%N in (1,1,60) do (
 :server_ready
 if "%READY%"=="0" (
     echo.
-    echo ERROR: The Python server did not start.
-    echo Look at the VoiceChanger Python Server window for the error.
+    echo ERROR: The Python server did not start within 90 seconds.
+    echo Check the VoiceChanger Python Server window for the exact error.
     echo.
     pause
     exit /b 1
@@ -60,7 +71,7 @@ if "%READY%"=="0" (
 
 start "" "http://127.0.0.1:8765/"
 echo.
-echo VoiceChanger is now running.
-echo Keep the VoiceChanger Python Server window open.
+echo VoiceChanger is running!
+echo Keep the Python server window open while using it.
 echo.
 exit /b 0
