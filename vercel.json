@@ -1,6 +1,0 @@
-{
-  "rewrites": [
-    { "source": "/", "destination": "/web/voicechanger.html" },
-    { "source": "/voicechanger", "destination": "/web/voicechanger.html" }
-  ]
-}

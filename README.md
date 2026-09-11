@@ -1,35 +1,19 @@
-# 🎙️ VoiceChanger
+# Local VoiceChanger
 
-A standalone browser-based voice changer using **Cartesia STT** and **Cartesia Sonic TTS**.
+Clean local browser voice changer using:
 
-## Pipeline
+- Qwen3-TTS 0.6B Base for local voice cloning and TTS
+- faster-whisper small for local speech-to-text
+- Flask for the local browser server
+- PyTorch for Qwen3-TTS
+- soundfile for WAV output
 
-**🎤 Microphone → Cartesia STT → 📝 transcript → Cartesia Sonic TTS → 🔊 browser output → VB-CABLE → ChilloutVR**
+## Windows
 
-## What this version uses
+1. Install Python 3.12 or newer.
+2. Extract the repository.
+3. Double-click `LAUNCH_VOICECHANGER.bat`.
+4. The launcher creates `.venv`, installs the exact required packages, starts the server, and opens the browser.
+5. The first TTS/clone use downloads the Qwen model from Hugging Face. Later runs reuse the local model cache.
 
-- Cartesia API key
-- Cartesia Voice ID for the voice you want to use
-- Cartesia `ink-whisper` for speech-to-text
-- Cartesia `sonic-3.5` for text-to-speech
-- Browser microphone/audio APIs
-- VB-CABLE for routing the generated voice into ChilloutVR
-
-## What it does NOT use
-
-- ❌ Deepgram
-- ❌ MelonLoader DLL
-- ❌ C# bridge
-- ❌ Python runtime
-- ❌ Netlify/Vercel backend
-
-The app is a static HTML/CSS/JavaScript browser app. Your Cartesia key is kept in the browser page and is never written into the repository.
-
-## ChilloutVR routing
-
-1. In the browser app, use **CABLE Input** as the TTS output.
-2. In ChilloutVR, select **CABLE Output** as the microphone/input device.
-3. Connect the Cartesia API key and Voice ID.
-4. Start automatic mode and speak normally.
-
-The browser detects speech, sends each spoken phrase to Cartesia STT, then sends the transcript to Cartesia TTS and plays the generated WAV through the selected output device.
+The app runs at `http://127.0.0.1:8765/` and does not require cloud API keys.
