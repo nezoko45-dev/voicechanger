@@ -1,10 +1,10 @@
 import { ChatterboxEngine, exposeEngine } from 'https://esm.sh/voxshot';
 
-let server;
-
+// Keep the heavy ONNX model entirely inside the worker. No progress events are
+// forwarded to the UI: loading is intentionally silent.
 const engine = new ChatterboxEngine({
-  stallTimeoutMs: 300000,
-  onProgress: event => server?.emitProgress(event)
+  requiresGpu: true,
+  stallTimeoutMs: 120000
 });
 
-server = exposeEngine(engine, self);
+exposeEngine(engine, self);
