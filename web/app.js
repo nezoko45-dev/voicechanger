@@ -8,32 +8,26 @@ const inputDevice = $('inputDevice');
 const outputDevice = $('outputDevice');
 const routingStatus = $('routingStatus');
 const text = $('text');
-const test = $('test');
-const startBtn = $('start');
-const stopBtn = $('stop');
-const transcript = $('transcript');
 const player = $('player');
+const transcript = $('transcript');
+const startBtn = $('start');
 
 let tts = null;
-let workerEngine = null;
 let worker = null;
+let workerEngine = null;
+let modelPromise = null;
 let cloned = false;
-let selectedOutput = 'default';
-let recognition = null;
-let micStream = null;
 let listening = false;
 let restarting = false;
-let queue = [];
-let queueRunning = false;
-let modelPromise = null;
+let recognition = null;
+let micStream = null;
+let outputId = 'default';
+let speaking = false;
+let phraseQueue = [];
 
 function setStatus(message, kind = '') {
   status.textContent = message;
   status.className = `status ${kind}`;
-}
-
-function setClone(message) {
-  cloneStatus.textContent = message;
 }
 
 function fail(error) {
@@ -42,153 +36,126 @@ function fail(error) {
   transcript.textContent = message;
 }
 
-async function loadModel() {
+async function loadChatterbox() {
   if (tts) return tts;
   if (modelPromise) return modelPromise;
+  if (!navigator.gpu) {
+    throw new Error('WebGPU is required for Chatterbox in this app.');
+  }
 
   modelPromise = (async () => {
-    // Do not preload. Starting a 1.5 GB ONNX model on page load was the main
-    // source of freezes. The worker is created only after the user requests TTS.
-    if (!navigator.gpu) {
-      throw new Error('WebGPU is required for Chatterbox. Enable WebGPU in Chrome or use a WebGPU-capable browser.');
-    }
-
     worker = new Worker('/tts.worker.js', { type: 'module' });
     workerEngine = new WorkerSynthesisEngine(worker);
-
-    // The worker's ChatterboxEngine is GPU-only. There is deliberately no WASM
-    // fallback because CPU inference can consume the machine and appear frozen.
-    tts = await VoxShot.create({
+    const instance = await VoxShot.create({
       engine: workerEngine,
       device: 'webgpu',
       minChunkLength: 20
     });
-
     setStatus('Chatterbox ready.', 'ok');
-    return tts;
+    return instance;
   })().catch(error => {
-    modelPromise = null;
-    tts = null;
+    try { worker?.terminate(); } catch {}
+    worker = null;
     workerEngine = null;
-    if (worker) {
-      try { worker.terminate(); } catch {}
-      worker = null;
-    }
+    modelPromise = null;
     throw error;
   });
 
-  try {
-    return await modelPromise;
-  } catch (error) {
-    fail(error);
-    throw error;
-  }
+  tts = await modelPromise;
+  return tts;
 }
 
-async function cloneVoice() {
+async function cloneWav() {
   try {
     const file = voiceFile.files?.[0];
-    if (!file) throw new Error('Choose a reference recording first.');
-    if (file.size < 10000) throw new Error('Reference recording is too small.');
+    if (!file) throw new Error('Choose a WAV file first.');
+    if (!/\.wav$/i.test(file.name) && file.type !== 'audio/wav' && file.type !== 'audio/x-wav') {
+      throw new Error('Please choose a WAV voice file.');
+    }
+    if (file.size < 10000) throw new Error('That WAV file is too small to be a useful voice reference.');
 
     cloned = false;
-    setStatus('Starting voice engine…');
-    await loadModel();
-    setStatus('Creating voice clone locally…');
-    await tts.cloneVoice(file);
-    await tts.saveVoice('my-voice').catch(() => {});
+    cloneStatus.textContent = 'Loading Chatterbox…';
+    setStatus('Loading Chatterbox…');
+    const engine = await loadChatterbox();
+
+    cloneStatus.textContent = 'Cloning WAV voice locally…';
+    await engine.cloneVoice(file);
     cloned = true;
-    setClone('Voice clone ready.');
+    cloneStatus.textContent = `Voice ready: ${file.name}`;
     setStatus('Voice clone ready.', 'ok');
   } catch (error) {
     cloned = false;
-    setClone(`Clone error: ${error?.message || error}`);
+    cloneStatus.textContent = `Clone failed: ${error?.message || error}`;
     fail(error);
   }
 }
 
-async function playAudio(audio) {
-  if (selectedOutput !== 'default' && player.setSinkId) {
-    await player.setSinkId(selectedOutput);
-    player.src = URL.createObjectURL(audio.toBlob());
+async function playSynth(audio) {
+  if (outputId !== 'default' && player.setSinkId) {
+    await player.setSinkId(outputId);
+    const url = URL.createObjectURL(audio.toBlob());
+    player.src = url;
     try {
       await player.play();
-      await new Promise(resolve => {
-        const done = () => {
-          player.removeEventListener('ended', done);
-          resolve();
-        };
-        player.addEventListener('ended', done);
-      });
+      await new Promise(resolve => player.addEventListener('ended', resolve, { once: true }));
     } finally {
-      URL.revokeObjectURL(player.src);
+      URL.revokeObjectURL(url);
     }
-  } else {
-    await audio.play();
+    return;
   }
+  await audio.play();
 }
 
-async function speak(value) {
-  const phrase = value.trim().slice(0, 160);
-  if (!phrase) return;
-  if (!cloned) throw new Error('Clone your voice first.');
-  await loadModel();
+async function speakPhrase(phrase) {
+  if (!cloned) return;
+  const value = phrase.trim().slice(0, 160);
+  if (!value) return;
+  const engine = await loadChatterbox();
 
-  for await (const chunk of tts.stream(phrase)) {
-    await playAudio(chunk);
-  }
-}
-
-async function processQueue() {
-  if (queueRunning) return;
-  queueRunning = true;
-
-  try {
-    while (queue.length) {
-      const phrase = queue.shift();
-      try {
-        setStatus('Speaking cloned voice…');
-        await speak(phrase);
-      } catch (error) {
-        fail(error);
-      }
+  speaking = true;
+  setStatus('Speaking your cloned voice…');
+  for await (const chunk of engine.stream(value)) {
+    if (!listening && phraseQueue.length === 0) {
+      // Finish the current phrase, but don't start another one after Stop.
     }
-  } finally {
-    queueRunning = false;
-    if (listening) setStatus('Listening continuously.', 'ok');
+    await playSynth(chunk);
   }
+  speaking = false;
 }
 
-function enqueue(value) {
+async function drainQueue() {
+  if (speaking) return;
+  while (phraseQueue.length && listening) {
+    const phrase = phraseQueue.shift();
+    try {
+      await speakPhrase(phrase);
+    } catch (error) {
+      speaking = false;
+      fail(error);
+    }
+  }
+  if (listening) setStatus('Listening — speak naturally.', 'ok');
+}
+
+function queuePhrase(value) {
   const phrase = value.trim();
-  if (!phrase) return;
-
-  // Do not let recognition results build an unlimited TTS backlog.
-  if (queue.length >= 2) queue.shift();
-  queue.push(phrase);
-  void processQueue();
+  if (!phrase || !listening) return;
+  // Keep echo latency low instead of allowing a long backlog.
+  if (phraseQueue.length >= 2) phraseQueue.shift();
+  phraseQueue.push(phrase);
+  void drainQueue();
 }
 
 async function openMic() {
   if (micStream) return;
-
-  const constraints = inputDevice.value
-    ? {
-        deviceId: { exact: inputDevice.value },
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false
-      }
-    : {
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false
-      };
-
-  micStream = await navigator.mediaDevices.getUserMedia({ audio: constraints });
+  const audio = inputDevice.value
+    ? { deviceId: { exact: inputDevice.value }, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    : { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+  micStream = await navigator.mediaDevices.getUserMedia({ audio });
 }
 
-function makeRecognition() {
+function createRecognition() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) return null;
 
@@ -200,32 +167,29 @@ function makeRecognition() {
 
   r.onstart = () => {
     restarting = false;
-    startBtn.textContent = 'Listening continuously…';
-    setStatus('Listening continuously.', 'ok');
+    setStatus('Listening — speak naturally.', 'ok');
   };
 
   r.onresult = event => {
     let finalText = '';
-    let interim = '';
-
+    let interimText = '';
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const phrase = event.results[i][0]?.transcript || '';
       if (event.results[i].isFinal) finalText += phrase;
-      else interim += phrase;
+      else interimText += phrase;
     }
-
     if (finalText.trim()) {
       transcript.textContent = finalText.trim();
-      enqueue(finalText);
-    } else if (interim.trim()) {
-      transcript.textContent = interim.trim();
+      queuePhrase(finalText);
+    } else if (interimText.trim()) {
+      transcript.textContent = interimText.trim();
     }
   };
 
   r.onerror = event => {
     if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
       listening = false;
-      setStatus('Microphone permission denied. Allow this site to use the microphone.', 'err');
+      setStatus('Microphone permission was denied.', 'err');
     } else if (event.error !== 'aborted') {
       setStatus(`Speech recognition: ${event.error}`, 'err');
     }
@@ -234,141 +198,103 @@ function makeRecognition() {
   r.onend = () => {
     if (!listening || restarting) return;
     restarting = true;
-
     setTimeout(() => {
       if (!listening) return;
-      try {
-        r.start();
-      } catch {
-        restarting = false;
-        setTimeout(() => {
-          if (listening) {
-            try { r.start(); } catch {}
-          }
-        }, 500);
-      }
+      try { r.start(); }
+      catch { restarting = false; setTimeout(() => { if (listening) { try { r.start(); } catch {} } }, 500); }
     }, 250);
   };
-
   return r;
 }
 
-async function startListening() {
+async function startEcho() {
   try {
-    if (!cloned) throw new Error('Clone your voice first.');
+    if (!cloned) throw new Error('Clone the WAV voice first.');
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('Microphone access is unavailable.');
+    if (!recognition) recognition = createRecognition();
+    if (!recognition) throw new Error('Chrome or Edge Speech Recognition is required for STT.');
 
     await openMic();
     listening = true;
-
-    if (!recognition) recognition = makeRecognition();
-    if (!recognition) throw new Error('Chrome or Edge speech recognition is required.');
-
-    try {
-      recognition.start();
-    } catch (error) {
+    startBtn.textContent = 'Echo is running…';
+    try { recognition.start(); } catch (error) {
       if (!String(error).includes('InvalidStateError')) throw error;
     }
-
-    startBtn.textContent = 'Listening continuously…';
   } catch (error) {
     fail(error);
   }
 }
 
-function stopListening() {
+function stopEcho() {
   listening = false;
   restarting = false;
-  queue = [];
-
-  if (recognition) {
-    try { recognition.abort(); } catch {}
-  }
-
+  phraseQueue = [];
+  try { recognition?.abort(); } catch {}
   if (micStream) {
     micStream.getTracks().forEach(track => track.stop());
     micStream = null;
   }
-
-  startBtn.textContent = 'Start continuous listening';
+  startBtn.textContent = 'Start voice echo';
   setStatus(cloned ? 'Voice clone ready.' : 'Ready.');
+}
+
+async function testVoice() {
+  try {
+    if (!cloned) throw new Error('Clone the WAV voice first.');
+    await speakPhrase(text.value);
+    if (!listening) setStatus('Test complete.', 'ok');
+  } catch (error) {
+    fail(error);
+  }
 }
 
 async function refreshDevices() {
   if (!navigator.mediaDevices?.enumerateDevices) return;
-
   const devices = await navigator.mediaDevices.enumerateDevices();
   inputDevice.innerHTML = '<option value="">Default microphone</option>';
   outputDevice.innerHTML = '<option value="default">Default Windows output</option>';
-
-  for (const device of devices) {
-    if (device.kind === 'audioinput' && device.deviceId) {
-      inputDevice.add(new Option(device.label || 'Microphone', device.deviceId));
-    }
-
-    if (device.kind === 'audiooutput' && device.deviceId) {
-      const label = /cable input|vb-audio cable|virtual audio cable/i.test(device.label || '')
-        ? 'VB-CABLE — CABLE Input'
-        : (device.label || 'Audio output');
-      outputDevice.add(new Option(label, device.deviceId));
+  for (const d of devices) {
+    if (d.kind === 'audioinput' && d.deviceId) inputDevice.add(new Option(d.label || 'Microphone', d.deviceId));
+    if (d.kind === 'audiooutput' && d.deviceId) {
+      const label = /cable input|vb-audio cable|virtual audio cable/i.test(d.label || '') ? 'VB-CABLE — CABLE Input' : (d.label || 'Audio output');
+      outputDevice.add(new Option(label, d.deviceId));
     }
   }
-
-  routingStatus.textContent = `TTS output → ${outputDevice.selectedOptions[0]?.text || 'Default Windows output'}. ChilloutVR microphone → CABLE Output.`;
+  routingStatus.textContent = `Voice output → ${outputDevice.selectedOptions[0]?.text || 'Default Windows output'}.`;
 }
 
 voiceFile.addEventListener('change', () => {
-  setClone(voiceFile.files?.[0] ? `Selected: ${voiceFile.files[0].name}` : 'No voice loaded.');
+  const file = voiceFile.files?.[0];
+  cloneStatus.textContent = file ? `Selected: ${file.name}` : 'No voice loaded.';
 });
 
-$('clone').onclick = cloneVoice;
+$('clone').onclick = cloneWav;
 $('clearVoice').onclick = () => {
+  stopEcho();
   cloned = false;
   voiceFile.value = '';
-  setClone('No voice loaded.');
+  cloneStatus.textContent = 'No voice loaded.';
   setStatus('Voice clone cleared.');
 };
-
-test.onclick = async () => {
-  try {
-    setStatus('Generating cloned test voice…');
-    await speak(text.value);
-    setStatus('Test complete.', 'ok');
-  } catch (error) {
-    fail(error);
-  }
-};
-
-startBtn.onclick = startListening;
-stopBtn.onclick = stopListening;
+$('start').onclick = startEcho;
+$('stop').onclick = stopEcho;
+$('test').onclick = testVoice;
 $('refreshDevices').onclick = () => refreshDevices().catch(fail);
 
 $('chooseOutput').onclick = async () => {
   try {
-    if (!navigator.mediaDevices?.selectAudioOutput) {
-      throw new Error('Chrome did not expose the output-device picker. Use the output list instead.');
-    }
-
+    if (!navigator.mediaDevices?.selectAudioOutput) throw new Error('Output picker is unavailable. Select an output from the list.');
     const device = await navigator.mediaDevices.selectAudioOutput();
     if (device?.deviceId) {
-      selectedOutput = device.deviceId;
+      outputId = device.deviceId;
       await refreshDevices();
       outputDevice.value = device.deviceId;
     }
-  } catch (error) {
-    fail(error);
-  }
+  } catch (error) { fail(error); }
 };
 
-outputDevice.onchange = () => {
-  selectedOutput = outputDevice.value || 'default';
-};
-
+outputDevice.onchange = () => { outputId = outputDevice.value || 'default'; };
 window.addEventListener('error', event => fail(event.error || new Error(event.message)));
-window.addEventListener('unhandledrejection', event => fail(event.reason || new Error('Unknown error')));
-
+window.addEventListener('unhandledrejection', event => fail(event.reason || new Error('Unhandled error')));
 refreshDevices().catch(() => {});
-
-window.addEventListener('beforeunload', () => {
-  try { worker?.terminate(); } catch {}
-});
+window.addEventListener('beforeunload', () => { try { worker?.terminate(); } catch {} });
