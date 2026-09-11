@@ -16,6 +16,7 @@ let listening = false;
 let restarting = false;
 let queue = [];
 let queueRunning = false;
+let modelPromise = null;
 
 function setStatus(message, kind = '') {
   status.textContent = message;
@@ -30,37 +31,44 @@ function fail(error) {
 
 function progress(event) {
   if (!event) return;
-  const plan = event.plan ? ` (${event.plan})` : '';
-  if (event.status === 'load-start') setClone(`Loading Chatterbox${plan}…`);
-  else if (event.status === 'load-compiling') setClone(`Model downloaded. Compiling ONNX session${plan}…`);
-  else if (event.status === 'load-fallback') setClone(`Backend fallback: ${event.reason || 'trying another plan'}…`);
-  else if (event.status === 'load-ready') setClone(`Model ready: ${event.plan || 'Chatterbox'}.`);
-  else if (event.status === 'progress' && Number.isFinite(event.progress)) setClone(`Downloading model: ${Math.round(event.progress)}%`);
-  modelState.textContent = event.status || 'Loading';
+  // Progress is intentionally hidden. The model starts loading immediately in the background.
+  if (event.status === 'load-ready') {
+    modelState.textContent = event.plan || 'ready';
+  } else if (event.status === 'load-fallback') {
+    modelState.textContent = 'fallback';
+  } else if (event.status === 'load-compiling') {
+    modelState.textContent = 'initializing';
+  }
 }
 
 async function loadModel() {
   if (tts) return tts;
-  const mode = backend.value;
-  setStatus(mode === 'wasm' ? 'Loading Chatterbox in safe WASM mode…' : 'Loading Chatterbox…');
-  setClone('Starting real Chatterbox model. First load can be about 1.5 GB.');
-  modelState.textContent = 'Loading';
+  if (modelPromise) return modelPromise;
 
-  engine = new ChatterboxEngine({
-    stallTimeoutMs: 300000,
-    onProgress: progress
+  modelPromise = (async () => {
+    engine = new ChatterboxEngine({
+      stallTimeoutMs: 300000,
+      onProgress: progress
+    });
+
+    const mode = backend.value || 'auto';
+    tts = await VoxShot.create({
+      engine,
+      device: mode,
+      minChunkLength: 20
+    });
+
+    modelState.textContent = tts.device || 'ready';
+    setStatus('Chatterbox ready.', 'ok');
+    return tts;
+  })().catch(error => {
+    modelPromise = null;
+    tts = null;
+    fail(error);
+    throw error;
   });
 
-  tts = await VoxShot.create({
-    engine,
-    device: mode,
-    minChunkLength: 20
-  });
-
-  setStatus(`Chatterbox ready — ${tts.device}.`, 'ok');
-  setClone(`Real Chatterbox ready (${tts.device}).`);
-  modelState.textContent = tts.device;
-  return tts;
+  return modelPromise;
 }
 
 async function cloneVoice() {
@@ -71,7 +79,6 @@ async function cloneVoice() {
     await loadModel();
     cloned = false;
     setStatus('Creating voice clone locally…');
-    setClone(`Cloning ${file.name}…`);
     await tts.cloneVoice(file);
     await tts.saveVoice('my-voice').catch(() => {});
     cloned = true;
@@ -257,7 +264,11 @@ $('chooseOutput').onclick = async () => {
   } catch (error) { fail(error); }
 };
 outputDevice.onchange = () => { selectedOutput = outputDevice.value || 'default'; };
-backend.onchange = () => { if (tts) setStatus('Backend changed. Clear voice and clone again to use the new backend.'); };
+backend.onchange = () => { if (tts) setStatus('Backend changed. Reload the page to use the new backend.'); };
 window.addEventListener('error', event => fail(event.error || new Error(event.message)));
 window.addEventListener('unhandledrejection', event => fail(event.reason || new Error('Unknown error')));
 refreshDevices().catch(() => {});
+
+// Prewarm Chatterbox immediately. There is no progress bar and no clone click required to start model loading.
+// The browser cache makes subsequent visits much faster.
+loadModel().catch(() => {});
