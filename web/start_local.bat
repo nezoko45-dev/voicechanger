@@ -18,7 +18,14 @@ if errorlevel 1 (
   exit /b 1
 )
 echo.
-echo Starting local VoiceChanger server...
-echo Keep this window open while using the HTML app.
-%PY% local_server.py
-pause
+echo Starting local VoiceChanger Python server...
+start "VoiceChanger Python Server" /min "%PY%" local_server.py
+
+echo Waiting for the local server...
+timeout /t 3 /nobreak >nul
+start "" "http://127.0.0.1:8765/"
+echo.
+echo VoiceChanger is opening in your browser.
+echo Python will continue running in the background.
+echo Close the 'VoiceChanger Python Server' process/window to stop it.
+exit /b 0
