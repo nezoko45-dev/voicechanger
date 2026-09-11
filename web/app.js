@@ -1,4 +1,4 @@
-import { VoxShot, ChatterboxEngine } from 'voxshot';
+import { VoxShot, WorkerSynthesisEngine } from 'voxshot';
 
 const $ = id => document.getElementById(id);
 const status = $('status'), modelState = $('modelState'), cloneStatus = $('cloneStatus');
@@ -7,7 +7,8 @@ const routingStatus = $('routingStatus'), text = $('text'), test = $('test'), st
 const transcript = $('transcript'), meter = $('meterFill'), player = $('player');
 
 let tts = null;
-let engine = null;
+let workerEngine = null;
+let worker = null;
 let cloned = false;
 let selectedOutput = 'default';
 let recognition = null;
@@ -31,7 +32,6 @@ function fail(error) {
 
 function progress(event) {
   if (!event) return;
-  // Progress is intentionally hidden. The model starts loading immediately in the background.
   if (event.status === 'load-ready') {
     modelState.textContent = event.plan || 'ready';
   } else if (event.status === 'load-fallback') {
@@ -46,24 +46,29 @@ async function loadModel() {
   if (modelPromise) return modelPromise;
 
   modelPromise = (async () => {
-    engine = new ChatterboxEngine({
-      stallTimeoutMs: 300000,
-      onProgress: progress
-    });
+    // All Chatterbox/ONNX work lives in a dedicated worker so model loading,
+    // compilation and synthesis cannot freeze the page or microphone controls.
+    worker = new Worker('/tts.worker.js', { type: 'module' });
+    workerEngine = new WorkerSynthesisEngine(worker, { onProgress: progress });
 
-    const mode = backend.value || 'auto';
+    const mode = backend.value || 'wasm';
     tts = await VoxShot.create({
-      engine,
+      engine: workerEngine,
       device: mode,
       minChunkLength: 20
     });
 
-    modelState.textContent = tts.device || 'ready';
+    modelState.textContent = tts.device || mode;
     setStatus('Chatterbox ready.', 'ok');
     return tts;
   })().catch(error => {
     modelPromise = null;
     tts = null;
+    workerEngine = null;
+    if (worker) {
+      try { worker.terminate(); } catch {}
+      worker = null;
+    }
     fail(error);
     throw error;
   });
@@ -269,6 +274,9 @@ window.addEventListener('error', event => fail(event.error || new Error(event.me
 window.addEventListener('unhandledrejection', event => fail(event.reason || new Error('Unknown error')));
 refreshDevices().catch(() => {});
 
-// Prewarm Chatterbox immediately. There is no progress bar and no clone click required to start model loading.
-// The browser cache makes subsequent visits much faster.
+// Start the model immediately, but do it in the worker so the page remains responsive.
 loadModel().catch(() => {});
+
+window.addEventListener('beforeunload', () => {
+  try { worker?.terminate(); } catch {}
+});
