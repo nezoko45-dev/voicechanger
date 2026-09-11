@@ -1,8 +1,6 @@
 {
   "rewrites": [
-    { "source": "/", "destination": "/web/index.html" },
-    { "source": "/style.css", "destination": "/web/style.css" },
-    { "source": "/app-fixed.js", "destination": "/web/app-fixed.js" },
-    { "source": "/tts.worker.js", "destination": "/web/tts.worker.js" }
+    { "source": "/", "destination": "/web/voicechanger.html" },
+    { "source": "/voicechanger", "destination": "/web/voicechanger.html" }
   ]
 }
