@@ -1,13 +1,15 @@
-// Use VoxShot's current main branch build instead of the older npm release.
-// The released package has a known Chatterbox dtype-plan problem that can make
-// Transformers.js request the full fp32 language model (~2 GB) instead of the
-// quantized WebGPU model. That can exhaust browser/GPU memory and crash Chrome.
+// Chatterbox worker for the browser voice-clone app.
+// Force the safer WebGPU q4 language model so Chrome does not try to allocate
+// the full fp32 language model during startup.
 import { ChatterboxEngine, exposeEngine } from 'https://esm.sh/gh/m96-chan/voxshot@main';
 
 const engine = new ChatterboxEngine({
   requiresGpu: true,
-  stallTimeoutMs: 120000
+  dtype: {
+    language_model: 'q4',
+    model: 'q4'
+  },
+  stallTimeoutMs: 300000
 });
 
-// Intentionally expose no progress events. The UI has no loading/progress bar.
 exposeEngine(engine, self);
