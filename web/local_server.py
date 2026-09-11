@@ -10,6 +10,7 @@ from flask import Flask, jsonify, request, send_from_directory
 ROOT = Path(__file__).resolve().parent
 VOICE_DIR = ROOT / "voices"
 VOICE_DIR.mkdir(exist_ok=True)
+REFERENCE_WAV = VOICE_DIR / "reference.wav"
 
 app = Flask(__name__, static_folder=str(ROOT), static_url_path="")
 TTS_MODEL_ID = os.getenv("QWEN_TTS_MODEL", "Qwen/Qwen3-TTS-12Hz-0.6B-Base")
@@ -17,7 +18,7 @@ WHISPER_MODEL_ID = os.getenv("WHISPER_MODEL", "small")
 
 tts_model = None
 whisper_model = None
-voice_prompt = None
+voice_ready = False
 model_lock = threading.Lock()
 startup_error = None
 
@@ -50,7 +51,7 @@ def get_tts():
                 )
                 startup_error = None
             except Exception as exc:
-                startup_error = f"TTS load failed: {exc}"
+                startup_error = f"TTS load failed: {type(exc).__name__}: {exc}"
                 traceback.print_exc()
                 raise
     return tts_model
@@ -71,7 +72,7 @@ def get_whisper():
                 whisper_model = WhisperModel(WHISPER_MODEL_ID, device=device, compute_type=compute)
                 startup_error = None
             except Exception as exc:
-                startup_error = f"STT load failed: {exc}"
+                startup_error = f"STT load failed: {type(exc).__name__}: {exc}"
                 traceback.print_exc()
                 raise
     return whisper_model
@@ -98,8 +99,8 @@ def status():
             "cuda": False,
             "tts": TTS_MODEL_ID,
             "stt": WHISPER_MODEL_ID,
-            "voice_cloned": voice_prompt is not None,
-            "error": f"PyTorch import failed: {exc}",
+            "voice_cloned": voice_ready and REFERENCE_WAV.exists(),
+            "error": f"PyTorch import failed: {type(exc).__name__}: {exc}",
         })
     return jsonify({
         "ok": True,
@@ -108,49 +109,69 @@ def status():
         "cuda": cuda,
         "tts": TTS_MODEL_ID,
         "stt": WHISPER_MODEL_ID,
-        "voice_cloned": voice_prompt is not None,
+        "voice_cloned": voice_ready and REFERENCE_WAV.exists(),
         "error": startup_error,
     })
 
 
 @app.post("/api/clone")
 def clone():
-    global voice_prompt
+    global voice_ready, startup_error
     audio = request.files.get("audio")
-    if audio is None:
-        return jsonify(error="Select a WAV voice sample."), 400
-    if Path(audio.filename or "voice.wav").suffix.lower() != ".wav":
-        return jsonify(error="Voice cloning requires a WAV file."), 400
-    path = VOICE_DIR / "reference.wav"
-    audio.save(path)
+    if audio is None or not audio.filename:
+        return jsonify(error="Choose your WAV file first."), 400
+    if Path(audio.filename).suffix.lower() != ".wav":
+        return jsonify(error="Please select a .wav file."), 400
+
+    temp_path = VOICE_DIR / "reference.upload.wav"
     try:
+        audio.save(temp_path)
+        if temp_path.stat().st_size < 1000:
+            return jsonify(error="That WAV file is empty or too small."), 400
+
+        # Keep the user's WAV exactly as supplied. Qwen3-TTS accepts a local WAV path.
+        temp_path.replace(REFERENCE_WAV)
         model = get_tts()
-        prompt = model.create_voice_clone_prompt(
-            ref_audio=str(path),
+
+        # Validate the reference now, but do not create/cache a prompt here.
+        # Generation will use this same local WAV directly, which is more compatible
+        # across qwen-tts package versions.
+        model.create_voice_clone_prompt(
+            ref_audio=str(REFERENCE_WAV),
             x_vector_only_mode=True,
         )
-        voice_prompt = prompt
-        return jsonify(ok=True, message="Voice clone ready.")
+        voice_ready = True
+        startup_error = None
+        return jsonify(ok=True, message="Your WAV voice is ready. Click Speak to test it.")
     except Exception as exc:
+        voice_ready = False
+        startup_error = f"Voice clone failed: {type(exc).__name__}: {exc}"
         traceback.print_exc()
-        return jsonify(error=str(exc)), 500
+        return jsonify(error=startup_error), 500
+    finally:
+        try:
+            if temp_path.exists():
+                temp_path.unlink()
+        except OSError:
+            pass
 
 
 @app.post("/api/tts")
 def tts():
-    global voice_prompt
+    if not voice_ready or not REFERENCE_WAV.exists():
+        return jsonify(error="Select your WAV and click Use this WAV voice first."), 400
     text = (request.form.get("text") or "").strip()
     if not text:
         return jsonify(error="Text is required."), 400
-    if voice_prompt is None:
-        return jsonify(error="Clone a voice first."), 400
     try:
         import soundfile as sf
         model = get_tts()
+        # Pass the user's WAV directly. This avoids depending on a cached prompt
+        # object format that differs between qwen-tts releases.
         wavs, sample_rate = model.generate_voice_clone(
             text=text[:500],
             language="English",
-            voice_clone_prompt=voice_prompt,
+            ref_audio=str(REFERENCE_WAV),
             x_vector_only_mode=True,
         )
         out = io.BytesIO()
@@ -158,7 +179,7 @@ def tts():
         return app.response_class(out.getvalue(), mimetype="audio/wav")
     except Exception as exc:
         traceback.print_exc()
-        return jsonify(error=str(exc)), 500
+        return jsonify(error=f"TTS failed: {type(exc).__name__}: {exc}"), 500
 
 
 @app.post("/api/stt")
@@ -182,7 +203,7 @@ def stt():
         return jsonify(text=text, language=info.language)
     except Exception as exc:
         traceback.print_exc()
-        return jsonify(error=str(exc)), 500
+        return jsonify(error=f"STT failed: {type(exc).__name__}: {exc}"), 500
     finally:
         try:
             os.remove(temp_name)
@@ -192,5 +213,5 @@ def stt():
 
 if __name__ == "__main__":
     print("VoiceChanger server: http://127.0.0.1:8765")
-    print("The server starts even if an AI package/model fails; the browser will show the exact error.")
+    print("Local-only mode: no Railway or cloud service is required.")
     app.run(host="127.0.0.1", port=8765, threaded=True)
