@@ -5,41 +5,43 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Local VoiceChanger</title>
 <style>
-body{font-family:system-ui,sans-serif;max-width:760px;margin:40px auto;padding:20px;background:#111;color:#eee}button,input,select{font:inherit;padding:10px;margin:5px 0}button{cursor:pointer}section{border:1px solid #333;border-radius:12px;padding:18px;margin:14px 0}.ok{color:#7dff9a}.bad{color:#ff7d7d}#log{white-space:pre-wrap;background:#080808;padding:12px;border-radius:8px;min-height:80px}
+body{font-family:system-ui,sans-serif;max-width:760px;margin:40px auto;padding:20px;background:#111;color:#eee}button,input,select{font:inherit;padding:10px;margin:5px 0}button{cursor:pointer}button:disabled{opacity:.5;cursor:wait}section{border:1px solid #333;border-radius:12px;padding:18px;margin:14px 0}.ok{color:#7dff9a}.bad{color:#ff7d7d}#log{white-space:pre-wrap;background:#080808;padding:12px;border-radius:8px;min-height:80px}
 </style>
 </head>
 <body>
 <h1>Local VoiceChanger</h1>
-<p>Local Qwen3-TTS voice cloning + faster-whisper STT. No cloud API keys.</p>
+<p>Uses your own WAV as the local voice reference. No Railway, cloud API, or API key is required.</p>
 <section>
-<h2>1. Voice clone</h2>
-<p>Choose a clean WAV recording of the voice you want to clone.</p>
-<input id="voice" type="file" accept="audio/wav,.wav">
-<button id="clone">Create voice clone</button>
+<h2>1. Your WAV voice</h2>
+<p>Select your own clean WAV recording. The server uses this file directly as the voice-cloning reference.</p>
+<input id="voice" type="file" accept=".wav,audio/wav">
+<br><button id="clone">Use this WAV voice</button>
+<p id="cloneState">No voice loaded.</p>
 </section>
 <section>
 <h2>2. Test TTS</h2>
-<input id="text" value="Hello! This is my cloned voice.">
-<button id="speak">Speak</button>
+<input id="text" value="Hello! This is my cloned voice." style="width:90%">
+<br><button id="speak" disabled>Speak</button>
 </section>
 <section>
 <h2>3. Voice changer</h2>
 <label>Microphone<br><select id="mic"></select></label><br>
 <label>Output<br><select id="out"></select></label><br>
-<button id="start">Start</button><button id="stop" disabled>Stop</button>
+<button id="start" disabled>Start</button><button id="stop" disabled>Stop</button>
 <p id="state">Checking local server...</p>
 </section>
 <div id="log"></div>
 <script>
-const $=id=>document.getElementById(id);let stream=null,rec=null,running=false,busy=false,queue=[];
+const $=id=>document.getElementById(id);
+let stream=null,rec=null,running=false,busy=false,queue=[];
 function log(x){$('log').textContent=x+'\n'+$('log').textContent}
 async function api(url,opt){const r=await fetch(url,opt);if(!r.ok){let e='Request failed';try{e=(await r.json()).error||e}catch{}throw Error(e)}return r}
-async function status(){try{const s=await (await api('/api/status')).json();$('state').textContent=`Server OK — TTS: ${s.tts} | STT: ${s.stt} | CUDA: ${s.cuda?'yes':'no'} | Clone: ${s.voice_cloned?'ready':'not ready'}`;$('state').className='ok'}catch(e){$('state').textContent='Server unavailable: '+e.message;$('state').className='bad'}}
+async function status(){try{const s=await (await api('/api/status')).json();$('state').textContent=`Server OK — TTS: ${s.tts} | STT: ${s.stt} | CUDA: ${s.cuda?'yes':'no'} | Voice: ${s.voice_cloned?'ready':'not loaded'}`;$('state').className='ok';if(s.voice_cloned){$('speak').disabled=false;$('start').disabled=false}}catch(e){$('state').textContent='Server unavailable: '+e.message;$('state').className='bad'}}
 async function devices(){const ds=await navigator.mediaDevices.enumerateDevices();$('mic').innerHTML='';$('out').innerHTML='';ds.filter(d=>d.kind==='audioinput').forEach(d=>$('mic').add(new Option(d.label||'Microphone',d.deviceId)));ds.filter(d=>d.kind==='audiooutput').forEach(d=>$('out').add(new Option(d.label||'Output',d.deviceId)))}
-$('clone').onclick=async()=>{const f=$('voice').files[0];if(!f)return log('Choose a WAV first.');try{log('Creating local voice clone...');const fd=new FormData();fd.append('audio',f);const j=await (await api('/api/clone',{method:'POST',body:fd})).json();log(j.message);status()}catch(e){log('Clone error: '+e.message)}};
-$('speak').onclick=async()=>{try{const fd=new FormData();fd.append('text',$('text').value);const r=await api('/api/tts',{method:'POST',body:fd});const a=new Audio(URL.createObjectURL(await r.blob()));if(a.setSinkId&&$('out').value)await a.setSinkId($('out').value);await a.play()}catch(e){log('TTS error: '+e.message)}};
-async function transcribe(blob){const fd=new FormData();fd.append('audio',blob,'speech.webm');const j=await (await api('/api/stt',{method:'POST',body:fd})).json();return j.text||''}
-async function speak(text){const fd=new FormData();fd.append('text',text);const r=await api('/api/tts',{method:'POST',body:fd});const a=new Audio(URL.createObjectURL(await r.blob()));if(a.setSinkId&&$('out').value)await a.setSinkId($('out').value);await a.play();await new Promise(resolve=>a.onended=resolve)}
+$('clone').onclick=async()=>{const f=$('voice').files[0];if(!f){log('Choose your WAV file first.');return}if(!f.name.toLowerCase().endsWith('.wav')){log('Please select a .wav file.');return}const b=$('clone');b.disabled=true;$('cloneState').textContent='Loading your WAV and creating the local voice prompt...';try{const fd=new FormData();fd.append('audio',f,f.name);const r=await api('/api/clone',{method:'POST',body:fd});const j=await r.json();if(j.error)throw Error(j.error);$('cloneState').textContent='Your WAV voice is ready.';$('cloneState').className='ok';log('Voice loaded: '+f.name);$('speak').disabled=false;$('start').disabled=false;await status()}catch(e){$('cloneState').textContent='Voice load failed: '+e.message;$('cloneState').className='bad';log('Voice clone error: '+e.message)}finally{b.disabled=false}};
+$('speak').onclick=async()=>{try{$('speak').disabled=true;const fd=new FormData();fd.append('text',$('text').value);const r=await api('/api/tts',{method:'POST',body:fd});const a=new Audio(URL.createObjectURL(await r.blob()));if(a.setSinkId&&$('out').value)await a.setSinkId($('out').value);await a.play();await new Promise(resolve=>a.onended=resolve)}catch(e){log('TTS error: '+e.message)}finally{$('speak').disabled=false}};
+async function transcribe(blob){const fd=new FormData();fd.append('audio',blob,'speech.webm');const j=await (await api('/api/stt',{method:'POST',body:fd})).json();if(j.error)throw Error(j.error);return j.text||''}
+async function speak(text){const fd=new FormData();fd.append('text',text);const r=await api('/api/tts',{method:'POST',body:fd);const a=new Audio(URL.createObjectURL(await r.blob()));if(a.setSinkId&&$('out').value)await a.setSinkId($('out').value);await a.play();await new Promise(resolve=>a.onended=resolve)}
 async function process(){if(busy||!queue.length)return;busy=true;try{const b=queue.shift();const text=await transcribe(b);if(text){log('You: '+text);await speak(text)}}catch(e){log('Voice error: '+e.message)}finally{busy=false;process()}}
 $('start').onclick=async()=>{if(running)return;try{stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:$('mic').value?{exact:$('mic').value}:undefined}});running=true;$('start').disabled=true;$('stop').disabled=false;rec=new MediaRecorder(stream);rec.ondataavailable=e=>{if(e.data.size){queue.push(e.data);process()}};rec.start(2500);log('VoiceChanger started. Speak normally.')}catch(e){log('Microphone error: '+e.message)}};
 $('stop').onclick=()=>{running=false;if(rec)rec.stop();if(stream)stream.getTracks().forEach(t=>t.stop());$('start').disabled=false;$('stop').disabled=true;log('VoiceChanger stopped.')};
