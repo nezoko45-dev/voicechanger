@@ -33,7 +33,7 @@ body{font-family:system-ui,sans-serif;max-width:760px;margin:40px auto;padding:2
 <div id="log"></div>
 <script>
 const $=id=>document.getElementById(id);
-let stream=null,rec=null,running=false,busy=false,queue=[];
+let stream=null,rec=null,running=false,busy=false,queue=[],segmentTimer=null;
 function log(x){$('log').textContent=x+'\n'+$('log').textContent}
 async function api(url,opt){const r=await fetch(url,opt);if(!r.ok){let e='Request failed';try{e=(await r.json()).error||e}catch{}throw Error(e)}return r}
 async function status(){try{const s=await (await api('/api/status')).json();$('state').textContent=`Server OK — TTS: ${s.tts} | STT: ${s.stt} | CUDA: ${s.cuda?'yes':'no'} | Voice: ${s.voice_cloned?'ready':'not loaded'}`;$('state').className='ok';if(s.voice_cloned){$('speak').disabled=false;$('start').disabled=false}}catch(e){$('state').textContent='Server unavailable: '+e.message;$('state').className='bad'}}
@@ -43,8 +43,9 @@ $('speak').onclick=async()=>{try{$('speak').disabled=true;const fd=new FormData(
 async function transcribe(blob){const fd=new FormData();fd.append('audio',blob,'speech.webm');const j=await (await api('/api/stt',{method:'POST',body:fd})).json();if(j.error)throw Error(j.error);return j.text||''}
 async function speak(text){const fd=new FormData();fd.append('text',text);const r=await api('/api/tts',{method:'POST',body:fd});const a=new Audio(URL.createObjectURL(await r.blob()));if(a.setSinkId&&$('out').value)await a.setSinkId($('out').value);await a.play();await new Promise(resolve=>a.onended=resolve)}
 async function process(){if(busy||!queue.length)return;busy=true;try{const b=queue.shift();const text=await transcribe(b);if(text){log('You: '+text);await speak(text)}}catch(e){log('Voice error: '+e.message)}finally{busy=false;process()}}
-$('start').onclick=async()=>{if(running)return;try{stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:$('mic').value?{exact:$('mic').value}:undefined}});running=true;$('start').disabled=true;$('stop').disabled=false;rec=new MediaRecorder(stream);rec.ondataavailable=e=>{if(e.data.size){queue.push(e.data);process()}};rec.start(2500);log('VoiceChanger started. Speak normally.')}catch(e){log('Microphone error: '+e.message)}};
-$('stop').onclick=()=>{running=false;if(rec)rec.stop();if(stream)stream.getTracks().forEach(t=>t.stop());$('start').disabled=false;$('stop').disabled=true;log('VoiceChanger stopped.')};
+function startSegment(){if(!running||!stream)return;let options={};if(MediaRecorder.isTypeSupported('audio/webm;codecs=opus'))options.mimeType='audio/webm;codecs=opus';else if(MediaRecorder.isTypeSupported('audio/webm'))options.mimeType='audio/webm';rec=new MediaRecorder(stream,options);const chunks=[];rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};rec.onstop=()=>{if(chunks.length){const type=chunks[0].type||'audio/webm';queue.push(new Blob(chunks,{type}));process()}if(running){startSegment()}};rec.start();segmentTimer=setTimeout(()=>{if(rec&&rec.state==='recording')rec.stop()},2500)}
+$('start').onclick=async()=>{if(running)return;try{stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:$('mic').value?{exact:$('mic').value}:undefined}});running=true;$('start').disabled=true;$('stop').disabled=false;startSegment();log('VoiceChanger started. Recording complete 2.5-second audio segments to avoid invalid/incomplete WebM data.')}catch(e){running=false;log('Microphone error: '+e.message)}};
+$('stop').onclick=()=>{running=false;if(segmentTimer)clearTimeout(segmentTimer);segmentTimer=null;if(rec&&rec.state!=='inactive')rec.stop();if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;$('start').disabled=false;$('stop').disabled=true;log('VoiceChanger stopped.')};
 navigator.mediaDevices.addEventListener?.('devicechange',devices);devices();status();
 </script>
 </body>
