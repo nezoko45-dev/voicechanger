@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Chatterbox Voice Echo</title>
 <link rel="stylesheet" href="/style.css">
-<script type="importmap">{"imports":{"voxshot":"https://esm.sh/gh/m96-chan/voxshot@main","@huggingface/transformers":"https://esm.sh/@huggingface/transformers"}}</script>
+<script type="importmap">{"imports":{"voxshot":"https://esm.sh/gh/m96-chan/voxshot@main","@huggingface/transformers":"https://esm.sh/@huggingface/transformers@4.2.0"}}</script>
 </head>
 <body>
 <main class="app">
@@ -20,8 +20,8 @@
 
 <section class="card">
   <h2>1. Load your voice</h2>
-  <input id="voiceFile" type="file" accept=".wav,audio/wav,audio/*">
-  <p class="hint">Choose a clean WAV recording of your voice, ideally 5–15 seconds of English speech.</p>
+  <input id="voiceFile" type="file" accept=".wav,audio/wav,audio/x-wav">
+  <p class="hint">Use a clean 5–15 second English WAV recording. The model runs locally in your browser.</p>
   <div class="buttons">
     <button id="clone" class="primary">Clone WAV voice</button>
     <button id="clearVoice">Clear</button>
@@ -31,7 +31,7 @@
 
 <section class="card">
   <h2>2. Echo mode</h2>
-  <p class="hint">Press Start, speak into your microphone, and each recognized phrase is immediately spoken back using the cloned WAV voice.</p>
+  <p class="hint">Press Start, speak, and each recognized phrase is spoken back using your cloned voice.</p>
   <div class="buttons">
     <button id="start" class="primary">Start voice echo</button>
     <button id="stop" class="danger">Stop</button>
@@ -61,10 +61,10 @@
 <section class="card small">
   <h2>How it works</h2>
   <ul>
-    <li>Chatterbox + VoxShot handles local WAV voice cloning and TTS.</li>
-    <li>Chrome/Edge Speech Recognition handles STT.</li>
-    <li>Nothing is sent to a voice API and no API key is required.</li>
-    <li>The Chatterbox engine runs in a Web Worker with WebGPU.</li>
+    <li>Chatterbox + VoxShot performs local WAV voice cloning and TTS.</li>
+    <li>Chrome/Edge Speech Recognition provides live STT.</li>
+    <li>No voice API or API key is required.</li>
+    <li>Chatterbox runs in a Web Worker using WebGPU q4 weights.</li>
   </ul>
 </section>
 
