@@ -3,12 +3,9 @@ import io
 import os
 import tempfile
 import threading
+import traceback
 
-import soundfile as sf
-import torch
 from flask import Flask, jsonify, request, send_from_directory
-from faster_whisper import WhisperModel
-from qwen_tts import Qwen3TTSModel
 
 ROOT = Path(__file__).resolve().parent
 VOICE_DIR = ROOT / "voices"
@@ -22,39 +19,61 @@ tts_model = None
 whisper_model = None
 voice_prompt = None
 model_lock = threading.Lock()
+startup_error = None
+
+
+def get_torch():
+    import torch
+    return torch
 
 
 def get_tts():
-    global tts_model
+    global tts_model, startup_error
     if tts_model is not None:
         return tts_model
     with model_lock:
         if tts_model is None:
-            if torch.cuda.is_available():
-                dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
-                device = "cuda:0"
-            else:
-                dtype = torch.float32
-                device = "cpu"
-            print(f"[TTS] Loading {TTS_MODEL_ID} on {device}...")
-            tts_model = Qwen3TTSModel.from_pretrained(
-                TTS_MODEL_ID,
-                device_map=device,
-                dtype=dtype,
-            )
+            try:
+                from qwen_tts import Qwen3TTSModel
+                torch = get_torch()
+                if torch.cuda.is_available():
+                    dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+                    device = "cuda:0"
+                else:
+                    dtype = torch.float32
+                    device = "cpu"
+                print(f"[TTS] Loading {TTS_MODEL_ID} on {device}...")
+                tts_model = Qwen3TTSModel.from_pretrained(
+                    TTS_MODEL_ID,
+                    device_map=device,
+                    dtype=dtype,
+                )
+                startup_error = None
+            except Exception as exc:
+                startup_error = f"TTS load failed: {exc}"
+                traceback.print_exc()
+                raise
     return tts_model
 
 
 def get_whisper():
-    global whisper_model
+    global whisper_model, startup_error
     if whisper_model is not None:
         return whisper_model
     with model_lock:
         if whisper_model is None:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            compute = "float16" if device == "cuda" else "int8"
-            print(f"[STT] Loading faster-whisper {WHISPER_MODEL_ID} on {device}/{compute}...")
-            whisper_model = WhisperModel(WHISPER_MODEL_ID, device=device, compute_type=compute)
+            try:
+                import torch
+                from faster_whisper import WhisperModel
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                compute = "float16" if device == "cuda" else "int8"
+                print(f"[STT] Loading faster-whisper {WHISPER_MODEL_ID} on {device}/{compute}...")
+                whisper_model = WhisperModel(WHISPER_MODEL_ID, device=device, compute_type=compute)
+                startup_error = None
+            except Exception as exc:
+                startup_error = f"STT load failed: {exc}"
+                traceback.print_exc()
+                raise
     return whisper_model
 
 
@@ -65,12 +84,32 @@ def home():
 
 @app.get("/api/status")
 def status():
+    try:
+        import torch
+        cuda = torch.cuda.is_available()
+        torch_ok = True
+    except Exception as exc:
+        cuda = False
+        torch_ok = False
+        return jsonify({
+            "ok": True,
+            "server": True,
+            "torch": False,
+            "cuda": False,
+            "tts": TTS_MODEL_ID,
+            "stt": WHISPER_MODEL_ID,
+            "voice_cloned": voice_prompt is not None,
+            "error": f"PyTorch import failed: {exc}",
+        })
     return jsonify({
         "ok": True,
+        "server": True,
+        "torch": torch_ok,
+        "cuda": cuda,
         "tts": TTS_MODEL_ID,
         "stt": WHISPER_MODEL_ID,
-        "cuda": torch.cuda.is_available(),
         "voice_cloned": voice_prompt is not None,
+        "error": startup_error,
     })
 
 
@@ -93,6 +132,7 @@ def clone():
         voice_prompt = prompt
         return jsonify(ok=True, message="Voice clone ready.")
     except Exception as exc:
+        traceback.print_exc()
         return jsonify(error=str(exc)), 500
 
 
@@ -105,6 +145,7 @@ def tts():
     if voice_prompt is None:
         return jsonify(error="Clone a voice first."), 400
     try:
+        import soundfile as sf
         model = get_tts()
         wavs, sample_rate = model.generate_voice_clone(
             text=text[:500],
@@ -116,6 +157,7 @@ def tts():
         sf.write(out, wavs[0], sample_rate, format="WAV", subtype="PCM_16")
         return app.response_class(out.getvalue(), mimetype="audio/wav")
     except Exception as exc:
+        traceback.print_exc()
         return jsonify(error=str(exc)), 500
 
 
@@ -139,6 +181,7 @@ def stt():
         text = " ".join(s.text.strip() for s in segments if s.text.strip()).strip()
         return jsonify(text=text, language=info.language)
     except Exception as exc:
+        traceback.print_exc()
         return jsonify(error=str(exc)), 500
     finally:
         try:
@@ -149,4 +192,5 @@ def stt():
 
 if __name__ == "__main__":
     print("VoiceChanger server: http://127.0.0.1:8765")
+    print("The server starts even if an AI package/model fails; the browser will show the exact error.")
     app.run(host="127.0.0.1", port=8765, threaded=True)
