@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VoiceChanger — Chatterbox + VoxShot</title>
+<style>
+:root{font-family:Inter,system-ui,sans-serif;color:#eee;background:#090b10}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at top,#1b2030,#090b10 55%)}main{width:min(900px,94vw);margin:32px auto;padding-bottom:50px}header{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:20px}h1{margin:0 0 8px;font-size:34px}.sub{margin:0;color:#9da6b8}.status{padding:9px 13px;border:1px solid #303746;border-radius:999px;background:#11151e;color:#aeb7c9;white-space:nowrap}.status.ok{color:#9df0bb;border-color:#285b3d}.status.err{color:#ff9d9d;border-color:#6b3030}.card{background:#11151e;border:1px solid #292f3d;border-radius:18px;padding:20px;margin:14px 0;box-shadow:0 10px 30px #0004}.card h2{margin:0 0 12px;font-size:19px}.hint{color:#9da6b8;font-size:14px;line-height:1.5}.row{display:flex;gap:10px;flex-wrap:wrap}button,input,textarea,select{font:inherit}button{border:1px solid #394254;background:#1a202c;color:#fff;padding:11px 15px;border-radius:10px;cursor:pointer}button:hover{background:#232b3a}button:disabled{opacity:.45;cursor:not-allowed}.primary{background:#6d45d8;border-color:#825de5}.primary:hover{background:#7950ea}.danger{border-color:#71383f}.log,.transcript{margin-top:13px;padding:13px;border-radius:10px;background:#0a0d13;border:1px solid #252b36;min-height:44px;color:#cbd3e2}.transcript{font-size:17px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.grid label{display:grid;gap:7px;color:#aeb7c9;font-size:14px}select,textarea,input[type=file]{width:100%;padding:10px;background:#0b0f16;color:#eee;border:1px solid #303746;border-radius:10px}textarea{min-height:90px;resize:vertical}@media(max-width:650px){header{display:block}.status{display:inline-block;margin-top:14px}.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main>
+<header><div><h1>VoiceChanger</h1><p class="sub">Chatterbox + VoxShot voice cloning · continuous speech recognition · cloned-voice TTS</p></div><div id="status" class="status">Ready</div></header>
+<section class="card">
+<h2>1. Clone your voice</h2>
+<input id="voiceFile" type="file" accept=".wav,audio/wav,audio/x-wav,audio/wave">
+<p class="hint">Choose a clean 5–15 second WAV sample. The Chatterbox/VoxShot model runs in the browser when supported.</p>
+<div class="row"><button id="clone" class="primary">Clone WAV voice</button><button id="clear">Clear clone</button></div>
+<div id="cloneStatus" class="log">No voice clone loaded.</div>
+</section>
+<section class="card">
+<h2>2. Continuous voice changer</h2>
+<p class="hint">Start once, then talk normally. Browser STT continuously recognizes finalized phrases and sends them to VoxShot TTS. Each phrase is played back using your cloned voice.</p>
+<div class="row"><button id="start" class="primary">Start VoiceChanger</button><button id="stop" class="danger">Stop</button></div>
+<div id="transcript" class="transcript">Waiting for speech.</div>
+</section>
+<section class="card">
+<h2>3. Test cloned TTS</h2>
+<textarea id="text">Hello! This is my cloned voice.</textarea>
+<div class="row"><button id="test" class="primary">Speak test</button></div>
+</section>
+<section class="card">
+<h2>Microphone & output</h2>
+<div class="grid">
+<label>Microphone<select id="inputDevice"><option value="">Default microphone</option></select></label>
+<label>Voice output<select id="outputDevice"><option value="default">Default Windows output</option></select></label>
+</div>
+<div class="row" style="margin-top:12px"><button id="refresh">Refresh devices</button></div>
+<p id="routing" class="hint">For VB-CABLE, choose CABLE Input as the output and CABLE Output as the microphone in the target app.</p>
+</section>
+<section class="card">
+<h2>Engine</h2>
+<div id="engineLog" class="log">VoxShot is not loaded yet. Loading starts when you clone your voice.</div>
+<p class="hint">STT uses the browser's continuous SpeechRecognition API. Voice cloning and TTS use Chatterbox through VoxShot.</p>
+</section>
+<audio id="player" preload="auto"></audio>
+</main>
+<script type="module">
+const $=id=>document.getElementById(id);
+const status=$('status'),cloneStatus=$('cloneStatus'),engineLog=$('engineLog'),voiceFile=$('voiceFile'),transcript=$('transcript'),player=$('player');
+let engine=null,enginePromise=null,cloned=false,listening=false,recognition=null,speaking=false,queue=[],outputId='default';
+function setStatus(t,k=''){status.textContent=t;status.className='status '+k}
+function showError(e){console.error(e);const m=e?.message||String(e);setStatus(m,'err');engineLog.textContent=m}
+async function getEngine(){
+  if(engine)return engine;if(enginePromise)return enginePromise;
+  enginePromise=(async()=>{
+    setStatus('Loading VoxShot…');engineLog.textContent='Loading VoxShot + Chatterbox…';
+    // Bundle the module entry so the browser does not fail on an unbundled dynamic import.
+    const mod=await import('https://esm.sh/gh/m96-chan/voxshot@main?bundle');
+    if(!mod.VoxShot||!mod.ChatterboxEngine)throw new Error('VoxShot/Chatterbox exports were not found.');
+    setStatus('Starting Chatterbox…');
+    const cb=new mod.ChatterboxEngine({requiresGpu:false,stallTimeoutMs:300000});
+    engine=await mod.VoxShot.create({engine:cb,device:'auto',minChunkLength:20});
+    engineLog.textContent='Chatterbox + VoxShot ready.';setStatus('Engine ready.','ok');return engine;
+  })().catch(e=>{engine=null;throw e}).finally(()=>enginePromise=null);
+  return enginePromise;
+}
+async function cloneVoice(){
+  const f=voiceFile.files?.[0];if(!f){showError(new Error('Choose a WAV voice sample first.'));return}
+  if(!/\.wav$/i.test(f.name)&&!/^audio\/(wav|x-wav|wave)$/i.test(f.type)){showError(new Error('Please choose a WAV file.'));return}
+  if(f.size<10000){showError(new Error('The WAV sample is too small. Use a clean 5–15 second recording.'));return}
+  $('clone').disabled=true;cloned=false;cloneStatus.textContent='Loading voice engine…';
+  try{const e=await getEngine();cloneStatus.textContent='Cloning voice…';setStatus('Cloning your voice…');await e.cloneVoice(f);cloned=true;cloneStatus.textContent='Voice clone ready: '+f.name;setStatus('Voice clone ready!','ok')}
+  catch(e){cloned=false;cloneStatus.textContent='Clone failed.';showError(e)}finally{$('clone').disabled=false}
+}
+async function speak(sentence){
+  sentence=sentence.trim().slice(0,180);if(!sentence||!cloned)return;
+  const e=await getEngine();speaking=true;
+  try{setStatus('Playing cloned voice…');const audio=await e.speak(sentence);if(outputId!=='default'&&player.setSinkId)await player.setSinkId(outputId);if(audio instanceof HTMLAudioElement){await audio.play()}else if(audio?.play){await audio.play()}else{throw new Error('VoxShot returned an audio object that cannot be played.')}}finally{speaking=false}
+}
+async function drain(){if(speaking)return;while(queue.length&&listening){const phrase=queue.shift();try{await speak(phrase)}catch(e){showError(e)}}if(listening)setStatus('Listening — speak naturally.','ok')}
+function makeRecognition(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return null;const r=new SR();
+  r.lang='en-US';r.continuous=true;r.interimResults=true;r.maxAlternatives=1;
+  r.onstart=()=>setStatus('Listening — speak naturally.','ok');
+  r.onresult=e=>{let interim='',finalText='';for(let i=e.resultIndex;i<e.results.length;i++){const s=e.results[i][0]?.transcript||'';if(e.results[i].isFinal)finalText+=s;else interim+=s}if(finalText.trim()){transcript.textContent=finalText.trim();queue.push(finalText.trim());void drain()}else if(interim.trim())transcript.textContent=interim.trim()};
+  r.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed'){listening=false;setStatus('Microphone/speech recognition permission was blocked.','err')}else if(!['aborted','no-speech'].includes(e.error))setStatus('Speech recognition: '+e.error,'err')};
+  r.onend=()=>{if(listening)setTimeout(()=>{try{r.start()}catch{}},200)};return r;
+}
+async function start(){try{if(!cloned)throw new Error('Clone your WAV voice first.');if(!recognition)recognition=makeRecognition();if(!recognition)throw new Error('Use a current Chrome or Edge browser for continuous speech recognition.');listening=true;queue=[];transcript.textContent='Listening…';try{recognition.start()}catch{}}catch(e){showError(e)}}
+function stop(){listening=false;queue=[];try{recognition?.abort()}catch{}setStatus(cloned?'Voice clone ready.':'Ready.');transcript.textContent='Stopped.'}
+async function test(){try{if(!cloned)throw new Error('Clone your WAV voice first.');await speak($('text').value);if(!listening)setStatus('Test complete.','ok')}catch(e){showError(e)}}
+async function refreshDevices(){if(!navigator.mediaDevices?.enumerateDevices)return;const ds=await navigator.mediaDevices.enumerateDevices();const inp=$('inputDevice'),out=$('outputDevice');inp.innerHTML='<option value="">Default microphone</option>';out.innerHTML='<option value="default">Default Windows output</option>';for(const d of ds){if(d.kind==='audioinput')inp.add(new Option(d.label||'Microphone',d.deviceId));if(d.kind==='audiooutput')out.add(new Option(/cable input|vb-audio cable|virtual audio cable/i.test(d.label||'')?'VB-CABLE — CABLE Input':(d.label||'Audio output'),d.deviceId))}if([...out.options].some(o=>o.value===outputId))out.value=outputId;$('routing').textContent='Voice output → '+(out.selectedOptions[0]?.text||'Default Windows output')+'.'}
+voiceFile.onchange=()=>{const f=voiceFile.files?.[0];cloneStatus.textContent=f?'Selected: '+f.name:'No voice clone loaded.'};$('clone').onclick=cloneVoice;$('clear').onclick=()=>{stop();cloned=false;voiceFile.value='';cloneStatus.textContent='No voice clone loaded.';setStatus('Voice clone cleared.')};$('start').onclick=start;$('stop').onclick=stop;$('test').onclick=test;$('refresh').onclick=()=>refreshDevices().catch(showError);$('outputDevice').onchange=e=>{outputId=e.target.value||'default';$('routing').textContent='Voice output → '+e.target.selectedOptions[0].text+'.'};window.addEventListener('error',e=>showError(e.error||new Error(e.message)));window.addEventListener('unhandledrejection',e=>showError(e.reason||new Error('Unhandled promise rejection')));refreshDevices().catch(()=>{});
+</script>
+</body>
+</html>
