@@ -63,6 +63,70 @@ function playNativeWav(base64) {
   return true;
 }
 
+function driverRoot() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'driver')
+    : path.join(__dirname, 'driver');
+}
+
+function driverScript() {
+  const file = path.join(driverRoot(), 'install-voicechanger-driver.ps1');
+  if (!fs.existsSync(file)) throw new Error(`VoiceChanger driver installer is missing: ${file}`);
+  return file;
+}
+
+function runPowerShellScript(action, elevated = false) {
+  const script = driverScript();
+  const escapedScript = script.replace(/'/g, "''");
+  return new Promise((resolve, reject) => {
+    let command;
+    if (elevated) {
+      command = `$p = Start-Process -FilePath 'powershell.exe' -Verb RunAs -Wait -PassThru -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','${escapedScript}','${action}'; [Console]::WriteLine($p.ExitCode)`;
+    } else {
+      command = `& powershell.exe -NoProfile -ExecutionPolicy Bypass -File '${escapedScript}' '${action}'; exit $LASTEXITCODE`;
+    }
+
+    const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', command], {
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (data) => { stdout += data.toString(); });
+    child.stderr.on('data', (data) => { stderr += data.toString(); });
+    child.on('error', reject);
+    child.on('exit', (code) => {
+      const text = `${stdout}\n${stderr}`.trim();
+      if (code === 0) return resolve({ ok: true, output: text });
+      resolve({ ok: false, output: text || `PowerShell exited with code ${code}`, code });
+    });
+  });
+}
+
+async function getDriverStatus() {
+  if (process.platform !== 'win32') return { installed: false, supported: false, output: 'Windows is required.' };
+  try {
+    const result = await runPowerShellScript('status', false);
+    return { supported: true, installed: result.ok, output: result.output };
+  } catch (error) {
+    return { supported: true, installed: false, output: error.message };
+  }
+}
+
+async function installDriver() {
+  if (process.platform !== 'win32') throw new Error('The VoiceChanger virtual audio driver is Windows-only.');
+  const result = await runPowerShellScript('install', true);
+  if (!result.ok) throw new Error(result.output || 'Driver installation failed.');
+  return result;
+}
+
+async function uninstallDriver() {
+  if (process.platform !== 'win32') throw new Error('The VoiceChanger virtual audio driver is Windows-only.');
+  const result = await runPowerShellScript('uninstall', true);
+  if (!result.ok) throw new Error(result.output || 'Driver removal failed.');
+  return result;
+}
+
 function webRoot() {
   return app.isPackaged
     ? path.join(process.resourcesPath, 'web')
@@ -133,6 +197,9 @@ async function createWindow() {
 
 ipcMain.handle('native-audio:play-wav', (_event, base64) => playNativeWav(base64));
 ipcMain.handle('native-audio:stop', () => { stopNativePlayer(); return true; });
+ipcMain.handle('voicechanger-driver:status', () => getDriverStatus());
+ipcMain.handle('voicechanger-driver:install', () => installDriver());
+ipcMain.handle('voicechanger-driver:uninstall', () => uninstallDriver());
 
 app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
