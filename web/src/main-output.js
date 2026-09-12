@@ -191,29 +191,69 @@ function getInterimDelta(previous, current) {
   if (common === a.length && b.length >= a.length) return b.slice(common).join(" ");
   return b.slice(Math.max(0, common)).join(" ");
 }
+
+function queueCompletedPhrases() {
+  const sentenceMatch = conversionBuffer.match(/^(.+?[.!?…]+)(?:\s+|$)/);
+  if (!sentenceMatch) return false;
+  const phrase = sentenceMatch[1].trim();
+  conversionBuffer = conversionBuffer.slice(sentenceMatch[0].length).trim();
+  if (phrase) conversionQueue.push(phrase);
+  return true;
+}
+
+function flushConversionBuffer(reason = "pause") {
+  if (!conversionBuffer.trim()) return;
+  const phrase = conversionBuffer.trim();
+  conversionBuffer = "";
+  conversionQueue.push(phrase);
+  log(`TTS phrase queued (${reason}).`);
+  void drainConversionQueue();
+}
+
+function armConversionPauseTimer() {
+  if (conversionTimer) clearTimeout(conversionTimer);
+  if (!conversionBuffer.trim()) { conversionTimer = null; return; }
+  conversionTimer = setTimeout(() => {
+    conversionTimer = null;
+    if (!running || !conversionBuffer.trim()) return;
+    // Short silence means the speaker actually paused. Do not split on word count.
+    flushConversionBuffer("short pause");
+  }, 450);
+}
+
 function queueConversionText(text, final = false) {
   if (!running || !text) return;
-  const delta = getInterimDelta(lastInterimText, text); lastInterimText = text;
+  const delta = getInterimDelta(lastInterimText, text);
+  lastInterimText = text;
   if (delta) conversionBuffer = `${conversionBuffer} ${delta}`.trim();
-  if (conversionTimer) { clearTimeout(conversionTimer); conversionTimer = null; }
-  const words = conversionBuffer.split(/\s+/).filter(Boolean);
-  if (words.length >= 3 || final) {
-    const count = final ? words.length : Math.min(4, words.length); const chunk = words.splice(0, count).join(" "); conversionBuffer = words.join(" ");
-    if (chunk) { conversionQueue.push(chunk); void drainConversionQueue(); }
-  } else if (words.length) {
-    conversionTimer = setTimeout(() => {
-      conversionTimer = null; const pending = conversionBuffer.split(/\s+/).filter(Boolean); if (!pending.length) return;
-      const count = Math.min(3, pending.length); const chunk = pending.splice(0, count).join(" "); conversionBuffer = pending.join(" ");
-      if (chunk) { conversionQueue.push(chunk); void drainConversionQueue(); }
-    }, 120);
+
+  // Punctuation is the fastest safe boundary. Queue complete sentences immediately,
+  // while leaving the unfinished sentence intact so words are never chopped off.
+  while (queueCompletedPhrases()) {}
+  if (conversionQueue.length) void drainConversionQueue();
+
+  if (final) {
+    lastInterimText = "";
+    if (conversionTimer) { clearTimeout(conversionTimer); conversionTimer = null; }
+    // Deepgram final means this transcript segment is complete. Flush it now instead
+    // of waiting for another endpoint/utterance timeout.
+    flushConversionBuffer("Deepgram final");
+    return;
   }
-  if (final) lastInterimText = "";
+
+  armConversionPauseTimer();
 }
+
 async function drainConversionQueue() {
   if (conversionWorker || !running || !conversionQueue.length) return;
-  conversionWorker = true; const generation = conversionGeneration;
-  try { while (conversionQueue.length && running && generation === conversionGeneration) { const chunk = conversionQueue.shift(); await speak(chunk, "conversion"); } }
-  finally { if (generation === conversionGeneration) conversionWorker = false; }
+  conversionWorker = true;
+  const generation = conversionGeneration;
+  try {
+    while (conversionQueue.length && running && generation === conversionGeneration) {
+      const chunk = conversionQueue.shift();
+      await speak(chunk, "conversion");
+    }
+  } finally { if (generation === conversionGeneration) conversionWorker = false; }
 }
 
 function downsample(data, from, to = 16000) {
@@ -257,7 +297,9 @@ async function startVC(isReconnect = false) {
   await ensureOutputAudioContext();
   stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   const key = apiKey();
-  const url = "wss://api.deepgram.com/v1/listen?model=nova-3&language=en-US&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&smart_format=true&endpointing=300&utterance_end_ms=1000";
+  // Keep Deepgram responsive, but do not rely on endpointing for the first TTS audio.
+  // The local 450ms pause timer and punctuation boundary handle low-latency phrase starts.
+  const url = "wss://api.deepgram.com/v1/listen?model=nova-3&language=en-US&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&smart_format=true&endpointing=500&utterance_end_ms=800";
   const ws = new WebSocket(url, ["token", key]); socket = ws; ws.binaryType = "arraybuffer";
   ws.onopen = () => {
     if (ws !== socket || manualStop || generation !== reconnectGeneration) { try { ws.close(); } catch {} return; }
@@ -266,7 +308,7 @@ async function startVC(isReconnect = false) {
     const silent = audioContext.createGain(); silent.gain.value = 0; sourceNode.connect(processor); processor.connect(silent); silent.connect(audioContext.destination);
     processor.onaudioprocess = (event) => { if (!running || ws.readyState !== WebSocket.OPEN) return; try { ws.send(pcm16(downsample(event.inputBuffer.getChannelData(0), audioContext.sampleRate)).buffer); } catch {} };
     running = true; $("micDot")?.classList.add("live"); $("startVC").disabled = true; $("stopVC").disabled = false;
-    $("sttInfo").textContent = "LIVE VOICE CONVERSION — your speech is converted to the cloned voice."; status("Live voice conversion • selected output • cutout protection enabled", "ok"); log("Deepgram connected — output-routed live conversion active.");
+    $("sttInfo").textContent = "LIVE VOICE CONVERSION — your speech is converted to the cloned voice."; status("Live voice conversion • low-latency sentence buffering • selected output", "ok"); log("Deepgram connected — low-latency cloned-voice conversion active.");
   };
   ws.onmessage = (event) => { let data; try { data = JSON.parse(event.data); } catch { return; } if (data.type !== "Results") return; const alt = data.channel?.alternatives?.[0]; const text = alt?.transcript?.trim(); if (!text) return; $("transcript").textContent = text; if (running) { queueConversionText(text, !!data.is_final); if (data.is_final) log(`YOU: ${text}`); } };
   ws.onerror = () => log("Deepgram WebSocket error; reconnecting automatically.");
