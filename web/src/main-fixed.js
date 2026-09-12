@@ -14,11 +14,12 @@ let sttSocket = null;
 let sttRunning = false;
 let echoQueue = Promise.resolve();
 
-// Pocket TTS v2 models live inside the per-language bundle.
+// pocket-tts-js expects the BASE `onnx/` folder here. It appends
+// the selected language bundle (`english_2026-04`) itself.
 const MODEL_SOURCES = [
-  "https://huggingface.co/vlapky/pocket-tts-onnx/resolve/main/onnx/english_2026-04",
-  "https://huggingface.co/KevinAHM/pocket-tts-web/resolve/main/onnx/english_2026-04",
-  "https://hf-mirror.com/vlapky/pocket-tts-onnx/resolve/main/onnx/english_2026-04"
+  "https://huggingface.co/vlapky/pocket-tts-onnx/resolve/main/onnx",
+  "https://hf-mirror.com/vlapky/pocket-tts-onnx/resolve/main/onnx",
+  "https://huggingface.co/KevinAHM/pocket-tts-web/resolve/main/onnx"
 ];
 
 function log(message) {
@@ -85,14 +86,14 @@ async function loadModel() {
     const base = MODEL_SOURCES[i];
     try {
       status(`Downloading Pocket TTS bundle ${i + 1}/${MODEL_SOURCES.length}…`, "working");
-      log(`Trying Pocket TTS v2 bundle: ${base}`);
+      log(`Trying Pocket TTS source: ${base}/english_2026-04`);
       tts?.destroy?.();
       const candidate = new PocketTTS({
         language: "english_2026-04",
         quantized: true,
         voiceCloning: true,
         cache: true,
-        cacheName: "voicechanger-pocket-tts-v4",
+        cacheName: "voicechanger-pocket-tts-v5",
         maxThreads: Math.min(4, navigator.hardwareConcurrency || 2),
         modelBaseUrl: base,
         ortBaseUrl: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.0/dist/"
@@ -101,7 +102,7 @@ async function loadModel() {
         if (p?.total) {
           const pct = Math.max(1, Math.min(100, Math.round((p.loaded / p.total) * 100)));
           $("progressBar").style.width = `${pct}%`;
-          if (pct % 10 === 0 || pct === 100) log(`${p.label || "model"}: ${pct}% (${mb(p.total)})`);
+          if (pct % 10 === 0 || pct === 100) log(`${p.label || "model"}: ${pct}% (${mb(p.total)})${p.fromCache ? " [cache]" : ""}`);
         } else if (p?.status) log(`Model: ${p.status}`);
       });
       tts = candidate;
