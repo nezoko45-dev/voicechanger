@@ -108,8 +108,11 @@ function runPowerShellScript(action, elevated = false) {
     child.on('error', reject);
     child.on('exit', (code) => {
       const text = `${stdout}\n${stderr}`.trim();
-      if (code === 0) return resolve({ ok: true, output: text, ...classifyDriverOutput(text) });
-      resolve({ ok: false, output: text || `PowerShell exited with code ${code}`, code, ...classifyDriverOutput(text) });
+      const status = classifyDriverOutput(text);
+      if (code === 0 || status.reboot || status.installed || status.staged) {
+        return resolve({ ok: true, output: text, code: code ?? 0, ...status });
+      }
+      resolve({ ok: false, output: text || `PowerShell exited with code ${code}`, code, ...status });
     });
   });
 }
@@ -134,7 +137,10 @@ async function getDriverStatus() {
 async function installDriver() {
   if (process.platform !== 'win32') throw new Error('The VoiceChanger virtual audio driver is Windows-only.');
   const result = await runPowerShellScript('install', true);
-  if (!result.ok && !result.staged && !result.reboot) throw new Error(result.output || 'Driver installation failed.');
+  if (!result.ok && !result.staged && !result.reboot && !result.installed) {
+    const detail = result.output ? `\n\n${result.output}` : ` (PowerShell exited with code ${result.code ?? 1})`;
+    throw new Error(`Driver installation failed.${detail}`);
+  }
   return result;
 }
 
