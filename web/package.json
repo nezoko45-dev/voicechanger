@@ -1,12 +1,10 @@
 {
-  "name": "voicechanger-browser",
-  "version": "1.0.0",
+  "name": "desktop-voicechanger-ui",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "build": "vite build"
   },
   "dependencies": {
     "pocket-tts-js": "^0.1.0"
