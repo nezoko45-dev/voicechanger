@@ -1,0 +1,43 @@
+name: Build VoiceChanger Direct
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build-windows-direct:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package.json
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm install
+
+      - name: Build web UI
+        working-directory: web
+        run: npm run build
+
+      - name: Install Direct desktop dependencies
+        working-directory: desktop-direct
+        run: npm install
+
+      - name: Build VoiceChanger Direct EXE
+        working-directory: desktop-direct
+        run: npm run build
+
+      - name: Upload Direct EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceChanger-Direct-Windows
+          path: desktop-direct/dist/*.exe
+          if-no-files-found: error
