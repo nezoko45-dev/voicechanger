@@ -75,6 +75,15 @@ function driverScript() {
   return file;
 }
 
+function classifyDriverOutput(output) {
+  const text = String(output || '');
+  return {
+    installed: /VC_STATUS=installed/i.test(text),
+    staged: /VC_STATUS=staged/i.test(text),
+    missing: /VC_STATUS=missing/i.test(text),
+  };
+}
+
 function runPowerShellScript(action, elevated = false) {
   const script = driverScript();
   const escapedScript = script.replace(/'/g, "''");
@@ -97,26 +106,31 @@ function runPowerShellScript(action, elevated = false) {
     child.on('error', reject);
     child.on('exit', (code) => {
       const text = `${stdout}\n${stderr}`.trim();
-      if (code === 0) return resolve({ ok: true, output: text });
-      resolve({ ok: false, output: text || `PowerShell exited with code ${code}`, code });
+      if (code === 0) return resolve({ ok: true, output: text, ...classifyDriverOutput(text) });
+      resolve({ ok: false, output: text || `PowerShell exited with code ${code}`, code, ...classifyDriverOutput(text) });
     });
   });
 }
 
 async function getDriverStatus() {
-  if (process.platform !== 'win32') return { installed: false, supported: false, output: 'Windows is required.' };
+  if (process.platform !== 'win32') return { supported: false, installed: false, staged: false, output: 'Windows is required.' };
   try {
     const result = await runPowerShellScript('status', false);
-    return { supported: true, installed: result.ok, output: result.output };
+    return {
+      supported: true,
+      installed: !!result.installed,
+      staged: !!result.staged,
+      output: result.output
+    };
   } catch (error) {
-    return { supported: true, installed: false, output: error.message };
+    return { supported: true, installed: false, staged: false, output: error.message };
   }
 }
 
 async function installDriver() {
   if (process.platform !== 'win32') throw new Error('The VoiceChanger virtual audio driver is Windows-only.');
   const result = await runPowerShellScript('install', true);
-  if (!result.ok) throw new Error(result.output || 'Driver installation failed.');
+  if (!result.ok && !result.staged) throw new Error(result.output || 'Driver installation failed.');
   return result;
 }
 
