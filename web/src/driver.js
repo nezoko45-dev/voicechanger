@@ -58,10 +58,15 @@ function addDriverCard() {
     setDriverStatus('Installing the VoiceChanger virtual audio driver…', 'working');
     try {
       const result = await window.nativeAudio?.driverInstall?.();
-      if (!result?.ok && !result?.staged) throw new Error(result?.output || 'Driver installation failed.');
+      if (!result?.ok && !result?.staged && !result?.reboot) throw new Error(result?.output || 'Driver installation failed.');
       appendDriverLog(result.output);
+      if (result.reboot) {
+        setDriverStatus('⚠ Windows Test Signing was enabled. Restart Windows once, then click Install VoiceChanger Driver again.', 'working');
+        appendDriverLog('RESTART REQUIRED: Windows Test Signing has been enabled so the virtual audio driver can start without Code 52.');
+        return;
+      }
       if (result.staged && !result.installed) {
-        setDriverStatus('Driver package installed. Windows is opening Add Legacy Hardware to create the VoiceChanger speaker/microphone.', 'working');
+        setDriverStatus('Driver package installed, but Windows has not exposed the virtual audio endpoints yet. Refresh after Windows finishes device setup.', 'working');
       } else {
         setDriverStatus('✓ VoiceChanger Driver installed. Registering its Windows audio endpoints…', 'working');
       }
@@ -133,8 +138,16 @@ async function checkDriverStatus() {
       if (!output) setDriverStatus('✓ VoiceChanger Driver is installed, but Windows has not exposed its virtual speaker yet.', 'working');
       return;
     }
+    if (result.reboot) {
+      setDriverStatus('⚠ Windows restart is required to finish enabling the VoiceChanger driver.', 'working');
+      return;
+    }
+    if (result.testsigningOff) {
+      setDriverStatus('⚠ VoiceChanger Driver needs one Windows restart to enable its required driver mode. Click Install Driver to prepare it.', 'working');
+      return;
+    }
     if (result.staged) {
-      setDriverStatus('Driver package is installed, but the virtual audio endpoints are not created yet. Use the Windows Add Legacy Hardware wizard that the installer opened.', 'working');
+      setDriverStatus('Driver package is installed, but the virtual audio endpoints are not created yet. Refresh Driver Status and try Install Driver again.', 'working');
       return;
     }
     setDriverStatus('VoiceChanger virtual audio driver is not installed.', 'bad');
