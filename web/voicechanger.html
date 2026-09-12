@@ -3,51 +3,60 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VoiceChanger Studio</title>
+<title>VoiceChanger Studio — Browser AI</title>
+<script src="./coi-serviceworker.js"></script>
 <style>
-:root{font-family:Inter,system-ui,sans-serif;color:#f4f4f5;background:#09090b}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at top,#25202d 0,#09090b 48%);display:flex;justify-content:center;padding:32px 16px}.app{width:min(900px,100%)}header{margin-bottom:22px}h1{font-size:38px;margin:0 0 6px}p{color:#a1a1aa}.card{background:rgba(24,24,27,.88);border:1px solid #3f3f46;border-radius:18px;padding:22px;margin:14px 0;box-shadow:0 15px 40px #0005}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}label{display:block;color:#d4d4d8;margin:10px 0 6px}input[type=file],textarea,select{width:100%;background:#18181b;color:#fff;border:1px solid #52525b;border-radius:10px;padding:11px;font:inherit}textarea{min-height:110px;resize:vertical}button{border:0;border-radius:10px;padding:12px 18px;background:#7c3aed;color:#fff;font-weight:700;cursor:pointer}button.secondary{background:#27272a}button.danger{background:#dc2626}button:disabled{opacity:.45;cursor:not-allowed}.status{padding:10px 12px;border-radius:10px;background:#18181b;color:#a1a1aa}.ok{color:#86efac}.bad{color:#fca5a5}.meter{height:8px;background:#27272a;border-radius:99px;overflow:hidden;margin-top:10px}.meter i{display:block;height:100%;width:0;background:#a78bfa;transition:width .08s}.log{white-space:pre-wrap;max-height:220px;overflow:auto;background:#050505;border-radius:10px;padding:12px;color:#d4d4d8;font-family:ui-monospace,monospace;font-size:13px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:650px){.grid{grid-template-columns:1fr}h1{font-size:30px}}
+:root{font-family:Inter,system-ui,-apple-system,sans-serif;color:#f5f5f5;background:#08080b}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% -10%,#31264b 0,#0b0a0f 48%,#060609 100%);padding:28px 14px}.app{width:min(940px,100%);margin:auto}header{margin-bottom:20px}h1{font-size:40px;margin:0 0 6px}h2{margin:0 0 8px;font-size:21px}p{color:#a1a1aa;line-height:1.5}.tag{display:inline-block;padding:5px 9px;border-radius:999px;background:#221936;color:#c4b5fd;font-size:12px;font-weight:700}.card{background:rgba(20,20,24,.9);border:1px solid #393943;border-radius:18px;padding:21px;margin:14px 0;box-shadow:0 16px 45px #0006}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}label{display:block;color:#d4d4d8;margin:10px 0 7px}input[type=file],textarea,select{width:100%;background:#121217;color:#fff;border:1px solid #4b4b56;border-radius:11px;padding:11px;font:inherit}textarea{min-height:115px;resize:vertical}button{border:0;border-radius:11px;padding:12px 17px;background:#7c3aed;color:#fff;font-weight:800;cursor:pointer}button.secondary{background:#292930}button.danger{background:#dc2626}button:disabled{opacity:.4;cursor:not-allowed}.status{padding:9px 12px;border-radius:10px;background:#15151a;color:#aaa}.ok{color:#86efac}.bad{color:#fca5a5}.working{color:#fcd34d}.progress{height:7px;background:#292930;border-radius:99px;overflow:hidden;margin-top:13px}.progress i{display:block;height:100%;width:0;background:#a78bfa;transition:width .2s}.small{font-size:13px}.log{white-space:pre-wrap;max-height:260px;overflow:auto;background:#050507;border-radius:11px;padding:13px;color:#d4d4d8;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}.notice{border-left:3px solid #8b5cf6;padding:10px 13px;background:#15121d;border-radius:8px;color:#c4b5fd}.feature{display:flex;gap:9px;flex-wrap:wrap;margin-top:10px}.feature span{padding:7px 10px;background:#18181e;border:1px solid #30303a;border-radius:9px;font-size:12px;color:#d4d4d8}@media(max-width:680px){.grid{grid-template-columns:1fr}h1{font-size:31px}}
 </style>
 </head>
 <body>
 <main class="app">
-<header><h1>🎙️ VoiceChanger Studio</h1><p>Local browser interface for WAV voice cloning and speech generation. Your voice stays on your computer.</p></header>
+<header>
+  <span class="tag">100% browser inference</span>
+  <h1>🎙️ VoiceChanger Studio</h1>
+  <p>Voice cloning and TTS run inside your browser. No Python server, no batch file, no Vercel backend, and no API key.</p>
+  <div class="feature"><span>🧠 Pocket TTS</span><span>⚡ Web Worker</span><span>📁 WAV cloning</span><span>💾 Browser cache</span><span>🎤 Browser STT</span></div>
+</header>
+
 <section class="card">
-<h2>1. Clone your voice</h2>
-<p>Choose a clean WAV recording. It becomes the reference voice used by the local TTS engine.</p>
-<input id="voice" type="file" accept=".wav,audio/wav">
-<div class="row"><button id="clone">Use WAV as voice</button><span id="cloneState" class="status">No voice loaded</span></div>
+  <h2>1. Load the browser AI</h2>
+  <p>The first load downloads the quantized Pocket TTS model from Hugging Face. It is cached by your browser for later sessions.</p>
+  <div class="row"><button id="loadModel">🧠 Load Browser Model</button><span id="modelInfo" class="status">Not loaded</span></div>
+  <div class="progress"><i id="progressBar"></i></div>
+  <p id="secureInfo" class="small"></p>
 </section>
+
 <section class="card">
-<h2>2. Generate speech</h2>
-<textarea id="text">Hello! This is my cloned voice.</textarea>
-<div class="row"><button id="speak" disabled>🔊 Generate &amp; Play</button><audio id="player" controls></audio></div>
+  <h2>2. Clone a voice</h2>
+  <p>Choose a clean WAV recording. The audio is decoded in your browser and converted into a voice reference locally.</p>
+  <div class="grid">
+    <div><label>Voice WAV</label><input id="cloneFile" type="file" accept=".wav,audio/wav" disabled></div>
+    <div><label>Or use a built-in voice</label><select id="builtinVoice" disabled></select></div>
+  </div>
+  <div class="row"><button id="loadBuiltin" class="secondary" disabled>Use Built-in Voice</button><span id="voiceStatus" class="status">No voice selected</span></div>
 </section>
+
 <section class="card">
-<h2>3. Browser VoiceChanger</h2>
-<p>Talk into your microphone. A short silence ends each phrase, then the local STT/TTS pipeline processes it.</p>
-<div class="grid"><div><label>Microphone</label><select id="mic"></select></div><div><label>Output</label><select id="out"></select></div></div>
-<div class="meter"><i id="level"></i></div>
-<div class="row" style="margin-top:14px"><button id="start" disabled>🎤 Start</button><button id="stop" class="danger" disabled>■ Stop</button></div>
-<p id="state" class="status">Connecting to local engine...</p>
+  <h2>3. Generate speech</h2>
+  <textarea id="text">Hello! This voice is being generated directly inside my browser.</textarea>
+  <div class="row"><button id="generate" disabled>🔊 Generate &amp; Play</button><button id="stop" class="danger" disabled>■ Stop</button><button id="download" class="secondary" disabled>⬇ Download WAV</button></div>
 </section>
-<section class="card"><h2>Activity</h2><div id="log" class="log">Waiting...</div></section>
+
+<section class="card">
+  <h2>4. Browser VoiceChanger</h2>
+  <p>Start listening, speak normally, and browser speech recognition turns each completed phrase into cloned-voice speech. Recognition pauses while the cloned voice plays to reduce feedback.</p>
+  <div class="row"><button id="startVC" disabled>🎤 Start VoiceChanger</button><button id="stopVC" class="danger" disabled>■ Stop</button><span id="sttInfo" class="status">Checking speech recognition…</span></div>
+</section>
+
+<section class="card">
+  <h2>Activity</h2>
+  <div id="log" class="log">Waiting…</div>
+</section>
+
+<section class="card notice">
+  <strong>Browser-only architecture:</strong> the TTS model and voice-cloning encoder execute client-side. The model assets are downloaded once and cached locally. Browser SpeechRecognition availability varies by browser.
+</section>
 </main>
-<script>
-const $=id=>document.getElementById(id);let stream=null,audioCtx=null,analyser=null,sourceNode=null,raf=0,rec=null,running=false,processing=false,chunks=[],phraseTimer=null,lastVoice=0;const SILENCE=520,MIN_PHRASE=220,MAX_PHRASE=7000,THRESHOLD=.018;
-function log(s){$('log').textContent=s+'\n'+$('log').textContent}
-async function api(url,opt={}){const r=await fetch(url,opt);if(!r.ok){let e='Request failed';try{e=(await r.json()).error||e}catch{}throw Error(e)}return r}
-async function status(){try{const s=await(await api('/api/status')).json();$('state').textContent=`Local engine online • TTS ${s.tts} • STT ${s.stt} • CUDA ${s.cuda?'ON':'OFF'} • Voice ${s.voice_cloned?'READY':'NOT LOADED'}`;$('state').className='status ok';if(s.voice_cloned){$('speak').disabled=false;$('start').disabled=false}}catch(e){$('state').textContent='Local engine unavailable: '+e.message;$('state').className='status bad'}}
-async function devices(){try{const ds=await navigator.mediaDevices.enumerateDevices();$('mic').innerHTML='';$('out').innerHTML='';ds.filter(x=>x.kind==='audioinput').forEach(x=>$('mic').add(new Option(x.label||'Microphone',x.deviceId)));ds.filter(x=>x.kind==='audiooutput').forEach(x=>$('out').add(new Option(x.label||'Output',x.deviceId)))}catch(e){log('Device error: '+e.message)}}
-$('clone').onclick=async()=>{const f=$('voice').files[0];if(!f){log('Choose a WAV file first.');return}const b=$('clone');b.disabled=true;$('cloneState').textContent='Loading WAV...';try{const fd=new FormData();fd.append('audio',f,f.name);const j=await(await api('/api/clone',{method:'POST',body:fd})).json();if(j.error)throw Error(j.error);$('cloneState').textContent='Voice reference ready';$('cloneState').className='status ok';$('speak').disabled=false;$('start').disabled=false;log('Voice loaded: '+f.name)}catch(e){$('cloneState').textContent=e.message;$('cloneState').className='status bad';log('Clone error: '+e.message)}finally{b.disabled=false}};
-async function speak(text){const fd=new FormData();fd.append('text',text);const r=await api('/api/tts',{method:'POST',body:fd});const url=URL.createObjectURL(await r.blob());const p=$('player');p.src=url;if(p.setSinkId&&$('out').value)await p.setSinkId($('out').value);await p.play();return new Promise(resolve=>p.onended=()=>{URL.revokeObjectURL(url);resolve()})}
-$('speak').onclick=async()=>{const text=$('text').value.trim();if(!text)return;try{$('speak').disabled=true;await speak(text)}catch(e){log('TTS error: '+e.message)}finally{$('speak').disabled=false}};
-async function transcribe(blob){const fd=new FormData();fd.append('audio',blob,'speech.webm');const j=await(await api('/api/stt',{method:'POST',body:fd})).json();if(j.error)throw Error(j.error);return j.text||''}
-async function finishPhrase(){if(rec&&rec.state==='recording')rec.stop()}
-function monitor(){if(!running||!analyser)return;const data=new Float32Array(analyser.fftSize);analyser.getFloatTimeDomainData(data);let sum=0;for(const x of data)sum+=x*x;const rms=Math.sqrt(sum/data.length);$('level').style.width=Math.min(100,rms*2500)+'%';const now=performance.now();if(rms>THRESHOLD){lastVoice=now;if(!rec)startPhrase()}else if(rec&&now-lastVoice>SILENCE&&now-lastVoice>MIN_PHRASE)finishPhrase();raf=requestAnimationFrame(monitor)}
-function startPhrase(){if(!running||!stream||rec)return;chunks=[];const options={};if(MediaRecorder.isTypeSupported('audio/webm;codecs=opus'))options.mimeType='audio/webm;codecs=opus';else if(MediaRecorder.isTypeSupported('audio/webm'))options.mimeType='audio/webm';rec=new MediaRecorder(stream,options);rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};rec.onstop=async()=>{rec=null;const blob=new Blob(chunks,{type:chunks[0]?.type||'audio/webm'});if(blob.size>1000&&!processing){processing=true;try{const text=await transcribe(blob);if(text){log('You: '+text);await speak(text)}}catch(e){log('Voice error: '+e.message)}finally{processing=false}}};rec.onerror=e=>{log('Recorder error: '+(e.error?.message||'unknown'));rec=null};rec.start();phraseTimer=setTimeout(finishPhrase,MAX_PHRASE)}
-$('start').onclick=async()=>{if(running)return;try{stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:$('mic').value?{exact:$('mic').value}:undefined,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});audioCtx=new AudioContext();analyser=audioCtx.createAnalyser();analyser.fftSize=1024;analyser.smoothingTimeConstant=.15;sourceNode=audioCtx.createMediaStreamSource(stream);sourceNode.connect(analyser);running=true;lastVoice=performance.now();$('start').disabled=true;$('stop').disabled=false;$('state').textContent='Listening — speak, then pause briefly.';$('state').className='status ok';monitor();log('VoiceChanger started. Speak normally; a short pause sends the phrase.')}catch(e){log('Microphone error: '+e.message)}};
-$('stop').onclick=()=>{running=false;cancelAnimationFrame(raf);clearTimeout(phraseTimer);if(rec&&rec.state!=='inactive')rec.stop();rec=null;if(sourceNode)sourceNode.disconnect();if(audioCtx)audioCtx.close().catch(()=>{});if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;analyser=null;$('level').style.width='0';$('start').disabled=false;$('stop').disabled=true;$('state').textContent='Stopped.';$('state').className='status';log('VoiceChanger stopped.')};
-navigator.mediaDevices.addEventListener?.('devicechange',devices);devices();status();
-</script>
+<script type="module" src="./src/main.js"></script>
 </body>
 </html>
