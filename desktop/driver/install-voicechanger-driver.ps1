@@ -21,10 +21,19 @@ function Find-Inf {
   return $inf.FullName
 }
 
+function Find-DeviceInstaller {
+  $file = Join-Path $PSScriptRoot 'VoiceChangerDeviceInstaller.exe'
+  if (-not (Test-Path $file)) {
+    throw "VoiceChanger device installer is missing: $file"
+  }
+  return $file
+}
+
 function Get-DriverDevices {
   try {
     return @(Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
       Where-Object {
+        $_.InstanceId -like 'ROOT\\VirtualAudioDriver*' -or
         $_.FriendlyName -match 'Virtual Audio Driver|Virtual Mic Driver|VoiceChanger' -or
         $_.Manufacturer -match 'MikeTheTech|VirtualDrivers'
       } |
@@ -58,15 +67,17 @@ $action = if ($args.Count) { $args[0].ToLowerInvariant() } else { 'status' }
 switch ($action) {
   'install' {
     $inf = Find-Inf
-    Write-Host "Installing VoiceChanger virtual audio driver package from $inf"
+    $installer = Find-DeviceInstaller
+    Write-Host "Creating VoiceChanger ROOT device and installing driver from $inf"
 
-    & pnputil.exe /add-driver $inf /install
-    if ($LASTEXITCODE -ne 0) {
-      throw "pnputil failed with exit code $LASTEXITCODE"
+    & $installer $inf 2>&1 | ForEach-Object { Write-Host $_ }
+    $installerExit = $LASTEXITCODE
+    if ($installerExit -notin @(0, 3010)) {
+      throw "VoiceChanger device installer failed with exit code $installerExit"
     }
 
     Scan-Devices
-    Start-Sleep -Seconds 2
+    Start-Sleep -Seconds 3
 
     $devices = @(Get-DriverDevices)
     if ($devices.Count -gt 0) {
@@ -77,19 +88,12 @@ switch ($action) {
 
     if (Test-DriverPackage -InfPath $inf) {
       Write-Host 'VC_STATUS=staged'
-      Write-Host 'The signed VoiceChanger driver package is installed in the Windows Driver Store.'
-      Write-Host 'Windows did not create the root-enumerated audio device automatically.'
-      Write-Host 'Opening the Windows Add Legacy Hardware wizard so the virtual speaker/microphone can be created.'
-      try {
-        Start-Process -FilePath (Join-Path $env:windir 'System32\hdwwiz.exe') -WindowStyle Normal | Out-Null
-      } catch {
-        Write-Host "VC_WIZARD_ERROR=$($_.Exception.Message)"
-      }
+      Write-Host 'The signed driver package is present, but Windows has not started the virtual device yet.'
       break
     }
 
     Write-Host 'VC_STATUS=missing'
-    throw 'The VoiceChanger driver package could not be verified in the Windows Driver Store.'
+    throw 'VoiceChanger ROOT device creation completed, but Windows did not expose the driver device.'
   }
 
   'uninstall' {
@@ -114,7 +118,7 @@ switch ($action) {
 
     if (Test-DriverPackage -InfPath $inf) {
       Write-Host 'VC_STATUS=staged'
-      Write-Host 'Driver package is installed, but the virtual audio endpoints are not currently present.'
+      Write-Host 'Driver package is installed, but the ROOT virtual audio device is not currently present.'
       break
     }
 
