@@ -91,6 +91,11 @@ async function playWav(blob) {
   await playback.play();
 }
 
+// Each call now represents one complete sentence because tts-onset-fix.js
+// buffers Pocket TTS's internal chunks. Schedule that complete sentence as a
+// single AudioBuffer. If the previous sentence is still playing, start exactly
+// at its end. If it already ended while TTS was generating, start immediately
+// with only a 5 ms safety lead-in instead of the old 20 ms artificial gap.
 function enqueueAudioChunk(audio, generation) {
   if (!audio || generation !== conversionGeneration || !audioContext) return;
   try {
@@ -99,14 +104,14 @@ function enqueueAudioChunk(audio, generation) {
     const buffer = audioContext.createBuffer(1, samples.length, tts.sampleRate);
     buffer.copyToChannel(samples, 0);
     const now = audioContext.currentTime;
-    if (!nextAudioTime || nextAudioTime < now + 0.015) nextAudioTime = now + 0.02;
+    const start = nextAudioTime > now + 0.005 ? nextAudioTime : now + 0.005;
     const source = audioContext.createBufferSource();
     source.buffer = buffer;
     const gain = audioContext.createGain();
     gain.gain.value = 1;
     source.connect(gain).connect(audioContext.destination);
-    source.start(nextAudioTime);
-    nextAudioTime += buffer.duration;
+    source.start(start);
+    nextAudioTime = start + buffer.duration;
     scheduledAudio.push(source);
     source.onended = () => { scheduledAudio = scheduledAudio.filter((n) => n !== source); };
   } catch (e) { log(`AUDIO SCHEDULE ERROR: ${e.message}`); }
@@ -218,20 +223,54 @@ async function startVC(isReconnect = false) {
   const ws = new WebSocket(url, ["token", key]); socket = ws; ws.binaryType = "arraybuffer";
   ws.onopen = () => {
     if (ws !== socket || manualStop || generation !== reconnectGeneration) { try { ws.close(); } catch {} return; }
-    reconnectAttempts = 0; audioContext = new AudioContext(); if (audioContext.state === "suspended") void audioContext.resume();
-    sourceNode = audioContext.createMediaStreamSource(stream); processor = audioContext.createScriptProcessor(2048, 1, 1); const silent = audioContext.createGain(); silent.gain.value = 0; sourceNode.connect(processor); processor.connect(silent); silent.connect(audioContext.destination);
-    processor.onaudioprocess = (event) => { if (!running || ws.readyState !== WebSocket.OPEN) return; try { ws.send(pcm16(downsample(event.inputBuffer.getChannelData(0), audioContext.sampleRate)).buffer); } catch {} };
-    running = true; $("micDot")?.classList.add("live"); $("startVC").disabled = true; $("stopVC").disabled = false; $("sttInfo").textContent = "LIVE VOICE CONVERSION — your speech is converted to the cloned voice."; status("Live voice conversion • sentence-safe • cutout protection enabled", "ok"); log("Deepgram connected — live cloned-voice conversion active.");
+    running = true; reconnectAttempts = 0; $("micDot")?.classList.add("live"); $("stopVC").disabled = false; $("startVC").disabled = true; $("sttInfo").textContent = "Deepgram STT live — speak normally."; status("VoiceChanger live • sentence-buffered TTS", "ok");
+    audioContext = new AudioContext();
+    audioContext.resume().catch(() => {});
+    sourceNode = audioContext.createMediaStreamSource(stream);
+    processor = audioContext.createScriptProcessor(4096, 1, 1);
+    processor.onaudioprocess = (event) => {
+      if (!running || ws.readyState !== WebSocket.OPEN) return;
+      const input = event.inputBuffer.getChannelData(0);
+      const pcm = pcm16(downsample(input, event.inputBuffer.sampleRate, 16000));
+      try { ws.send(pcm.buffer); } catch (e) { log(`STT SEND ERROR: ${e.message}`); }
+    };
+    sourceNode.connect(processor); processor.connect(audioContext.destination);
   };
-  ws.onmessage = (event) => { let data; try { data = JSON.parse(event.data); } catch { return; } if (data.type !== "Results") return; const alt = data.channel?.alternatives?.[0]; const text = alt?.transcript?.trim(); if (!text) return; $("transcript").textContent = text; if (running) { queueConversionText(text, !!data.is_final); if (data.is_final) log(`YOU: ${text}`); } };
-  ws.onerror = () => log("Deepgram WebSocket error; reconnecting automatically.");
-  ws.onclose = (event) => { if (!manualStop && generation === reconnectGeneration) { cleanupConnection(); scheduleReconnect(generation, `${event.code}${event.reason ? ` ${event.reason}` : ""}`); } };
+  ws.onmessage = (event) => {
+    let data; try { data = JSON.parse(event.data); } catch { return; }
+    if (data?.type !== "Results") return;
+    const alt = data.channel?.alternatives?.[0];
+    const text = alt?.transcript?.trim() || "";
+    if (!text) return;
+    $("sttInfo").textContent = data.is_final ? `Heard: ${text}` : `Listening: ${text}`;
+    queueConversionText(text, !!data.is_final);
+  };
+  ws.onerror = () => log("Deepgram WebSocket error.");
+  ws.onclose = (event) => {
+    if (socket === ws) socket = null;
+    if (!manualStop && generation === reconnectGeneration) {
+      running = false; $("micDot")?.classList.remove("live"); $("sttInfo").textContent = `Deepgram disconnected (${event.code}). Reconnecting…`;
+      try { processor?.disconnect(); } catch {} try { sourceNode?.disconnect(); } catch {} try { audioContext?.close(); } catch {}
+      processor = null; sourceNode = null; audioContext = null;
+      try { stream?.getTracks().forEach((t) => t.stop()); } catch {} stream = null;
+      scheduleReconnect(generation, event.code);
+    }
+  };
 }
 
-$("deepgramKey").value = localStorage.getItem("voicechanger.deepgramKey") || "";
-$("deepgramKey").addEventListener("input", () => { localStorage.setItem("voicechanger.deepgramKey", $("deepgramKey").value.trim()); if (voiceRef) $("startVC").disabled = !apiKey(); });
-$("loadModel").addEventListener("click", loadModel); $("cloneFile").addEventListener("change", (e) => e.target.files?.[0] && cloneFile(e.target.files[0])); $("recordVoice").addEventListener("click", recordClone); $("generate").addEventListener("click", () => speak($("text").value));
-$("stop").addEventListener("click", () => { try { tts?.stop?.(); } catch {} conversionGeneration++; conversionQueue.length = 0; stopScheduledAudio(); busy = false; status("Generation stopped."); });
-$("refreshOutputs").addEventListener("click", refreshOutputs);
-$("outputDevice").addEventListener("change", async () => { const device = $("outputDevice").value; localStorage.setItem("voicechanger.outputDevice", device); const label = $("outputDevice").selectedOptions?.[0]?.text || device; log(`Output changed to: ${label}`); await applyOutputToPlayback(); });
-$("startVC").addEventListener("click", () => startVC().catch((e) => { status(`VoiceChanger failed: ${e.message}`, "bad"); log(`VC ERROR: ${e.message}`); })); $("stopVC").addEventListener("click", stopVC); refreshOutputs();
+function bindUI() {
+  $("loadModel")?.addEventListener("click", () => loadModel());
+  $("cloneFile")?.addEventListener("change", (e) => { const file = e.target.files?.[0]; if (file) cloneFile(file); });
+  $("recordVoice")?.addEventListener("click", recordClone);
+  $("generate")?.addEventListener("click", () => speak($("ttsText")?.value || ""));
+  $("startVC")?.addEventListener("click", () => startVC().catch((e) => { status(e.message, "bad"); log(`START ERROR: ${e.message}`); }));
+  $("stopVC")?.addEventListener("click", stopVC);
+  $("outputDevice")?.addEventListener("change", async () => { const value = $("outputDevice").value || "default"; localStorage.setItem("voicechanger.outputDevice", value); await applyOutputToPlayback(); });
+  const keyInput = $("deepgramKey");
+  if (keyInput) { keyInput.value = localStorage.getItem("voicechanger.deepgramKey") || ""; keyInput.addEventListener("input", () => { localStorage.setItem("voicechanger.deepgramKey", keyInput.value.trim()); $("startVC").disabled = !voiceRef || !apiKey(); }); }
+  refreshOutputs();
+  $("startVC").disabled = true;
+  $("stopVC").disabled = true;
+}
+
+window.addEventListener("DOMContentLoaded", bindUI);
