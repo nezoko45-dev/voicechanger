@@ -4,5 +4,6 @@
 import './output-sink-fix.js';
 import './pocket-tts-fix.js';
 import './tts-onset-fix.js';
+import './instant-echo-fix.js';
 import './main-fixed.js';
 import './driver.js';
