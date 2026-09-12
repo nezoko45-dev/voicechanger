@@ -53,16 +53,15 @@ function Set-EndpointName {
   )
   try {
     Set-PnpDeviceProperty -InstanceId $Device.InstanceId -KeyName 'DEVPKEY_Device_FriendlyName' -Type String -Data $Name -ErrorAction Stop
-    Write-Host "Renamed audio endpoint to $Name: $($Device.InstanceId)"
+    Write-Host "Renamed audio endpoint to ${Name}: $($Device.InstanceId)"
     return $true
   } catch {
-    Write-Host "WARNING: Could not rename endpoint $($Device.InstanceId) to $Name: $($_.Exception.Message)"
+    Write-Host "WARNING: Could not rename endpoint $($Device.InstanceId) to ${Name}: $($_.Exception.Message)"
     return $false
   }
 }
 
 function Set-MagicMicNames {
-  # Rename the parent virtual adapter so Device Manager is branded.
   try {
     foreach ($device in @(Get-VirtualDevices)) {
       try {
@@ -76,9 +75,6 @@ function Set-MagicMicNames {
     Write-Host "WARNING: Magic Mic parent-device rename failed: $($_.Exception.Message)"
   }
 
-  # Windows exposes the speaker and microphone as separate AudioEndpoint PnP devices.
-  # Keep the playback endpoint exactly "Magic Mic" and brand the capture endpoint
-  # "Magic Mic Microphone" so Discord/VRChat/etc. can select it as an input.
   $endpoints = @(Get-AudioEndpoints)
   foreach ($endpoint in $endpoints) {
     $isCapture = $endpoint.InstanceId -match '\{0\.0\.1\.'
