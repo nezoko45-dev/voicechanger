@@ -42,9 +42,7 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile $zip
           $expected = 'dd10560994de65a7e587fb8b93c0d7e9838292d9c3566a0976c2786d727292bd'
           $actual = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($actual -ne $expected) {
-            throw "Driver package SHA256 mismatch. Expected $expected but received $actual."
-          }
+          if ($actual -ne $expected) { throw "Driver package SHA256 mismatch. Expected $expected but received $actual." }
           Expand-Archive -Path $zip -DestinationPath $packageDir -Force
           Write-Host 'Bundled VoiceChanger driver package:'
           Get-ChildItem -Path $packageDir -Recurse -Include *.sys,*.inf,*.cat,*.dll | ForEach-Object { Write-Host $_.FullName }
@@ -84,18 +82,10 @@ jobs:
           $downloadDir = Join-Path $env:GITHUB_WORKSPACE 'desktop/download'
           if (Test-Path $downloadDir) { Remove-Item -Recurse -Force $downloadDir }
           New-Item -ItemType Directory -Path $downloadDir -Force | Out-Null
-          $safeName = [System.IO.Path]::GetFileNameWithoutExtension($exe.Name) + '.bin'
+          $safeName = [System.IO.Path]::GetFileNameWithoutExtension($exe.Name) + '.download'
           Copy-Item $exe.FullName (Join-Path $downloadDir $safeName) -Force
           $hash = (Get-FileHash -Path (Join-Path $downloadDir $safeName) -Algorithm SHA256).Hash.ToLowerInvariant()
-          @"
-VoiceChanger Desktop portable Windows build
-
-1. Extract this artifact.
-2. Rename the .bin file to .exe.
-3. Run the EXE normally.
-
-SHA256: $hash
-"@ | Set-Content -Path (Join-Path $downloadDir 'README.txt') -Encoding UTF8
+          Set-Content -Path (Join-Path $downloadDir 'README.txt') -Value @('VoiceChanger Desktop portable Windows build','',('Rename the .download file to .exe, then run it.'),('SHA256: ' + $hash)) -Encoding UTF8
 
       - name: Upload portable desktop artifact
         uses: actions/upload-artifact@v4
