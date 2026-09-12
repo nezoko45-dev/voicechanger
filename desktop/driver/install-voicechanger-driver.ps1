@@ -29,11 +29,32 @@ function Get-DriverDevices {
     return @(Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
       Where-Object {
         $_.InstanceId -like 'ROOT\\VirtualAudioDriver*' -or
-        $_.FriendlyName -match 'Virtual Audio Driver|Virtual Mic Driver|VoiceChanger' -or
+        $_.FriendlyName -match 'Virtual Audio Driver|Virtual Mic Driver|VoiceChanger|Magic Mic' -or
         $_.Manufacturer -match 'MikeTheTech|VirtualDrivers'
       } |
       Select-Object Status, Class, FriendlyName, Manufacturer, InstanceId)
   } catch { return @() }
+}
+
+function Set-MagicMicName {
+  try {
+    $devices = @(Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
+      Where-Object {
+        $_.InstanceId -like 'ROOT\\VirtualAudioDriver*' -or
+        $_.FriendlyName -match 'Virtual Audio Driver|Virtual Mic Driver|VoiceChanger|Magic Mic' -or
+        $_.Manufacturer -match 'MikeTheTech|VirtualDrivers'
+      })
+    foreach ($device in $devices) {
+      try {
+        Set-PnpDeviceProperty -InstanceId $device.InstanceId -KeyName 'DEVPKEY_Device_FriendlyName' -Type String -Data 'Magic Mic' -ErrorAction Stop
+        Write-Host "Renamed virtual audio device to Magic Mic: $($device.InstanceId)"
+      } catch {
+        Write-Host "WARNING: Could not rename $($device.InstanceId) to Magic Mic: $($_.Exception.Message)"
+      }
+    }
+  } catch {
+    Write-Host "WARNING: Magic Mic device rename failed: $($_.Exception.Message)"
+  }
 }
 
 function Test-DriverPackage {
@@ -120,6 +141,7 @@ switch ($action) {
 
     Scan-Devices
     Start-Sleep -Seconds 3
+    Set-MagicMicName
     $devices = @(Get-DriverDevices)
     if ($devices.Count -gt 0) {
       Write-Host 'VC_STATUS=installed'
@@ -150,8 +172,9 @@ switch ($action) {
     $inf = Find-Inf
     $devices = @(Get-DriverDevices)
     if ($devices.Count -gt 0) {
+      Set-MagicMicName
       Write-Host 'VC_STATUS=installed'
-      $devices | Format-Table -AutoSize
+      @(Get-DriverDevices) | Format-Table -AutoSize
       break
     }
     if (-not (Test-TestSigning)) {
