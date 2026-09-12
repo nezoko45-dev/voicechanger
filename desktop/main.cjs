@@ -81,7 +81,7 @@ function runPowerShellScript(action, elevated = false) {
   return new Promise((resolve, reject) => {
     let command;
     if (elevated) {
-      command = `$p = Start-Process -FilePath 'powershell.exe' -Verb RunAs -Wait -PassThru -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','${escapedScript}','${action}'; [Console]::WriteLine($p.ExitCode)`;
+      command = `$p = Start-Process -FilePath 'powershell.exe' -Verb RunAs -Wait -PassThru -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','${escapedScript}','${action}'; exit $p.ExitCode`;
     } else {
       command = `& powershell.exe -NoProfile -ExecutionPolicy Bypass -File '${escapedScript}' '${action}'; exit $LASTEXITCODE`;
     }
