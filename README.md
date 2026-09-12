@@ -1,27 +1,23 @@
-# VoiceChanger
+# VoiceChanger Desktop
 
-Browser-only AI voice cloning and TTS app.
+Windows desktop STT/TTS VoiceChanger built around Pocket TTS voice cloning.
 
-- 🧠 Pocket TTS ONNX inference in the browser
-- 📁 Clone a voice from a WAV reference
-- 🔊 Streaming cloned-voice TTS
-- 🎤 Browser VoiceChanger mode using SpeechRecognition when available
-- 💾 Model assets cached by the browser
-- ❌ No Python
-- ❌ No batch file
-- ❌ No Vercel backend
-- ❌ No voice-cloning API key
+### What it does
 
-## Run
+- 🎤 Records a short microphone sample or imports an audio file.
+- 🧬 Clones that voice locally with Pocket TTS.
+- 🗣️ Uses Windows/Electron speech recognition for STT.
+- 🔊 Generates the recognized speech in the cloned voice.
+- 🎚️ Lets you select any Windows audio output device, including VoiceMeeter Input or VB-Cable.
+- 📦 Builds as a portable Windows `.exe` — no Vercel, GitHub Pages, or separate server to run.
+- 💾 Pocket TTS assets are cached after the first download.
 
-The browser app is in `web/`.
+### Build
 
-```bash
-cd web
-npm install
-npm run dev
-```
+GitHub Actions automatically builds the portable Windows EXE on pushes to `main` or by manually running **Build Windows VoiceChanger**.
 
-For deployment, run `npm run build` in `web/` and host the resulting `web/dist/` folder on a static host.
+The first launch needs internet access to download the Pocket TTS runtime/model assets. After that, the model is cached locally when the runtime allows caching.
 
-The first model load downloads the quantized Pocket TTS browser assets. They are cached locally afterward.
+### Audio routing
+
+For Voicemeeter, select **VoiceMeeter Input (VB-Audio VoiceMeeter VAIO)** as the app's Output Device. For VB-Cable, select **CABLE Input (VB-Audio Virtual Cable)**. Windows/Voicemeeter can then route that signal wherever you need it.
