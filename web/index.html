@@ -20,6 +20,15 @@
 <section class="card section"><h2>Activity</h2><div id="log" class="log">Ready.</div></section>
 <section class="card section notice"><strong>Browser processing:</strong> the Pocket TTS engine and worker are bundled with this Vite app. Model assets are fetched from the Pocket TTS model host and cached by your browser. No Python server or paid voice API is required.</section>
 </main>
-<script type="module" src="./src/main.js"></script>
+<script type="module">
+import("/voicechanger/src/main.js").catch((error)=>{
+  const app=document.querySelector(".app");
+  const box=document.createElement("section");
+  box.className="card section";
+  box.innerHTML=`<h2>⚠️ App failed to start</h2><p class="muted">${String(error?.message||error)}</p><p class="hint">The page loaded, but the Vite JavaScript bundle could not start. Check the GitHub Pages deployment for the latest build.</p>`;
+  app.appendChild(box);
+  console.error(error);
+});
+</script>
 </body>
 </html>
