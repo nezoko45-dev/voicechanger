@@ -24,7 +24,7 @@
 <body>
   <main class="app">
     <header class="hero">
-      <div><h1>🎙️ VoiceChanger Desktop</h1><div class="sub">Deepgram STT → cloned Pocket TTS voice → selected Windows audio</div></div>
+      <div><h1>🎙️ VoiceChanger Desktop</h1><div class="sub">Deepgram STT → cloned Pocket TTS voice → VoiceChanger virtual audio driver</div></div>
       <div class="badge" id="modelBadge">Model not loaded</div>
     </header>
 
@@ -64,7 +64,7 @@
         <div class="stack">
           <select id="outputDevice"></select>
           <button id="refreshOutputs" class="secondary">Refresh Windows outputs</button>
-          <div class="hint">The selected device is now used for TTS playback. Choose VoiceMeeter Input (or your VoiceMeeter Banana endpoint) to route the cloned voice into VoiceMeeter.</div>
+          <div class="hint">VoiceChanger Driver is selected automatically when installed. The cloned voice is sent into its virtual speaker endpoint, creating the virtual microphone path for Windows, VoiceMeeter, ChilloutVR, and other apps.</div>
         </div>
       </div>
 
@@ -74,14 +74,14 @@
           <button id="startVC" disabled>▶ Start VoiceChanger</button>
           <button id="stopVC" class="secondary" disabled>■ Stop VoiceChanger</button>
           <div id="transcript" class="transcript">Nothing transcribed yet.</div>
-          <div class="hint">Speak normally. Your words appear above as Deepgram transcribes them, then each final phrase is spoken with the cloned voice.</div>
+          <div class="hint">Speak normally. Your words appear above as Deepgram transcribes them, then each final phrase is spoken with the cloned voice into the VoiceChanger driver.</div>
         </div>
       </div>
 
       <div class="card wide">
         <h2>6. Test the cloned TTS</h2>
         <div class="stack">
-          <textarea id="text">Hello! This is my cloned voice speaking through VoiceChanger.</textarea>
+          <textarea id="text">Hello! This is my cloned voice speaking through the VoiceChanger virtual audio driver.</textarea>
           <div class="row">
             <button id="generate" disabled>🔊 Speak</button>
             <button id="stop" class="danger">Stop</button>
@@ -109,13 +109,13 @@
         const raw = atob(base64);
         const bytes = new Uint8Array(raw.length);
         for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-        return new Blob([bytes], { type: "audio/wav" });
+        return new Blob([bytes], { type: 'audio/wav' });
       };
 
       const stopSelectedPlayback = () => {
         if (activeAudio) {
           try { activeAudio.pause(); } catch {}
-          try { activeAudio.removeAttribute("src"); activeAudio.load(); } catch {}
+          try { activeAudio.removeAttribute('src'); activeAudio.load(); } catch {}
           activeAudio = null;
         }
         if (activeUrl) {
@@ -125,13 +125,37 @@
         try { bridge.stop?.(); } catch {}
       };
 
+      const isVoiceChangerLabel = (label) => /voicechanger|virtual audio driver|virtual.?audio|virtual.?speaker/i.test(label || '');
+
+      const chooseVirtualDriver = async () => {
+        try {
+          const select = document.getElementById('outputDevice');
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const output = devices.filter((d) => d.kind === 'audiooutput').find((d) => isVoiceChangerLabel(d.label));
+          if (output && select) {
+            if (![...select.options].some((o) => o.value === output.deviceId)) {
+              select.add(new Option(output.label || 'VoiceChanger Driver', output.deviceId));
+            }
+            select.value = output.deviceId;
+            localStorage.setItem('voicechanger.outputDevice', output.deviceId);
+            return output.deviceId;
+          }
+        } catch (error) {
+          console.warn('[VoiceChanger driver] Could not detect virtual output:', error);
+        }
+        return null;
+      };
+
       window.nativeAudio = {
         ...bridge,
         playWavBase64: async (base64) => {
-          const select = document.getElementById("outputDevice");
-          const selectedDevice = select?.value || "default";
+          let selectedDevice = localStorage.getItem('voicechanger.outputDevice') || '';
+          const select = document.getElementById('outputDevice');
+          const driverDevice = await chooseVirtualDriver();
+          if (driverDevice) selectedDevice = driverDevice;
+          if (!selectedDevice || selectedDevice === 'default') selectedDevice = select?.value || '';
 
-          if (typeof HTMLMediaElement.prototype.setSinkId !== "function") {
+          if (typeof HTMLMediaElement.prototype.setSinkId !== 'function') {
             return bridge.playWavBase64(base64);
           }
 
@@ -142,9 +166,9 @@
             const url = URL.createObjectURL(blob);
             activeAudio = audio;
             activeUrl = url;
-            audio.preload = "auto";
+            audio.preload = 'auto';
 
-            if (selectedDevice && selectedDevice !== "default") {
+            if (selectedDevice && selectedDevice !== 'default') {
               await audio.setSinkId(selectedDevice);
             }
 
@@ -159,7 +183,7 @@
             await audio.play();
             return true;
           } catch (error) {
-            console.warn("[output routing] Selected device playback failed; using native Windows fallback.", error);
+            console.warn('[output routing] VoiceChanger/selected device playback failed; using native Windows fallback.', error);
             stopSelectedPlayback();
             return bridge.playWavBase64(base64);
           }
