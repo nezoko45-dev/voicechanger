@@ -75,9 +75,31 @@ jobs:
         working-directory: desktop
         run: npm run build
 
-      - name: Upload portable EXE
+      - name: Prepare browser-safe desktop artifact
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Get-ChildItem -Path desktop/dist -Filter '*.exe' -File | Select-Object -First 1
+          if (-not $exe) { throw 'Portable VoiceChanger EXE was not produced.' }
+          $downloadDir = Join-Path $env:GITHUB_WORKSPACE 'desktop/download'
+          if (Test-Path $downloadDir) { Remove-Item -Recurse -Force $downloadDir }
+          New-Item -ItemType Directory -Path $downloadDir -Force | Out-Null
+          $safeName = [System.IO.Path]::GetFileNameWithoutExtension($exe.Name) + '.bin'
+          Copy-Item $exe.FullName (Join-Path $downloadDir $safeName) -Force
+          $hash = (Get-FileHash -Path (Join-Path $downloadDir $safeName) -Algorithm SHA256).Hash.ToLowerInvariant()
+          @"
+VoiceChanger Desktop portable Windows build
+
+1. Extract this artifact.
+2. Rename the .bin file to .exe.
+3. Run the EXE normally.
+
+SHA256: $hash
+"@ | Set-Content -Path (Join-Path $downloadDir 'README.txt') -Encoding UTF8
+
+      - name: Upload portable desktop artifact
         uses: actions/upload-artifact@v4
         with:
           name: VoiceChanger-Desktop-Windows
-          path: desktop/dist/*.exe
+          path: desktop/download/*
           if-no-files-found: error
