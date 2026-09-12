@@ -21,7 +21,7 @@
 <section class="card">
   <h2>1. Load the browser AI</h2>
   <p>The first load downloads the quantized Pocket TTS model from Hugging Face. It is cached by your browser for later sessions.</p>
-  <div class="row"><button id="loadModel">🧠 Load Browser Model</button><span id="modelInfo" class="status">Not loaded</span></div>
+  <div class="row"><button id="loadModel">🧠 Load Browser Model</button><span id="modelInfo" class="status">Not loaded</span><span id="status" class="status">Ready — click Load Browser Model</span></div>
   <div class="progress"><i id="progressBar"></i></div>
   <p id="secureInfo" class="small"></p>
 </section>
@@ -31,7 +31,7 @@
   <p>Choose a clean WAV recording. The audio is decoded in your browser and converted into a voice reference locally.</p>
   <div class="grid">
     <div><label>Voice WAV</label><input id="cloneFile" type="file" accept=".wav,audio/wav" disabled></div>
-    <div><label>Or use a built-in voice</label><select id="builtinVoice" disabled></select></div>
+    <div><label>Or use a built-in voice</label><select id="builtinVoice" disabled><option>Load the model first</option></select></div>
   </div>
   <div class="row"><button id="loadBuiltin" class="secondary" disabled>Use Built-in Voice</button><span id="voiceStatus" class="status">No voice selected</span></div>
 </section>
