@@ -2,7 +2,7 @@ const find = (id) => document.getElementById(id);
 
 function findVoiceChangerOutput(devices) {
   const outputs = devices.filter((d) => d.kind === 'audiooutput');
-  return outputs.find((d) => /voicechanger|virtual audio driver|virtual.?audio|virtual.?speaker/i.test(d.label || '')) || null;
+  return outputs.find((d) => /magic mic|voicechanger|virtual audio driver|virtual.?audio|virtual.?speaker/i.test(d.label || '')) || null;
 }
 
 async function selectVoiceChangerOutput({ requireDriver = false } = {}) {
@@ -12,19 +12,58 @@ async function selectVoiceChangerOutput({ requireDriver = false } = {}) {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const output = findVoiceChangerOutput(devices);
     if (!output) {
-      if (requireDriver) appendDriverLog('VoiceChanger virtual output is not visible yet. Windows may still be creating the virtual audio endpoint.');
+      if (requireDriver) appendDriverLog('Magic Mic virtual output is not visible yet. Windows may still be creating the virtual audio endpoint.');
       return null;
     }
     const option = [...select.options].find((item) => item.value === output.deviceId);
-    if (!option) select.add(new Option(output.label || 'VoiceChanger Driver', output.deviceId));
+    if (!option) select.add(new Option(output.label || 'Magic Mic', output.deviceId));
     select.value = output.deviceId;
     localStorage.setItem('voicechanger.outputDevice', output.deviceId);
-    setDriverStatus('✓ VoiceChanger Driver is installed and selected as the TTS output.', 'ok');
+    setDriverStatus('✓ Magic Mic is installed and selected as the TTS output.', 'ok');
     return output;
   } catch (error) {
-    appendDriverLog(`VOICECHANGER OUTPUT ERROR: ${error.message}`);
+    appendDriverLog(`MAGIC MIC OUTPUT ERROR: ${error.message}`);
     return null;
   }
+}
+
+function installMagicMicPlaybackRouter() {
+  if (!window.nativeAudio?.playWavBase64 || window.nativeAudio.__magicMicRouterInstalled) return;
+  const nativeFallback = window.nativeAudio.playWavBase64.bind(window.nativeAudio);
+  const state = { audio: null, url: null };
+
+  window.nativeAudio.playWavBase64 = async (base64) => {
+    const select = find('outputDevice');
+    const outputId = select?.value || localStorage.getItem('voicechanger.outputDevice') || '';
+    if (!outputId || outputId === 'default' || typeof HTMLMediaElement.prototype.setSinkId !== 'function') {
+      return nativeFallback(base64);
+    }
+
+    try {
+      if (state.audio) {
+        try { state.audio.pause(); } catch {}
+      }
+      if (state.url) URL.revokeObjectURL(state.url);
+      const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+      state.url = URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }));
+      const audio = new Audio(state.url);
+      state.audio = audio;
+      await audio.setSinkId(outputId);
+      await audio.play();
+      audio.addEventListener('ended', () => {
+        if (state.url) {
+          URL.revokeObjectURL(state.url);
+          state.url = null;
+        }
+        if (state.audio === audio) state.audio = null;
+      }, { once: true });
+      return true;
+    } catch (error) {
+      appendDriverLog(`MAGIC MIC PLAYBACK ERROR: ${error.message}`);
+      return nativeFallback(base64);
+    }
+  };
+  window.nativeAudio.__magicMicRouterInstalled = true;
 }
 
 function addDriverCard() {
@@ -36,17 +75,17 @@ function addDriverCard() {
   card.id = 'driverCard';
   card.className = 'card wide';
   card.innerHTML = `
-    <h2>🎛️ VoiceChanger Driver</h2>
+    <h2>🎛️ Magic Mic Virtual Audio</h2>
     <div class="stack">
-      <div id="driverStatus" class="status working">Checking the virtual audio driver…</div>
+      <div id="driverStatus" class="status working">Checking the Magic Mic virtual audio driver…</div>
       <div class="row">
-        <button id="installDriver">Install VoiceChanger Driver</button>
+        <button id="installDriver">Install Magic Mic Driver</button>
         <button id="uninstallDriver" class="danger">Remove Driver</button>
         <button id="refreshDriver" class="secondary">Refresh Driver Status</button>
-        <button id="routeDriver" class="secondary">Route TTS Through VoiceChanger Driver</button>
+        <button id="routeDriver" class="secondary">Route TTS Through Magic Mic</button>
       </div>
       <div class="hint">
-        The bundled VoiceChanger driver creates the Windows virtual speaker + virtual microphone. TTS is routed into its virtual speaker, and ChilloutVR can use its virtual microphone endpoint.
+        Magic Mic is the Windows virtual speaker/output used by VoiceChanger. Pocket TTS speech is routed to Magic Mic so other apps can select its matching virtual microphone endpoint.
       </div>
     </div>`;
 
@@ -55,20 +94,20 @@ function addDriverCard() {
   find('installDriver').addEventListener('click', async () => {
     const button = find('installDriver');
     button.disabled = true;
-    setDriverStatus('Installing the VoiceChanger virtual audio driver…', 'working');
+    setDriverStatus('Installing the Magic Mic virtual audio driver…', 'working');
     try {
       const result = await window.nativeAudio?.driverInstall?.();
       if (!result?.ok && !result?.staged && !result?.reboot) throw new Error(result?.output || 'Driver installation failed.');
       appendDriverLog(result.output);
       if (result.reboot) {
-        setDriverStatus('⚠ Windows Test Signing was enabled. Restart Windows once, then click Install VoiceChanger Driver again.', 'working');
-        appendDriverLog('RESTART REQUIRED: Windows Test Signing has been enabled so the virtual audio driver can start without Code 52.');
+        setDriverStatus('⚠ Windows Test Signing was enabled. Restart Windows once, then click Install Magic Mic Driver again.', 'working');
+        appendDriverLog('RESTART REQUIRED: Windows Test Signing has been enabled so Magic Mic can start without Code 52.');
         return;
       }
       if (result.staged && !result.installed) {
-        setDriverStatus('Driver package installed, but Windows has not exposed the virtual audio endpoints yet. Refresh after Windows finishes device setup.', 'working');
+        setDriverStatus('Driver package installed, but Windows has not exposed the Magic Mic endpoints yet. Refresh after Windows finishes device setup.', 'working');
       } else {
-        setDriverStatus('✓ VoiceChanger Driver installed. Registering its Windows audio endpoints…', 'working');
+        setDriverStatus('✓ Magic Mic installed. Registering its Windows audio endpoints…', 'working');
       }
       try { find('refreshOutputs')?.click(); } catch {}
       setTimeout(() => { selectVoiceChangerOutput({ requireDriver: true }); }, 1200);
@@ -85,11 +124,11 @@ function addDriverCard() {
   find('uninstallDriver').addEventListener('click', async () => {
     const button = find('uninstallDriver');
     button.disabled = true;
-    setDriverStatus('Removing VoiceChanger Driver…', 'working');
+    setDriverStatus('Removing Magic Mic Driver…', 'working');
     try {
       const result = await window.nativeAudio?.driverUninstall?.();
       if (!result?.ok) throw new Error(result?.output || 'Driver removal failed.');
-      setDriverStatus('VoiceChanger Driver removal requested.', 'ok');
+      setDriverStatus('Magic Mic Driver removal requested.', 'ok');
       appendDriverLog(result.output);
       try { find('refreshOutputs')?.click(); } catch {}
     } catch (error) {
@@ -104,7 +143,7 @@ function addDriverCard() {
   find('refreshDriver').addEventListener('click', checkDriverStatus);
   find('routeDriver').addEventListener('click', async () => {
     const output = await selectVoiceChangerOutput({ requireDriver: true });
-    if (!output) setDriverStatus('VoiceChanger virtual output was not found yet. Install the VoiceChanger Driver first.', 'bad');
+    if (!output) setDriverStatus('Magic Mic virtual output was not found yet. Install the Magic Mic Driver first.', 'bad');
   });
 }
 
@@ -135,28 +174,29 @@ async function checkDriverStatus() {
     }
     if (result.installed) {
       const output = await selectVoiceChangerOutput();
-      if (!output) setDriverStatus('✓ VoiceChanger Driver is installed, but Windows has not exposed its virtual speaker yet.', 'working');
+      if (!output) setDriverStatus('✓ Magic Mic Driver is installed, but Windows has not exposed its virtual speaker yet.', 'working');
       return;
     }
     if (result.reboot) {
-      setDriverStatus('⚠ Windows restart is required to finish enabling the VoiceChanger driver.', 'working');
+      setDriverStatus('⚠ Windows restart is required to finish enabling Magic Mic.', 'working');
       return;
     }
     if (result.testsigningOff) {
-      setDriverStatus('⚠ VoiceChanger Driver needs one Windows restart to enable its required driver mode. Click Install Driver to prepare it.', 'working');
+      setDriverStatus('⚠ Magic Mic needs one Windows restart to enable its required driver mode. Click Install Magic Mic Driver to prepare it.', 'working');
       return;
     }
     if (result.staged) {
-      setDriverStatus('Driver package is installed, but the virtual audio endpoints are not created yet. Refresh Driver Status and try Install Driver again.', 'working');
+      setDriverStatus('Driver package is installed, but Magic Mic endpoints are not created yet. Refresh Driver Status and try Install Magic Mic Driver again.', 'working');
       return;
     }
-    setDriverStatus('VoiceChanger virtual audio driver is not installed.', 'bad');
+    setDriverStatus('Magic Mic virtual audio driver is not installed.', 'bad');
   } catch (error) {
     setDriverStatus(`Driver status failed: ${error.message}`, 'bad');
   }
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+  installMagicMicPlaybackRouter();
   addDriverCard();
   checkDriverStatus();
 });
