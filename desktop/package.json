@@ -1,12 +1,15 @@
 {
   "name": "voicechanger-desktop",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "private": true,
   "description": "Windows desktop STT/TTS VoiceChanger with Deepgram STT, Pocket TTS voice cloning, and Magic Mic virtual audio",
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
     "build": "electron-builder --win portable"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "electron": "^44.0.0",
@@ -20,6 +23,7 @@
     "files": [
       "main.cjs",
       "preload.cjs",
+      "deepgram-proxy.cjs",
       "package.json"
     ],
     "extraResources": [
