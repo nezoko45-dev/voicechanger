@@ -44,8 +44,6 @@ function playNativeWav(base64) {
   fs.writeFileSync(file, Buffer.from(base64, 'base64'));
   nativeTemp = file;
 
-  // SoundPlayer sends the PCM WAV through Windows' normal playback device,
-  // completely bypassing Chromium's HTMLMediaElement/audio-output path.
   const escaped = file.replace(/'/g, "''");
   const script = `$p = New-Object System.Media.SoundPlayer('${escaped}'); $p.PlaySync()`;
   nativePlayer = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
@@ -106,6 +104,87 @@ function startLocalServer() {
   });
 }
 
+async function injectVirtualMicRouting(win) {
+  const script = `(() => {
+    const outputSelect = document.getElementById('outputDevice');
+    if (!outputSelect || document.getElementById('virtualMicRouting')) return;
+
+    const card = outputSelect.closest('.card');
+    const panel = document.createElement('div');
+    panel.id = 'virtualMicRouting';
+    panel.style.marginTop = '12px';
+    panel.style.paddingTop = '12px';
+    panel.style.borderTop = '1px solid #2a3148';
+    panel.innerHTML = \`
+      <div style="font-weight:700;margin-bottom:8px">🎚️ Virtual microphone routing</div>
+      <button id="useVirtualMic" class="secondary" type="button">Auto-route to virtual mic</button>
+      <div id="virtualMicInfo" class="hint" style="margin-top:8px">Checking VB-CABLE / VoiceMeeter devices…</div>
+    \`;
+    card.appendChild(panel);
+
+    const info = document.getElementById('virtualMicInfo');
+    const button = document.getElementById('useVirtualMic');
+    const saved = localStorage.getItem('voicechanger.virtualOutputDevice') || '';
+
+    async function scan() {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const outputs = devices.filter(d => d.kind === 'audiooutput');
+        const inputs = devices.filter(d => d.kind === 'audioinput');
+        const virtualOut = outputs.find(d => /cable input|voice.?meeter.*input|voicemeeter.*aux.*input|voicemeeter.*vaio.*input/i.test(d.label));
+        const virtualIn = inputs.find(d => /cable output|voice.?meeter.*output|voicemeeter.*aux.*output|voicemeeter.*vaio.*output/i.test(d.label));
+
+        if (saved && [...outputSelect.options].some(o => o.value === saved)) {
+          outputSelect.value = saved;
+        } else if (virtualOut && !outputSelect.value) {
+          outputSelect.value = virtualOut.deviceId;
+        }
+
+        if (virtualOut && virtualIn) {
+          info.textContent = `Detected: ${virtualOut.label} → ${virtualIn.label}. TTS will feed this virtual microphone path.`;
+          info.className = 'hint ok';
+          return { virtualOut, virtualIn };
+        }
+        if (virtualOut) {
+          info.textContent = `Detected ${virtualOut.label}. Its matching recording endpoint should appear in Windows / ChilloutVR.`;
+          info.className = 'hint working';
+          return { virtualOut, virtualIn };
+        }
+        info.textContent = 'No VB-CABLE or VoiceMeeter virtual output detected. Install/enable the virtual audio driver first.';
+        info.className = 'hint bad';
+        return { virtualOut: null, virtualIn: null };
+      } catch (error) {
+        info.textContent = `Audio device scan failed: ${error.message}`;
+        info.className = 'hint bad';
+        return { virtualOut: null, virtualIn: null };
+      }
+    }
+
+    button.onclick = async () => {
+      const found = await scan();
+      if (!found.virtualOut) return;
+      outputSelect.value = found.virtualOut.deviceId;
+      localStorage.setItem('voicechanger.virtualOutputDevice', found.virtualOut.deviceId);
+      outputSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      info.textContent = `✓ Routing cloned voice to ${found.virtualOut.label}. Use ${found.virtualIn?.label || 'the matching virtual recording endpoint'} as the microphone in ChilloutVR.`;
+      info.className = 'hint ok';
+    };
+
+    outputSelect.addEventListener('change', () => {
+      const value = outputSelect.value;
+      if (value) localStorage.setItem('voicechanger.virtualOutputDevice', value);
+    });
+    navigator.mediaDevices.addEventListener?.('devicechange', () => { setTimeout(scan, 250); });
+
+    setTimeout(scan, 100);
+  })();`;
+  try {
+    await win.webContents.executeJavaScript(script, true);
+  } catch (error) {
+    console.error('[virtual mic UI]', error);
+  }
+}
+
 async function createWindow() {
   const url = await startLocalServer();
   const win = new BrowserWindow({
@@ -130,6 +209,7 @@ async function createWindow() {
     if (input.key === 'F12' && input.type === 'keyDown') win.webContents.toggleDevTools();
   });
   await win.loadURL(url);
+  await injectVirtualMicRouting(win);
   win.webContents.on('console-message', (_event, _level, message) => console.log(`[renderer] ${message}`));
 }
 
