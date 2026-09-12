@@ -21,7 +21,16 @@ contextBridge.exposeInMainWorld('nativeDeepgram', {
     ipcRenderer.send('deepgram:connect', { url, protocols, clientId: id });
     return id;
   },
-  send: (id, data) => ipcRenderer.send('deepgram:send', { id, data }),
+  // Electron IPC's structured-clone boundary can reject renderer ArrayBuffer
+  // objects in some packaged Electron builds. Send plain integer arrays instead.
+  send: (id, data) => {
+    let bytes;
+    if (data instanceof ArrayBuffer) bytes = Array.from(new Uint8Array(data));
+    else if (ArrayBuffer.isView(data)) bytes = Array.from(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+    else if (Array.isArray(data)) bytes = data;
+    else throw new TypeError('Deepgram audio payload must be binary audio data.');
+    ipcRenderer.send('deepgram:send', { id, data: bytes });
+  },
   close: (id, code, reason) => ipcRenderer.send('deepgram:close', { id, code, reason }),
   addListener: (fn) => listeners.add(fn),
   removeListener: (fn) => listeners.delete(fn),
