@@ -146,7 +146,7 @@ async function recordClone() {
 async function speak(text, mode = "manual") {
   if (!tts) { status("Load Pocket TTS first.", "bad"); return; }
   if (!voiceRef) { status("Clone a voice first.", "bad"); return; }
-  const clean = text.trim().slice(0, mode === "conversion" ? 500 : 1500); if (!clean) return;
+  const clean = text.trim().slice(0, mode === "conversion" ? 2000 : 1500); if (!clean) return;
   if (mode === "conversion") {
     const generation = conversionGeneration;
     conversionWorker = true;
@@ -177,40 +177,25 @@ function getInterimDelta(previous, current) {
   const b = normalizedWords(current);
   let common = 0;
   while (common < a.length && common < b.length && a[common] === b[common]) common++;
-  // Deepgram normally sends cumulative interim text. Only speak the new suffix.
   if (common === a.length && b.length >= a.length) return b.slice(common).join(" ");
-  // If recognition revised earlier words, restart from the current result rather than duplicating it.
   return b.slice(Math.max(0, common)).join(" ");
 }
 
+// Deepgram interim results are intentionally used only for the on-screen transcript.
+// Never feed them into TTS: revisions can replace or truncate words mid-utterance.
 function queueConversionText(text, final = false) {
   if (!running || !text) return;
-  const delta = getInterimDelta(lastInterimText, text);
-  lastInterimText = text;
-  if (delta) conversionBuffer = `${conversionBuffer} ${delta}`.trim();
-  if (conversionTimer) { clearTimeout(conversionTimer); conversionTimer = null; }
-  const words = conversionBuffer.split(/\s+/).filter(Boolean);
-  // Small chunks give low latency without constantly restarting the TTS engine.
-  if (words.length >= 3 || final) {
-    const count = final ? words.length : Math.min(4, words.length);
-    const chunk = words.splice(0, count).join(" ");
-    conversionBuffer = words.join(" ");
-    if (chunk) {
-      conversionQueue.push(chunk);
-      void drainConversionQueue();
-    }
-  } else if (words.length) {
-    conversionTimer = setTimeout(() => {
-      conversionTimer = null;
-      const pending = conversionBuffer.split(/\s+/).filter(Boolean);
-      if (!pending.length) return;
-      const count = Math.min(3, pending.length);
-      const chunk = pending.splice(0, count).join(" ");
-      conversionBuffer = pending.join(" ");
-      if (chunk) { conversionQueue.push(chunk); void drainConversionQueue(); }
-    }, 140);
+  if (!final) {
+    lastInterimText = text;
+    return;
   }
-  if (final) lastInterimText = "";
+  const finalText = text.trim();
+  if (!finalText) return;
+  lastInterimText = "";
+  conversionBuffer = "";
+  if (conversionTimer) { clearTimeout(conversionTimer); conversionTimer = null; }
+  conversionQueue.push(finalText);
+  void drainConversionQueue();
 }
 
 async function drainConversionQueue() {
@@ -280,7 +265,10 @@ async function startVC(isReconnect = false) {
   conversionBuffer = ""; conversionQueue.length = 0; lastInterimText = ""; conversionWorker = false;
   stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   const key = apiKey();
-  const url = "wss://api.deepgram.com/v1/listen?model=nova-3&language=en-US&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&smart_format=true&endpointing=300&utterance_end_ms=1000";
+  // A 300ms endpoint was prematurely finalizing normal pauses, so Deepgram could
+  // hand Pocket TTS sentence fragments. Use a 1.2s endpoint and 2s utterance-end
+  // guard to keep ordinary mid-sentence pauses together.
+  const url = "wss://api.deepgram.com/v1/listen?model=nova-3&language=en-US&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&smart_format=true&endpointing=1200&utterance_end_ms=2000";
   const ws = new WebSocket(url, ["token", key]); socket = ws; ws.binaryType = "arraybuffer";
   ws.onopen = () => {
     if (ws !== socket || manualStop || generation !== reconnectGeneration) { try { ws.close(); } catch {} return; }
@@ -295,7 +283,7 @@ async function startVC(isReconnect = false) {
     running = true;
     $("micDot")?.classList.add("live"); $("startVC").disabled = true; $("stopVC").disabled = false;
     $("sttInfo").textContent = "LIVE VOICE CONVERSION — your speech is converted to the cloned voice.";
-    status("Live voice conversion • low-latency • cutout protection enabled", "ok"); log("Deepgram connected — live cloned-voice conversion active.");
+    status("Live voice conversion • sentence-safe • cutout protection enabled", "ok"); log("Deepgram connected — live cloned-voice conversion active.");
   };
   ws.onmessage = (event) => {
     let data; try { data = JSON.parse(event.data); } catch { return; }
