@@ -1,0 +1,39 @@
+{
+  "name": "pocket-voicechanger-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local desktop Pocket VoiceChanger",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "^44.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "dev.nezoko45.voicechanger",
+    "productName": "Pocket VoiceChanger",
+    "artifactName": "Pocket-VoiceChanger-${version}-${os}-${arch}.${ext}",
+    "asar": true,
+    "files": [
+      "main.cjs",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../web/dist",
+        "to": "web"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    }
+  }
+}
