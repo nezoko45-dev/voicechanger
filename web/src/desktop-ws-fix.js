@@ -1,8 +1,7 @@
-// Fresh desktop Deepgram transport.
-// Renderer code keeps the normal WebSocket API, but Deepgram traffic is handled
-// by Electron's main process using the ws package. This removes browser/Electron
-// WebSocket handshake instability while retaining Deepgram's Sec-WebSocket-Protocol
-// authentication: ["token", API_KEY].
+// Electron-safe Deepgram transport.
+// The renderer keeps the normal WebSocket-like API, while Deepgram traffic is
+// handled by Electron's main process. IPC carries only strings, numbers and
+// integer arrays; no callbacks/functions/Audio objects cross the bridge.
 const NativeWebSocket = window.WebSocket;
 const nativeDeepgram = window.nativeDeepgram;
 
@@ -25,28 +24,16 @@ if (!nativeDeepgram) {
       this.onmessage = null;
       this.onerror = null;
       this.onclose = null;
-      this._id = nativeDeepgram.connect(this.url, Array.isArray(protocols) ? protocols : (protocols ? [protocols] : []));
-      this._listener = (event) => {
-        if (!event || event.id !== this._id) return;
-        if (event.type === 'open') {
-          this.readyState = DeepgramSocket.OPEN;
-          this.protocol = event.protocol || '';
-          this.onopen?.(new Event('open'));
-        } else if (event.type === 'message') {
-          this.onmessage?.({ data: event.data, type: 'message', target: this });
-        } else if (event.type === 'error') {
-          this.onerror?.(new Event('error'));
-        } else if (event.type === 'close') {
-          this.readyState = DeepgramSocket.CLOSED;
-          this.onclose?.({ code: event.code || 1006, reason: event.reason || '', wasClean: !!event.wasClean, type: 'close', target: this });
-          nativeDeepgram.removeListener?.(this._listener);
-        }
-      };
-      nativeDeepgram.addListener(this._listener);
+      this._id = nativeDeepgram.connect(
+        this.url,
+        Array.isArray(protocols) ? protocols.map(String) : (protocols ? [String(protocols)] : [])
+      );
     }
 
     send(data) {
-      if (this.readyState !== DeepgramSocket.OPEN) throw new DOMException('WebSocket is not open', 'InvalidStateError');
+      if (this.readyState !== DeepgramSocket.OPEN) {
+        throw new DOMException('WebSocket is not open', 'InvalidStateError');
+      }
       nativeDeepgram.send(this._id, data);
     }
 
@@ -57,14 +44,64 @@ if (!nativeDeepgram) {
     }
   }
 
+  // Poll Electron for plain serializable events. This deliberately avoids
+  // passing callback functions through contextBridge, which is the source of
+  // the packaged-Electron "object could not be cloned" failure.
+  const pollTimer = setInterval(() => {
+    let events;
+    try {
+      events = nativeDeepgram.poll();
+    } catch (error) {
+      console.error('[Deepgram] native event polling failed:', error);
+      return;
+    }
+
+    if (!Array.isArray(events)) return;
+
+    for (const event of events) {
+      if (!event || !Number.isInteger(event.id)) continue;
+      const socket = sockets.get(event.id);
+      if (!socket) continue;
+
+      if (event.type === 'open') {
+        socket.readyState = DeepgramSocket.OPEN;
+        socket.protocol = event.protocol || '';
+        socket.onopen?.(new Event('open'));
+      } else if (event.type === 'message') {
+        socket.onmessage?.({ data: event.data || '', type: 'message', target: socket });
+      } else if (event.type === 'error') {
+        socket.onerror?.(new Event('error'));
+      } else if (event.type === 'close') {
+        socket.readyState = DeepgramSocket.CLOSED;
+        socket.onclose?.({
+          code: event.code || 1006,
+          reason: event.reason || '',
+          wasClean: !!event.wasClean,
+          type: 'close',
+          target: socket,
+        });
+        sockets.delete(event.id);
+      }
+    }
+  }, 10);
+
+  const sockets = new Map();
+  const OriginalConstructor = DeepgramSocket;
   const WrappedWebSocket = function(url, protocols) {
-    if (String(url).startsWith('wss://api.deepgram.com/')) return new DeepgramSocket(url, protocols);
+    if (String(url).startsWith('wss://api.deepgram.com/')) {
+      const socket = new OriginalConstructor(url, protocols);
+      sockets.set(socket._id, socket);
+      return socket;
+    }
     return new NativeWebSocket(url, protocols);
   };
+
   WrappedWebSocket.CONNECTING = 0;
   WrappedWebSocket.OPEN = 1;
   WrappedWebSocket.CLOSING = 2;
   WrappedWebSocket.CLOSED = 3;
   WrappedWebSocket.prototype = NativeWebSocket.prototype;
   window.WebSocket = WrappedWebSocket;
+
+  window.addEventListener('beforeunload', () => clearInterval(pollTimer), { once: true });
 }
