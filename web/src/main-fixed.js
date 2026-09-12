@@ -19,6 +19,8 @@ let manualStop = false;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
 let reconnectGeneration = 0;
+let echoBuffer = "";
+let echoTimer = null;
 
 const MODEL_SOURCES = [
   "https://huggingface.co/akrv/pocket-tts-onnx/resolve/main/onnx",
@@ -136,7 +138,6 @@ async function speak(text, mode = "manual") {
   if (!tts) { status("Load Pocket TTS first.", "bad"); return; }
   if (!voiceRef) { status("Clone a voice first.", "bad"); return; }
   const clean = text.trim().slice(0, mode === "echo" ? 700 : 1500); if (!clean) return;
-
   if (mode === "echo") {
     const generation = ++echoGeneration;
     try { tts.stop?.(); } catch {}
@@ -149,7 +150,6 @@ async function speak(text, mode = "manual") {
     } finally { if (generation === echoGeneration) busy = false; }
     return;
   }
-
   if (busy) return; busy = true;
   try {
     status("Generating cloned speech…", "working"); const chunks = [];
@@ -159,6 +159,32 @@ async function speak(text, mode = "manual") {
     $("preview").src = url; $("preview").hidden = false; $("download").href = url; $("download").download = `voicechanger-${Date.now()}.wav`; $("download").classList.remove("hidden");
     await playWav(blob); status(`Spoken • ${(metrics?.audioDuration || 0).toFixed(2)}s`, "ok");
   } catch (e) { status(`TTS failed: ${e.message}`, "bad"); log(`TTS ERROR: ${e.stack || e.message}`); } finally { busy = false; }
+}
+
+function queueInstantEcho(text, final = false) {
+  if (!running || !text) return;
+  echoBuffer = `${echoBuffer} ${text}`.trim();
+  if (echoTimer) clearTimeout(echoTimer);
+  // Speak short chunks while the user is still talking. This avoids waiting for a final sentence.
+  const words = echoBuffer.split(/\s+/).filter(Boolean);
+  const target = final ? 1 : 5;
+  if (words.length >= target || final) {
+    const count = final ? words.length : Math.min(7, words.length);
+    const chunk = words.splice(0, count).join(" ");
+    echoBuffer = words.join(" ");
+    if (chunk) void speak(chunk, "echo");
+  } else {
+    echoTimer = setTimeout(() => {
+      echoTimer = null;
+      const pending = echoBuffer.split(/\s+/).filter(Boolean);
+      if (pending.length) {
+        const count = Math.min(5, pending.length);
+        const chunk = pending.splice(0, count).join(" ");
+        echoBuffer = pending.join(" ");
+        void speak(chunk, "echo");
+      }
+    }, 180);
+  }
 }
 
 function downsample(data, from, to = 16000) {
@@ -185,6 +211,8 @@ function stopVC() {
   reconnectGeneration++;
   reconnectAttempts = 0;
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  if (echoTimer) { clearTimeout(echoTimer); echoTimer = null; }
+  echoBuffer = "";
   echoGeneration++; busy = false;
   try { tts?.stop?.(); } catch {}
   stopPlayback();
@@ -201,87 +229,45 @@ function scheduleReconnect(generation, reason) {
   const delay = Math.min(5000, 400 * Math.pow(2, reconnectAttempts - 1));
   status(`Reconnecting to Deepgram in ${(delay / 1000).toFixed(1)}s…`, "working");
   log(`Deepgram disconnected (${reason || "closed"}); reconnect attempt ${reconnectAttempts}.`);
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    if (manualStop || generation !== reconnectGeneration) return;
-    startVC(true).catch((e) => {
-      log(`RECONNECT ERROR: ${e.message}`);
-      scheduleReconnect(generation, e.message);
-    });
-  }, delay);
+  reconnectTimer = setTimeout(() => { reconnectTimer = null; if (!manualStop && generation === reconnectGeneration) startVC(true).catch((e) => { log(`RECONNECT ERROR: ${e.message}`); scheduleReconnect(generation, e.message); }); }, delay);
 }
 
 async function startVC(isReconnect = false) {
   if (!apiKey()) throw new Error("Enter your Deepgram API key first.");
   if (!voiceRef) throw new Error("Clone a voice first.");
-  if (!isReconnect) {
-    stopVC();
-    manualStop = false;
-    reconnectGeneration++;
-    reconnectAttempts = 0;
-  }
+  if (!isReconnect) { stopVC(); manualStop = false; reconnectGeneration++; reconnectAttempts = 0; }
   const generation = reconnectGeneration;
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   cleanupConnection();
-
+  echoBuffer = "";
   stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   const key = apiKey();
   const url = "wss://api.deepgram.com/v1/listen?model=nova-3&language=en-US&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&smart_format=true&endpointing=300&utterance_end_ms=1000";
-  const ws = new WebSocket(url, ["token", key]);
-  socket = ws;
-  ws.binaryType = "arraybuffer";
-
+  const ws = new WebSocket(url, ["token", key]); socket = ws; ws.binaryType = "arraybuffer";
   ws.onopen = () => {
     if (ws !== socket || manualStop || generation !== reconnectGeneration) { try { ws.close(); } catch {} return; }
-    reconnectAttempts = 0;
-    audioContext = new AudioContext();
-    sourceNode = audioContext.createMediaStreamSource(stream);
-    processor = audioContext.createScriptProcessor(2048, 1, 1);
-    const silent = audioContext.createGain(); silent.gain.value = 0;
-    sourceNode.connect(processor); processor.connect(silent); silent.connect(audioContext.destination);
-    processor.onaudioprocess = (event) => {
-      if (!running || socket !== ws || ws.readyState !== WebSocket.OPEN) return;
-      try { ws.send(pcm16(downsample(event.inputBuffer.getChannelData(0), audioContext.sampleRate)).buffer); } catch (e) { log(`AUDIO SEND ERROR: ${e.message}`); }
-    };
-    running = true;
-    $("micDot").classList.add("live"); $("startVC").disabled = true; $("stopVC").disabled = false; $("sttInfo").textContent = "Deepgram listening — speak normally.";
-    status("STT listening…", "ok");
-    log(`Deepgram connected${isReconnect ? " again" : ""} with resilient WebSocket handling.`);
+    reconnectAttempts = 0; audioContext = new AudioContext(); sourceNode = audioContext.createMediaStreamSource(stream); processor = audioContext.createScriptProcessor(2048, 1, 1);
+    const silent = audioContext.createGain(); silent.gain.value = 0; sourceNode.connect(processor); processor.connect(silent); silent.connect(audioContext.destination);
+    processor.onaudioprocess = (event) => { if (!running || ws.readyState !== WebSocket.OPEN) return; try { ws.send(pcm16(downsample(event.inputBuffer.getChannelData(0), audioContext.sampleRate)).buffer); } catch {} };
+    running = true; $("micDot").classList.add("live"); $("startVC").disabled = true; $("stopVC").disabled = false; $("sttInfo").textContent = "Deepgram listening — echoing as you speak."; status("STT listening — instant echo enabled", "ok"); log("Deepgram connected with instant interim echo.");
   };
-
   ws.onmessage = (event) => {
     let data; try { data = JSON.parse(event.data); } catch { return; }
-    if (data.type === "KeepAlive") return;
-    if (data.type === "Error") { log(`DEEPGRAM ERROR: ${data.message || data.description || "unknown error"}`); return; }
     if (data.type !== "Results") return;
-    const text = data.channel?.alternatives?.[0]?.transcript?.trim();
-    if (!text) return;
+    const alt = data.channel?.alternatives?.[0]; const text = alt?.transcript?.trim(); if (!text) return;
     $("transcript").textContent = text;
-    if (data.is_final && running && ws === socket) { log(`YOU: ${text}`); void speak(text, "echo"); }
+    if (running) {
+      // Interim transcripts are now used. Echo no longer waits for is_final.
+      queueInstantEcho(text, !!data.is_final);
+      if (data.is_final) { log(`YOU: ${text}`); echoBuffer = ""; }
+    }
   };
-
-  ws.onerror = () => {
-    if (ws !== socket || manualStop) return;
-    log("Deepgram WebSocket error; waiting for close/reconnect instead of stopping VoiceChanger.");
-  };
-
-  ws.onclose = (event) => {
-    if (ws !== socket || manualStop || generation !== reconnectGeneration) return;
-    cleanupConnection();
-    $("startVC").disabled = true; $("stopVC").disabled = true;
-    scheduleReconnect(generation, `code ${event.code}`);
-  };
+  ws.onerror = () => log("Deepgram WebSocket error; reconnecting automatically.");
+  ws.onclose = (event) => { if (!manualStop && generation === reconnectGeneration) { cleanupConnection(); scheduleReconnect(generation, `${event.code}${event.reason ? ` ${event.reason}` : ""}`); } };
 }
 
 $("deepgramKey").value = localStorage.getItem("voicechanger.deepgramKey") || "";
-$("deepgramKey").addEventListener("input", () => { localStorage.setItem("voicechanger.deepgramKey", $("deepgramKey").value.trim()); if (!running && voiceRef) $("startVC").disabled = !apiKey(); });
-$("loadModel").addEventListener("click", loadModel);
-$("cloneFile").addEventListener("change", (e) => e.target.files?.[0] && cloneFile(e.target.files[0]));
-$("recordVoice").addEventListener("click", recordClone);
-$("generate").addEventListener("click", () => speak($("text").value));
-$("stop").addEventListener("click", () => { try { tts?.stop?.(); } catch {} echoGeneration++; busy = false; stopPlayback(); status("Generation stopped."); });
-$("refreshOutputs").addEventListener("click", refreshOutputs);
-$("outputDevice").addEventListener("change", () => localStorage.setItem("voicechanger.outputDevice", $("outputDevice").value));
-$("startVC").addEventListener("click", () => startVC().catch((e) => { manualStop = false; status(`VoiceChanger failed: ${e.message}`, "bad"); log(`VC ERROR: ${e.message}`); $("startVC").disabled = !voiceRef || !apiKey(); }));
-$("stopVC").addEventListener("click", stopVC);
-refreshOutputs();
+$("deepgramKey").addEventListener("input", () => { localStorage.setItem("voicechanger.deepgramKey", $("deepgramKey").value.trim()); if (voiceRef) $("startVC").disabled = !apiKey(); });
+$("loadModel").addEventListener("click", loadModel); $("cloneFile").addEventListener("change", (e) => e.target.files?.[0] && cloneFile(e.target.files[0])); $("recordVoice").addEventListener("click", recordClone); $("generate").addEventListener("click", () => speak($("text").value));
+$("stop").addEventListener("click", () => { try { tts?.stop?.(); } catch {} echoGeneration++; busy = false; stopPlayback(); status("Generation stopped."); }); $("refreshOutputs").addEventListener("click", refreshOutputs); $("outputDevice").addEventListener("change", () => localStorage.setItem("voicechanger.outputDevice", $("outputDevice").value));
+$("startVC").addEventListener("click", () => startVC().catch((e) => { status(`VoiceChanger failed: ${e.message}`, "bad"); log(`VC ERROR: ${e.message}`); })); $("stopVC").addEventListener("click", stopVC); refreshOutputs();
