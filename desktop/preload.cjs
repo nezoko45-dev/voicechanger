@@ -6,4 +6,5 @@ contextBridge.exposeInMainWorld('nativeAudio', {
   driverStatus: () => ipcRenderer.invoke('voicechanger-driver:status'),
   driverInstall: () => ipcRenderer.invoke('voicechanger-driver:install'),
   driverUninstall: () => ipcRenderer.invoke('voicechanger-driver:uninstall'),
+  deepgramProxyUrl: () => ipcRenderer.sendSync('deepgram-proxy:url'),
 });
