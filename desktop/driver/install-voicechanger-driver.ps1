@@ -24,7 +24,7 @@ function Find-DeviceInstaller {
   return $file
 }
 
-function Get-DriverDevices {
+function Get-VirtualDevices {
   try {
     return @(Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
       Where-Object {
@@ -36,15 +36,35 @@ function Get-DriverDevices {
   } catch { return @() }
 }
 
-function Set-MagicMicName {
+function Get-AudioEndpoints {
   try {
-    $devices = @(Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
+    return @(Get-PnpDevice -PresentOnly -Class AudioEndpoint -ErrorAction SilentlyContinue |
       Where-Object {
-        $_.InstanceId -like 'ROOT\\VirtualAudioDriver*' -or
-        $_.FriendlyName -match 'Virtual Audio Driver|Virtual Mic Driver|VoiceChanger|Magic Mic' -or
-        $_.Manufacturer -match 'MikeTheTech|VirtualDrivers'
-      })
-    foreach ($device in $devices) {
+        $_.FriendlyName -match 'Virtual Audio Driver|Virtual Mic Driver|VoiceChanger|Magic Mic'
+      } |
+      Select-Object Status, Class, FriendlyName, Manufacturer, InstanceId)
+  } catch { return @() }
+}
+
+function Set-EndpointName {
+  param(
+    [Parameter(Mandatory=$true)][object]$Device,
+    [Parameter(Mandatory=$true)][string]$Name
+  )
+  try {
+    Set-PnpDeviceProperty -InstanceId $Device.InstanceId -KeyName 'DEVPKEY_Device_FriendlyName' -Type String -Data $Name -ErrorAction Stop
+    Write-Host "Renamed audio endpoint to $Name: $($Device.InstanceId)"
+    return $true
+  } catch {
+    Write-Host "WARNING: Could not rename endpoint $($Device.InstanceId) to $Name: $($_.Exception.Message)"
+    return $false
+  }
+}
+
+function Set-MagicMicNames {
+  # Rename the parent virtual adapter so Device Manager is branded.
+  try {
+    foreach ($device in @(Get-VirtualDevices)) {
       try {
         Set-PnpDeviceProperty -InstanceId $device.InstanceId -KeyName 'DEVPKEY_Device_FriendlyName' -Type String -Data 'Magic Mic' -ErrorAction Stop
         Write-Host "Renamed virtual audio device to Magic Mic: $($device.InstanceId)"
@@ -53,7 +73,20 @@ function Set-MagicMicName {
       }
     }
   } catch {
-    Write-Host "WARNING: Magic Mic device rename failed: $($_.Exception.Message)"
+    Write-Host "WARNING: Magic Mic parent-device rename failed: $($_.Exception.Message)"
+  }
+
+  # Windows exposes the speaker and microphone as separate AudioEndpoint PnP devices.
+  # Keep the playback endpoint exactly "Magic Mic" and brand the capture endpoint
+  # "Magic Mic Microphone" so Discord/VRChat/etc. can select it as an input.
+  $endpoints = @(Get-AudioEndpoints)
+  foreach ($endpoint in $endpoints) {
+    $isCapture = $endpoint.InstanceId -match '\{0\.0\.1\.'
+    if ($isCapture -or $endpoint.FriendlyName -match '(?i)Virtual Mic Driver') {
+      Set-EndpointName -Device $endpoint -Name 'Magic Mic Microphone' | Out-Null
+    } else {
+      Set-EndpointName -Device $endpoint -Name 'Magic Mic' | Out-Null
+    }
   }
 }
 
@@ -118,6 +151,18 @@ function Scan-Devices {
   try { & pnputil.exe /scan-devices 2>&1 | Out-Host } catch { Write-Host "Device scan failed: $($_.Exception.Message)" }
 }
 
+function Get-MagicMicEndpointState {
+  $endpoints = @(Get-AudioEndpoints)
+  $output = @($endpoints | Where-Object { $_.FriendlyName -eq 'Magic Mic' })
+  $input = @($endpoints | Where-Object { $_.FriendlyName -eq 'Magic Mic Microphone' })
+  return [pscustomobject]@{
+    OutputCount = $output.Count
+    InputCount = $input.Count
+    Output = $output
+    Input = $input
+  }
+}
+
 $action = if ($args.Count) { $args[0].ToLowerInvariant() } else { 'status' }
 
 switch ($action) {
@@ -128,7 +173,7 @@ switch ($action) {
 
     if (Enable-TestSigning) {
       Write-Host 'VC_STATUS=reboot'
-      Write-Host 'Windows Test Signing has been enabled. Restart Windows once, then click Install VoiceChanger Driver again.'
+      Write-Host 'Windows Test Signing has been enabled. Restart Windows once, then click Install Magic Mic Driver again.'
       break
     }
 
@@ -141,11 +186,21 @@ switch ($action) {
 
     Scan-Devices
     Start-Sleep -Seconds 3
-    Set-MagicMicName
-    $devices = @(Get-DriverDevices)
-    if ($devices.Count -gt 0) {
+    Set-MagicMicNames
+    $state = Get-MagicMicEndpointState
+    $devices = @(Get-VirtualDevices)
+    if ($state.OutputCount -gt 0 -and $state.InputCount -gt 0) {
       Write-Host 'VC_STATUS=installed'
-      $devices | Format-Table -AutoSize
+      Write-Host 'MAGIC_MIC_OUTPUT=Magic Mic'
+      Write-Host 'MAGIC_MIC_INPUT=Magic Mic Microphone'
+      Write-Host 'Both Magic Mic Windows audio endpoints are present.'
+      $state.Output | Format-Table -AutoSize
+      $state.Input | Format-Table -AutoSize
+      break
+    }
+    if ($devices.Count -gt 0) {
+      Write-Host 'VC_STATUS=staged'
+      Write-Host 'The virtual adapter is present, but Windows has not exposed both Magic Mic audio endpoints yet.'
       break
     }
     if (Test-DriverPackage -InfPath $inf) {
@@ -154,37 +209,42 @@ switch ($action) {
       break
     }
     Write-Host 'VC_STATUS=missing'
-    throw 'VoiceChanger ROOT device creation completed, but Windows did not expose the driver device.'
+    throw 'VoiceChanger ROOT device creation completed, but Windows did not expose the Magic Mic virtual audio device.'
   }
 
   'uninstall' {
-    $devices = @(Get-DriverDevices)
+    $devices = @(Get-VirtualDevices)
     $instanceIds = @($devices | ForEach-Object { $_.InstanceId } | Where-Object { $_ })
     foreach ($instanceId in $instanceIds) {
       Write-Host "Removing device $instanceId"
       & pnputil.exe /remove-device $instanceId
     }
-    Write-Host 'VoiceChanger virtual audio device removal requested.'
+    Write-Host 'Magic Mic virtual audio device removal requested.'
     break
   }
 
   'status' {
     $inf = Find-Inf
-    $devices = @(Get-DriverDevices)
-    if ($devices.Count -gt 0) {
-      Set-MagicMicName
+    $state = Get-MagicMicEndpointState
+    if ($state.OutputCount -gt 0 -and $state.InputCount -gt 0) {
+      Set-MagicMicNames
+      $state = Get-MagicMicEndpointState
       Write-Host 'VC_STATUS=installed'
-      @(Get-DriverDevices) | Format-Table -AutoSize
+      Write-Host 'MAGIC_MIC_OUTPUT=Magic Mic'
+      Write-Host 'MAGIC_MIC_INPUT=Magic Mic Microphone'
+      Write-Host 'Both Magic Mic Windows audio endpoints are installed.'
+      $state.Output | Format-Table -AutoSize
+      $state.Input | Format-Table -AutoSize
       break
     }
     if (-not (Test-TestSigning)) {
       Write-Host 'VC_STATUS=testsigning-off'
-      Write-Host 'Windows Test Signing is off. The bundled Virtual Audio Driver will show Code 52 until Test Signing is enabled and Windows is restarted.'
+      Write-Host 'Windows Test Signing is off. The bundled Virtual Audio Driver may show Code 52 until its required signing mode is enabled and Windows is restarted.'
       break
     }
     if (Test-DriverPackage -InfPath $inf) {
       Write-Host 'VC_STATUS=staged'
-      Write-Host 'Driver package is installed, but the ROOT virtual audio device is not currently present.'
+      Write-Host 'Driver package is installed, but both Magic Mic endpoints are not currently present.'
       break
     }
     Write-Host 'VC_STATUS=missing'
