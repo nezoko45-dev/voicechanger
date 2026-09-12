@@ -1,9 +1,9 @@
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  base: "/voicechanger/",
-  server: { port: 5173 },
+  base: "./",
   build: {
     target: "es2022",
+    sourcemap: false,
   },
 });
