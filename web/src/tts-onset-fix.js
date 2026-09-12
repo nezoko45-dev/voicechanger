@@ -35,9 +35,6 @@ function trimLeadingSilence(samples, sampleRate) {
   return samples;
 }
 
-// Hold one generated chunk so the next chunk can overlap its boundary. A
-// short equal-power crossfade removes clicks, tiny gaps, and repeated-sounding
-// attacks caused by starting each AudioBufferSourceNode independently.
 function crossfadePair(previous, current, sampleRate) {
   const overlap = Math.min(
     Math.round(sampleRate * 0.012),
@@ -46,10 +43,7 @@ function crossfadePair(previous, current, sampleRate) {
   );
 
   if (overlap < 16) {
-    const out = new Float32Array(previous.length + current.length);
-    out.set(previous, 0);
-    out.set(current, previous.length);
-    return out;
+    return { audio: null, overlap: 0 };
   }
 
   const out = new Float32Array(previous.length + current.length - overlap);
@@ -58,14 +52,13 @@ function crossfadePair(previous, current, sampleRate) {
   const start = previous.length - overlap;
   for (let i = 0; i < overlap; i++) {
     const t = i / Math.max(1, overlap - 1);
-    // Equal-power-ish curve; avoids a volume dip at the join.
     const fadeOut = Math.cos(t * Math.PI * 0.5);
     const fadeIn = Math.sin(t * Math.PI * 0.5);
     out[start + i] = previous[previous.length - overlap + i] * fadeOut + current[i] * fadeIn;
   }
 
   out.set(current.subarray(overlap), start + overlap);
-  return out;
+  return { audio: out, overlap };
 }
 
 PocketTTS.prototype.generate = function (text, options = {}) {
@@ -76,16 +69,9 @@ PocketTTS.prototype.generate = function (text, options = {}) {
   const sampleRate = Number(this.sampleRate) || 24000;
   let pending = null;
   let firstChunk = true;
-  let generationError = null;
-  let ended = false;
 
   const emit = (audio) => {
-    try {
-      options.onChunk(audio);
-    } catch (error) {
-      generationError = error;
-      throw error;
-    }
+    if (audio?.length) options.onChunk(audio);
   };
 
   const pushChunk = (audio) => {
@@ -97,7 +83,6 @@ PocketTTS.prototype.generate = function (text, options = {}) {
       firstChunk = false;
       samples = trimLeadingSilence(samples, sampleRate);
     }
-
     if (!samples.length) return;
 
     if (!pending) {
@@ -105,27 +90,21 @@ PocketTTS.prototype.generate = function (text, options = {}) {
       return;
     }
 
-    const blended = crossfadePair(pending, samples, sampleRate);
-    // The blended buffer contains the previous chunk and the new chunk with a
-    // real overlap. Holding the new chunk for the next callback keeps the
-    // playback pipeline continuous without needing changes to main-fixed.js.
-    const overlap = Math.min(
-      Math.round(sampleRate * 0.012),
-      Math.floor(pending.length / 3),
-      Math.floor(samples.length / 3)
-    );
+    const { audio: blended, overlap } = crossfadePair(pending, samples, sampleRate);
 
-    if (overlap >= 16) {
-      // Emit everything except the held tail that must be joined to the next
-      // chunk. This keeps latency bounded while preserving a true overlap.
-      const hold = samples;
-      const emitLength = Math.max(1, blended.length - hold.length);
-      emit(blended.slice(0, emitLength));
-      pending = hold;
-    } else {
-      emit(blended);
-      pending = null;
+    if (!blended || overlap < 16) {
+      // Tiny chunks are not worth crossfading. Keep the stream lossless rather
+      // than manufacturing an artificial gap or dropping speech.
+      emit(pending);
+      pending = samples;
+      return;
     }
+
+    // Emit exactly through the crossfade. The remainder of the current chunk
+    // has already been included after the overlap in `blended`, so retain only
+    // that un-emitted remainder for the next boundary.
+    emit(blended.slice(0, pending.length));
+    pending = samples.slice(overlap);
   };
 
   const wrappedOptions = {
@@ -133,18 +112,11 @@ PocketTTS.prototype.generate = function (text, options = {}) {
     onChunk: pushChunk
   };
 
-  const result = originalGenerate.call(this, text, wrappedOptions);
-
-  return Promise.resolve(result).then((metrics) => {
-    ended = true;
-    if (generationError) throw generationError;
-    if (pending?.length) {
-      emit(pending);
-      pending = null;
-    }
+  return Promise.resolve(originalGenerate.call(this, text, wrappedOptions)).then((metrics) => {
+    if (pending?.length) emit(pending);
+    pending = null;
     return metrics;
   }).catch((error) => {
-    ended = true;
     pending = null;
     throw error;
   });
