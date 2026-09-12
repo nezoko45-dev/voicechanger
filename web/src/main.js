@@ -1,4 +1,4 @@
-import { PocketTTS, LANGUAGES, StreamingPlayer, chunksToWavBlob } from "pocket-tts-js";
+import { PocketTTS, StreamingPlayer, chunksToWavBlob } from "pocket-tts-js";
 
 const $ = (id) => document.getElementById(id);
 let tts = null;
@@ -12,7 +12,7 @@ let wavUrl = null;
 
 function log(message) {
   const box = $("log");
-  box.textContent = `${message}\n${box.textContent}`;
+  box.textContent = `${new Date().toLocaleTimeString()} — ${message}\n${box.textContent}`;
 }
 
 function setStatus(text, type = "") {
@@ -25,19 +25,25 @@ function setVoiceStatus(text, type = "") {
   $("voiceStatus").className = `status ${type}`;
 }
 
+function browserSupportsSTT() {
+  return "SpeechRecognition" in window || "webkitSpeechRecognition" in window;
+}
+
 function bytes(n) {
   return `${(n / 1e6).toFixed(1)} MB`;
 }
 
-function browserSupportsSTT() {
-  return "SpeechRecognition" in window || "webkitSpeechRecognition" in window;
+function setProgress(value) {
+  const bar = $("progressBar");
+  if (bar) bar.style.width = `${Math.max(0, Math.min(100, value))}%`;
 }
 
 async function loadModel() {
   $("loadModel").disabled = true;
   $("loadModel").textContent = "Loading…";
-  setStatus("Downloading the browser model…", "working");
-  log("Starting Pocket TTS browser model.");
+  setStatus("Downloading browser AI…", "working");
+  log("Starting Pocket TTS. The model stays in this browser.");
+  setProgress(2);
 
   try {
     if (tts) tts.destroy();
@@ -51,15 +57,14 @@ async function loadModel() {
     const seen = new Map();
     const bundle = await tts.load((info) => {
       if (info.type === "progress" && info.total) {
-        const pct = Math.floor((info.loaded / info.total) * 20) * 5;
+        const pct = Math.round((info.loaded / info.total) * 100);
+        setProgress(pct);
         const key = info.label || "model";
-        if (seen.get(key) !== pct) {
+        if (seen.get(key) !== pct && pct % 10 === 0) {
           seen.set(key, pct);
-          log(`${key}: ${pct}% (${bytes(info.total)})${info.fromCache ? " [cached]" : ""}`);
+          log(`${key}: ${pct}% (${bytes(info.total)})${info.fromCache ? " cached" : ""}`);
         }
-      } else if (info.status) {
-        log(`Model: ${info.status}`);
-      }
+      } else if (info.status) log(`Model: ${info.status}`);
     });
 
     player = new StreamingPlayer({
@@ -69,43 +74,39 @@ async function loadModel() {
     });
 
     $("modelInfo").textContent = `Ready • ${tts.sampleRate} Hz • INT8 • ${bundle.predefinedVoices.length} built-in voices`;
+    $("modelBadge").textContent = "AI ready";
+    $("modelBadge").style.color = "#61e6a1";
     $("cloneFile").disabled = false;
     $("loadBuiltin").disabled = bundle.predefinedVoices.length === 0;
-    $("builtinVoice").innerHTML = bundle.predefinedVoices
-      .map((voice) => `<option value="${voice}">${voice}</option>`)
-      .join("");
-    $("generate").disabled = true;
-    $("download").disabled = true;
-    setStatus("Browser model ready. Load a WAV voice reference.", "ok");
-    log("Model ready. Nothing is running on a server.");
+    $("builtinVoice").innerHTML = bundle.predefinedVoices.map((voice) => `<option value="${voice}">${voice}</option>`).join("");
+    setProgress(100);
+    setStatus("AI ready — choose a voice.", "ok");
+    log("Browser AI is ready.");
   } catch (error) {
     console.error(error);
     setStatus(`Model failed: ${error.message}`, "bad");
     log(`MODEL ERROR: ${error.stack || error.message}`);
   } finally {
     $("loadModel").disabled = false;
-    $("loadModel").textContent = "Reload browser model";
+    $("loadModel").textContent = "Reload Browser AI";
   }
 }
 
 async function cloneFile(file) {
   if (!tts) return;
-  setVoiceStatus("Encoding voice reference…", "working");
+  setVoiceStatus("Analyzing voice sample…", "working");
   $("cloneFile").disabled = true;
   try {
     const ctx = new AudioContext();
     const buffer = await ctx.decodeAudioData(await file.arrayBuffer());
     if (buffer.duration < 2) throw new Error("Use a voice sample at least 2 seconds long.");
     const mono = buffer.getChannelData(0);
-    voiceRef = await tts.cloneVoice(mono, {
-      inputSampleRate: buffer.sampleRate,
-      name: file.name,
-    });
+    voiceRef = await tts.cloneVoice(mono, { inputSampleRate: buffer.sampleRate, name: file.name });
     await ctx.close();
-    setVoiceStatus(`Cloned: ${file.name}`, "ok");
+    setVoiceStatus(`✓ Cloned voice: ${file.name}`, "ok");
     $("generate").disabled = false;
     $("startVC").disabled = !browserSupportsSTT();
-    log(`Voice cloned locally from ${file.name}. The WAV was not uploaded.`);
+    log(`Voice cloned locally from ${file.name}.`);
   } catch (error) {
     console.error(error);
     setVoiceStatus(`Clone failed: ${error.message}`, "bad");
@@ -121,20 +122,22 @@ async function generate(text) {
   $("generate").disabled = true;
   $("stop").disabled = false;
   $("download").disabled = true;
+  $("preview").hidden = true;
   voiceChunks = [];
   player.reset();
   await player.resume();
 
+  const cleanText = text.trim().slice(0, 1200);
   const started = performance.now();
   let firstAudio = false;
-  log(`Generating: ${text.trim().slice(0, 80)}`);
+  log(`Generating voice: "${cleanText.slice(0, 80)}${cleanText.length > 80 ? "…" : ""}"`);
   try {
-    const metrics = await tts.generate(text.trim().slice(0, 1200), {
+    const metrics = await tts.generate(cleanText, {
       voice: voiceRef,
       onChunk: (audio, meta) => {
         if (!firstAudio && !meta.isSilence) {
           firstAudio = true;
-          log(`First audio: ${Math.round(performance.now() - started)}ms`);
+          log(`Voice audio started after ${Math.round(performance.now() - started)}ms.`);
         }
         player.play(audio, meta);
         voiceChunks.push(audio.slice());
@@ -145,8 +148,11 @@ async function generate(text) {
       if (wavUrl) URL.revokeObjectURL(wavUrl);
       wavUrl = URL.createObjectURL(chunksToWavBlob(voiceChunks, tts.sampleRate));
       $("download").disabled = false;
+      const preview = $("preview");
+      preview.src = wavUrl;
+      preview.hidden = false;
     }
-    log(`Done • ${metrics.audioDuration.toFixed(2)}s audio • ${metrics.rtfx.toFixed(2)}x realtime`);
+    log(`Finished: ${metrics.audioDuration.toFixed(2)}s of generated voice.`);
   } catch (error) {
     if (!error.message?.toLowerCase().includes("stop")) log(`TTS ERROR: ${error.message}`);
   } finally {
@@ -159,7 +165,7 @@ async function generate(text) {
 function setupSpeechRecognition() {
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!Recognition) {
-    $("sttInfo").textContent = "Browser speech recognition is unavailable here.";
+    $("sttInfo").textContent = "Speech recognition is unavailable in this browser.";
     return;
   }
 
@@ -172,8 +178,10 @@ function setupSpeechRecognition() {
     listening = true;
     $("startVC").disabled = true;
     $("stopVC").disabled = false;
+    $("micDot").classList.add("live");
+    $("sttInfo").textContent = "Microphone live — speak normally.";
     setStatus("VoiceChanger listening…", "ok");
-    log("VoiceChanger started.");
+    log("Microphone VoiceChanger started.");
   };
 
   recognition.onresult = async (event) => {
@@ -181,7 +189,7 @@ function setupSpeechRecognition() {
     if (!last.isFinal) return;
     const text = last[0].transcript.trim();
     if (!text || !voiceRef || generating) return;
-    log(`You: ${text}`);
+    log(`You said: ${text}`);
     recognition.stop();
     await generate(text);
     if (listening) {
@@ -190,15 +198,17 @@ function setupSpeechRecognition() {
   };
 
   recognition.onerror = (event) => {
-    log(`STT: ${event.error}`);
+    log(`Microphone/STT: ${event.error}`);
     if (event.error === "not-allowed" || event.error === "service-not-allowed") {
       listening = false;
-      setStatus("Microphone/speech permission was denied.", "bad");
+      $("micDot").classList.remove("live");
+      setStatus("Microphone permission was denied.", "bad");
     }
   };
 
   recognition.onend = () => {
     if (!listening) {
+      $("micDot").classList.remove("live");
       $("startVC").disabled = !voiceRef;
       $("stopVC").disabled = true;
       return;
@@ -223,10 +233,10 @@ $("loadBuiltin").addEventListener("click", async () => {
   setVoiceStatus(`Loading ${name}…`, "working");
   try {
     voiceRef = await tts.loadVoice(name);
-    setVoiceStatus(`Built-in voice: ${name}`, "ok");
+    setVoiceStatus(`✓ Built-in voice: ${name}`, "ok");
     $("generate").disabled = false;
     $("startVC").disabled = !browserSupportsSTT();
-    log(`Loaded built-in voice: ${name}`);
+    log(`Loaded built-in voice: ${name}.`);
   } catch (error) {
     setVoiceStatus(`Voice failed: ${error.message}`, "bad");
     log(`VOICE ERROR: ${error.message}`);
@@ -259,20 +269,18 @@ $("startVC").addEventListener("click", () => {
 $("stopVC").addEventListener("click", () => {
   listening = false;
   recognition?.stop();
-  setStatus("VoiceChanger stopped.", "");
+  $("micDot").classList.remove("live");
+  setStatus("VoiceChanger stopped.");
   $("startVC").disabled = !voiceRef;
   $("stopVC").disabled = true;
 });
 
 if (browserSupportsSTT()) {
   setupSpeechRecognition();
-  $("sttInfo").textContent = "Browser speech recognition available.";
+  $("sttInfo").textContent = "Microphone speech recognition available.";
 } else {
-  $("sttInfo").textContent = "This browser does not expose SpeechRecognition. TTS still works.";
+  $("sttInfo").textContent = "This browser does not expose SpeechRecognition.";
 }
 
-$("secureInfo").textContent = window.isSecureContext
-  ? "Secure browser context ✓"
-  : "Open this through HTTPS or localhost for microphone/model caching.";
-
-log("Ready. Click Load Browser Model to begin.");
+$("secureInfo").textContent = window.isSecureContext ? "Secure browser context ✓" : "Use the hosted HTTPS app for microphone access.";
+log("VoiceChanger app loaded. Load Browser AI to begin.");
