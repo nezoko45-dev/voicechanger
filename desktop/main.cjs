@@ -80,6 +80,8 @@ function classifyDriverOutput(output) {
   return {
     installed: /VC_STATUS=installed/i.test(text),
     staged: /VC_STATUS=staged/i.test(text),
+    reboot: /VC_STATUS=reboot/i.test(text),
+    testsigningOff: /VC_STATUS=testsigning-off/i.test(text),
     missing: /VC_STATUS=missing/i.test(text),
   };
 }
@@ -113,24 +115,26 @@ function runPowerShellScript(action, elevated = false) {
 }
 
 async function getDriverStatus() {
-  if (process.platform !== 'win32') return { supported: false, installed: false, staged: false, output: 'Windows is required.' };
+  if (process.platform !== 'win32') return { supported: false, installed: false, staged: false, reboot: false, testsigningOff: false, output: 'Windows is required.' };
   try {
     const result = await runPowerShellScript('status', false);
     return {
       supported: true,
       installed: !!result.installed,
       staged: !!result.staged,
+      reboot: !!result.reboot,
+      testsigningOff: !!result.testsigningOff,
       output: result.output
     };
   } catch (error) {
-    return { supported: true, installed: false, staged: false, output: error.message };
+    return { supported: true, installed: false, staged: false, reboot: false, testsigningOff: false, output: error.message };
   }
 }
 
 async function installDriver() {
   if (process.platform !== 'win32') throw new Error('The VoiceChanger virtual audio driver is Windows-only.');
   const result = await runPowerShellScript('install', true);
-  if (!result.ok && !result.staged) throw new Error(result.output || 'Driver installation failed.');
+  if (!result.ok && !result.staged && !result.reboot) throw new Error(result.output || 'Driver installation failed.');
   return result;
 }
 
