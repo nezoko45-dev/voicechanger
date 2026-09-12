@@ -4,9 +4,9 @@ const $ = (id) => document.getElementById(id);
 let tts = null;
 let player = null;
 let voiceRef = null;
-let generating = false;
 let recognition = null;
 let listening = false;
+let generating = false;
 let voiceChunks = [];
 let wavUrl = null;
 
@@ -14,102 +14,90 @@ function log(message) {
   const box = $("log");
   box.textContent = `${new Date().toLocaleTimeString()} — ${message}\n${box.textContent}`;
 }
-
-function setStatus(text, type = "") {
-  $("status").textContent = text;
-  $("status").className = `status ${type}`;
-}
-
-function setVoiceStatus(text, type = "") {
-  $("voiceStatus").textContent = text;
-  $("voiceStatus").className = `status ${type}`;
-}
-
-function browserSupportsSTT() {
-  return "SpeechRecognition" in window || "webkitSpeechRecognition" in window;
-}
-
-function bytes(n) {
-  return `${(n / 1e6).toFixed(1)} MB`;
-}
-
-function setProgress(value) {
-  const bar = $("progressBar");
-  if (bar) bar.style.width = `${Math.max(0, Math.min(100, value))}%`;
-}
+function status(text, type = "") { $("status").textContent = text; $("status").className = `status ${type}`; }
+function voiceStatus(text, type = "") { $("voiceStatus").textContent = text; $("voiceStatus").className = `status ${type}`; }
+function supportsSTT() { return "SpeechRecognition" in window || "webkitSpeechRecognition" in window; }
+function setProgress(value) { $("progressBar").style.width = `${Math.max(0, Math.min(100, value))}%`; }
+function mb(n) { return `${(n / 1e6).toFixed(1)} MB`; }
 
 async function loadModel() {
-  $("loadModel").disabled = true;
-  $("loadModel").textContent = "Loading…";
-  setStatus("Downloading browser AI…", "working");
-  log("Starting Pocket TTS. The model stays in this browser.");
+  const button = $("loadModel");
+  button.disabled = true;
+  button.textContent = "Loading…";
+  status("Downloading Pocket TTS…", "working");
   setProgress(2);
-
+  log("Loading Pocket TTS in a browser worker.");
   try {
-    if (tts) tts.destroy();
+    tts?.destroy();
     tts = new PocketTTS({
       language: "english_2026-04",
       quantized: true,
       voiceCloning: true,
       cache: true,
+      maxThreads: 8,
     });
-
     const seen = new Map();
     const bundle = await tts.load((info) => {
       if (info.type === "progress" && info.total) {
-        const pct = Math.round((info.loaded / info.total) * 100);
+        const pct = Math.round(info.loaded / info.total * 100);
         setProgress(pct);
         const key = info.label || "model";
-        if (seen.get(key) !== pct && pct % 10 === 0) {
+        if (pct % 10 === 0 && seen.get(key) !== pct) {
           seen.set(key, pct);
-          log(`${key}: ${pct}% (${bytes(info.total)})${info.fromCache ? " cached" : ""}`);
+          log(`${key}: ${pct}% (${mb(info.total)})${info.fromCache ? " cached" : ""}`);
         }
       } else if (info.status) log(`Model: ${info.status}`);
     });
-
     player = new StreamingPlayer({
       sampleRate: tts.sampleRate,
       primeSeconds: 0.18,
       onUnderrun: (u) => log(`Audio underrun: ${Math.round(u.gapSeconds * 1000)}ms`),
     });
-
-    $("modelInfo").textContent = `Ready • ${tts.sampleRate} Hz • INT8 • ${bundle.predefinedVoices.length} built-in voices`;
+    $("modelInfo").textContent = `Ready • ${tts.sampleRate} Hz • INT8 • ${bundle.predefinedVoices.length} voices`;
     $("modelBadge").textContent = "AI ready";
     $("modelBadge").style.color = "#61e6a1";
     $("cloneFile").disabled = false;
+    $("builtinVoice").disabled = bundle.predefinedVoices.length === 0;
     $("loadBuiltin").disabled = bundle.predefinedVoices.length === 0;
-    $("builtinVoice").innerHTML = bundle.predefinedVoices.map((voice) => `<option value="${voice}">${voice}</option>`).join("");
+    $("builtinVoice").innerHTML = bundle.predefinedVoices.map((v) => `<option value="${v}">${v}</option>`).join("");
     setProgress(100);
-    setStatus("AI ready — choose a voice.", "ok");
-    log("Browser AI is ready.");
+    status("Pocket TTS ready — choose a voice.", "ok");
+    log("Pocket TTS is ready.");
   } catch (error) {
     console.error(error);
-    setStatus(`Model failed: ${error.message}`, "bad");
+    status(`Model failed: ${error.message}`, "bad");
     log(`MODEL ERROR: ${error.stack || error.message}`);
   } finally {
-    $("loadModel").disabled = false;
-    $("loadModel").textContent = "Reload Browser AI";
+    button.disabled = false;
+    button.textContent = "Reload Pocket TTS";
   }
 }
 
-async function cloneFile(file) {
+async function cloneVoice(file) {
   if (!tts) return;
-  setVoiceStatus("Analyzing voice sample…", "working");
   $("cloneFile").disabled = true;
+  voiceStatus("Analyzing your voice…", "working");
   try {
     const ctx = new AudioContext();
     const buffer = await ctx.decodeAudioData(await file.arrayBuffer());
-    if (buffer.duration < 2) throw new Error("Use a voice sample at least 2 seconds long.");
-    const mono = buffer.getChannelData(0);
+    if (buffer.duration < 2) throw new Error("Use a recording of at least 2 seconds.");
+    const channels = [];
+    for (let c = 0; c < buffer.numberOfChannels; c++) channels.push(buffer.getChannelData(c));
+    const mono = new Float32Array(buffer.length);
+    for (let i = 0; i < buffer.length; i++) {
+      let sum = 0;
+      for (const channel of channels) sum += channel[i] || 0;
+      mono[i] = sum / channels.length;
+    }
     voiceRef = await tts.cloneVoice(mono, { inputSampleRate: buffer.sampleRate, name: file.name });
     await ctx.close();
-    setVoiceStatus(`✓ Cloned voice: ${file.name}`, "ok");
+    voiceStatus(`✓ Your cloned voice is ready: ${file.name}`, "ok");
     $("generate").disabled = false;
-    $("startVC").disabled = !browserSupportsSTT();
+    $("startVC").disabled = !supportsSTT();
     log(`Voice cloned locally from ${file.name}.`);
   } catch (error) {
     console.error(error);
-    setVoiceStatus(`Clone failed: ${error.message}`, "bad");
+    voiceStatus(`Clone failed: ${error.message}`, "bad");
     log(`CLONE ERROR: ${error.message}`);
   } finally {
     $("cloneFile").disabled = false;
@@ -126,19 +114,12 @@ async function generate(text) {
   voiceChunks = [];
   player.reset();
   await player.resume();
-
-  const cleanText = text.trim().slice(0, 1200);
-  const started = performance.now();
-  let firstAudio = false;
-  log(`Generating voice: "${cleanText.slice(0, 80)}${cleanText.length > 80 ? "…" : ""}"`);
+  const cleanText = text.trim().slice(0, 1500);
+  log(`Generating: "${cleanText.slice(0, 90)}${cleanText.length > 90 ? "…" : ""}"`);
   try {
     const metrics = await tts.generate(cleanText, {
       voice: voiceRef,
       onChunk: (audio, meta) => {
-        if (!firstAudio && !meta.isSilence) {
-          firstAudio = true;
-          log(`Voice audio started after ${Math.round(performance.now() - started)}ms.`);
-        }
         player.play(audio, meta);
         voiceChunks.push(audio.slice());
       },
@@ -148,13 +129,12 @@ async function generate(text) {
       if (wavUrl) URL.revokeObjectURL(wavUrl);
       wavUrl = URL.createObjectURL(chunksToWavBlob(voiceChunks, tts.sampleRate));
       $("download").disabled = false;
-      const preview = $("preview");
-      preview.src = wavUrl;
-      preview.hidden = false;
+      $("preview").src = wavUrl;
+      $("preview").hidden = false;
     }
-    log(`Finished: ${metrics.audioDuration.toFixed(2)}s of generated voice.`);
+    log(`Finished: ${metrics.audioDuration.toFixed(2)}s generated audio.`);
   } catch (error) {
-    if (!error.message?.toLowerCase().includes("stop")) log(`TTS ERROR: ${error.message}`);
+    if (!String(error.message).toLowerCase().includes("stop")) log(`TTS ERROR: ${error.message}`);
   } finally {
     generating = false;
     $("generate").disabled = !voiceRef;
@@ -162,50 +142,43 @@ async function generate(text) {
   }
 }
 
-function setupSpeechRecognition() {
+function setupSTT() {
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!Recognition) {
-    $("sttInfo").textContent = "Speech recognition is unavailable in this browser.";
+    $("sttInfo").textContent = "SpeechRecognition is not available in this browser.";
     return;
   }
-
   recognition = new Recognition();
   recognition.continuous = true;
   recognition.interimResults = false;
   recognition.lang = "en-US";
-
   recognition.onstart = () => {
     listening = true;
     $("startVC").disabled = true;
     $("stopVC").disabled = false;
     $("micDot").classList.add("live");
     $("sttInfo").textContent = "Microphone live — speak normally.";
-    setStatus("VoiceChanger listening…", "ok");
-    log("Microphone VoiceChanger started.");
+    status("VoiceChanger listening…", "ok");
+    log("Microphone started.");
   };
-
   recognition.onresult = async (event) => {
-    const last = event.results[event.results.length - 1];
-    if (!last.isFinal) return;
-    const text = last[0].transcript.trim();
-    if (!text || !voiceRef || generating) return;
+    const result = event.results[event.results.length - 1];
+    if (!result.isFinal || generating) return;
+    const text = result[0].transcript.trim();
+    if (!text || !voiceRef) return;
     log(`You said: ${text}`);
     recognition.stop();
     await generate(text);
-    if (listening) {
-      try { recognition.start(); } catch {}
-    }
+    if (listening) setTimeout(() => { try { recognition.start(); } catch {} }, 150);
   };
-
   recognition.onerror = (event) => {
-    log(`Microphone/STT: ${event.error}`);
+    log(`Browser STT: ${event.error}`);
     if (event.error === "not-allowed" || event.error === "service-not-allowed") {
       listening = false;
       $("micDot").classList.remove("live");
-      setStatus("Microphone permission was denied.", "bad");
+      status("Microphone permission was denied.", "bad");
     }
   };
-
   recognition.onend = () => {
     if (!listening) {
       $("micDot").classList.remove("live");
@@ -213,36 +186,27 @@ function setupSpeechRecognition() {
       $("stopVC").disabled = true;
       return;
     }
-    setTimeout(() => {
-      if (listening && !generating) {
-        try { recognition.start(); } catch {}
-      }
-    }, 150);
+    if (!generating) setTimeout(() => { try { recognition.start(); } catch {} }, 150);
   };
 }
 
 $("loadModel").addEventListener("click", loadModel);
-$("cloneFile").addEventListener("change", (event) => {
-  const file = event.target.files?.[0];
-  if (file) cloneFile(file);
-});
-
+$("cloneFile").addEventListener("change", (e) => { const file = e.target.files?.[0]; if (file) cloneVoice(file); });
 $("loadBuiltin").addEventListener("click", async () => {
   if (!tts) return;
   const name = $("builtinVoice").value;
-  setVoiceStatus(`Loading ${name}…`, "working");
+  voiceStatus(`Loading ${name}…`, "working");
   try {
     voiceRef = await tts.loadVoice(name);
-    setVoiceStatus(`✓ Built-in voice: ${name}`, "ok");
+    voiceStatus(`✓ Built-in voice: ${name}`, "ok");
     $("generate").disabled = false;
-    $("startVC").disabled = !browserSupportsSTT();
+    $("startVC").disabled = !supportsSTT();
     log(`Loaded built-in voice: ${name}.`);
   } catch (error) {
-    setVoiceStatus(`Voice failed: ${error.message}`, "bad");
+    voiceStatus(`Voice failed: ${error.message}`, "bad");
     log(`VOICE ERROR: ${error.message}`);
   }
 });
-
 $("generate").addEventListener("click", () => generate($("text").value));
 $("stop").addEventListener("click", async () => {
   await tts?.stop();
@@ -251,36 +215,55 @@ $("stop").addEventListener("click", async () => {
   $("generate").disabled = !voiceRef;
   log("Generation stopped.");
 });
-
 $("download").addEventListener("click", () => {
   if (!wavUrl) return;
   const a = document.createElement("a");
   a.href = wavUrl;
-  a.download = "voicechanger-browser.wav";
+  a.download = "pocket-voicechanger.wav";
   a.click();
 });
-
-$("startVC").addEventListener("click", () => {
+$("startVC").addEventListener("click", async () => {
   if (!recognition || !voiceRef) return;
   listening = true;
+  await player?.resume();
   try { recognition.start(); } catch {}
 });
-
 $("stopVC").addEventListener("click", () => {
   listening = false;
   recognition?.stop();
   $("micDot").classList.remove("live");
-  setStatus("VoiceChanger stopped.");
+  status("VoiceChanger stopped.");
   $("startVC").disabled = !voiceRef;
   $("stopVC").disabled = true;
 });
+$("clearCache").addEventListener("click", async () => {
+  try {
+    tts?.destroy();
+    tts = null;
+    player = null;
+    voiceRef = null;
+    await PocketTTS.clearCache();
+    setProgress(0);
+    $("modelBadge").textContent = "AI offline";
+    $("modelInfo").textContent = "Cache cleared";
+    $("cloneFile").disabled = true;
+    $("builtinVoice").disabled = true;
+    $("loadBuiltin").disabled = true;
+    $("generate").disabled = true;
+    $("startVC").disabled = true;
+    voiceStatus("No voice selected");
+    status("Model cache cleared.", "ok");
+    log("Pocket TTS cache cleared from this browser.");
+  } catch (error) {
+    status(`Cache clear failed: ${error.message}`, "bad");
+  }
+});
 
-if (browserSupportsSTT()) {
-  setupSpeechRecognition();
-  $("sttInfo").textContent = "Microphone speech recognition available.";
+if (supportsSTT()) {
+  setupSTT();
+  $("sttInfo").textContent = "Browser speech recognition available.";
 } else {
   $("sttInfo").textContent = "This browser does not expose SpeechRecognition.";
 }
-
 $("secureInfo").textContent = window.isSecureContext ? "Secure browser context ✓" : "Use the hosted HTTPS app for microphone access.";
-log("VoiceChanger app loaded. Load Browser AI to begin.");
+log("Pocket VoiceChanger loaded. Load the AI to begin.");
