@@ -1,64 +1,80 @@
 const { app, BrowserWindow, session } = require('electron');
-const path = require('path');
+const http = require('http');
 const fs = require('fs');
+const path = require('path');
+const mime = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon'
+};
+let server;
 
-const isDev = !app.isPackaged;
-
-function findWebIndex() {
-  const candidates = isDev
-    ? [
-        path.join(__dirname, '..', 'web', 'dist', 'index.html'),
-        path.join(__dirname, '..', 'web', 'index.html'),
-      ]
-    : [path.join(process.resourcesPath, 'web', 'index.html')];
-
-  return candidates.find((p) => fs.existsSync(p));
+function webRoot() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'web')
+    : path.join(__dirname, '..', 'web', 'dist');
 }
 
-function createWindow() {
-  const indexPath = findWebIndex();
-  if (!indexPath) {
-    throw new Error('VoiceChanger web build was not found. Build web/dist before launching.');
-  }
+function startLocalServer() {
+  return new Promise((resolve, reject) => {
+    const root = webRoot();
+    if (!fs.existsSync(path.join(root, 'index.html'))) return reject(new Error(`Desktop UI not built: ${root}`));
+    server = http.createServer((req, res) => {
+      let requestPath = decodeURIComponent((req.url || '/').split('?')[0]);
+      if (requestPath === '/') requestPath = '/index.html';
+      const safe = path.normalize(requestPath).replace(/^([.][.][/\\])+/, '');
+      const filePath = path.join(root, safe);
+      if (!filePath.startsWith(root)) { res.writeHead(403); return res.end('Forbidden'); }
+      fs.readFile(filePath, (err, data) => {
+        if (err) { res.writeHead(404); return res.end('Not found'); }
+        res.writeHead(200, { 'Content-Type': mime[path.extname(filePath).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+        res.end(data);
+      });
+    });
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      resolve(`http://127.0.0.1:${port}/`);
+    });
+  });
+}
 
+async function createWindow() {
+  const url = await startLocalServer();
   const win = new BrowserWindow({
-    width: 1220,
-    height: 920,
-    minWidth: 920,
-    minHeight: 700,
-    backgroundColor: '#070910',
-    title: 'Pocket VoiceChanger',
+    width: 1180,
+    height: 900,
+    minWidth: 900,
+    minHeight: 680,
+    backgroundColor: '#090b12',
+    title: 'VoiceChanger Desktop',
     webPreferences: {
       contextIsolation: true,
       sandbox: false,
-      webSecurity: false,
-      allowRunningInsecureContent: true,
       nodeIntegration: false,
+      webSecurity: true,
     },
   });
-
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  win.loadFile(indexPath);
-
-  win.webContents.on('console-message', (_event, _level, message) => {
-    console.log(`[renderer] ${message}`);
-  });
+  await win.loadURL(url);
+  win.webContents.on('console-message', (_event, _level, message) => console.log(`[renderer] ${message}`));
 }
 
-app.whenReady().then(() => {
-  // The desktop app intentionally does not rely on COOP/COEP headers.
-  // Pocket TTS is allowed to use one WASM thread in the web app.
+app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    callback(permission === 'media' || permission === 'microphone');
+    callback(['media', 'microphone', 'speaker-selection'].includes(permission));
   });
-
-  createWindow();
-
+  try {
+    await createWindow();
+  } catch (error) {
+    console.error(error);
+    app.quit();
+  }
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+app.on('before-quit', () => {
+  try { server?.close(); } catch {}
 });
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
