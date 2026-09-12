@@ -20,6 +20,7 @@ const crossOriginIsolation = {
 
 export default defineConfig({
   base: "./",
+  input: "voicechanger.html",
   plugins: [crossOriginIsolation],
   server: { port: 5173 },
   optimizeDeps: { exclude: ["pocket-tts-js"] },
