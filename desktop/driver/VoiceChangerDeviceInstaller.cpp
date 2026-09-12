@@ -9,6 +9,10 @@
 #pragma comment(lib, "setupapi.lib")
 #pragma comment(lib, "newdev.lib")
 
+#ifndef MAX_CLASS_NAME_LEN
+#define MAX_CLASS_NAME_LEN 256
+#endif
+
 static const wchar_t* kHardwareId = L"ROOT\\VirtualAudioDriver";
 
 int wmain(int argc, wchar_t** argv) {
