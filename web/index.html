@@ -24,7 +24,7 @@
 <body>
   <main class="app">
     <header class="hero">
-      <div><h1>🎙️ VoiceChanger Desktop</h1><div class="sub">Deepgram STT → cloned Pocket TTS voice → Windows audio</div></div>
+      <div><h1>🎙️ VoiceChanger Desktop</h1><div class="sub">Deepgram STT → cloned Pocket TTS voice → selected Windows audio</div></div>
       <div class="badge" id="modelBadge">Model not loaded</div>
     </header>
 
@@ -64,7 +64,7 @@
         <div class="stack">
           <select id="outputDevice"></select>
           <button id="refreshOutputs" class="secondary">Refresh Windows outputs</button>
-          <div class="hint">Native playback uses the Windows default device. For Voicemeeter, set Windows output to VoiceMeeter Input.</div>
+          <div class="hint">The selected device is now used for TTS playback. Choose VoiceMeeter Input (or your VoiceMeeter Banana endpoint) to route the cloned voice into VoiceMeeter.</div>
         </div>
       </div>
 
@@ -97,6 +97,82 @@
       </div>
     </section>
   </main>
+
+  <script>
+    // Route generated TTS through the device selected in the Windows output dropdown.
+    // The native Windows SoundPlayer remains the fallback for systems without setSinkId.
+    (() => {
+      const bridge = window.nativeAudio;
+      if (!bridge?.playWavBase64) return;
+      let activeAudio = null;
+      let activeUrl = null;
+
+      const base64ToBlob = (base64) => {
+        const raw = atob(base64);
+        const bytes = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+        return new Blob([bytes], { type: "audio/wav" });
+      };
+
+      const stopSelectedPlayback = () => {
+        if (activeAudio) {
+          try { activeAudio.pause(); } catch {}
+          try { activeAudio.removeAttribute("src"); activeAudio.load(); } catch {}
+          activeAudio = null;
+        }
+        if (activeUrl) {
+          URL.revokeObjectURL(activeUrl);
+          activeUrl = null;
+        }
+        try { bridge.stop?.(); } catch {}
+      };
+
+      window.nativeAudio = {
+        ...bridge,
+        playWavBase64: async (base64) => {
+          const select = document.getElementById("outputDevice");
+          const selectedDevice = select?.value || "default";
+
+          if (typeof HTMLMediaElement.prototype.setSinkId !== "function") {
+            return bridge.playWavBase64(base64);
+          }
+
+          try {
+            stopSelectedPlayback();
+            const audio = new Audio();
+            const blob = base64ToBlob(base64);
+            const url = URL.createObjectURL(blob);
+            activeAudio = audio;
+            activeUrl = url;
+            audio.preload = "auto";
+
+            if (selectedDevice && selectedDevice !== "default") {
+              await audio.setSinkId(selectedDevice);
+            }
+
+            audio.src = url;
+            audio.onended = () => {
+              if (activeAudio === audio) activeAudio = null;
+              if (activeUrl === url) {
+                URL.revokeObjectURL(url);
+                activeUrl = null;
+              }
+            };
+            await audio.play();
+            return true;
+          } catch (error) {
+            console.warn("[output routing] Selected device playback failed; using native Windows fallback.", error);
+            stopSelectedPlayback();
+            return bridge.playWavBase64(base64);
+          }
+        },
+        stop: () => {
+          stopSelectedPlayback();
+          return true;
+        }
+      };
+    })();
+  </script>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>
