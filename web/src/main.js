@@ -13,6 +13,8 @@ let sttSocket = null;
 let sttRunning = false;
 let echoQueue = Promise.resolve();
 let sessionId = 0;
+let playbackAudio = null;
+let playbackUrl = null;
 
 const MODEL_SOURCES = [
   "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/main/onnx",
@@ -53,7 +55,7 @@ async function refreshOutputs() {
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const outputs = devices.filter((d) => d.kind === "audiooutput");
-    const current = select.value;
+    const current = select.value || localStorage.getItem("voicechanger.outputDevice") || "";
     select.replaceChildren();
     if (!outputs.length) select.add(new Option("Windows default output", "default"));
     for (const device of outputs) {
@@ -64,12 +66,49 @@ async function refreshOutputs() {
   } catch (error) { log(`OUTPUT ERROR: ${error.message}`); }
 }
 
-async function nativePlay(blob) {
-  if (!window.nativeAudio?.playWavBase64) throw new Error("Native Windows audio bridge is missing. Install the newest EXE.");
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  await window.nativeAudio.playWavBase64(btoa(binary));
+function stopBrowserPlayback() {
+  if (playbackAudio) {
+    try { playbackAudio.pause(); } catch {}
+    try { playbackAudio.removeAttribute("src"); playbackAudio.load(); } catch {}
+    playbackAudio = null;
+  }
+  if (playbackUrl) {
+    URL.revokeObjectURL(playbackUrl);
+    playbackUrl = null;
+  }
+}
+
+async function playWavInBrowser(blob) {
+  if (!blob) throw new Error("No audio was generated.");
+  if (typeof HTMLMediaElement.prototype.setSinkId !== "function") {
+    throw new Error("This browser does not support selecting an audio output device. Use current Chrome or Edge.");
+  }
+
+  const select = $("outputDevice");
+  const selectedDevice = select?.value || localStorage.getItem("voicechanger.outputDevice") || "default";
+  stopBrowserPlayback();
+
+  const audio = new Audio();
+  const url = URL.createObjectURL(blob);
+  playbackAudio = audio;
+  playbackUrl = url;
+  audio.preload = "auto";
+  audio.src = url;
+
+  if (selectedDevice && selectedDevice !== "default") {
+    await audio.setSinkId(selectedDevice);
+  }
+
+  audio.onended = () => {
+    if (playbackAudio === audio) playbackAudio = null;
+    if (playbackUrl === url) {
+      URL.revokeObjectURL(url);
+      playbackUrl = null;
+    }
+  };
+
+  await audio.play();
+  return true;
 }
 
 async function loadModel() {
@@ -173,8 +212,8 @@ async function startRecording() {
     $("recordVoice").disabled = true;
     $("stopRecord").disabled = false;
     setVoiceStatus("🔴 Recording… speak clearly for 3–15 seconds.", "working");
+    $("stopRecord").onclick = () => { if (recorder.state !== "inactive") recorder.stop(); };
   } catch (error) { setVoiceStatus(`Microphone failed: ${error.message}`, "bad"); }
-  $("stopRecord").onclick = () => { if (recorder.state !== "inactive") recorder.stop(); };
 }
 
 async function generate(text, mode = "manual") {
@@ -197,7 +236,7 @@ async function generate(text, mode = "manual") {
       $("download").download = `voicechanger-${Date.now()}.wav`;
       $("download").classList.remove("hidden");
     }
-    await nativePlay(blob);
+    await playWavInBrowser(blob);
     setStatus(`Spoken • ${metrics.audioDuration.toFixed(2)}s`, "ok");
   } catch (error) {
     setStatus(`${mode === "echo" ? "Echo" : "TTS"} failed: ${error.message}`, "bad");
@@ -315,7 +354,7 @@ $("loadModel").addEventListener("click", loadModel);
 $("cloneFile").addEventListener("change", (e) => { const file = e.target.files?.[0]; if (file) cloneFile(file); });
 $("recordVoice").addEventListener("click", startRecording);
 $("generate").addEventListener("click", () => generate($("text").value));
-$("stop").addEventListener("click", async () => { try { await tts?.stop(); } catch {} try { await window.nativeAudio?.stop(); } catch {} setStatus("Generation stopped."); });
+$("stop").addEventListener("click", async () => { try { await tts?.stop(); } catch {} stopBrowserPlayback(); setStatus("Generation stopped."); });
 $("startVC").addEventListener("click", () => startDeepgram().catch((error) => { setStatus(`STT failed: ${error.message}`, "bad"); log(`STT ERROR: ${error.message}`); }));
 $("stopVC").addEventListener("click", () => { stopDeepgram(); setStatus("VoiceChanger stopped."); });
 $("refreshOutputs").addEventListener("click", refreshOutputs);
@@ -325,4 +364,4 @@ const savedKey = localStorage.getItem("voicechanger.deepgramKey");
 if (savedKey && $("deepgramKey")) $("deepgramKey").value = savedKey;
 setTranscript("Nothing transcribed yet.");
 refreshOutputs();
-log("VoiceChanger ready. Deepgram is used for reliable live STT; Pocket TTS remains local.");
+log("VoiceChanger browser app ready. Deepgram STT + local Pocket TTS + browser audio output are active.");
