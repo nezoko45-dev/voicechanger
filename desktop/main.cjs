@@ -1,10 +1,11 @@
-const { app, BrowserWindow, session } = require('electron');
+const { app, BrowserWindow, session, ipcMain } = require('electron');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const { spawn } = require('child_process');
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
-app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
 
 const mime = {
   '.html': 'text/html; charset=utf-8',
@@ -16,6 +17,53 @@ const mime = {
   '.ico': 'image/x-icon'
 };
 let server;
+let nativePlayer = null;
+let nativeTemp = null;
+
+function stopNativePlayer() {
+  if (nativePlayer) {
+    try { nativePlayer.kill(); } catch {}
+    nativePlayer = null;
+  }
+  if (nativeTemp) {
+    try { fs.unlinkSync(nativeTemp); } catch {}
+    nativeTemp = null;
+  }
+}
+
+function playNativeWav(base64) {
+  if (process.platform !== 'win32') {
+    throw new Error('Native Windows audio playback is only available on Windows.');
+  }
+  if (typeof base64 !== 'string' || base64.length > 20_000_000) {
+    throw new Error('Invalid audio payload.');
+  }
+
+  stopNativePlayer();
+  const file = path.join(os.tmpdir(), `voicechanger-${process.pid}-${Date.now()}.wav`);
+  fs.writeFileSync(file, Buffer.from(base64, 'base64'));
+  nativeTemp = file;
+
+  // SoundPlayer sends the PCM WAV through Windows' normal playback device,
+  // completely bypassing Chromium's HTMLMediaElement/audio-output path.
+  const escaped = file.replace(/'/g, "''");
+  const script = `$p = New-Object System.Media.SoundPlayer('${escaped}'); $p.PlaySync()`;
+  nativePlayer = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+    windowsHide: true,
+    stdio: 'ignore'
+  });
+  nativePlayer.on('exit', () => {
+    nativePlayer = null;
+    if (nativeTemp === file) {
+      try { fs.unlinkSync(file); } catch {}
+      nativeTemp = null;
+    }
+  });
+  nativePlayer.on('error', (error) => {
+    console.error('[native audio]', error);
+  });
+  return true;
+}
 
 function webRoot() {
   return app.isPackaged
@@ -72,7 +120,7 @@ async function createWindow() {
       sandbox: false,
       nodeIntegration: false,
       webSecurity: true,
-      autoplayPolicy: 'no-user-gesture-required',
+      preload: path.join(__dirname, 'preload.cjs')
     },
   });
 
@@ -84,6 +132,9 @@ async function createWindow() {
   await win.loadURL(url);
   win.webContents.on('console-message', (_event, _level, message) => console.log(`[renderer] ${message}`));
 }
+
+ipcMain.handle('native-audio:play-wav', (_event, base64) => playNativeWav(base64));
+ipcMain.handle('native-audio:stop', () => { stopNativePlayer(); return true; });
 
 app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
@@ -103,6 +154,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('before-quit', () => {
+  stopNativePlayer();
   try { server?.close(); } catch {}
 });
 app.on('window-all-closed', () => {
