@@ -15,6 +15,7 @@ let manualStop = false;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
 let reconnectGeneration = 0;
+let keepAliveTimer = null;
 
 let lastInterimText = "";
 let conversionBuffer = "";
@@ -135,7 +136,15 @@ function queueConversionText(text, final = false) { if (!running || !text) retur
 async function drainConversionQueue() { if (conversionWorker || !running || !conversionQueue.length) return; conversionWorker = true; const generation = conversionGeneration; try { while (conversionQueue.length && running && generation === conversionGeneration) { const chunk = conversionQueue.shift(); await speak(chunk, "conversion"); } } finally { if (generation === conversionGeneration) conversionWorker = false; } }
 function downsample(data, from, to = 16000) { if (from === to) return data; const ratio = from / to; const out = new Float32Array(Math.round(data.length / ratio)); let offset = 0; for (let i = 0; i < out.length; i++) { const end = Math.min(data.length, Math.round((i + 1) * ratio)); let sum = 0, count = 0; for (; offset < end; offset++) { sum += data[offset]; count++; } out[i] = count ? sum / count : 0; } return out; }
 function pcm16(data) { const out = new Int16Array(data.length); for (let i = 0; i < data.length; i++) { const s = Math.max(-1, Math.min(1, data[i])); out[i] = s < 0 ? s * 0x8000 : s * 0x7fff; } return out; }
-function cleanupConnection() { try { processor?.disconnect(); } catch {} try { sourceNode?.disconnect(); } catch {} try { audioContext?.close(); } catch {} processor = null; sourceNode = null; audioContext = null; try { stream?.getTracks().forEach((t) => t.stop()); } catch {} stream = null; socket = null; running = false; $("micDot")?.classList.remove("live"); }
+function stopKeepAlive() { if (keepAliveTimer) { clearInterval(keepAliveTimer); keepAliveTimer = null; } }
+function startKeepAlive(ws) {
+  stopKeepAlive();
+  keepAliveTimer = setInterval(() => {
+    if (!running || ws !== socket || ws.readyState !== WebSocket.OPEN) return;
+    try { ws.send(JSON.stringify({ type: "KeepAlive" })); } catch {}
+  }, 3000);
+}
+function cleanupConnection() { stopKeepAlive(); try { processor?.disconnect(); } catch {} try { sourceNode?.disconnect(); } catch {} try { audioContext?.close(); } catch {} processor = null; sourceNode = null; audioContext = null; try { stream?.getTracks().forEach((t) => t.stop()); } catch {} stream = null; socket = null; running = false; $("micDot")?.classList.remove("live"); }
 function stopVC() { manualStop = true; reconnectGeneration++; reconnectAttempts = 0; if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; } if (conversionTimer) { clearTimeout(conversionTimer); conversionTimer = null; } conversionBuffer = ""; conversionQueue.length = 0; lastInterimText = ""; conversionGeneration++; try { tts?.stop?.(); } catch {} stopPlayback(); const oldSocket = socket; cleanupConnection(); try { oldSocket?.close(1000, "User stopped VoiceChanger"); } catch {} $("startVC").disabled = !voiceRef || !apiKey(); $("stopVC").disabled = true; $("sttInfo").textContent = "VoiceChanger stopped."; }
 
 async function startVC() {
@@ -146,7 +155,7 @@ async function startVC() {
   await ensureOutputAudioContext();
   stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   const key = apiKey();
-  const url = "wss://api.deepgram.com/v1/listen?model=nova-3&language=en-US&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&smart_format=true&endpointing=500&utterance_end_ms=800";
+  const url = "wss://api.deepgram.com/v1/listen?model=nova-3&language=en-US&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&smart_format=true&endpointing=500&utterance_end_ms=800&keep_alive=true";
   const ws = new WebSocket(url, ["token", key]); socket = ws; ws.binaryType = "arraybuffer";
   ws.onopen = () => {
     if (ws !== socket || manualStop) { try { ws.close(); } catch {} return; }
@@ -154,14 +163,14 @@ async function startVC() {
     sourceNode = audioContext.createMediaStreamSource(stream); processor = audioContext.createScriptProcessor(2048, 1, 1);
     const silent = audioContext.createGain(); silent.gain.value = 0; sourceNode.connect(processor); processor.connect(silent); silent.connect(audioContext.destination);
     processor.onaudioprocess = (event) => { if (!running || ws.readyState !== WebSocket.OPEN) return; try { ws.send(pcm16(downsample(event.inputBuffer.getChannelData(0), audioContext.sampleRate)).buffer); } catch {} };
-    running = true; $("micDot")?.classList.add("live"); $("startVC").disabled = true; $("stopVC").disabled = false; $("sttInfo").textContent = "LIVE VOICE CONVERSION — your speech is converted to the cloned voice."; status("Live voice conversion • connected", "ok"); log("Deepgram connected — staying connected until Stop is pressed.");
+    running = true; startKeepAlive(ws); $("micDot")?.classList.add("live"); $("startVC").disabled = true; $("stopVC").disabled = false; $("sttInfo").textContent = "LIVE VOICE CONVERSION — your speech is converted to the cloned voice."; status("Live voice conversion • connected", "ok"); log("Deepgram connected — keep-alive enabled; stays connected until Stop is pressed.");
   };
-  ws.onmessage = (event) => { let data; try { data = JSON.parse(event.data); } catch { return; } if (data.type !== "Results") return; const alt = data.channel?.alternatives?.[0]; const text = alt?.transcript?.trim(); if (!text) return; $("transcript").textContent = text; if (running) { queueConversionText(text, !!data.is_final); if (data.is_final) log(`YOU: ${text}`); } };
-  ws.onerror = () => { log("Deepgram WebSocket error."); status("Deepgram connection error — stopped. Press Start to reconnect.", "bad"); };
+  ws.onmessage = (event) => { let data; try { data = JSON.parse(event.data); } catch { return; } if (data.type === "VoiceChangerProxyReady") { log("Deepgram proxy upstream connected."); return; } if (data.type === "VoiceChangerProxyError") { log(`Deepgram proxy error: ${data.message || "unknown error"}`); return; } if (data.type !== "Results") return; const alt = data.channel?.alternatives?.[0]; const text = alt?.transcript?.trim(); if (!text) return; $("transcript").textContent = text; if (running) { queueConversionText(text, !!data.is_final); if (data.is_final) log(`YOU: ${text}`); } };
+  ws.onerror = () => { log("Deepgram WebSocket error event received."); };
   ws.onclose = (event) => {
     if (ws !== socket) return;
     cleanupConnection();
-    if (!manualStop) { status(`Deepgram disconnected (${event.code}). Press Start to reconnect.`, "bad"); log(`Deepgram disconnected (${event.code}${event.reason ? ` ${event.reason}` : ""}). Automatic reconnect disabled.`); }
+    if (!manualStop) { status(`Deepgram disconnected (${event.code}). Press Start to reconnect.`, "bad"); log(`Deepgram disconnected (${event.code}${event.reason ? ` ${event.reason}` : ""}). The session ended unexpectedly.`); }
   };
 }
 
