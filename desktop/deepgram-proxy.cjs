@@ -29,8 +29,14 @@ function startDeepgramProxy() {
         return;
       }
 
+      // Deepgram keep-alive is a WebSocket message, not a URL parameter.
+      // Strip any stale keep_alive query parameter before opening the upstream socket.
+      const upstreamParams = new URLSearchParams(requestUrl.search);
+      upstreamParams.delete('keep_alive');
+      const upstreamQuery = upstreamParams.toString() ? `?${upstreamParams.toString()}` : '';
+
       wss.handleUpgrade(req, socket, head, (client) => {
-        wss.emit('connection', client, req, key, requestUrl.search);
+        wss.emit('connection', client, req, key, upstreamQuery);
       });
     } catch {
       socket.destroy();
