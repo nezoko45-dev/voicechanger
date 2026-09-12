@@ -228,22 +228,39 @@ ipcMain.on('deepgram-proxy:url', (event) => {
   event.returnValue = deepgramProxy?.url || '';
 });
 
+app.on('uncaughtException', (error) => {
+  console.error('[VoiceChanger main process]', error);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[VoiceChanger unhandled rejection]', reason);
+});
+
 app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     callback(['media', 'microphone', 'speaker-selection', 'notifications'].includes(permission));
   });
 
+  // The Deepgram proxy is an enhancement for packaged desktop builds, not a reason
+  // to terminate the whole application. If it cannot start, the UI still opens and
+  // desktop-ws-fix.js falls back to Deepgram's normal WebSocket connection.
   try {
     deepgramProxy = await startDeepgramProxy();
     console.log(`[deepgram] local proxy ready at ${deepgramProxy.url}`);
+  } catch (error) {
+    deepgramProxy = null;
+    console.error('[deepgram] local proxy unavailable; using direct WebSocket fallback:', error);
+  }
+
+  try {
     await createWindow();
   } catch (error) {
-    console.error(error);
-    app.quit();
+    console.error('[VoiceChanger] window startup failed:', error);
+    // Keep Electron alive long enough to expose the failure in logs instead of
+    // silently disappearing immediately.
   }
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) createWindow().catch(console.error);
   });
 });
 
