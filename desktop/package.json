@@ -1,8 +1,8 @@
 {
   "name": "voicechanger-desktop",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "private": true,
-  "description": "Windows desktop STT/TTS VoiceChanger with voice cloning",
+  "description": "Windows desktop STT/TTS VoiceChanger with voice cloning and virtual audio driver",
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
@@ -26,6 +26,10 @@
       {
         "from": "../web/dist",
         "to": "web"
+      },
+      {
+        "from": "driver",
+        "to": "driver"
       }
     ],
     "directories": {
