@@ -3,5 +3,6 @@
 // after transient WebSocket 1006 disconnects instead of leaving the UI stopped.
 import './output-sink-fix.js';
 import './pocket-tts-fix.js';
+import './tts-onset-fix.js';
 import './main-fixed.js';
 import './driver.js';
