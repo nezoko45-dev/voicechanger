@@ -2,15 +2,30 @@ const find = (id) => document.getElementById(id);
 
 function findVoiceChangerOutput(devices) {
   const outputs = devices.filter((d) => d.kind === 'audiooutput');
-  return outputs.find((d) => /magic mic|voicechanger|virtual audio driver|virtual.?audio|virtual.?speaker/i.test(d.label || '')) || null;
+  return outputs.find((d) => /magic mic(?!.*microphone)|voicechanger|virtual audio driver|virtual.?audio|virtual.?speaker/i.test(d.label || '')) || null;
+}
+
+function findVoiceChangerInput(devices) {
+  const inputs = devices.filter((d) => d.kind === 'audioinput');
+  return inputs.find((d) => /magic mic.*microphone|magic mic|virtual mic driver|voicechanger/i.test(d.label || '')) || null;
+}
+
+async function enumerateMagicMic() {
+  if (!navigator.mediaDevices?.enumerateDevices) return { output: null, input: null };
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return { output: findVoiceChangerOutput(devices), input: findVoiceChangerInput(devices) };
+  } catch (error) {
+    appendDriverLog(`MAGIC MIC DEVICE ENUMERATION ERROR: ${error.message}`);
+    return { output: null, input: null };
+  }
 }
 
 async function selectVoiceChangerOutput({ requireDriver = false } = {}) {
   const select = find('outputDevice');
   if (!select || !navigator.mediaDevices?.enumerateDevices) return null;
   try {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const output = findVoiceChangerOutput(devices);
+    const { output } = await enumerateMagicMic();
     if (!output) {
       if (requireDriver) appendDriverLog('Magic Mic virtual output is not visible yet. Windows may still be creating the virtual audio endpoint.');
       return null;
@@ -19,7 +34,7 @@ async function selectVoiceChangerOutput({ requireDriver = false } = {}) {
     if (!option) select.add(new Option(output.label || 'Magic Mic', output.deviceId));
     select.value = output.deviceId;
     localStorage.setItem('voicechanger.outputDevice', output.deviceId);
-    setDriverStatus('✓ Magic Mic is installed and selected as the TTS output.', 'ok');
+    setDriverStatus('✓ Magic Mic output is installed and selected. Its microphone endpoint is available to Discord/VRChat/etc.', 'ok');
     return output;
   } catch (error) {
     appendDriverLog(`MAGIC MIC OUTPUT ERROR: ${error.message}`);
@@ -85,7 +100,7 @@ function addDriverCard() {
         <button id="routeDriver" class="secondary">Route TTS Through Magic Mic</button>
       </div>
       <div class="hint">
-        Magic Mic is the Windows virtual speaker/output used by VoiceChanger. Pocket TTS speech is routed to Magic Mic so other apps can select its matching virtual microphone endpoint.
+        Pocket TTS is sent to the Magic Mic virtual speaker. Windows exposes the matching <b>Magic Mic Microphone</b> input so Discord, VRChat, OBS, games, and other apps can use the generated voice as their microphone.
       </div>
     </div>`;
 
@@ -105,9 +120,9 @@ function addDriverCard() {
         return;
       }
       if (result.staged && !result.installed) {
-        setDriverStatus('Driver package installed, but Windows has not exposed the Magic Mic endpoints yet. Refresh after Windows finishes device setup.', 'working');
+        setDriverStatus('Driver package installed, but Windows has not exposed both Magic Mic endpoints yet. Refresh after Windows finishes device setup.', 'working');
       } else {
-        setDriverStatus('✓ Magic Mic installed. Registering its Windows audio endpoints…', 'working');
+        setDriverStatus('✓ Magic Mic installed. Registering its speaker and microphone endpoints…', 'working');
       }
       try { find('refreshOutputs')?.click(); } catch {}
       setTimeout(() => { selectVoiceChangerOutput({ requireDriver: true }); }, 1200);
@@ -142,8 +157,18 @@ function addDriverCard() {
 
   find('refreshDriver').addEventListener('click', checkDriverStatus);
   find('routeDriver').addEventListener('click', async () => {
-    const output = await selectVoiceChangerOutput({ requireDriver: true });
-    if (!output) setDriverStatus('Magic Mic virtual output was not found yet. Install the Magic Mic Driver first.', 'bad');
+    const devices = await enumerateMagicMic();
+    const output = devices.output;
+    if (!output) {
+      setDriverStatus('Magic Mic virtual output was not found yet. Install the Magic Mic Driver first.', 'bad');
+      return;
+    }
+    if (!devices.input) {
+      setDriverStatus('Magic Mic output is present, but Windows has not exposed Magic Mic Microphone yet.', 'working');
+      return;
+    }
+    await selectVoiceChangerOutput({ requireDriver: true });
+    setDriverStatus('✓ TTS is routed to Magic Mic. Select “Magic Mic Microphone” as the microphone in Discord/VRChat/etc.', 'ok');
   });
 }
 
@@ -173,8 +198,15 @@ async function checkDriverStatus() {
       return;
     }
     if (result.installed) {
-      const output = await selectVoiceChangerOutput();
-      if (!output) setDriverStatus('✓ Magic Mic Driver is installed, but Windows has not exposed its virtual speaker yet.', 'working');
+      const devices = await enumerateMagicMic();
+      if (!devices.output) {
+        setDriverStatus('✓ Magic Mic Driver is installed, but Windows has not exposed its virtual speaker yet.', 'working');
+      } else if (!devices.input) {
+        setDriverStatus('⚠ Magic Mic speaker is ready, but Magic Mic Microphone is not visible yet.', 'working');
+      } else {
+        await selectVoiceChangerOutput();
+        setDriverStatus('✓ Magic Mic speaker + microphone are ready. TTS will flow into Magic Mic Microphone.', 'ok');
+      }
       return;
     }
     if (result.reboot) {
@@ -186,7 +218,7 @@ async function checkDriverStatus() {
       return;
     }
     if (result.staged) {
-      setDriverStatus('Driver package is installed, but Magic Mic endpoints are not created yet. Refresh Driver Status and try Install Magic Mic Driver again.', 'working');
+      setDriverStatus('Driver package is installed, but both Magic Mic endpoints are not created yet. Refresh Driver Status and try Install Magic Mic Driver again.', 'working');
       return;
     }
     setDriverStatus('Magic Mic virtual audio driver is not installed.', 'bad');
