@@ -3,9 +3,6 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-// Live VoiceChanger replies are generated asynchronously after STT events.
-// Chromium can otherwise reject audio.play() because the call is no longer
-// directly inside a user gesture.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
 
@@ -75,9 +72,11 @@ async function createWindow() {
       sandbox: false,
       nodeIntegration: false,
       webSecurity: true,
+      autoplayPolicy: 'no-user-gesture-required',
     },
   });
 
+  win.webContents.setAudioMuted(false);
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('before-input-event', (_event, input) => {
     if (input.key === 'F12' && input.type === 'keyDown') win.webContents.toggleDevTools();
