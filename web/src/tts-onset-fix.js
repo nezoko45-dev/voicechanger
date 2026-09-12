@@ -2,8 +2,8 @@ import { PocketTTS } from "pocket-tts-js";
 
 // Buffer the complete Pocket TTS utterance before handing audio to the live
 // playback scheduler. This removes chunk-arrival jitter and chunk-boundary
-// stutter entirely; the scheduler receives one contiguous PCM buffer per
-// utterance instead of many independently timed pieces.
+// stutter. Tiny edge fades also remove the sharp DC/click-like onset that can
+// be heard as a beep on some cloned voices and output devices.
 const originalGenerate = PocketTTS.prototype.generate;
 
 function toFloat32(audio) {
@@ -39,12 +39,31 @@ function joinChunks(chunks) {
   return joined;
 }
 
+function softenEdges(samples, sampleRate) {
+  const fadeSamples = Math.min(Math.max(1, Math.round(sampleRate * 0.008)), Math.floor(samples.length / 2));
+  for (let i = 0; i < fadeSamples; i++) {
+    const gain = (i + 1) / fadeSamples;
+    samples[i] *= gain;
+    samples[samples.length - 1 - i] *= gain;
+  }
+  return samples;
+}
+
+function emitBuffered(chunks, onChunk, sampleRate) {
+  if (!chunks.length) return;
+  const joined = joinChunks(chunks);
+  sanitize(joined);
+  softenEdges(joined, sampleRate);
+  onChunk(joined);
+}
+
 PocketTTS.prototype.generate = function (text, options = {}) {
   if (typeof options?.onChunk !== "function") {
     return originalGenerate.call(this, text, options);
   }
 
   const chunks = [];
+  const sampleRate = Number(this.sampleRate) || 24000;
 
   const wrappedOptions = {
     ...options,
@@ -56,16 +75,13 @@ PocketTTS.prototype.generate = function (text, options = {}) {
 
   const result = originalGenerate.call(this, text, wrappedOptions);
 
-  // Pocket TTS resolves after its generated chunks have been delivered. Only
-  // then emit the complete utterance as one audio buffer. This deliberately
-  // trades a small amount of playback latency for stable, gap-free audio.
   if (result && typeof result.then === "function") {
     return result.then((metrics) => {
-      if (chunks.length) options.onChunk(joinChunks(chunks));
+      emitBuffered(chunks, options.onChunk, sampleRate);
       return metrics;
     });
   }
 
-  if (chunks.length) options.onChunk(joinChunks(chunks));
+  emitBuffered(chunks, options.onChunk, sampleRate);
   return result;
 };
