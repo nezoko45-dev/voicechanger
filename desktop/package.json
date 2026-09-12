@@ -1,8 +1,8 @@
 {
-  "name": "pocket-voicechanger-desktop",
-  "version": "1.0.0",
+  "name": "voicechanger-desktop",
+  "version": "2.0.0",
   "private": true,
-  "description": "Local desktop Pocket VoiceChanger",
+  "description": "Windows desktop STT/TTS VoiceChanger with voice cloning",
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
@@ -14,26 +14,14 @@
   },
   "build": {
     "appId": "dev.nezoko45.voicechanger",
-    "productName": "Pocket VoiceChanger",
-    "artifactName": "Pocket-VoiceChanger-${version}-${os}-${arch}.${ext}",
+    "productName": "VoiceChanger Desktop",
+    "artifactName": "VoiceChanger-Desktop-${version}-${arch}.${ext}",
     "asar": true,
-    "files": [
-      "main.cjs",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "../web/dist",
-        "to": "web"
-      }
-    ],
+    "files": ["main.cjs", "package.json"],
+    "extraResources": [{ "from": "../web/dist", "to": "web" }],
+    "directories": { "output": "dist" },
     "win": {
-      "target": [
-        {
-          "target": "portable",
-          "arch": ["x64"]
-        }
-      ]
+      "target": [{ "target": "portable", "arch": ["x64"] }]
     }
   }
 }
