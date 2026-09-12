@@ -29,6 +29,26 @@ jobs:
         working-directory: web
         run: npm run build
 
+      - name: Download signed VoiceChanger virtual audio driver package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $driverDir = Join-Path $env:GITHUB_WORKSPACE 'desktop\driver'
+          $packageDir = Join-Path $driverDir 'package'
+          $zip = Join-Path $env:RUNNER_TEMP 'voicechanger-driver.zip'
+          if (Test-Path $packageDir) { Remove-Item -Recurse -Force $packageDir }
+          New-Item -ItemType Directory -Path $packageDir -Force | Out-Null
+          $url = 'https://github.com/VirtualDrivers/Virtual-Audio-Driver/releases/download/25.7.14/Virtual.Audio.Driver.Signed.-.25.7.14.zip'
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          $expected = 'dd10560994de65a7e587fb8b93c0d7e9838292d9c3566a0976c2786d727292bd'
+          $actual = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) {
+            throw "Driver package SHA256 mismatch. Expected $expected but received $actual."
+          }
+          Expand-Archive -Path $zip -DestinationPath $packageDir -Force
+          Write-Host 'Bundled VoiceChanger driver package:'
+          Get-ChildItem -Path $packageDir -Recurse -Include *.sys,*.inf,*.cat,*.dll | ForEach-Object { Write-Host $_.FullName }
+
       - name: Install desktop dependencies
         working-directory: desktop
         run: npm install
