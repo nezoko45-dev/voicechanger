@@ -1,49 +1,70 @@
 const find = (id) => document.getElementById(id);
 
-function findVoiceChangerOutput(devices) {
+function findVoiceMeeterOutput(devices) {
   const outputs = devices.filter((d) => d.kind === 'audiooutput');
-  return outputs.find((d) => /magic mic(?!.*microphone)|voicechanger|virtual audio driver|virtual.?audio|virtual.?speaker/i.test(d.label || '')) || null;
+  return outputs.find((d) => /voicemeeter.*(?:input|vaio)|vb-audio.*voicemeeter/i.test(d.label || '')) || null;
 }
 
-function findVoiceChangerInput(devices) {
+function findMagicMicOutput(devices) {
+  const outputs = devices.filter((d) => d.kind === 'audiooutput');
+  return outputs.find((d) => /magic mic(?!.*microphone)|voicechanger|virtual audio driver|virtual.?speaker/i.test(d.label || '')) || null;
+}
+
+function findVoiceMeeterInput(devices) {
+  const inputs = devices.filter((d) => d.kind === 'audioinput');
+  return inputs.find((d) => /voicemeeter.*(?:out|output|b1)|vb-audio.*voicemeeter.*out/i.test(d.label || '')) || null;
+}
+
+function findMagicMicInput(devices) {
   const inputs = devices.filter((d) => d.kind === 'audioinput');
   return inputs.find((d) => /magic mic.*microphone|magic mic|virtual mic driver|voicechanger/i.test(d.label || '')) || null;
 }
 
-async function enumerateMagicMic() {
-  if (!navigator.mediaDevices?.enumerateDevices) return { output: null, input: null };
+async function enumerateRoutingDevices() {
+  if (!navigator.mediaDevices?.enumerateDevices) return { voiceMeeterOutput: null, voiceMeeterInput: null, magicMicOutput: null, magicMicInput: null };
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
-    return { output: findVoiceChangerOutput(devices), input: findVoiceChangerInput(devices) };
+    return {
+      voiceMeeterOutput: findVoiceMeeterOutput(devices),
+      voiceMeeterInput: findVoiceMeeterInput(devices),
+      magicMicOutput: findMagicMicOutput(devices),
+      magicMicInput: findMagicMicInput(devices),
+    };
   } catch (error) {
-    appendDriverLog(`MAGIC MIC DEVICE ENUMERATION ERROR: ${error.message}`);
-    return { output: null, input: null };
+    appendDriverLog(`AUDIO DEVICE ENUMERATION ERROR: ${error.message}`);
+    return { voiceMeeterOutput: null, voiceMeeterInput: null, magicMicOutput: null, magicMicInput: null };
   }
 }
 
-async function selectVoiceChangerOutput({ requireDriver = false } = {}) {
+async function selectPreferredOutput({ requireDevice = false } = {}) {
   const select = find('outputDevice');
   if (!select || !navigator.mediaDevices?.enumerateDevices) return null;
   try {
-    const { output } = await enumerateMagicMic();
-    if (!output) {
-      if (requireDriver) appendDriverLog('Magic Mic virtual output is not visible yet. Windows may still be creating the virtual audio endpoint.');
+    const devices = await enumerateRoutingDevices();
+    const preferred = devices.voiceMeeterOutput || devices.magicMicOutput;
+    if (!preferred) {
+      if (requireDevice) appendDriverLog('No VoiceMeeter or Magic Mic output was found.');
       return null;
     }
-    const option = [...select.options].find((item) => item.value === output.deviceId);
-    if (!option) select.add(new Option(output.label || 'Magic Mic', output.deviceId));
-    select.value = output.deviceId;
-    localStorage.setItem('voicechanger.outputDevice', output.deviceId);
-    setDriverStatus('✓ Magic Mic output is installed and selected. Its microphone endpoint is available to Discord/VRChat/etc.', 'ok');
-    return output;
+    const option = [...select.options].find((item) => item.value === preferred.deviceId);
+    if (!option) select.add(new Option(preferred.label || 'VoiceMeeter Input', preferred.deviceId));
+    select.value = preferred.deviceId;
+    localStorage.setItem('voicechanger.outputDevice', preferred.deviceId);
+    localStorage.setItem('voicechanger.outputRoute', devices.voiceMeeterOutput ? 'voicemeeter' : 'magic-mic');
+    if (devices.voiceMeeterOutput) {
+      setDriverStatus('✓ VoiceMeeter Input is selected as the primary TTS output.', 'ok');
+    } else {
+      setDriverStatus('✓ VoiceMeeter was not found. Magic Mic is selected as the fallback TTS output.', 'working');
+    }
+    return preferred;
   } catch (error) {
-    appendDriverLog(`MAGIC MIC OUTPUT ERROR: ${error.message}`);
+    appendDriverLog(`AUDIO OUTPUT ERROR: ${error.message}`);
     return null;
   }
 }
 
-function installMagicMicPlaybackRouter() {
-  if (!window.nativeAudio?.playWavBase64 || window.nativeAudio.__magicMicRouterInstalled) return;
+function installTtsPlaybackRouter() {
+  if (!window.nativeAudio?.playWavBase64 || window.nativeAudio.__ttsRouterInstalled) return;
   const nativeFallback = window.nativeAudio.playWavBase64.bind(window.nativeAudio);
   const state = { audio: null, url: null };
 
@@ -74,11 +95,11 @@ function installMagicMicPlaybackRouter() {
       }, { once: true });
       return true;
     } catch (error) {
-      appendDriverLog(`MAGIC MIC PLAYBACK ERROR: ${error.message}`);
+      appendDriverLog(`TTS OUTPUT ERROR: ${error.message}`);
       return nativeFallback(base64);
     }
   };
-  window.nativeAudio.__magicMicRouterInstalled = true;
+  window.nativeAudio.__ttsRouterInstalled = true;
 }
 
 function addDriverCard() {
@@ -90,86 +111,55 @@ function addDriverCard() {
   card.id = 'driverCard';
   card.className = 'card wide';
   card.innerHTML = `
-    <h2>🎛️ Magic Mic Virtual Audio</h2>
+    <h2>🎛️ TTS Audio Routing</h2>
     <div class="stack">
-      <div id="driverStatus" class="status working">Checking the Magic Mic virtual audio driver…</div>
+      <div id="driverStatus" class="status working">Checking VoiceMeeter and Magic Mic…</div>
       <div class="row">
-        <button id="installDriver">Install Magic Mic Driver</button>
-        <button id="uninstallDriver" class="danger">Remove Driver</button>
-        <button id="refreshDriver" class="secondary">Refresh Driver Status</button>
-        <button id="routeDriver" class="secondary">Route TTS Through Magic Mic</button>
+        <button id="routeVoiceMeeter">Use VoiceMeeter</button>
+        <button id="routeMagicMic" class="secondary">Use Magic Mic Fallback</button>
+        <button id="refreshDriver" class="secondary">Refresh Audio Devices</button>
       </div>
       <div class="hint">
-        Pocket TTS is sent to the Magic Mic virtual speaker. Windows exposes the matching <b>Magic Mic Microphone</b> input so Discord, VRChat, OBS, games, and other apps can use the generated voice as their microphone.
+        <b>Primary:</b> VoiceMeeter Input. <b>Fallback:</b> Magic Mic. Pocket TTS is sent directly to the selected Windows virtual playback device. VoiceMeeter's matching output can then be selected as the microphone by Discord, VRChat, OBS, games, and other apps.
       </div>
     </div>`;
 
   grid.insertBefore(card, grid.firstElementChild);
 
-  find('installDriver').addEventListener('click', async () => {
-    const button = find('installDriver');
-    button.disabled = true;
-    setDriverStatus('Installing the Magic Mic virtual audio driver…', 'working');
-    try {
-      const result = await window.nativeAudio?.driverInstall?.();
-      if (!result?.ok && !result?.staged && !result?.reboot) throw new Error(result?.output || 'Driver installation failed.');
-      appendDriverLog(result.output);
-      if (result.reboot) {
-        setDriverStatus('⚠ Windows Test Signing was enabled. Restart Windows once, then click Install Magic Mic Driver again.', 'working');
-        appendDriverLog('RESTART REQUIRED: Windows Test Signing has been enabled so Magic Mic can start without Code 52.');
-        return;
-      }
-      if (result.staged && !result.installed) {
-        setDriverStatus('Driver package installed, but Windows has not exposed both Magic Mic endpoints yet. Refresh after Windows finishes device setup.', 'working');
-      } else {
-        setDriverStatus('✓ Magic Mic installed. Registering its speaker and microphone endpoints…', 'working');
-      }
-      try { find('refreshOutputs')?.click(); } catch {}
-      setTimeout(() => { selectVoiceChangerOutput({ requireDriver: true }); }, 1200);
-      setTimeout(() => { selectVoiceChangerOutput({ requireDriver: true }); }, 3000);
-      setTimeout(() => { checkDriverStatus(); }, 5000);
-    } catch (error) {
-      setDriverStatus(`Driver install failed: ${error.message}`, 'bad');
-      appendDriverLog(`DRIVER INSTALL ERROR: ${error.stack || error.message}`);
-    } finally {
-      button.disabled = false;
+  find('routeVoiceMeeter').addEventListener('click', async () => {
+    const devices = await enumerateRoutingDevices();
+    if (!devices.voiceMeeterOutput) {
+      setDriverStatus('VoiceMeeter Input was not found. Make sure VoiceMeeter is installed and its virtual audio devices are enabled in Windows.', 'bad');
+      appendDriverLog('VOICE MEETER NOT FOUND: expected a VoiceMeeter Input / VAIO playback device.');
+      return;
     }
+    await selectOutputDevice(devices.voiceMeeterOutput, 'voicemeeter');
+    setDriverStatus('✓ TTS is now routed through VoiceMeeter Input. Use VoiceMeeter Out B1 / Output as the microphone in your target app.', 'ok');
   });
 
-  find('uninstallDriver').addEventListener('click', async () => {
-    const button = find('uninstallDriver');
-    button.disabled = true;
-    setDriverStatus('Removing Magic Mic Driver…', 'working');
-    try {
-      const result = await window.nativeAudio?.driverUninstall?.();
-      if (!result?.ok) throw new Error(result?.output || 'Driver removal failed.');
-      setDriverStatus('Magic Mic Driver removal requested.', 'ok');
-      appendDriverLog(result.output);
-      try { find('refreshOutputs')?.click(); } catch {}
-    } catch (error) {
-      setDriverStatus(`Driver removal failed: ${error.message}`, 'bad');
-      appendDriverLog(`DRIVER REMOVE ERROR: ${error.stack || error.message}`);
-    } finally {
-      button.disabled = false;
-      await checkDriverStatus();
+  find('routeMagicMic').addEventListener('click', async () => {
+    const devices = await enumerateRoutingDevices();
+    if (!devices.magicMicOutput) {
+      setDriverStatus('Magic Mic output was not found. Install the Magic Mic driver first.', 'bad');
+      return;
     }
+    await selectOutputDevice(devices.magicMicOutput, 'magic-mic');
+    setDriverStatus('✓ TTS is now routed through Magic Mic. Use Magic Mic Microphone as the microphone in your target app.', 'ok');
   });
 
   find('refreshDriver').addEventListener('click', checkDriverStatus);
-  find('routeDriver').addEventListener('click', async () => {
-    const devices = await enumerateMagicMic();
-    const output = devices.output;
-    if (!output) {
-      setDriverStatus('Magic Mic virtual output was not found yet. Install the Magic Mic Driver first.', 'bad');
-      return;
-    }
-    if (!devices.input) {
-      setDriverStatus('Magic Mic output is present, but Windows has not exposed Magic Mic Microphone yet.', 'working');
-      return;
-    }
-    await selectVoiceChangerOutput({ requireDriver: true });
-    setDriverStatus('✓ TTS is routed to Magic Mic. Select “Magic Mic Microphone” as the microphone in Discord/VRChat/etc.', 'ok');
-  });
+}
+
+async function selectOutputDevice(device, route) {
+  const select = find('outputDevice');
+  if (select) {
+    const option = [...select.options].find((item) => item.value === device.deviceId);
+    if (!option) select.add(new Option(device.label || route, device.deviceId));
+    select.value = device.deviceId;
+  }
+  localStorage.setItem('voicechanger.outputDevice', device.deviceId);
+  localStorage.setItem('voicechanger.outputRoute', route);
+  return device;
 }
 
 function setDriverStatus(text, type = '') {
@@ -186,49 +176,33 @@ function appendDriverLog(text) {
 }
 
 async function checkDriverStatus() {
-  if (!window.nativeAudio?.driverStatus) {
-    setDriverStatus('Driver controls are unavailable in this build. Install the newest EXE.', 'bad');
+  setDriverStatus('Checking VoiceMeeter and Magic Mic audio devices…', 'working');
+  const devices = await enumerateRoutingDevices();
+  const savedRoute = localStorage.getItem('voicechanger.outputRoute');
+
+  if (savedRoute === 'magic-mic' && devices.magicMicOutput) {
+    await selectOutputDevice(devices.magicMicOutput, 'magic-mic');
+    setDriverStatus('✓ Magic Mic fallback is selected.', 'working');
     return;
   }
-  setDriverStatus('Checking Windows audio devices…', 'working');
-  try {
-    const result = await window.nativeAudio.driverStatus();
-    if (!result.supported) {
-      setDriverStatus(result.output || 'Windows is required.', 'bad');
-      return;
-    }
-    if (result.installed) {
-      const devices = await enumerateMagicMic();
-      if (!devices.output) {
-        setDriverStatus('✓ Magic Mic Driver is installed, but Windows has not exposed its virtual speaker yet.', 'working');
-      } else if (!devices.input) {
-        setDriverStatus('⚠ Magic Mic speaker is ready, but Magic Mic Microphone is not visible yet.', 'working');
-      } else {
-        await selectVoiceChangerOutput();
-        setDriverStatus('✓ Magic Mic speaker + microphone are ready. TTS will flow into Magic Mic Microphone.', 'ok');
-      }
-      return;
-    }
-    if (result.reboot) {
-      setDriverStatus('⚠ Windows restart is required to finish enabling Magic Mic.', 'working');
-      return;
-    }
-    if (result.testsigningOff) {
-      setDriverStatus('⚠ Magic Mic needs one Windows restart to enable its required driver mode. Click Install Magic Mic Driver to prepare it.', 'working');
-      return;
-    }
-    if (result.staged) {
-      setDriverStatus('Driver package is installed, but both Magic Mic endpoints are not created yet. Refresh Driver Status and try Install Magic Mic Driver again.', 'working');
-      return;
-    }
-    setDriverStatus('Magic Mic virtual audio driver is not installed.', 'bad');
-  } catch (error) {
-    setDriverStatus(`Driver status failed: ${error.message}`, 'bad');
+
+  if (devices.voiceMeeterOutput) {
+    await selectOutputDevice(devices.voiceMeeterOutput, 'voicemeeter');
+    setDriverStatus('✓ VoiceMeeter Input is ready and selected as the primary TTS output.', 'ok');
+    return;
   }
+
+  if (devices.magicMicOutput) {
+    await selectOutputDevice(devices.magicMicOutput, 'magic-mic');
+    setDriverStatus('⚠ VoiceMeeter was not detected. Magic Mic has been selected as the fallback.', 'working');
+    return;
+  }
+
+  setDriverStatus('⚠ No VoiceMeeter or Magic Mic virtual output was found. Install/enable one of them in Windows Sound.', 'bad');
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-  installMagicMicPlaybackRouter();
+  installTtsPlaybackRouter();
   addDriverCard();
   checkDriverStatus();
 });
