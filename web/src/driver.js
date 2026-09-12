@@ -12,14 +12,14 @@ async function selectVoiceChangerOutput({ requireDriver = false } = {}) {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const output = findVoiceChangerOutput(devices);
     if (!output) {
-      if (requireDriver) appendDriverLog('VoiceChanger virtual output is not visible yet. Windows may need a moment to register the driver.');
+      if (requireDriver) appendDriverLog('VoiceChanger virtual output is not visible yet. Windows may still be creating the virtual audio endpoint.');
       return null;
     }
     const option = [...select.options].find((item) => item.value === output.deviceId);
     if (!option) select.add(new Option(output.label || 'VoiceChanger Driver', output.deviceId));
     select.value = output.deviceId;
     localStorage.setItem('voicechanger.outputDevice', output.deviceId);
-    setDriverStatus('✓ VoiceChanger Driver installed and selected as the TTS output.', 'ok');
+    setDriverStatus('✓ VoiceChanger Driver is installed and selected as the TTS output.', 'ok');
     return output;
   } catch (error) {
     appendDriverLog(`VOICECHANGER OUTPUT ERROR: ${error.message}`);
@@ -46,7 +46,7 @@ function addDriverCard() {
         <button id="routeDriver" class="secondary">Route TTS Through VoiceChanger Driver</button>
       </div>
       <div class="hint">
-        The bundled VoiceChanger driver creates the Windows virtual audio endpoints. TTS is routed to its virtual speaker automatically, and apps such as ChilloutVR can select the matching virtual microphone endpoint.
+        The bundled VoiceChanger driver creates the Windows virtual speaker + virtual microphone. TTS is routed into its virtual speaker, and ChilloutVR can use its virtual microphone endpoint.
       </div>
     </div>`;
 
@@ -58,18 +58,22 @@ function addDriverCard() {
     setDriverStatus('Installing the VoiceChanger virtual audio driver…', 'working');
     try {
       const result = await window.nativeAudio?.driverInstall?.();
-      if (!result?.ok) throw new Error(result?.output || 'Driver installation failed.');
-      setDriverStatus('✓ VoiceChanger Driver installed. Registering its Windows audio endpoints…', 'working');
+      if (!result?.ok && !result?.staged) throw new Error(result?.output || 'Driver installation failed.');
       appendDriverLog(result.output);
+      if (result.staged && !result.installed) {
+        setDriverStatus('Driver package installed. Windows is opening Add Legacy Hardware to create the VoiceChanger speaker/microphone.', 'working');
+      } else {
+        setDriverStatus('✓ VoiceChanger Driver installed. Registering its Windows audio endpoints…', 'working');
+      }
       try { find('refreshOutputs')?.click(); } catch {}
       setTimeout(() => { selectVoiceChangerOutput({ requireDriver: true }); }, 1200);
       setTimeout(() => { selectVoiceChangerOutput({ requireDriver: true }); }, 3000);
+      setTimeout(() => { checkDriverStatus(); }, 5000);
     } catch (error) {
       setDriverStatus(`Driver install failed: ${error.message}`, 'bad');
       appendDriverLog(`DRIVER INSTALL ERROR: ${error.stack || error.message}`);
     } finally {
       button.disabled = false;
-      await checkDriverStatus();
     }
   });
 
@@ -95,7 +99,7 @@ function addDriverCard() {
   find('refreshDriver').addEventListener('click', checkDriverStatus);
   find('routeDriver').addEventListener('click', async () => {
     const output = await selectVoiceChangerOutput({ requireDriver: true });
-    if (!output) setDriverStatus('VoiceChanger virtual output was not found. Install the VoiceChanger Driver first.', 'bad');
+    if (!output) setDriverStatus('VoiceChanger virtual output was not found yet. Install the VoiceChanger Driver first.', 'bad');
   });
 }
 
@@ -126,12 +130,14 @@ async function checkDriverStatus() {
     }
     if (result.installed) {
       const output = await selectVoiceChangerOutput();
-      if (!output) {
-        setDriverStatus('✓ VoiceChanger virtual driver installed. Its Windows audio output is still registering.', 'working');
-      }
-    } else {
-      setDriverStatus('VoiceChanger virtual audio driver is not installed.', 'bad');
+      if (!output) setDriverStatus('✓ VoiceChanger Driver is installed, but Windows has not exposed its virtual speaker yet.', 'working');
+      return;
     }
+    if (result.staged) {
+      setDriverStatus('Driver package is installed, but the virtual audio endpoints are not created yet. Use the Windows Add Legacy Hardware wizard that the installer opened.', 'working');
+      return;
+    }
+    setDriverStatus('VoiceChanger virtual audio driver is not installed.', 'bad');
   } catch (error) {
     setDriverStatus(`Driver status failed: ${error.message}`, 'bad');
   }
