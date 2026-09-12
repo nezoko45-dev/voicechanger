@@ -1,7 +1,11 @@
 import { PocketTTS } from "pocket-tts-js";
 
-// Keep Pocket TTS streaming so live conversion starts immediately. Only apply
-// a tiny first-sample fade to prevent the sharp click/beep at playback onset.
+// Sentence-buffered Pocket TTS:
+// - collect every generated chunk for one sentence
+// - emit exactly one contiguous audio buffer when that sentence finishes
+// - use a tiny edge fade to suppress clicks/beeps
+// The live playback scheduler can then transition cleanly from one complete
+// sentence to the next without exposing individual model chunk boundaries.
 const originalGenerate = PocketTTS.prototype.generate;
 
 function toFloat32(audio) {
@@ -26,12 +30,27 @@ function sanitize(samples) {
   return samples;
 }
 
-function fadeIn(samples, sampleRate) {
+function joinChunks(chunks) {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const joined = new Float32Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    joined.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return joined;
+}
+
+function fadeEdges(samples, sampleRate) {
   const count = Math.min(
-    Math.max(1, Math.round((Number(sampleRate) || 24000) * 0.006)),
+    Math.max(1, Math.round((Number(sampleRate) || 24000) * 0.004)),
     Math.floor(samples.length / 2)
   );
-  for (let i = 0; i < count; i++) samples[i] *= (i + 1) / count;
+  for (let i = 0; i < count; i++) {
+    const gain = (i + 1) / count;
+    samples[i] *= gain;
+    samples[samples.length - 1 - i] *= gain;
+  }
   return samples;
 }
 
@@ -40,20 +59,27 @@ PocketTTS.prototype.generate = function (text, options = {}) {
     return originalGenerate.call(this, text, options);
   }
 
-  let firstChunk = true;
+  const chunks = [];
+  const sampleRate = Number(this.sampleRate) || 24000;
+
   const wrappedOptions = {
     ...options,
     onChunk: (audio) => {
       const samples = toFloat32(audio);
-      if (!samples?.length) return;
-      sanitize(samples);
-      if (firstChunk) {
-        firstChunk = false;
-        fadeIn(samples, this.sampleRate);
-      }
-      options.onChunk(samples);
+      if (samples?.length) chunks.push(sanitize(samples));
     }
   };
 
-  return originalGenerate.call(this, text, wrappedOptions);
+  const result = originalGenerate.call(this, text, wrappedOptions);
+
+  const finish = (metrics) => {
+    if (chunks.length) {
+      const sentence = fadeEdges(joinChunks(chunks), sampleRate);
+      options.onChunk(sentence);
+    }
+    return metrics;
+  };
+
+  if (result && typeof result.then === "function") return result.then(finish);
+  return finish(result);
 };
