@@ -14,11 +14,23 @@ function log(message) {
   const box = $("log");
   box.textContent = `${new Date().toLocaleTimeString()} — ${message}\n${box.textContent}`;
 }
-function status(text, type = "") { $("status").textContent = text; $("status").className = `status ${type}`; }
-function voiceStatus(text, type = "") { $("voiceStatus").textContent = text; $("voiceStatus").className = `status ${type}`; }
-function supportsSTT() { return "SpeechRecognition" in window || "webkitSpeechRecognition" in window; }
-function setProgress(value) { $("progressBar").style.width = `${Math.max(0, Math.min(100, value))}%`; }
-function mb(n) { return `${(n / 1e6).toFixed(1)} MB`; }
+function status(text, type = "") {
+  $("status").textContent = text;
+  $("status").className = `status ${type}`;
+}
+function voiceStatus(text, type = "") {
+  $("voiceStatus").textContent = text;
+  $("voiceStatus").className = `status ${type}`;
+}
+function supportsSTT() {
+  return "SpeechRecognition" in window || "webkitSpeechRecognition" in window;
+}
+function setProgress(value) {
+  $("progressBar").style.width = `${Math.max(0, Math.min(100, value))}%`;
+}
+function mb(n) {
+  return `${(n / 1e6).toFixed(1)} MB`;
+}
 
 async function loadModel() {
   const button = $("loadModel");
@@ -26,7 +38,8 @@ async function loadModel() {
   button.textContent = "Loading…";
   status("Downloading Pocket TTS…", "working");
   setProgress(2);
-  log("Loading Pocket TTS in a browser worker.");
+  log("Loading bundled Pocket TTS package.");
+
   try {
     tts?.destroy();
     tts = new PocketTTS({
@@ -34,39 +47,50 @@ async function loadModel() {
       quantized: true,
       voiceCloning: true,
       cache: true,
-      maxThreads: 8,
+      // Intentionally use one WASM thread so the app does not require
+      // cross-origin isolation or a COI service worker.
+      maxThreads: 1,
+      ortBaseUrl: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.0/dist/",
     });
+
     const seen = new Map();
     const bundle = await tts.load((info) => {
       if (info.type === "progress" && info.total) {
-        const pct = Math.round(info.loaded / info.total * 100);
+        const pct = Math.round((info.loaded / info.total) * 100);
         setProgress(pct);
         const key = info.label || "model";
         if (pct % 10 === 0 && seen.get(key) !== pct) {
           seen.set(key, pct);
           log(`${key}: ${pct}% (${mb(info.total)})${info.fromCache ? " cached" : ""}`);
         }
-      } else if (info.status) log(`Model: ${info.status}`);
+      } else if (info.status) {
+        log(`Model: ${info.status}`);
+      }
     });
+
     player = new StreamingPlayer({
       sampleRate: tts.sampleRate,
       primeSeconds: 0.18,
       onUnderrun: (u) => log(`Audio underrun: ${Math.round(u.gapSeconds * 1000)}ms`),
     });
-    $("modelInfo").textContent = `Ready • ${tts.sampleRate} Hz • INT8 • ${bundle.predefinedVoices.length} voices`;
+
+    $("modelInfo").textContent = `Ready • ${tts.sampleRate} Hz • INT8 • ${bundle.predefinedVoices.length} voices • 1 WASM thread`;
     $("modelBadge").textContent = "AI ready";
     $("modelBadge").style.color = "#61e6a1";
     $("cloneFile").disabled = false;
     $("builtinVoice").disabled = bundle.predefinedVoices.length === 0;
     $("loadBuiltin").disabled = bundle.predefinedVoices.length === 0;
-    $("builtinVoice").innerHTML = bundle.predefinedVoices.map((v) => `<option value="${v}">${v}</option>`).join("");
+    $("builtinVoice").innerHTML = bundle.predefinedVoices.length
+      ? bundle.predefinedVoices.map((v) => `<option value="${v}">${v}</option>`).join("")
+      : "<option>No built-in voices</option>";
     setProgress(100);
     status("Pocket TTS ready — choose a voice.", "ok");
     log("Pocket TTS is ready.");
   } catch (error) {
     console.error(error);
-    status(`Model failed: ${error.message}`, "bad");
-    log(`MODEL ERROR: ${error.stack || error.message}`);
+    const message = error?.stack || error?.message || String(error);
+    status(`Model failed: ${error?.message || String(error)}`, "bad");
+    log(`MODEL ERROR: ${message}`);
   } finally {
     button.disabled = false;
     button.textContent = "Reload Pocket TTS";
@@ -81,15 +105,18 @@ async function cloneVoice(file) {
     const ctx = new AudioContext();
     const buffer = await ctx.decodeAudioData(await file.arrayBuffer());
     if (buffer.duration < 2) throw new Error("Use a recording of at least 2 seconds.");
-    const channels = [];
-    for (let c = 0; c < buffer.numberOfChannels; c++) channels.push(buffer.getChannelData(c));
+
     const mono = new Float32Array(buffer.length);
     for (let i = 0; i < buffer.length; i++) {
       let sum = 0;
-      for (const channel of channels) sum += channel[i] || 0;
-      mono[i] = sum / channels.length;
+      for (let c = 0; c < buffer.numberOfChannels; c++) sum += buffer.getChannelData(c)[i] || 0;
+      mono[i] = sum / buffer.numberOfChannels;
     }
-    voiceRef = await tts.cloneVoice(mono, { inputSampleRate: buffer.sampleRate, name: file.name });
+
+    voiceRef = await tts.cloneVoice(mono, {
+      inputSampleRate: buffer.sampleRate,
+      name: `clone:${file.name}:${file.lastModified}`,
+    });
     await ctx.close();
     voiceStatus(`✓ Your cloned voice is ready: ${file.name}`, "ok");
     $("generate").disabled = false;
@@ -98,7 +125,7 @@ async function cloneVoice(file) {
   } catch (error) {
     console.error(error);
     voiceStatus(`Clone failed: ${error.message}`, "bad");
-    log(`CLONE ERROR: ${error.message}`);
+    log(`CLONE ERROR: ${error.stack || error.message}`);
   } finally {
     $("cloneFile").disabled = false;
   }
@@ -112,11 +139,13 @@ async function generate(text) {
   $("download").disabled = true;
   $("preview").hidden = true;
   voiceChunks = [];
-  player.reset();
-  await player.resume();
-  const cleanText = text.trim().slice(0, 1500);
-  log(`Generating: "${cleanText.slice(0, 90)}${cleanText.length > 90 ? "…" : ""}"`);
+
   try {
+    player.reset();
+    await player.resume();
+    const cleanText = text.trim().slice(0, 1500);
+    log(`Generating: "${cleanText.slice(0, 90)}${cleanText.length > 90 ? "…" : ""}"`);
+
     const metrics = await tts.generate(cleanText, {
       voice: voiceRef,
       onChunk: (audio, meta) => {
@@ -124,17 +153,22 @@ async function generate(text) {
         voiceChunks.push(audio.slice());
       },
     });
+
     player.flush();
-    if (voiceChunks.length) {
-      if (wavUrl) URL.revokeObjectURL(wavUrl);
-      wavUrl = URL.createObjectURL(chunksToWavBlob(voiceChunks, tts.sampleRate));
-      $("download").disabled = false;
-      $("preview").src = wavUrl;
-      $("preview").hidden = false;
-    }
+    if (!voiceChunks.length) throw new Error("Pocket TTS finished without returning any audio chunks.");
+
+    if (wavUrl) URL.revokeObjectURL(wavUrl);
+    wavUrl = URL.createObjectURL(chunksToWavBlob(voiceChunks, tts.sampleRate));
+    $("download").disabled = false;
+    $("preview").src = wavUrl;
+    $("preview").hidden = false;
     log(`Finished: ${metrics.audioDuration.toFixed(2)}s generated audio.`);
   } catch (error) {
-    if (!String(error.message).toLowerCase().includes("stop")) log(`TTS ERROR: ${error.message}`);
+    console.error(error);
+    if (!String(error.message).toLowerCase().includes("stop")) {
+      status(`TTS failed: ${error.message}`, "bad");
+      log(`TTS ERROR: ${error.stack || error.message}`);
+    }
   } finally {
     generating = false;
     $("generate").disabled = !voiceRef;
@@ -148,10 +182,12 @@ function setupSTT() {
     $("sttInfo").textContent = "SpeechRecognition is not available in this browser.";
     return;
   }
+
   recognition = new Recognition();
   recognition.continuous = true;
   recognition.interimResults = false;
   recognition.lang = "en-US";
+
   recognition.onstart = () => {
     listening = true;
     $("startVC").disabled = true;
@@ -161,6 +197,7 @@ function setupSTT() {
     status("VoiceChanger listening…", "ok");
     log("Microphone started.");
   };
+
   recognition.onresult = async (event) => {
     const result = event.results[event.results.length - 1];
     if (!result.isFinal || generating) return;
@@ -171,6 +208,7 @@ function setupSTT() {
     await generate(text);
     if (listening) setTimeout(() => { try { recognition.start(); } catch {} }, 150);
   };
+
   recognition.onerror = (event) => {
     log(`Browser STT: ${event.error}`);
     if (event.error === "not-allowed" || event.error === "service-not-allowed") {
@@ -179,6 +217,7 @@ function setupSTT() {
       status("Microphone permission was denied.", "bad");
     }
   };
+
   recognition.onend = () => {
     if (!listening) {
       $("micDot").classList.remove("live");
@@ -191,7 +230,11 @@ function setupSTT() {
 }
 
 $("loadModel").addEventListener("click", loadModel);
-$("cloneFile").addEventListener("change", (e) => { const file = e.target.files?.[0]; if (file) cloneVoice(file); });
+$("cloneFile").addEventListener("change", (e) => {
+  const file = e.target.files?.[0];
+  if (file) cloneVoice(file);
+});
+
 $("loadBuiltin").addEventListener("click", async () => {
   if (!tts) return;
   const name = $("builtinVoice").value;
@@ -204,9 +247,10 @@ $("loadBuiltin").addEventListener("click", async () => {
     log(`Loaded built-in voice: ${name}.`);
   } catch (error) {
     voiceStatus(`Voice failed: ${error.message}`, "bad");
-    log(`VOICE ERROR: ${error.message}`);
+    log(`VOICE ERROR: ${error.stack || error.message}`);
   }
 });
+
 $("generate").addEventListener("click", () => generate($("text").value));
 $("stop").addEventListener("click", async () => {
   await tts?.stop();
@@ -215,6 +259,7 @@ $("stop").addEventListener("click", async () => {
   $("generate").disabled = !voiceRef;
   log("Generation stopped.");
 });
+
 $("download").addEventListener("click", () => {
   if (!wavUrl) return;
   const a = document.createElement("a");
@@ -222,12 +267,14 @@ $("download").addEventListener("click", () => {
   a.download = "pocket-voicechanger.wav";
   a.click();
 });
+
 $("startVC").addEventListener("click", async () => {
   if (!recognition || !voiceRef) return;
   listening = true;
   await player?.resume();
   try { recognition.start(); } catch {}
 });
+
 $("stopVC").addEventListener("click", () => {
   listening = false;
   recognition?.stop();
@@ -236,6 +283,7 @@ $("stopVC").addEventListener("click", () => {
   $("startVC").disabled = !voiceRef;
   $("stopVC").disabled = true;
 });
+
 $("clearCache").addEventListener("click", async () => {
   try {
     tts?.destroy();
@@ -245,6 +293,7 @@ $("clearCache").addEventListener("click", async () => {
     await PocketTTS.clearCache();
     setProgress(0);
     $("modelBadge").textContent = "AI offline";
+    $("modelBadge").style.color = "";
     $("modelInfo").textContent = "Cache cleared";
     $("cloneFile").disabled = true;
     $("builtinVoice").disabled = true;
@@ -265,5 +314,9 @@ if (supportsSTT()) {
 } else {
   $("sttInfo").textContent = "This browser does not expose SpeechRecognition.";
 }
-$("secureInfo").textContent = window.isSecureContext ? "Secure browser context ✓" : "Use the hosted HTTPS app for microphone access.";
+
+$("secureInfo").textContent = window.isSecureContext
+  ? "Secure browser context ✓"
+  : "Use the hosted HTTPS app for microphone access.";
+
 log("Pocket VoiceChanger loaded. Load the AI to begin.");
