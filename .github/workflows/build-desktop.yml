@@ -1,12 +1,9 @@
 name: Build Windows VoiceChanger
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
-  workflow_dispatch:
-
-permissions:
-  contents: read
 
 jobs:
   build-windows:
@@ -18,13 +15,17 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            web/package.json
+            desktop/package.json
 
       - name: Install web dependencies
         working-directory: web
         run: npm install
 
-      - name: Build web UI
+      - name: Build desktop UI
         working-directory: web
         run: npm run build
 
@@ -32,13 +33,13 @@ jobs:
         working-directory: desktop
         run: npm install
 
-      - name: Build portable Windows app
+      - name: Build portable Windows EXE
         working-directory: desktop
         run: npm run build
 
       - name: Upload portable EXE
         uses: actions/upload-artifact@v4
         with:
-          name: Pocket-VoiceChanger-Windows
+          name: VoiceChanger-Desktop-Windows
           path: desktop/dist/*.exe
           if-no-files-found: error
