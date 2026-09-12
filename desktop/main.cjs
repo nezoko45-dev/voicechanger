@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
+const { startDeepgramProxy } = require('./deepgram-proxy.cjs');
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
@@ -19,6 +20,7 @@ const mime = {
 let server;
 let nativePlayer = null;
 let nativeTemp = null;
+let deepgramProxy = null;
 
 function stopNativePlayer() {
   if (nativePlayer) {
@@ -31,9 +33,6 @@ function stopNativePlayer() {
   }
 }
 
-// Kept only as a legacy fallback for environments where browser sink routing
-// is unavailable. The renderer normally intercepts this through driver.js and
-// routes WAV playback with HTMLMediaElement.setSinkId().
 function playNativeWav(base64) {
   if (process.platform !== 'win32') {
     throw new Error('Native Windows audio playback is only available on Windows.');
@@ -220,13 +219,14 @@ async function createWindow() {
   win.webContents.on('console-message', (_event, _level, message) => console.log(`[renderer] ${message}`));
 }
 
-// Renderer-side driver.js routes TTS to the selected output with setSinkId().
-// Keep this IPC available only as the explicit last-resort fallback.
 ipcMain.handle('native-audio:play-wav', (_event, base64) => playNativeWav(base64));
 ipcMain.handle('native-audio:stop', () => { stopNativePlayer(); return true; });
 ipcMain.handle('voicechanger-driver:status', () => getDriverStatus());
 ipcMain.handle('voicechanger-driver:install', () => installDriver());
 ipcMain.handle('voicechanger-driver:uninstall', () => uninstallDriver());
+ipcMain.on('deepgram-proxy:url', (event) => {
+  event.returnValue = deepgramProxy?.url || '';
+});
 
 app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
@@ -234,6 +234,8 @@ app.whenReady().then(async () => {
   });
 
   try {
+    deepgramProxy = await startDeepgramProxy();
+    console.log(`[deepgram] local proxy ready at ${deepgramProxy.url}`);
     await createWindow();
   } catch (error) {
     console.error(error);
@@ -248,6 +250,7 @@ app.whenReady().then(async () => {
 app.on('before-quit', () => {
   stopNativePlayer();
   try { server?.close(); } catch {}
+  try { deepgramProxy?.server?.close(); } catch {}
 });
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
