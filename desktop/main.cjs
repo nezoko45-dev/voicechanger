@@ -11,7 +11,7 @@ const mime = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
+  '.json': 'application/json',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon'
@@ -31,6 +31,9 @@ function stopNativePlayer() {
   }
 }
 
+// Kept only as a legacy fallback for environments where browser sink routing
+// is unavailable. The renderer normally intercepts this through driver.js and
+// routes WAV playback with HTMLMediaElement.setSinkId().
 function playNativeWav(base64) {
   if (process.platform !== 'win32') {
     throw new Error('Native Windows audio playback is only available on Windows.');
@@ -57,9 +60,7 @@ function playNativeWav(base64) {
       nativeTemp = null;
     }
   });
-  nativePlayer.on('error', (error) => {
-    console.error('[native audio]', error);
-  });
+  nativePlayer.on('error', (error) => console.error('[native audio]', error));
   return true;
 }
 
@@ -219,6 +220,8 @@ async function createWindow() {
   win.webContents.on('console-message', (_event, _level, message) => console.log(`[renderer] ${message}`));
 }
 
+// Renderer-side driver.js routes TTS to the selected output with setSinkId().
+// Keep this IPC available only as the explicit last-resort fallback.
 ipcMain.handle('native-audio:play-wav', (_event, base64) => playNativeWav(base64));
 ipcMain.handle('native-audio:stop', () => { stopNativePlayer(); return true; });
 ipcMain.handle('voicechanger-driver:status', () => getDriverStatus());
