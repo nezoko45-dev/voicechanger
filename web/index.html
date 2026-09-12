@@ -18,6 +18,7 @@
     .meter{height:8px;background:#0a0d15;border-radius:999px;overflow:hidden}.bar{height:100%;width:0;background:#6d75ff;transition:width .2s}.dot{width:10px;height:10px;border-radius:50%;background:#525b75;display:inline-block}.dot.live{background:#ff536e;box-shadow:0 0 14px #ff536e}
     audio{width:100%;margin-top:10px}.transcript{min-height:80px;max-height:180px;overflow:auto;white-space:pre-wrap;background:#080b13;border:1px solid #242b3f;border-radius:10px;padding:14px;font-size:17px;line-height:1.5;color:#f2f5fb}.log{height:180px;overflow:auto;white-space:pre-wrap;background:#080b13;border:1px solid #242b3f;border-radius:10px;padding:12px;font:12px ui-monospace,SFMono-Regular,Consolas,monospace;color:#9eabc3}
     .hint{font-size:12px;color:#78839b}.switch{display:flex;gap:8px;align-items:center}.hidden{display:none}.full{width:100%}
+    .boot-error{display:none;padding:12px;border-radius:10px;background:#3a1720;color:#ffb3c0;border:1px solid #713241;margin-bottom:16px}
     @media(max-width:780px){.grid{grid-template-columns:1fr}.wide{grid-column:auto}.hero{align-items:start;flex-direction:column}}
   </style>
 </head>
@@ -25,16 +26,17 @@
   <main class="app">
     <header class="hero">
       <div><h1>🎙️ VoiceChanger</h1><div class="sub">Browser HTML app • Deepgram STT → cloned Pocket TTS voice → selected Windows audio output</div></div>
-      <div class="badge" id="modelBadge">Model not loaded</div>
+      <div class="badge" id="modelBadge">Browser ready</div>
     </header>
+    <div id="bootError" class="boot-error"></div>
 
     <section class="grid">
       <div class="card">
         <h2>1. AI engine</h2>
         <div class="stack">
-          <button id="loadModel">Load Pocket TTS</button>
+          <button type="button" id="loadModel">Load Pocket TTS</button>
           <div class="meter"><div id="progressBar" class="bar"></div></div>
-          <div id="modelInfo" class="muted">The cloned TTS model runs locally in your browser after its first download.</div>
+          <div id="modelInfo" class="muted">Click Load Pocket TTS to initialize the local model.</div>
           <div id="status" class="status">Waiting for the AI engine.</div>
         </div>
       </div>
@@ -42,9 +44,9 @@
       <div class="card">
         <h2>2. Voice clone</h2>
         <div class="stack">
-          <button id="recordVoice">🎤 Record clone sample</button>
-          <button id="stopRecord" class="danger" disabled>Stop recording</button>
-          <div class="hint">Use 3–15 seconds of clear speech.</div>
+          <button type="button" id="recordVoice">🎤 Record clone sample</button>
+          <button type="button" id="stopRecord" class="danger" disabled>Stop recording</button>
+          <div class="hint">Load Pocket TTS first, then record 3–15 seconds of clear speech or choose an audio file.</div>
           <input id="cloneFile" type="file" accept="audio/*,.wav,.mp3,.m4a" />
           <div id="voiceStatus" class="status">No voice selected.</div>
         </div>
@@ -54,27 +56,27 @@
         <h2>3. Deepgram STT</h2>
         <div class="stack">
           <input id="deepgramKey" type="password" placeholder="Deepgram API key" autocomplete="off" />
-          <div class="hint">Needed for live transcription. The key is stored only in this browser's local storage.</div>
-          <div class="switch"><span id="micDot" class="dot"></span><span id="sttInfo">Load the model, clone a voice, then enter your Deepgram key.</span></div>
+          <div class="hint">Needed only for live transcription. The key stays in this browser's local storage.</div>
+          <div class="switch"><span id="micDot" class="dot"></span><span id="sttInfo">Enter your Deepgram key when you want live VoiceChanger.</span></div>
         </div>
       </div>
 
       <div class="card">
         <h2>4. Output device</h2>
         <div class="stack">
-          <select id="outputDevice"></select>
-          <button id="refreshOutputs" class="secondary">Refresh Windows outputs</button>
-          <div class="hint">The browser sends cloned TTS directly to the selected Windows playback endpoint. VoiceMeeter Input can receive that audio and route it to VoiceMeeter Out B1/B2/B3 for Discord, VRChat, OBS, games, or other apps.</div>
+          <select id="outputDevice"><option value="default">Windows default output</option></select>
+          <button type="button" id="refreshOutputs" class="secondary">Refresh Windows outputs</button>
+          <div class="hint">Choose VoiceMeeter Input / VAIO3 Input for the virtual-audio path. The browser will send generated TTS to that device when supported.</div>
         </div>
       </div>
 
       <div class="card wide">
         <h2>5. Live VoiceChanger</h2>
         <div class="stack">
-          <button id="startVC" disabled>▶ Start VoiceChanger</button>
-          <button id="stopVC" class="secondary" disabled>■ Stop VoiceChanger</button>
+          <button type="button" id="startVC">▶ Start VoiceChanger</button>
+          <button type="button" id="stopVC" class="secondary" disabled>■ Stop VoiceChanger</button>
           <div id="transcript" class="transcript">Nothing transcribed yet.</div>
-          <div class="hint">Speak normally. Deepgram transcribes your words, then Pocket TTS speaks each final phrase with the cloned voice.</div>
+          <div class="hint">Start requires a cloned voice and a Deepgram key. The button is intentionally enabled so setup errors are shown instead of leaving the UI greyed out.</div>
         </div>
       </div>
 
@@ -83,8 +85,8 @@
         <div class="stack">
           <textarea id="text">Hello! This is my cloned voice speaking from the browser through the selected virtual audio device.</textarea>
           <div class="row">
-            <button id="generate" disabled>🔊 Speak</button>
-            <button id="stop" class="danger">Stop</button>
+            <button type="button" id="generate">🔊 Speak</button>
+            <button type="button" id="stop" class="danger">Stop</button>
             <a id="download" class="hidden"><button class="secondary" type="button">Download WAV</button></a>
           </div>
           <audio id="preview" controls hidden></audio>
@@ -98,6 +100,22 @@
     </section>
   </main>
 
+  <script>
+    window.addEventListener('error', (event) => {
+      const box = document.getElementById('bootError');
+      const log = document.getElementById('log');
+      const message = event.error?.stack || event.message || 'Unknown browser error';
+      if (box) { box.style.display = 'block'; box.textContent = 'Browser script error: ' + message; }
+      if (log) log.textContent = new Date().toLocaleTimeString() + ' — SCRIPT ERROR: ' + message + '\n' + log.textContent;
+    });
+    window.addEventListener('unhandledrejection', (event) => {
+      const box = document.getElementById('bootError');
+      const log = document.getElementById('log');
+      const message = event.reason?.stack || event.reason?.message || String(event.reason || 'Unknown promise error');
+      if (box) { box.style.display = 'block'; box.textContent = 'Browser startup error: ' + message; }
+      if (log) log.textContent = new Date().toLocaleTimeString() + ' — STARTUP ERROR: ' + message + '\n' + log.textContent;
+    });
+  </script>
   <script type="module" src="/src/app.js"></script>
 </body>
 </html>
