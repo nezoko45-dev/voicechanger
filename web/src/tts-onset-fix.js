@@ -1,9 +1,7 @@
 import { PocketTTS } from "pocket-tts-js";
 
-// Buffer the complete Pocket TTS utterance before handing audio to the live
-// playback scheduler. This removes chunk-arrival jitter and chunk-boundary
-// stutter. Tiny edge fades also remove the sharp DC/click-like onset that can
-// be heard as a beep on some cloned voices and output devices.
+// Keep Pocket TTS streaming so live conversion starts immediately. Only apply
+// a tiny first-sample fade to prevent the sharp click/beep at playback onset.
 const originalGenerate = PocketTTS.prototype.generate;
 
 function toFloat32(audio) {
@@ -28,33 +26,13 @@ function sanitize(samples) {
   return samples;
 }
 
-function joinChunks(chunks) {
-  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-  const joined = new Float32Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    joined.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return joined;
-}
-
-function softenEdges(samples, sampleRate) {
-  const fadeSamples = Math.min(Math.max(1, Math.round(sampleRate * 0.008)), Math.floor(samples.length / 2));
-  for (let i = 0; i < fadeSamples; i++) {
-    const gain = (i + 1) / fadeSamples;
-    samples[i] *= gain;
-    samples[samples.length - 1 - i] *= gain;
-  }
+function fadeIn(samples, sampleRate) {
+  const count = Math.min(
+    Math.max(1, Math.round((Number(sampleRate) || 24000) * 0.006)),
+    Math.floor(samples.length / 2)
+  );
+  for (let i = 0; i < count; i++) samples[i] *= (i + 1) / count;
   return samples;
-}
-
-function emitBuffered(chunks, onChunk, sampleRate) {
-  if (!chunks.length) return;
-  const joined = joinChunks(chunks);
-  sanitize(joined);
-  softenEdges(joined, sampleRate);
-  onChunk(joined);
 }
 
 PocketTTS.prototype.generate = function (text, options = {}) {
@@ -62,26 +40,20 @@ PocketTTS.prototype.generate = function (text, options = {}) {
     return originalGenerate.call(this, text, options);
   }
 
-  const chunks = [];
-  const sampleRate = Number(this.sampleRate) || 24000;
-
+  let firstChunk = true;
   const wrappedOptions = {
     ...options,
     onChunk: (audio) => {
       const samples = toFloat32(audio);
-      if (samples?.length) chunks.push(sanitize(samples));
+      if (!samples?.length) return;
+      sanitize(samples);
+      if (firstChunk) {
+        firstChunk = false;
+        fadeIn(samples, this.sampleRate);
+      }
+      options.onChunk(samples);
     }
   };
 
-  const result = originalGenerate.call(this, text, wrappedOptions);
-
-  if (result && typeof result.then === "function") {
-    return result.then((metrics) => {
-      emitBuffered(chunks, options.onChunk, sampleRate);
-      return metrics;
-    });
-  }
-
-  emitBuffered(chunks, options.onChunk, sampleRate);
-  return result;
+  return originalGenerate.call(this, text, wrappedOptions);
 };
