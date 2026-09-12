@@ -12,11 +12,11 @@
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.card{background:rgba(17,21,34,.92);border:1px solid #2a3148;border-radius:18px;padding:18px;box-shadow:0 12px 40px #0004}.wide{grid-column:1/-1}
     h2{font-size:18px;margin:0 0 12px}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.stack{display:grid;gap:10px}
     button,input,select,textarea{font:inherit}button{background:#6d75ff;border:0;color:white;padding:11px 15px;border-radius:11px;cursor:pointer;font-weight:650}button.secondary{background:#242b41}button.danger{background:#a84458}button:disabled{opacity:.45;cursor:not-allowed}
-    select,input[type=text],textarea{width:100%;background:#0c1020;color:#edf0f8;border:1px solid #353d57;border-radius:10px;padding:11px}textarea{min-height:120px;resize:vertical}
+    select,input[type=text],input[type=password],textarea{width:100%;background:#0c1020;color:#edf0f8;border:1px solid #353d57;border-radius:10px;padding:11px}textarea{min-height:120px;resize:vertical}
     input[type=file]{width:100%;padding:10px;background:#0c1020;border:1px dashed #414962;border-radius:10px;color:#aab4ca}
     .muted{color:#919bb2;font-size:13px}.status{padding:10px 12px;border-radius:10px;background:#151a29;color:#adb7cb}.ok{background:#10281e;color:#83e1aa}.bad{background:#2b151a;color:#ff9faf}.working{background:#23211a;color:#f1d28d}
     .meter{height:8px;background:#0a0d15;border-radius:999px;overflow:hidden}.bar{height:100%;width:0;background:#6d75ff;transition:width .2s}.dot{width:10px;height:10px;border-radius:50%;background:#525b75;display:inline-block}.dot.live{background:#ff536e;box-shadow:0 0 14px #ff536e}
-    audio{width:100%;margin-top:10px}.log{height:180px;overflow:auto;white-space:pre-wrap;background:#080b13;border:1px solid #242b3f;border-radius:10px;padding:12px;font:12px ui-monospace,SFMono-Regular,Consolas,monospace;color:#9eabc3}
+    audio{width:100%;margin-top:10px}.transcript{min-height:80px;max-height:180px;overflow:auto;white-space:pre-wrap;background:#080b13;border:1px solid #242b3f;border-radius:10px;padding:14px;font-size:17px;line-height:1.5;color:#f2f5fb}.log{height:180px;overflow:auto;white-space:pre-wrap;background:#080b13;border:1px solid #242b3f;border-radius:10px;padding:12px;font:12px ui-monospace,SFMono-Regular,Consolas,monospace;color:#9eabc3}
     .hint{font-size:12px;color:#78839b}.switch{display:flex;gap:8px;align-items:center}.hidden{display:none}.full{width:100%}
     @media(max-width:780px){.grid{grid-template-columns:1fr}.wide{grid-column:auto}.hero{align-items:start;flex-direction:column}}
   </style>
@@ -24,7 +24,7 @@
 <body>
   <main class="app">
     <header class="hero">
-      <div><h1>🎙️ VoiceChanger Desktop</h1><div class="sub">STT → cloned voice → TTS • local AI inference • Windows audio routing</div></div>
+      <div><h1>🎙️ VoiceChanger Desktop</h1><div class="sub">Deepgram STT → cloned Pocket TTS voice → Windows audio</div></div>
       <div class="badge" id="modelBadge">Model not loaded</div>
     </header>
 
@@ -34,7 +34,7 @@
         <div class="stack">
           <button id="loadModel">Load Pocket TTS</button>
           <div class="meter"><div id="progressBar" class="bar"></div></div>
-          <div id="modelInfo" class="muted">The model is downloaded once and cached locally by the app.</div>
+          <div id="modelInfo" class="muted">The cloned TTS model runs locally after its first download.</div>
           <div id="status" class="status">Waiting for the AI engine.</div>
         </div>
       </div>
@@ -44,38 +44,47 @@
         <div class="stack">
           <button id="recordVoice">🎤 Record clone sample</button>
           <button id="stopRecord" class="danger" disabled>Stop recording</button>
-          <div class="hint">Use 3–15 seconds of clear speech with little background noise.</div>
+          <div class="hint">Use 3–15 seconds of clear speech.</div>
           <input id="cloneFile" type="file" accept="audio/*,.wav,.mp3,.m4a" />
           <div id="voiceStatus" class="status">No voice selected.</div>
         </div>
       </div>
 
       <div class="card">
-        <h2>3. Output device</h2>
+        <h2>3. Deepgram STT</h2>
         <div class="stack">
-          <select id="outputDevice"></select>
-          <button id="refreshOutputs" class="secondary">Refresh Windows outputs</button>
-          <div class="hint">Pick “VoiceMeeter Input” or “CABLE Input” to send the generated voice into Voicemeeter/VB-Cable.</div>
+          <input id="deepgramKey" type="password" placeholder="Deepgram API key" autocomplete="off" />
+          <div class="hint">Needed for reliable live transcription. The key is stored only in this app's local storage.</div>
+          <div class="switch"><span id="micDot" class="dot"></span><span id="sttInfo">Load the model, clone a voice, then enter your Deepgram key.</span></div>
         </div>
       </div>
 
       <div class="card">
-        <h2>4. Speech input</h2>
+        <h2>4. Output device</h2>
         <div class="stack">
-          <div class="switch"><span id="micDot" class="dot"></span><span id="sttInfo">STT is ready when a cloned voice is loaded.</span></div>
-          <button id="startVC" disabled>▶ Start VoiceChanger</button>
-          <button id="stopVC" class="secondary" disabled>■ Stop VoiceChanger</button>
-          <div class="hint">Speak naturally. The app transcribes your words, generates the cloned voice, then sends the audio to the selected output.</div>
+          <select id="outputDevice"></select>
+          <button id="refreshOutputs" class="secondary">Refresh Windows outputs</button>
+          <div class="hint">Native playback uses the Windows default device. For Voicemeeter, set Windows output to VoiceMeeter Input.</div>
         </div>
       </div>
 
       <div class="card wide">
-        <h2>5. Type or test the cloned voice</h2>
+        <h2>5. Live VoiceChanger</h2>
         <div class="stack">
-          <textarea id="text" placeholder="Type something here to test the cloned voice…">Hello! This is my cloned voice speaking through VoiceChanger.</textarea>
+          <button id="startVC" disabled>▶ Start VoiceChanger</button>
+          <button id="stopVC" class="secondary" disabled>■ Stop VoiceChanger</button>
+          <div id="transcript" class="transcript">Nothing transcribed yet.</div>
+          <div class="hint">Speak normally. Your words appear above as Deepgram transcribes them, then each final phrase is spoken with the cloned voice.</div>
+        </div>
+      </div>
+
+      <div class="card wide">
+        <h2>6. Test the cloned TTS</h2>
+        <div class="stack">
+          <textarea id="text">Hello! This is my cloned voice speaking through VoiceChanger.</textarea>
           <div class="row">
             <button id="generate" disabled>🔊 Speak</button>
-            <button id="stop" class="danger" disabled>Stop</button>
+            <button id="stop" class="danger">Stop</button>
             <a id="download" class="hidden"><button class="secondary" type="button">Download WAV</button></a>
           </div>
           <audio id="preview" controls hidden></audio>
