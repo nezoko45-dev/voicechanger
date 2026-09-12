@@ -99,8 +99,6 @@
   </main>
 
   <script>
-    // Route generated TTS through the device selected in the Windows output dropdown.
-    // The native Windows SoundPlayer remains the fallback for systems without setSinkId.
     (() => {
       const bridge = window.nativeAudio;
       if (!bridge?.playWavBase64) return;
@@ -173,6 +171,6 @@
       };
     })();
   </script>
-  <script type="module" src="/src/main.js"></script>
+  <script type="module" src="/src/app.js"></script>
 </body>
 </html>
