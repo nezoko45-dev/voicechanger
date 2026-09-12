@@ -10,7 +10,6 @@ let recording = false;
 let mediaRecorder = null;
 let recordChunks = [];
 let wavUrl = null;
-let currentAudio = null;
 let echoQueue = Promise.resolve();
 let echoCounter = 0;
 
@@ -43,53 +42,31 @@ async function refreshOutputs() {
     const current = select.value;
     select.replaceChildren();
     if (!outputs.length) {
-      select.add(new Option("System default output", "default"));
+      select.add(new Option("Windows default output", "default"));
       return;
     }
     for (const device of outputs) {
-      const label = device.label || (device.deviceId === "default" ? "Default Windows output" : `Audio output ${device.deviceId.slice(0, 8)}`);
+      const label = device.label || (device.deviceId === "default" ? "Windows default output" : `Audio output ${device.deviceId.slice(0, 8)}`);
       select.add(new Option(label, device.deviceId));
     }
     if ([...select.options].some((o) => o.value === current)) select.value = current;
-    log(`Found ${outputs.length} Windows audio output device${outputs.length === 1 ? "" : "s"}.`);
+    log(`Found ${outputs.length} Windows audio output${outputs.length === 1 ? "" : "s"}. Native TTS playback uses the Windows default device.`);
   } catch (error) { log(`OUTPUT ERROR: ${error.message}`); }
 }
 
-async function chooseOutput(audio) {
-  const sinkId = $("outputDevice").value || "default";
-  if (typeof audio.setSinkId === "function") {
-    try {
-      await audio.setSinkId(sinkId);
-      return;
-    } catch (error) {
-      log(`Selected output unavailable (${error.message}); using Windows default.`);
-      try { await audio.setSinkId("default"); } catch {}
-    }
-  }
-}
-
-async function stopAudio() {
-  if (!currentAudio) return;
-  try { currentAudio.pause(); currentAudio.currentTime = 0; currentAudio.removeAttribute("src"); currentAudio.load(); } catch {}
-  currentAudio = null;
-}
-
 async function playBlob(blob) {
-  await stopAudio();
-  const url = URL.createObjectURL(blob);
-  const audio = new Audio(url);
-  audio.preload = "auto";
-  currentAudio = audio;
-  await chooseOutput(audio);
-  audio.onended = () => { URL.revokeObjectURL(url); if (currentAudio === audio) currentAudio = null; };
-  audio.onerror = () => log("AUDIO ERROR: generated speech could not be played.");
-  try {
-    await audio.play();
-  } catch (error) {
-    log(`PLAYBACK ERROR: ${error.message}`);
-    await chooseOutput(audio);
-    await audio.play();
+  if (!window.nativeAudio?.playWavBase64) {
+    throw new Error("Native Windows audio bridge is missing. Use the new desktop EXE build.");
   }
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  const base64 = btoa(binary);
+  await window.nativeAudio.playWavBase64(base64);
+  log("TTS sent to native Windows audio playback.");
 }
 
 async function loadModel() {
@@ -166,7 +143,7 @@ async function decodeAndClone(blob, name = "recording.webm") {
     if (buffer.duration < 2) throw new Error("Use at least 2 seconds of speech for cloning.");
     if (buffer.duration > 30) throw new Error("Keep the reference clip under 30 seconds.");
     const mono = new Float32Array(buffer.length);
-    for (let i = 0; i < buffer.length; i++) {
+    for (let i = 0; i < buffer.length; i += 1) {
       let sum = 0;
       for (let c = 0; c < buffer.numberOfChannels; c += 1) sum += buffer.getChannelData(c)[i] || 0;
       mono[i] = sum / buffer.numberOfChannels;
@@ -178,6 +155,7 @@ async function decodeAndClone(blob, name = "recording.webm") {
   $("startVC").disabled = !supportsSTT();
   log(`Voice clone created from ${name}.`);
 }
+
 async function cloneFile(file) {
   if (!tts) return;
   $("cloneFile").disabled = true;
@@ -186,6 +164,7 @@ async function cloneFile(file) {
   catch (error) { setVoiceStatus(`Clone failed: ${error.message}`, "bad"); log(`CLONE ERROR: ${error.stack || error.message}`); }
   finally { $("cloneFile").disabled = false; }
 }
+
 async function startRecording() {
   if (!tts || recording) return;
   try {
@@ -212,6 +191,7 @@ async function startRecording() {
     log("Voice-clone microphone recording started.");
   } catch (error) { setVoiceStatus(`Microphone failed: ${error.message}`, "bad"); log(`MIC ERROR: ${error.stack || error.message}`); }
 }
+
 function stopRecording() { if (mediaRecorder && recording) mediaRecorder.stop(); }
 
 async function generate(text, mode = "manual") {
@@ -225,7 +205,6 @@ async function generate(text, mode = "manual") {
   $("download").classList.add("hidden");
   const chunks = [];
   try {
-    await stopAudio();
     const cleanText = text.trim().slice(0, 1500);
     setStatus(mode === "echo" ? "Echoing with your cloned voice…" : "Generating cloned speech…", "working");
     log(`${mode === "echo" ? "ECHO" : "TTS"}: ${cleanText.slice(0, 100)}${cleanText.length > 100 ? "…" : ""}`);
@@ -242,10 +221,13 @@ async function generate(text, mode = "manual") {
       $("download").classList.remove("hidden");
     }
     await playBlob(blob);
-    setStatus(mode === "echo" ? `Echoed • ${metrics.audioDuration.toFixed(2)}s` : `Spoken • ${metrics.audioDuration.toFixed(2)}s • routed to selected output`, "ok");
+    setStatus(mode === "echo" ? `Echoed • ${metrics.audioDuration.toFixed(2)}s` : `Spoken • ${metrics.audioDuration.toFixed(2)}s • played through Windows audio`, "ok");
     log(`Generated ${metrics.audioDuration.toFixed(2)} seconds of cloned audio.`);
   } catch (error) {
-    if (!/stop/i.test(error?.message || "")) { setStatus(`${mode === "echo" ? "Echo" : "TTS"} failed: ${error?.message || error}`, "bad"); log(`${mode === "echo" ? "ECHO" : "TTS"} ERROR: ${error?.stack || error}`); }
+    if (!/stop/i.test(error?.message || "")) {
+      setStatus(`${mode === "echo" ? "Echo" : "TTS"} failed: ${error?.message || error}`, "bad");
+      log(`${mode === "echo" ? "ECHO" : "TTS"} ERROR: ${error?.stack || error}`);
+    }
   } finally {
     generating = false;
     if (mode === "manual") {
@@ -321,6 +303,7 @@ function stopVoiceChanger() {
   listening = false;
   echoCounter += 1;
   try { recognition?.stop(); } catch {}
+  try { window.nativeAudio?.stop(); } catch {}
   $("micDot").classList.remove("live");
   $("startVC").disabled = !voiceRef;
   $("stopVC").disabled = true;
@@ -336,7 +319,7 @@ $("stopRecord").addEventListener("click", stopRecording);
 $("generate").addEventListener("click", () => generate($("text").value));
 $("stop").addEventListener("click", async () => {
   try { await tts?.stop(); } catch {}
-  await stopAudio();
+  try { await window.nativeAudio?.stop(); } catch {}
   $("stop").disabled = true;
   $("generate").disabled = !voiceRef;
   setStatus("Generation stopped.");
@@ -345,9 +328,9 @@ $("stop").addEventListener("click", async () => {
 $("startVC").addEventListener("click", startVoiceChanger);
 $("stopVC").addEventListener("click", stopVoiceChanger);
 $("refreshOutputs").addEventListener("click", refreshOutputs);
-$("outputDevice").addEventListener("change", () => log(`Output selected: ${$("outputDevice").selectedOptions[0]?.textContent || "default"}`));
+$("outputDevice").addEventListener("change", () => log(`Output selection changed. Native playback uses Windows default audio output: ${$("outputDevice").selectedOptions[0]?.textContent || "default"}`));
 
 if (supportsSTT()) $("sttInfo").textContent = "STT available — load the model and clone a voice to begin.";
 else $("sttInfo").textContent = "SpeechRecognition is unavailable in this Electron build.";
 refreshOutputs();
-log("Desktop VoiceChanger ready. Each finalized phrase now echoes through the cloned voice.");
+log("Desktop VoiceChanger ready. TTS playback uses native Windows audio.");
