@@ -1,5 +1,6 @@
-// VoiceChanger Direct intentionally uses the browser's native WebSocket for Deepgram.
-// There is no Electron WebSocket/IPC bridge in the Direct desktop build.
+// VoiceChanger Direct uses the reconnecting Deepgram client.
+// main-fixed.js keeps the live STT session alive by automatically reconnecting
+// after transient WebSocket 1006 disconnects instead of leaving the UI stopped.
 import './pocket-tts-fix.js';
-import './main-output.js';
+import './main-fixed.js';
 import './driver.js';
