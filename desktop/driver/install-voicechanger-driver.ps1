@@ -21,6 +21,15 @@ function Find-Inf {
   return $inf.FullName
 }
 
+function Find-DriverBinary {
+  $packageRoot = Join-Path $PSScriptRoot 'package'
+  $binary = Get-ChildItem -Path $packageRoot -Recurse -Filter '*.sys' -File | Select-Object -First 1
+  if (-not $binary) {
+    throw 'No driver SYS binary was found in the bundled driver package.'
+  }
+  return $binary.FullName
+}
+
 function Find-DeviceInstaller {
   $file = Join-Path $PSScriptRoot 'VoiceChangerDeviceInstaller.exe'
   if (-not (Test-Path $file)) {
@@ -54,6 +63,58 @@ function Test-DriverPackage {
   }
 }
 
+function Test-TestSigning {
+  try {
+    $output = & bcdedit.exe /enum '{current}' 2>&1 | Out-String
+    return ($output -match '(?im)^\s*testsigning\s+Yes\s*$')
+  } catch {
+    return $false
+  }
+}
+
+function Enable-TestSigning {
+  if (Test-TestSigning) {
+    return $false
+  }
+
+  Write-Host 'Windows Test Signing is required by the bundled Virtual Audio Driver.'
+  Write-Host 'Enabling Test Signing mode now. Windows must be restarted before the driver can start.'
+
+  $output = & bcdedit.exe /set testsigning on 2>&1 | Out-String
+  if ($LASTEXITCODE -ne 0) {
+    if ($output -match 'secure boot|boot configuration data|protected by.*secure boot' -or $output -match 'element data type') {
+      throw 'Windows could not enable Test Signing because Secure Boot or boot policy is blocking it. Disable Secure Boot in firmware, restart Windows, then run Install Driver again.'
+    }
+    throw "Could not enable Windows Test Signing: $($output.Trim())"
+  }
+
+  return $true
+}
+
+function Trust-DriverSigner {
+  param([Parameter(Mandatory=$true)][string]$DriverBinary)
+
+  try {
+    $sig = Get-AuthenticodeSignature -FilePath $DriverBinary
+    if ($sig.SignerCertificate) {
+      Write-Host ("Trusting bundled driver signer: " + $sig.SignerCertificate.Subject)
+      foreach ($storeName in @('TrustedPublisher', 'Root')) {
+        $store = New-Object System.Security.Cryptography.X509Certificates.X509Store($storeName, 'LocalMachine')
+        $store.Open('ReadWrite')
+        try {
+          $store.Add($sig.SignerCertificate)
+        } finally {
+          $store.Close()
+        }
+      }
+    } else {
+      Write-Host "WARNING: The bundled driver binary has no readable signer certificate."
+    }
+  } catch {
+    throw "Unable to trust the bundled driver signer: $($_.Exception.Message)"
+  }
+}
+
 function Scan-Devices {
   try {
     & pnputil.exe /scan-devices 2>&1 | Out-Host
@@ -67,7 +128,16 @@ $action = if ($args.Count) { $args[0].ToLowerInvariant() } else { 'status' }
 switch ($action) {
   'install' {
     $inf = Find-Inf
+    $driverBinary = Find-DriverBinary
     $installer = Find-DeviceInstaller
+
+    if (Enable-TestSigning) {
+      Write-Host 'VC_STATUS=reboot'
+      Write-Host 'Windows Test Signing has been enabled. Restart Windows once, then click Install VoiceChanger Driver again.'
+      break
+    }
+
+    Trust-DriverSigner -DriverBinary $driverBinary
     Write-Host "Creating VoiceChanger ROOT device and installing driver from $inf"
 
     & $installer $inf 2>&1 | ForEach-Object { Write-Host $_ }
@@ -88,7 +158,7 @@ switch ($action) {
 
     if (Test-DriverPackage -InfPath $inf) {
       Write-Host 'VC_STATUS=staged'
-      Write-Host 'The signed driver package is present, but Windows has not started the virtual device yet.'
+      Write-Host 'The driver package is present, but Windows has not started the virtual device yet.'
       break
     }
 
@@ -113,6 +183,12 @@ switch ($action) {
     if ($devices.Count -gt 0) {
       Write-Host 'VC_STATUS=installed'
       $devices | Format-Table -AutoSize
+      break
+    }
+
+    if (-not (Test-TestSigning)) {
+      Write-Host 'VC_STATUS=testsigning-off'
+      Write-Host 'Windows Test Signing is off. The bundled Virtual Audio Driver will show Code 52 until Test Signing is enabled and Windows is restarted.'
       break
     }
 
