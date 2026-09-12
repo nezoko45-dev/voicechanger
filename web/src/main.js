@@ -11,6 +11,8 @@ let mediaRecorder = null;
 let recordChunks = [];
 let wavUrl = null;
 let currentAudio = null;
+let echoQueue = Promise.resolve();
+let echoCounter = 0;
 
 const MODEL_SOURCES = [
   "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/main/onnx",
@@ -20,7 +22,7 @@ const MODEL_SOURCES = [
 
 function log(message) {
   const box = $("log");
-  if (box) box.textContent = `${new Date().toLocaleTimeString()} — ${message}\n${box.textContent}`;
+  box.textContent = `${new Date().toLocaleTimeString()} — ${message}\n${box.textContent}`;
 }
 function setStatus(text, type = "") {
   $("status").textContent = text;
@@ -35,84 +37,58 @@ function mb(n) { return `${(n / 1e6).toFixed(1)} MB`; }
 
 async function refreshOutputs() {
   const select = $("outputDevice");
-  if (!select || !navigator.mediaDevices?.enumerateDevices) return;
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const outputs = devices.filter((d) => d.kind === "audiooutput");
-    const current = select.value || "default";
+    const current = select.value;
     select.replaceChildren();
     if (!outputs.length) {
       select.add(new Option("System default output", "default"));
       return;
     }
-    select.add(new Option("System default output", "default"));
     for (const device of outputs) {
-      if (device.deviceId === "default") continue;
-      const label = device.label || `Audio output ${device.deviceId.slice(0, 8)}`;
+      const label = device.label || (device.deviceId === "default" ? "Default Windows output" : `Audio output ${device.deviceId.slice(0, 8)}`);
       select.add(new Option(label, device.deviceId));
     }
     if ([...select.options].some((o) => o.value === current)) select.value = current;
-    else select.value = "default";
     log(`Found ${outputs.length} Windows audio output device${outputs.length === 1 ? "" : "s"}.`);
   } catch (error) { log(`OUTPUT ERROR: ${error.message}`); }
 }
 
 async function chooseOutput(audio) {
-  const sinkId = $("outputDevice")?.value || "default";
+  const sinkId = $("outputDevice").value || "default";
   if (typeof audio.setSinkId === "function") {
     try {
       await audio.setSinkId(sinkId);
-      log(`TTS output: ${sinkId === "default" ? "System default" : ( $("outputDevice")?.selectedOptions?.[0]?.textContent || sinkId )}`);
-      return true;
+      return;
     } catch (error) {
-      log(`Output device unavailable (${error.message}); falling back to Windows default.`);
+      log(`Selected output unavailable (${error.message}); using Windows default.`);
+      try { await audio.setSinkId("default"); } catch {}
     }
   }
-  return false;
 }
 
 async function stopAudio() {
   if (!currentAudio) return;
-  try {
-    currentAudio.pause();
-    currentAudio.currentTime = 0;
-    currentAudio.removeAttribute("src");
-    currentAudio.load();
-  } catch {}
+  try { currentAudio.pause(); currentAudio.currentTime = 0; currentAudio.removeAttribute("src"); currentAudio.load(); } catch {}
   currentAudio = null;
 }
 
 async function playBlob(blob) {
   await stopAudio();
   const url = URL.createObjectURL(blob);
-  const audio = new Audio();
+  const audio = new Audio(url);
   audio.preload = "auto";
-  audio.volume = 1.0;
-  audio.src = url;
   currentAudio = audio;
-
   await chooseOutput(audio);
-
-  audio.onended = () => {
-    URL.revokeObjectURL(url);
-    if (currentAudio === audio) currentAudio = null;
-  };
-  audio.onerror = () => {
-    log(`TTS audio playback error: ${audio.error?.message || `code ${audio.error?.code || "unknown"}`}`);
-  };
-
+  audio.onended = () => { URL.revokeObjectURL(url); if (currentAudio === audio) currentAudio = null; };
+  audio.onerror = () => log("AUDIO ERROR: generated speech could not be played.");
   try {
     await audio.play();
   } catch (error) {
-    // A selected virtual device can disappear while Voicemeeter/VB-Cable restarts.
-    // Retry once on the normal Windows output so TTS is never silently muted.
-    log(`TTS play() failed: ${error.message}; retrying on System default.`);
-    try {
-      if (typeof audio.setSinkId === "function") await audio.setSinkId("default");
-      await audio.play();
-    } catch (retryError) {
-      throw new Error(`Windows audio playback was blocked: ${retryError.message}`);
-    }
+    log(`PLAYBACK ERROR: ${error.message}`);
+    await chooseOutput(audio);
+    await audio.play();
   }
 }
 
@@ -192,7 +168,7 @@ async function decodeAndClone(blob, name = "recording.webm") {
     const mono = new Float32Array(buffer.length);
     for (let i = 0; i < buffer.length; i++) {
       let sum = 0;
-      for (let c = 0; c < buffer.numberOfChannels; c++) sum += buffer.getChannelData(c)[i] || 0;
+      for (let c = 0; c < buffer.numberOfChannels; c += 1) sum += buffer.getChannelData(c)[i] || 0;
       mono[i] = sum / buffer.numberOfChannels;
     }
     voiceRef = await tts.cloneVoice(mono, { inputSampleRate: buffer.sampleRate, name: `clone:${name}:${Date.now()}` });
@@ -202,7 +178,6 @@ async function decodeAndClone(blob, name = "recording.webm") {
   $("startVC").disabled = !supportsSTT();
   log(`Voice clone created from ${name}.`);
 }
-
 async function cloneFile(file) {
   if (!tts) return;
   $("cloneFile").disabled = true;
@@ -211,7 +186,6 @@ async function cloneFile(file) {
   catch (error) { setVoiceStatus(`Clone failed: ${error.message}`, "bad"); log(`CLONE ERROR: ${error.stack || error.message}`); }
   finally { $("cloneFile").disabled = false; }
 }
-
 async function startRecording() {
   if (!tts || recording) return;
   try {
@@ -238,62 +212,136 @@ async function startRecording() {
     log("Voice-clone microphone recording started.");
   } catch (error) { setVoiceStatus(`Microphone failed: ${error.message}`, "bad"); log(`MIC ERROR: ${error.stack || error.message}`); }
 }
-
 function stopRecording() { if (mediaRecorder && recording) mediaRecorder.stop(); }
 
-async function generate(text) {
+async function generate(text, mode = "manual") {
   if (!tts || !voiceRef || !text.trim() || generating) return;
   generating = true;
-  $("generate").disabled = true;
-  $("stop").disabled = false;
+  if (mode === "manual") {
+    $("generate").disabled = true;
+    $("stop").disabled = false;
+  }
   $("preview").hidden = true;
   $("download").classList.add("hidden");
   const chunks = [];
   try {
     await stopAudio();
     const cleanText = text.trim().slice(0, 1500);
-    setStatus("Generating cloned speech…", "working");
-    log(`TTS: ${cleanText.slice(0, 100)}${cleanText.length > 100 ? "…" : ""}`);
+    setStatus(mode === "echo" ? "Echoing with your cloned voice…" : "Generating cloned speech…", "working");
+    log(`${mode === "echo" ? "ECHO" : "TTS"}: ${cleanText.slice(0, 100)}${cleanText.length > 100 ? "…" : ""}`);
     const metrics = await tts.generate(cleanText, { voice: voiceRef, onChunk: (audio) => chunks.push(audio.slice()) });
     if (!chunks.length) throw new Error("No audio was generated.");
     const blob = chunksToWavBlob(chunks, tts.sampleRate);
-    if (wavUrl) URL.revokeObjectURL(wavUrl);
-    wavUrl = URL.createObjectURL(blob);
-    $("preview").src = wavUrl;
-    $("preview").hidden = false;
-    $("download").href = wavUrl;
-    $("download").download = `voicechanger-${Date.now()}.wav`;
-    $("download").classList.remove("hidden");
+    if (mode === "manual") {
+      if (wavUrl) URL.revokeObjectURL(wavUrl);
+      wavUrl = URL.createObjectURL(blob);
+      $("preview").src = wavUrl;
+      $("preview").hidden = false;
+      $("download").href = wavUrl;
+      $("download").download = `voicechanger-${Date.now()}.wav`;
+      $("download").classList.remove("hidden");
+    }
     await playBlob(blob);
-    setStatus(`Spoken • ${metrics.audioDuration.toFixed(2)}s • routed to selected output`, "ok");
+    setStatus(mode === "echo" ? `Echoed • ${metrics.audioDuration.toFixed(2)}s` : `Spoken • ${metrics.audioDuration.toFixed(2)}s • routed to selected output`, "ok");
     log(`Generated ${metrics.audioDuration.toFixed(2)} seconds of cloned audio.`);
   } catch (error) {
-    if (!/stop/i.test(error?.message || "")) { setStatus(`TTS failed: ${error?.message || error}`, "bad"); log(`TTS ERROR: ${error?.stack || error}`); }
-  } finally { generating = false; $("generate").disabled = !voiceRef; $("stop").disabled = true; }
+    if (!/stop/i.test(error?.message || "")) { setStatus(`${mode === "echo" ? "Echo" : "TTS"} failed: ${error?.message || error}`, "bad"); log(`${mode === "echo" ? "ECHO" : "TTS"} ERROR: ${error?.stack || error}`); }
+  } finally {
+    generating = false;
+    if (mode === "manual") {
+      $("generate").disabled = !voiceRef;
+      $("stop").disabled = true;
+    }
+  }
 }
 
 function setupSTT() {
   if (recognition) return;
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Recognition) { $("sttInfo").textContent = "This Electron build does not provide browser SpeechRecognition."; return; }
+  if (!Recognition) {
+    $("sttInfo").textContent = "This Electron build does not provide browser SpeechRecognition.";
+    return;
+  }
   recognition = new Recognition();
   recognition.continuous = true;
   recognition.interimResults = false;
   recognition.lang = "en-US";
-  recognition.onstart = () => { listening = true; $("startVC").disabled = true; $("stopVC").disabled = false; $("micDot").classList.add("live"); $("sttInfo").textContent = "Listening — speak normally."; setStatus("VoiceChanger listening…", "ok"); log("Speech recognition started."); };
-  recognition.onresult = async (event) => { const result = event.results[event.results.length - 1]; if (!result.isFinal || generating || !voiceRef) return; const text = result[0].transcript.trim(); if (!text) return; log(`You said: ${text}`); await generate(text); };
-  recognition.onerror = (event) => { log(`STT: ${event.error}`); if (event.error === "not-allowed" || event.error === "service-not-allowed") stopVoiceChanger(); };
-  recognition.onend = () => { if (listening && !generating) { try { recognition.start(); } catch {} } };
+
+  recognition.onstart = () => {
+    listening = true;
+    $("startVC").disabled = true;
+    $("stopVC").disabled = false;
+    $("micDot").classList.add("live");
+    $("sttInfo").textContent = "Listening — each phrase will echo in your cloned voice.";
+    setStatus("VoiceChanger listening…", "ok");
+    log("Continuous echo listening started.");
+  };
+
+  recognition.onresult = (event) => {
+    for (let i = event.resultIndex; i < event.results.length; i += 1) {
+      const result = event.results[i];
+      if (!result.isFinal) continue;
+      const text = result[0].transcript.trim();
+      if (!text || !voiceRef || !listening) continue;
+      log(`You said: ${text}`);
+      echoCounter += 1;
+      const id = echoCounter;
+      echoQueue = echoQueue.then(async () => {
+        if (!listening || id !== echoCounter) return;
+        await generate(text, "echo");
+      }).catch((error) => log(`ECHO QUEUE ERROR: ${error.message}`));
+    }
+  };
+
+  recognition.onerror = (event) => {
+    log(`STT: ${event.error}`);
+    if (event.error === "not-allowed" || event.error === "service-not-allowed") stopVoiceChanger();
+  };
+
+  recognition.onend = () => {
+    if (listening) {
+      setTimeout(() => {
+        if (!listening) return;
+        try { recognition.start(); } catch {}
+      }, 100);
+    }
+  };
 }
-function startVoiceChanger() { if (!voiceRef) return; if (!recognition) setupSTT(); if (!recognition) return; listening = true; try { recognition.start(); } catch {} }
-function stopVoiceChanger() { listening = false; try { recognition?.stop(); } catch {}; $("micDot").classList.remove("live"); $("startVC").disabled = !voiceRef; $("stopVC").disabled = true; $("sttInfo").textContent = "VoiceChanger stopped."; if (!generating) setStatus("VoiceChanger stopped."); log("Speech recognition stopped."); }
+
+function startVoiceChanger() {
+  if (!voiceRef) return;
+  if (!recognition) setupSTT();
+  if (!recognition) return;
+  listening = true;
+  echoCounter += 1;
+  try { recognition.start(); } catch {}
+}
+
+function stopVoiceChanger() {
+  listening = false;
+  echoCounter += 1;
+  try { recognition?.stop(); } catch {}
+  $("micDot").classList.remove("live");
+  $("startVC").disabled = !voiceRef;
+  $("stopVC").disabled = true;
+  $("sttInfo").textContent = "VoiceChanger stopped.";
+  if (!generating) setStatus("VoiceChanger stopped.");
+  log("Continuous echo stopped.");
+}
 
 $("loadModel").addEventListener("click", loadModel);
 $("cloneFile").addEventListener("change", (e) => { const file = e.target.files?.[0]; if (file) cloneFile(file); });
 $("recordVoice").addEventListener("click", startRecording);
 $("stopRecord").addEventListener("click", stopRecording);
 $("generate").addEventListener("click", () => generate($("text").value));
-$("stop").addEventListener("click", async () => { try { await tts?.stop(); } catch {} await stopAudio(); $("stop").disabled = true; $("generate").disabled = !voiceRef; setStatus("Generation stopped."); log("TTS generation stopped."); });
+$("stop").addEventListener("click", async () => {
+  try { await tts?.stop(); } catch {}
+  await stopAudio();
+  $("stop").disabled = true;
+  $("generate").disabled = !voiceRef;
+  setStatus("Generation stopped.");
+  log("TTS generation stopped.");
+});
 $("startVC").addEventListener("click", startVoiceChanger);
 $("stopVC").addEventListener("click", stopVoiceChanger);
 $("refreshOutputs").addEventListener("click", refreshOutputs);
@@ -302,4 +350,4 @@ $("outputDevice").addEventListener("change", () => log(`Output selected: ${$("ou
 if (supportsSTT()) $("sttInfo").textContent = "STT available — load the model and clone a voice to begin.";
 else $("sttInfo").textContent = "SpeechRecognition is unavailable in this Electron build.";
 refreshOutputs();
-log("Desktop VoiceChanger ready. No hosted webpage is required.");
+log("Desktop VoiceChanger ready. Each finalized phrase now echoes through the cloned voice.");
