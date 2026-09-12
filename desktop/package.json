@@ -1,8 +1,8 @@
 {
   "name": "voicechanger-desktop",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "private": true,
-  "description": "Windows desktop STT/TTS VoiceChanger with voice cloning and virtual audio driver",
+  "description": "Windows desktop STT/TTS VoiceChanger with Deepgram STT, Pocket TTS voice cloning, and Magic Mic virtual audio",
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
