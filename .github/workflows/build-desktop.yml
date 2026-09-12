@@ -49,6 +49,24 @@ jobs:
           Write-Host 'Bundled VoiceChanger driver package:'
           Get-ChildItem -Path $packageDir -Recurse -Include *.sys,*.inf,*.cat,*.dll | ForEach-Object { Write-Host $_.FullName }
 
+      - name: Build VoiceChanger device installer helper
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path $vswhere)) { throw 'Visual Studio vswhere.exe was not found.' }
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) { throw 'MSVC x64 toolchain was not found.' }
+          $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          if (-not (Test-Path $vcvars)) { throw "vcvars64.bat was not found: $vcvars" }
+          $source = Join-Path $env:GITHUB_WORKSPACE 'desktop\driver\VoiceChangerDeviceInstaller.cpp'
+          $output = Join-Path $env:GITHUB_WORKSPACE 'desktop\driver\VoiceChangerDeviceInstaller.exe'
+          $cmd = "call `"$vcvars`" && cl.exe /nologo /O2 /EHsc /MT `"$source`" /link setupapi.lib newdev.lib /OUT:`"$output`""
+          cmd.exe /d /s /c $cmd
+          if ($LASTEXITCODE -ne 0) { throw "VoiceChangerDeviceInstaller compilation failed with exit code $LASTEXITCODE" }
+          if (-not (Test-Path $output)) { throw 'VoiceChangerDeviceInstaller.exe was not produced.' }
+          Write-Host "Built $output"
+
       - name: Install desktop dependencies
         working-directory: desktop
         run: npm install
