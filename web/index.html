@@ -1,34 +1,93 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#080a10">
-<title>Pocket VoiceChanger</title>
-<style>
-:root{font-family:Inter,system-ui,-apple-system,sans-serif;color:#f7f8ff;background:#070910}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 15% 0%,#35255b,#0b0e17 48%,#05060a)}button,input,select,textarea{font:inherit}button{border:0;border-radius:12px;padding:12px 16px;background:#795cff;color:#fff;font-weight:800;cursor:pointer}button:hover:not(:disabled){filter:brightness(1.1)}button:disabled{opacity:.4;cursor:not-allowed}.secondary{background:#20263a}.danger{background:#b93857}.app{max-width:1120px;margin:auto;padding:26px 18px 50px}.top{display:flex;justify-content:space-between;align-items:center;gap:18px}.brand{display:flex;gap:14px;align-items:center}.logo{width:58px;height:58px;border-radius:17px;display:grid;place-items:center;background:linear-gradient(135deg,#8968ff,#d84d9b);font-size:29px}.eyebrow{color:#ad9eff;font-size:12px;font-weight:900;letter-spacing:.14em;text-transform:uppercase}.title{font-size:30px;font-weight:950}.sub,.muted{color:#9299ad;line-height:1.55}.pill{padding:8px 12px;border-radius:999px;background:#121625;border:1px solid #292f44;color:#aeb6cb;font-size:12px}.hero{display:grid;grid-template-columns:1.35fr .65fr;gap:16px;margin:22px 0 16px}.card{background:#10131ddd;border:1px solid #252a3c;border-radius:18px;padding:20px;box-shadow:0 18px 55px #0006}.card h2{font-size:17px;margin:0 0 8px}.big{font-size:30px;font-weight:950}.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:18px}.step{background:#0b0e17;border:1px solid #202538;border-radius:14px;padding:13px}.step b{display:block;margin-bottom:5px}.step span{color:#858da3;font-size:12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.section{margin-top:16px}label{display:block;color:#aab1c4;font-size:12px;font-weight:800;margin-bottom:7px}.field,.drop{width:100%;border:1px solid #2a3043;background:#0b0e17;color:#f7f8ff;border-radius:12px;padding:12px}.actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:13px}.status{display:inline-block;margin-top:10px;color:#9299ae;font-size:12px}.ok{color:#61e6a1}.bad{color:#ff738e}.working{color:#c2b8ff}.meter{height:8px;border-radius:99px;background:#080a10;overflow:hidden;margin-top:12px}.meter i{display:block;width:0;height:100%;background:linear-gradient(90deg,#7c5cff,#d84d9b);transition:width .2s}.record{display:flex;align-items:center;gap:10px}.dot{width:10px;height:10px;border-radius:50%;background:#444b60}.dot.live{background:#ff486d;box-shadow:0 0 16px #ff486d}.preview{width:100%;margin-top:14px}.log{min-height:100px;max-height:240px;overflow:auto;white-space:pre-wrap;background:#080a10;border:1px solid #1e2333;border-radius:12px;padding:12px;color:#8e97ad;font:12px/1.55 ui-monospace,Consolas,monospace}.notice{font-size:12px;color:#7f879b}.hint{font-size:12px;color:#777f94;margin-top:8px}@media(max-width:800px){.hero,.grid,.steps{grid-template-columns:1fr}.pill{display:none}}
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VoiceChanger Desktop</title>
+  <style>
+    :root{color-scheme:dark;font-family:Inter,Segoe UI,Arial,sans-serif;background:#090b12;color:#eef1f7}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 20% 0,#23294a 0,#090b12 40%);min-height:100vh}
+    .app{max-width:1050px;margin:auto;padding:28px}.hero{display:flex;justify-content:space-between;align-items:end;gap:20px;margin-bottom:20px}
+    h1{font-size:34px;margin:0 0 6px}.sub{color:#9ca7be}.badge{border:1px solid #343b56;border-radius:999px;padding:8px 12px;background:#111628;color:#aeb9d5}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.card{background:rgba(17,21,34,.92);border:1px solid #2a3148;border-radius:18px;padding:18px;box-shadow:0 12px 40px #0004}.wide{grid-column:1/-1}
+    h2{font-size:18px;margin:0 0 12px}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.stack{display:grid;gap:10px}
+    button,input,select,textarea{font:inherit}button{background:#6d75ff;border:0;color:white;padding:11px 15px;border-radius:11px;cursor:pointer;font-weight:650}button.secondary{background:#242b41}button.danger{background:#a84458}button:disabled{opacity:.45;cursor:not-allowed}
+    select,input[type=text],textarea{width:100%;background:#0c1020;color:#edf0f8;border:1px solid #353d57;border-radius:10px;padding:11px}textarea{min-height:120px;resize:vertical}
+    input[type=file]{width:100%;padding:10px;background:#0c1020;border:1px dashed #414962;border-radius:10px;color:#aab4ca}
+    .muted{color:#919bb2;font-size:13px}.status{padding:10px 12px;border-radius:10px;background:#151a29;color:#adb7cb}.ok{background:#10281e;color:#83e1aa}.bad{background:#2b151a;color:#ff9faf}.working{background:#23211a;color:#f1d28d}
+    .meter{height:8px;background:#0a0d15;border-radius:999px;overflow:hidden}.bar{height:100%;width:0;background:#6d75ff;transition:width .2s}.dot{width:10px;height:10px;border-radius:50%;background:#525b75;display:inline-block}.dot.live{background:#ff536e;box-shadow:0 0 14px #ff536e}
+    audio{width:100%;margin-top:10px}.log{height:180px;overflow:auto;white-space:pre-wrap;background:#080b13;border:1px solid #242b3f;border-radius:10px;padding:12px;font:12px ui-monospace,SFMono-Regular,Consolas,monospace;color:#9eabc3}
+    .hint{font-size:12px;color:#78839b}.switch{display:flex;gap:8px;align-items:center}.hidden{display:none}.full{width:100%}
+    @media(max-width:780px){.grid{grid-template-columns:1fr}.wide{grid-column:auto}.hero{align-items:start;flex-direction:column}}
+  </style>
 </head>
 <body>
-<main class="app">
-<header class="top"><div class="brand"><div class="logo">🎙️</div><div><div class="eyebrow">100% Browser AI</div><div class="title">Pocket VoiceChanger</div><div class="sub">Vite-bundled worker → Pocket TTS → cloned voice.</div></div></div><div class="pill" id="modelBadge">AI offline</div></header>
-<section class="hero"><div class="card"><h2>🎤 Browser VoiceChanger</h2><p class="muted">Pocket TTS is imported normally through Vite, so its Web Worker is emitted with the app instead of being created from a CDN URL. Voice cloning and speech generation stay in the browser.</p><div class="steps"><div class="step"><b>01 · Load</b><span>Load Pocket TTS in the bundled worker.</span></div><div class="step"><b>02 · Clone</b><span>Upload a clean voice clip.</span></div><div class="step"><b>03 · Talk</b><span>Use the microphone live.</span></div></div></div><div class="card"><div class="muted">Engine</div><div class="big">Pocket TTS</div><div id="modelInfo" class="status">Not loaded</div><div class="meter"><i id="progressBar"></i></div></div></section>
-<section class="card section"><h2>1. Load Pocket TTS</h2><p class="muted">The first load downloads the browser model files. They are cached for later sessions.</p><div class="actions"><button id="loadModel">🧠 Load Pocket TTS</button><button id="clearCache" class="secondary">Clear model cache</button></div><span id="status" class="status">Ready</span><div id="secureInfo" class="hint"></div></section>
-<section class="card section"><h2>2. Choose or clone a voice</h2><div class="grid"><div><label>Your voice sample</label><div class="drop"><input id="cloneFile" type="file" accept="audio/*,.wav" disabled></div><div class="hint">Use a clean recording with one speaker. A few seconds is enough.</div></div><div><label>Built-in Pocket TTS voice</label><select id="builtinVoice" class="field" disabled><option>Load Pocket TTS first</option></select><div class="actions"><button id="loadBuiltin" class="secondary" disabled>Use Built-in Voice</button></div></div></div><span id="voiceStatus" class="status">No voice selected</span></section>
-<section class="card section"><h2>3. 🎤 Live VoiceChanger</h2><p class="muted">Start the microphone, speak a phrase, and the browser's SpeechRecognition transcribes it. Pocket TTS then speaks the result in your selected voice.</p><div class="record"><span id="micDot" class="dot"></span><span id="sttInfo" class="status">Checking browser speech recognition…</span></div><div class="actions"><button id="startVC" disabled>🎤 Start VoiceChanger</button><button id="stopVC" class="danger" disabled>■ Stop</button></div></section>
-<section class="card section"><h2>4. 🔊 Test the voice</h2><textarea id="text" class="field" rows="5">Hello! This is my Pocket TTS browser voice.</textarea><div class="actions"><button id="generate" disabled>▶ Generate Voice</button><button id="stop" class="danger" disabled>■ Stop</button><button id="download" class="secondary" disabled>⬇ Download WAV</button></div><audio id="preview" class="preview" controls hidden></audio></section>
-<section class="card section"><h2>Activity</h2><div id="log" class="log">Ready.</div></section>
-<section class="card section notice"><strong>Browser processing:</strong> the Pocket TTS engine and worker are bundled with this Vite app. Model assets are fetched from the Pocket TTS model host and cached by your browser. No Python server or paid voice API is required.</section>
-</main>
-<script type="module">
-import("./src/main.js").catch((error)=>{
-  const app=document.querySelector(".app");
-  const box=document.createElement("section");
-  box.className="card section";
-  box.innerHTML=`<h2>⚠️ App failed to start</h2><p class="muted">${String(error?.message||error)}</p><p class="hint">The page loaded, but the Vite JavaScript bundle could not start.</p>`;
-  app.appendChild(box);
-  console.error(error);
-});
-</script>
+  <main class="app">
+    <header class="hero">
+      <div><h1>🎙️ VoiceChanger Desktop</h1><div class="sub">STT → cloned voice → TTS • local AI inference • Windows audio routing</div></div>
+      <div class="badge" id="modelBadge">Model not loaded</div>
+    </header>
+
+    <section class="grid">
+      <div class="card">
+        <h2>1. AI engine</h2>
+        <div class="stack">
+          <button id="loadModel">Load Pocket TTS</button>
+          <div class="meter"><div id="progressBar" class="bar"></div></div>
+          <div id="modelInfo" class="muted">The model is downloaded once and cached locally by the app.</div>
+          <div id="status" class="status">Waiting for the AI engine.</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>2. Voice clone</h2>
+        <div class="stack">
+          <button id="recordVoice">🎤 Record clone sample</button>
+          <button id="stopRecord" class="danger" disabled>Stop recording</button>
+          <div class="hint">Use 3–15 seconds of clear speech with little background noise.</div>
+          <input id="cloneFile" type="file" accept="audio/*,.wav,.mp3,.m4a" />
+          <div id="voiceStatus" class="status">No voice selected.</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>3. Output device</h2>
+        <div class="stack">
+          <select id="outputDevice"></select>
+          <button id="refreshOutputs" class="secondary">Refresh Windows outputs</button>
+          <div class="hint">Pick “VoiceMeeter Input” or “CABLE Input” to send the generated voice into Voicemeeter/VB-Cable.</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>4. Speech input</h2>
+        <div class="stack">
+          <div class="switch"><span id="micDot" class="dot"></span><span id="sttInfo">STT is ready when a cloned voice is loaded.</span></div>
+          <button id="startVC" disabled>▶ Start VoiceChanger</button>
+          <button id="stopVC" class="secondary" disabled>■ Stop VoiceChanger</button>
+          <div class="hint">Speak naturally. The app transcribes your words, generates the cloned voice, then sends the audio to the selected output.</div>
+        </div>
+      </div>
+
+      <div class="card wide">
+        <h2>5. Type or test the cloned voice</h2>
+        <div class="stack">
+          <textarea id="text" placeholder="Type something here to test the cloned voice…">Hello! This is my cloned voice speaking through VoiceChanger.</textarea>
+          <div class="row">
+            <button id="generate" disabled>🔊 Speak</button>
+            <button id="stop" class="danger" disabled>Stop</button>
+            <a id="download" class="hidden"><button class="secondary" type="button">Download WAV</button></a>
+          </div>
+          <audio id="preview" controls hidden></audio>
+        </div>
+      </div>
+
+      <div class="card wide">
+        <h2>Activity</h2>
+        <div id="log" class="log">VoiceChanger starting…</div>
+      </div>
+    </section>
+  </main>
+  <script type="module" src="/src/main.js"></script>
 </body>
 </html>
