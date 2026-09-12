@@ -1,19 +1,27 @@
-# Local VoiceChanger
+# VoiceChanger
 
-Clean local browser voice changer using:
+Browser-only AI voice cloning and TTS app.
 
-- Qwen3-TTS 0.6B Base for local voice cloning and TTS
-- faster-whisper small for local speech-to-text
-- Flask for the local browser server
-- PyTorch for Qwen3-TTS
-- soundfile for WAV output
+- 🧠 Pocket TTS ONNX inference in the browser
+- 📁 Clone a voice from a WAV reference
+- 🔊 Streaming cloned-voice TTS
+- 🎤 Browser VoiceChanger mode using SpeechRecognition when available
+- 💾 Model assets cached by the browser
+- ❌ No Python
+- ❌ No batch file
+- ❌ No Vercel backend
+- ❌ No voice-cloning API key
 
-## Windows
+## Run
 
-1. Install Python 3.12 or newer.
-2. Extract the repository.
-3. Double-click `LAUNCH_VOICECHANGER.bat`.
-4. The launcher creates `.venv`, installs the exact required packages, starts the server, and opens the browser.
-5. The first TTS/clone use downloads the Qwen model from Hugging Face. Later runs reuse the local model cache.
+The browser app is in `web/`.
 
-The app runs at `http://127.0.0.1:8765/` and does not require cloud API keys.
+```bash
+cd web
+npm install
+npm run dev
+```
+
+For deployment, run `npm run build` in `web/` and host the resulting `web/dist/` folder on a static host.
+
+The first model load downloads the quantized Pocket TTS browser assets. They are cached locally afterward.
