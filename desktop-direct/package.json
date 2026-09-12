@@ -1,0 +1,29 @@
+{
+  "name": "voicechanger-direct",
+  "version": "3.0.0",
+  "private": true,
+  "description": "VoiceChanger Direct - Electron shell using the browser's native Deepgram WebSocket and Pocket TTS",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "^44.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "dev.nezoko45.voicechanger.direct",
+    "productName": "VoiceChanger Direct",
+    "artifactName": "VoiceChanger-Direct-${version}-${arch}.${ext}",
+    "asar": true,
+    "files": ["main.cjs", "package.json"],
+    "extraResources": [
+      { "from": "../web/dist", "to": "web" }
+    ],
+    "directories": { "output": "dist" },
+    "win": {
+      "target": [{ "target": "portable", "arch": ["x64"] }]
+    }
+  }
+}
