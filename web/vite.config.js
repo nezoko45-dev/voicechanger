@@ -25,8 +25,5 @@ export default defineConfig({
   optimizeDeps: { exclude: ["pocket-tts-js"] },
   build: {
     target: "es2022",
-    rollupOptions: {
-      input: "voicechanger.html",
-    },
   },
 });
