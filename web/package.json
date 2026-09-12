@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prebuild": "node scripts/fix-pocket-tts.mjs",
     "build": "vite build"
   },
   "dependencies": {
