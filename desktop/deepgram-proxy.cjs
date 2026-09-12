@@ -38,41 +38,89 @@ function startDeepgramProxy() {
   });
 
   wss.on('connection', (client, _req, key, query) => {
-    const upstreamUrl = `wss://${DEEPGRAM_HOST}/v1/listen${query}`;
-    const upstream = new WebSocket(upstreamUrl, {
-      headers: { Authorization: `Token ${key}` }
-    });
+    let upstream = null;
+    let closedByClient = false;
+    let reconnectTimer = null;
+    let reconnectAttempt = 0;
+    let keepAliveTimer = null;
 
-    const closeBoth = (code = 1000, reason = '') => {
-      try { if (client.readyState === WebSocket.OPEN) client.close(code, reason); } catch {}
-      try { if (upstream.readyState === WebSocket.OPEN) upstream.close(code, reason); } catch {}
+    const clearTimers = () => {
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+      if (keepAliveTimer) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
     };
 
-    upstream.on('open', () => {
-      if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify({ type: 'VoiceChangerProxyReady' }));
-    });
+    const closeBoth = (code = 1000, reason = '') => {
+      closedByClient = true;
+      clearTimers();
+      try { if (client.readyState === WebSocket.OPEN) client.close(code, reason); } catch {}
+      try { if (upstream && (upstream.readyState === WebSocket.OPEN || upstream.readyState === WebSocket.CONNECTING)) upstream.close(code, reason); } catch {}
+    };
 
-    upstream.on('message', (data, isBinary) => {
-      if (client.readyState === WebSocket.OPEN) client.send(data, { binary: isBinary });
-    });
+    const scheduleUpstreamReconnect = () => {
+      if (closedByClient || client.readyState !== WebSocket.OPEN || reconnectTimer) return;
+      const delay = Math.min(5000, 500 * Math.pow(2, Math.min(reconnectAttempt, 3)));
+      reconnectAttempt += 1;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connectUpstream();
+      }, delay);
+    };
 
-    upstream.on('close', (code, reason) => {
-      if (client.readyState === WebSocket.OPEN) client.close(code || 1000, reason);
-    });
-
-    upstream.on('error', (error) => {
-      if (client.readyState === WebSocket.OPEN) {
-        try { client.send(JSON.stringify({ type: 'VoiceChangerProxyError', message: error.message || 'Deepgram connection failed.' })); } catch {}
-        client.close(1011, 'Deepgram connection failed');
+    const connectUpstream = () => {
+      if (closedByClient || client.readyState !== WebSocket.OPEN) return;
+      try {
+        upstream = new WebSocket(`wss://${DEEPGRAM_HOST}/v1/listen${query}`, {
+          headers: { Authorization: `Token ${key}` }
+        });
+      } catch (error) {
+        if (client.readyState === WebSocket.OPEN) {
+          try { client.send(JSON.stringify({ type: 'VoiceChangerProxyError', message: error.message || 'Deepgram connection failed.' })); } catch {}
+        }
+        scheduleUpstreamReconnect();
+        return;
       }
-    });
+
+      upstream.binaryType = 'arraybuffer';
+      upstream.on('open', () => {
+        reconnectAttempt = 0;
+        if (keepAliveTimer) clearInterval(keepAliveTimer);
+        keepAliveTimer = setInterval(() => {
+          if (!upstream || upstream.readyState !== WebSocket.OPEN) return;
+          try { upstream.send(JSON.stringify({ type: 'KeepAlive' })); } catch {}
+        }, 5000);
+        if (client.readyState === WebSocket.OPEN) {
+          try { client.send(JSON.stringify({ type: 'VoiceChangerProxyReady' })); } catch {}
+        }
+      });
+
+      upstream.on('message', (data, isBinary) => {
+        if (client.readyState === WebSocket.OPEN) client.send(data, { binary: isBinary });
+      });
+
+      upstream.on('close', (code, reason) => {
+        if (keepAliveTimer) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
+        if (!closedByClient && client.readyState === WebSocket.OPEN) {
+          try { client.send(JSON.stringify({ type: 'VoiceChangerProxyReconnecting', code: code || 1000 })); } catch {}
+          scheduleUpstreamReconnect();
+        }
+      });
+
+      upstream.on('error', (error) => {
+        if (client.readyState === WebSocket.OPEN) {
+          try { client.send(JSON.stringify({ type: 'VoiceChangerProxyError', message: error.message || 'Deepgram connection failed.' })); } catch {}
+        }
+      });
+    };
 
     client.on('message', (data, isBinary) => {
-      if (upstream.readyState === WebSocket.OPEN) upstream.send(data, { binary: isBinary });
+      if (upstream?.readyState === WebSocket.OPEN) {
+        try { upstream.send(data, { binary: isBinary }); } catch {}
+      }
     });
 
     client.on('close', () => closeBoth());
     client.on('error', () => closeBoth(1011, 'Client connection failed'));
+    connectUpstream();
   });
 
   return new Promise((resolve, reject) => {
