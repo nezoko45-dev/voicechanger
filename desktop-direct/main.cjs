@@ -12,7 +12,6 @@ app.commandLine.appendSwitch('enable-features', 'AudioServiceOutOfProcess');
 const mime = { '.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon' };
 let server;
 let rvcProcess = null;
-// Official audio.cpp GGUF repository. RVC is provided as a self-contained F16 GGUF package.
 const MODEL_URL = 'https://huggingface.co/audio-cpp/audio.cpp-gguf/resolve/main/RVC-GGUF/rvc-f16.gguf';
 
 function webRoot(){ return app.isPackaged ? path.join(process.resourcesPath,'web') : path.join(__dirname,'..','web','dist'); }
@@ -58,14 +57,21 @@ function runRvc(payload){
   }));
 }
 function startLocalServer(){return new Promise((resolve,reject)=>{const root=path.resolve(webRoot());if(!fs.existsSync(path.join(root,'index.html')))return reject(new Error(`VoiceChanger UI missing: ${root}`));server=http.createServer((req,res)=>{try{let p=decodeURIComponent((req.url||'/').split('?')[0]);if(p==='/')p='/index.html';const rel=path.normalize(p).replace(/^([.][.][/\\])+/, '');const file=path.resolve(root,`.${path.sep}${rel}`);if(file!==root&&!file.startsWith(root+path.sep)){res.writeHead(403);return res.end('Forbidden');}fs.readFile(file,(err,data)=>{if(err){res.writeHead(err.code==='ENOENT'?404:500);return res.end(err.code==='ENOENT'?'Not found':'Server error');}res.writeHead(200,{'Content-Type':mime[path.extname(file).toLowerCase()]||'application/octet-stream','Cache-Control':'no-store'});res.end(data);});}catch{res.writeHead(400);res.end('Bad request');}});server.on('error',reject);server.listen(0,'127.0.0.1',()=>resolve(`http://127.0.0.1:${server.address().port}/`));});}
-async function createWindow(){const url=await startLocalServer();const win=new BrowserWindow({width:1180,height:900,minWidth:900,minHeight:680,backgroundColor:'#090b12',title:'VoiceChanger Direct',webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,preload:path.join(__dirname,'preload.cjs')}});win.webContents.setAudioMuted(false);win.webContents.setWindowOpenHandler(()=>({action:'deny'}));win.webContents.on('before-input-event',(_e,input)=>{if(input.key==='F12'&&input.type==='keyDown')win.webContents.toggleDevTools();});await win.loadURL(url);}
+async function createWindow(){
+  const url=await startLocalServer();
+  const preload=path.join(__dirname,'preload.cjs');
+  if(!fs.existsSync(preload)) throw new Error(`VoiceChanger preload missing: ${preload}`);
+  const win=new BrowserWindow({width:1180,height:900,minWidth:900,minHeight:680,backgroundColor:'#090b12',title:'VoiceChanger Direct',webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:false,webSecurity:true,preload}});
+  win.webContents.setAudioMuted(false);win.webContents.setWindowOpenHandler(()=>({action:'deny'}));win.webContents.on('before-input-event',(_e,input)=>{if(input.key==='F12'&&input.type==='keyDown')win.webContents.toggleDevTools();});
+  await win.loadURL(url);
+}
 
-ipcMain.handle('rvc:status',()=>({engine:fs.existsSync(enginePath()),model:fs.existsSync(modelPath()),modelPath:modelPath()}));
+ipcMain.handle('rvc:status',()=>({engine:fs.existsSync(enginePath()),model:fs.existsSync(modelPath()),modelPath:modelPath(),platform:process.platform}));
 ipcMain.handle('rvc:ensure-model',()=>ensureModel());
 ipcMain.handle('rvc:convert-wav',(_e,payload)=>runRvc(payload));
 ipcMain.handle('rvc:stop',()=>{try{rvcProcess?.kill();}catch{}rvcProcess=null;return true;});
 
-app.whenReady().then(async()=>{session.defaultSession.setPermissionRequestHandler((_wc,p,cb)=>cb(['media','microphone','speaker-selection','notifications'].includes(p)));try{await createWindow();}catch(e){console.error('[VoiceChanger Direct] startup failed:',e);}app.on('activate',()=>{if(BrowserWindow.getAllWindows().length===0)createWindow().catch(console.error);});});
+app.whenReady().then(async()=>{session.defaultSession.setPermissionRequestHandler((_wc,p,cb)=>cb(['media','microphone','speaker-selection','notifications'].includes(p));try{await createWindow();}catch(e){console.error('[VoiceChanger Direct] startup failed:',e);}app.on('activate',()=>{if(BrowserWindow.getAllWindows().length===0)createWindow().catch(console.error);});});
 app.on('before-quit',()=>{try{rvcProcess?.kill();}catch{}try{server?.close();}catch{}});
 app.on('window-all-closed',()=>{if(process.platform!=='darwin')app.quit();});
 process.on('uncaughtException',e=>console.error('[VoiceChanger Direct] uncaught:',e));
