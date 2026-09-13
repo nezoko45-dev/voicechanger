@@ -1,11 +1,7 @@
 import { PocketTTS } from "pocket-tts-js";
 
-// Sentence-buffered Pocket TTS:
-// - collect every generated chunk for one sentence
-// - emit exactly one contiguous audio buffer when that sentence finishes
-// - use a tiny edge fade to suppress clicks/beeps
-// The live playback scheduler can then transition cleanly from one complete
-// sentence to the next without exposing individual model chunk boundaries.
+// Sentence-buffered Pocket TTS. Keep every conversion strictly Float32 so
+// malformed/non-aligned typed-array payloads cannot throw RangeError in Electron.
 const originalGenerate = PocketTTS.prototype.generate;
 
 function toFloat32(audio) {
@@ -14,10 +10,18 @@ function toFloat32(audio) {
     copy.set(audio);
     return copy;
   }
-  if (audio instanceof ArrayBuffer) return new Float32Array(audio.slice(0));
+  if (audio instanceof ArrayBuffer) {
+    const usable = audio.byteLength - (audio.byteLength % 4);
+    if (usable <= 0) return null;
+    return new Float32Array(audio.slice(0, usable));
+  }
   if (ArrayBuffer.isView(audio)) {
-    const bytes = audio.buffer.slice(audio.byteOffset, audio.byteOffset + audio.byteLength);
-    return new Float32Array(bytes);
+    if (typeof audio.length === "number") {
+      const copy = new Float32Array(audio.length);
+      for (let i = 0; i < audio.length; i++) copy[i] = Number(audio[i]) || 0;
+      return copy;
+    }
+    return null;
   }
   return null;
 }
@@ -55,31 +59,32 @@ function fadeEdges(samples, sampleRate) {
 }
 
 PocketTTS.prototype.generate = function (text, options = {}) {
-  if (typeof options?.onChunk !== "function") {
-    return originalGenerate.call(this, text, options);
-  }
+  if (typeof options?.onChunk !== "function") return originalGenerate.call(this, text, options);
 
   const chunks = [];
   const sampleRate = Number(this.sampleRate) || 24000;
-
   const wrappedOptions = {
     ...options,
     onChunk: (audio) => {
-      const samples = toFloat32(audio);
-      if (samples?.length) chunks.push(sanitize(samples));
+      try {
+        const samples = toFloat32(audio);
+        if (samples?.length) chunks.push(sanitize(samples));
+      } catch {
+        // Ignore a malformed individual chunk rather than crashing the renderer.
+      }
     }
   };
 
-  const result = originalGenerate.call(this, text, wrappedOptions);
+  let result;
+  try {
+    result = originalGenerate.call(this, text, wrappedOptions);
+  } catch (error) {
+    throw error;
+  }
 
   const finish = (metrics) => {
-    if (chunks.length) {
-      const sentence = fadeEdges(joinChunks(chunks), sampleRate);
-      options.onChunk(sentence);
-    }
+    if (chunks.length) options.onChunk(fadeEdges(joinChunks(chunks), sampleRate));
     return metrics;
   };
-
-  if (result && typeof result.then === "function") return result.then(finish);
-  return finish(result);
+  return result && typeof result.then === "function" ? result.then(finish) : finish(result);
 };
