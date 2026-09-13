@@ -20,7 +20,10 @@ jobs:
         run: |
           $p = 'desktop-browser/Program.cs'
           $s = Get-Content -Raw $p
-          $s = $s.Replace('for (var i = 1, j = 0; i < n; i++)', 'var j = 0; for (var i = 1; i < n; i++)')
+          $old = 'for (var i = 1, j = 0; i < n; i++) { var bit = n >> 1; for (; (j & bit) != 0; bit >>= 1) j ^= bit; j ^= bit; if (i < j) { (re[i], re[j]) = (re[j], re[i]); (im[i], im[j]) = (im[j], im[i]); } }'
+          $new = 'var j0 = 0; for (var i = 1; i < n; i++) { var bit = n >> 1; for (; (j0 & bit) != 0; bit >>= 1) j0 ^= bit; j0 ^= bit; if (i < j0) { (re[i], re[j0]) = (re[j0], re[i]); (im[i], im[j0]) = (im[j0], im[i]); } }'
+          if (-not $s.Contains($old)) { throw 'Expected FFT line was not found' }
+          $s = $s.Replace($old, $new)
           Set-Content -Path $p -Value $s -NoNewline
       - name: Publish single EXE
         run: dotnet publish desktop-browser/VoiceChanger.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o dist
