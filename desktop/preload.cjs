@@ -16,6 +16,15 @@ ipcRenderer.on('deepgram:event', (_event, payload) => {
   if (eventQueue.length > MAX_QUEUE) eventQueue.splice(0, eventQueue.length - MAX_QUEUE);
 });
 
+function openVoiceGenerate(payload) {
+  if (!payload || typeof payload !== 'object') throw new TypeError('OpenVoice request must be an object.');
+  return ipcRenderer.invoke('openvoice:generate', {
+    referenceBase64: String(payload.referenceBase64 || ''),
+    referenceName: String(payload.referenceName || 'reference.wav'),
+    text: String(payload.text || ''),
+  });
+}
+
 contextBridge.exposeInMainWorld('nativeAudio', {
   playWavBase64: (base64) => ipcRenderer.invoke('native-audio:play-wav', String(base64 || '')),
   stop: () => ipcRenderer.invoke('native-audio:stop'),
@@ -24,22 +33,8 @@ contextBridge.exposeInMainWorld('nativeAudio', {
   driverUninstall: () => ipcRenderer.invoke('voicechanger-driver:uninstall'),
 });
 
-contextBridge.exposeInMainWorld('openVoiceTTS', {
-  generate: (payload) => {
-    if (!payload || typeof payload !== 'object') throw new TypeError('OpenVoice request must be an object.');
-    return ipcRenderer.invoke('openvoice:generate', {
-      referenceBase64: String(payload.referenceBase64 || ''),
-      referenceName: String(payload.referenceName || 'reference.wav'),
-      text: String(payload.text || ''),
-    });
-  },
-});
-
-// Backward-compatible alias so the existing UI can migrate without another
-// renderer/IPC serialization path.
-contextBridge.exposeInMainWorld('f5TTS', {
-  generate: (payload) => window.openVoiceTTS.generate(payload),
-});
+contextBridge.exposeInMainWorld('openVoiceTTS', { generate: openVoiceGenerate });
+contextBridge.exposeInMainWorld('f5TTS', { generate: openVoiceGenerate });
 
 contextBridge.exposeInMainWorld('nativeDeepgram', {
   connect: (url, protocols) => {
