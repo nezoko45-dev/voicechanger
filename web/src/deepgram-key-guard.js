@@ -1,5 +1,6 @@
-// Prevent UI/error strings from ever becoming Deepgram WebSocket subprotocols.
-// This is deliberately installed before main-fixed.js creates any WebSocket.
+// Deepgram credential guard.
+// Never replace or mutate the browser's WebSocket constructor: Chromium/Electron
+// exposes WebSocket state constants as read-only properties.
 const NativeWebSocket = window.WebSocket;
 const SAFE_KEY = "voicechanger.deepgramKey.safe";
 
@@ -31,23 +32,15 @@ if (keyInput) {
   keyInput.addEventListener("input", () => rememberKey(keyInput.value));
 }
 
-window.WebSocket = new Proxy(NativeWebSocket, {
-  construct(Target, args) {
-    if (Array.isArray(args[1])) {
-      const protocols = [...args[1]];
-      // Only the Deepgram token protocol may contain the API key.
-      if (protocols.length >= 2 && protocols[0] === "token" && !validKey(protocols[1])) {
-        const recovered = recoverKey();
-        if (!recovered) throw new DOMException("Enter a valid Deepgram API key.", "SyntaxError");
-        protocols[1] = recovered;
-        args[1] = protocols;
-      }
-    }
-    return Reflect.construct(Target, args);
-  }
+// Do not monkey-patch window.WebSocket. main-fixed.js validates the key before
+// constructing the native socket, which keeps Electron's native constructor
+// and its read-only CONNECTING/OPEN/CLOSING/CLOSED constants untouched.
+Object.defineProperty(window, "__voiceChangerNativeWebSocket", {
+  value: NativeWebSocket,
+  configurable: false,
+  enumerable: false,
+  writable: false
 });
 
-window.WebSocket.CONNECTING = NativeWebSocket.CONNECTING;
-window.WebSocket.OPEN = NativeWebSocket.OPEN;
-window.WebSocket.CLOSING = NativeWebSocket.CLOSING;
-window.WebSocket.CLOSED = NativeWebSocket.CLOSED;
+window.voiceChangerDeepgramKey = recoverKey;
+window.voiceChangerRememberDeepgramKey = rememberKey;
