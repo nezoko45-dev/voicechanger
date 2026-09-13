@@ -61,12 +61,12 @@ async function createWindow(){
   const url=await startLocalServer();
   const preload=path.join(__dirname,'preload.cjs');
   if(!fs.existsSync(preload)) throw new Error(`VoiceChanger preload missing: ${preload}`);
-  const win=new BrowserWindow({width:1180,height:900,minWidth:900,minHeight:680,backgroundColor:'#090b12',title:'VoiceChanger Direct',webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:false,webSecurity:true,preload}});
+  const win=new BrowserWindow({width:1180,height:900,minWidth:900,minHeight:680,backgroundColor:'#090b12',title:'VoiceChanger Direct',webPreferences:{contextIsolation:false,nodeIntegration:false,sandbox:false,webSecurity:true,preload}});
   win.webContents.setAudioMuted(false);win.webContents.setWindowOpenHandler(()=>({action:'deny'}));win.webContents.on('before-input-event',(_e,input)=>{if(input.key==='F12'&&input.type==='keyDown')win.webContents.toggleDevTools();});
   await win.loadURL(url);
 }
 
-ipcMain.handle('rvc:status',()=>({engine:fs.existsSync(enginePath()),model:fs.existsSync(modelPath()),modelPath:modelPath(),platform:process.platform}));
+ipcMain.handle('rvc:status',()=>({engine:fs.existsSync(enginePath()),model:fs.existsSync(modelPath()),modelPath:modelPath(),platform:process.platform,desktop:true}));
 ipcMain.handle('rvc:ensure-model',()=>ensureModel());
 ipcMain.handle('rvc:convert-wav',(_e,payload)=>runRvc(payload));
 ipcMain.handle('rvc:stop',()=>{try{rvcProcess?.kill();}catch{}rvcProcess=null;return true;});
