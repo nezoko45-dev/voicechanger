@@ -1,6 +1,6 @@
 {
   "name": "voicechanger-desktop",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "private": true,
   "description": "Windows desktop VoiceChanger with Deepgram STT, OpenVoice V2 local voice cloning, and Magic Mic virtual audio",
   "main": "main.cjs",
@@ -15,7 +15,7 @@
     "files":["main.cjs","preload.cjs","deepgram-proxy.cjs","package.json"],
     "extraResources":[
       {"from":"../web/dist","to":"web"},
-      {"from":"../openvoice/dist/openvoice-engine.exe","to":"openvoice/openvoice-engine.exe"},
+      {"from":"../openvoice/dist/openvoice-engine","to":"openvoice/openvoice-engine"},
       {"from":"driver","to":"driver"}
     ],
     "directories":{"output":"dist"},
