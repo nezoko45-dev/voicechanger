@@ -36,7 +36,11 @@ jobs:
           python -m pip install -r f5tts/requirements.txt
           if (Test-Path f5tts/dist) { Remove-Item -Recurse -Force f5tts/dist }
           if (Test-Path f5tts/build) { Remove-Item -Recurse -Force f5tts/build }
+          New-Item -ItemType Directory -Path f5tts/dist -Force | Out-Null
+          New-Item -ItemType Directory -Path f5tts/build -Force | Out-Null
           python -m PyInstaller --noconfirm --clean --onefile --name f5tts-engine `
+            --distpath f5tts/dist `
+            --workpath f5tts/build `
             --collect-all f5_tts `
             --collect-all vocos `
             --collect-all cached_path `
