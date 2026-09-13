@@ -24,16 +24,21 @@ contextBridge.exposeInMainWorld('nativeAudio', {
   driverUninstall: () => ipcRenderer.invoke('voicechanger-driver:uninstall'),
 });
 
-contextBridge.exposeInMainWorld('f5TTS', {
+contextBridge.exposeInMainWorld('openVoiceTTS', {
   generate: (payload) => {
-    if (!payload || typeof payload !== 'object') throw new TypeError('F5-TTS request must be an object.');
-    return ipcRenderer.invoke('f5tts:generate', {
+    if (!payload || typeof payload !== 'object') throw new TypeError('OpenVoice request must be an object.');
+    return ipcRenderer.invoke('openvoice:generate', {
       referenceBase64: String(payload.referenceBase64 || ''),
       referenceName: String(payload.referenceName || 'reference.wav'),
-      referenceText: String(payload.referenceText || ''),
       text: String(payload.text || ''),
     });
   },
+});
+
+// Backward-compatible alias so the existing UI can migrate without another
+// renderer/IPC serialization path.
+contextBridge.exposeInMainWorld('f5TTS', {
+  generate: (payload) => window.openVoiceTTS.generate(payload),
 });
 
 contextBridge.exposeInMainWorld('nativeDeepgram', {
