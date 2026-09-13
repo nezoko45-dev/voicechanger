@@ -1,10 +1,10 @@
 {
   "name": "desktop-voicechanger-ui",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "private": true,
   "type": "module",
   "scripts": {
-    "prebuild": "node scripts/fix-pocket-tts.mjs",
+    "prebuild": "node scripts/fix-pocket-tts.mjs && node scripts/fix-browser-pocket-tts.mjs",
     "build": "vite build"
   },
   "dependencies": {
