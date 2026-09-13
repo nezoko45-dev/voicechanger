@@ -15,6 +15,13 @@ jobs:
           dotnet-version: '8.0.x'
       - name: Restore
         run: dotnet restore desktop-browser/VoiceChanger.csproj
+      - name: Fix C# build syntax
+        shell: pwsh
+        run: |
+          $p = 'desktop-browser/Program.cs'
+          $s = Get-Content -Raw $p
+          $s = $s.Replace('for (var i = 1, j = 0; i < n; i++)', 'var j = 0; for (var i = 1; i < n; i++)')
+          Set-Content -Path $p -Value $s -NoNewline
       - name: Publish single EXE
         run: dotnet publish desktop-browser/VoiceChanger.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o dist
       - name: Verify
