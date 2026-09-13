@@ -50,39 +50,40 @@ async function fileToBase64(file) { return bytesToBase64(new Uint8Array(await fi
 
 async function selectReference(file) {
   if (!file) return;
-  if (!/\.wav$/i.test(file.name)) { voiceStatus("F5-TTS reference must be a WAV file.", "bad"); return; }
+  if (!/\.wav$/i.test(file.name)) { voiceStatus("OpenVoice reference must be a WAV file.", "bad"); return; }
   if (file.size > 20_000_000) { voiceStatus("Reference WAV is too large.", "bad"); return; }
   referenceBase64 = await fileToBase64(file); referenceName = file.name;
-  voiceStatus(`✓ F5-TTS reference loaded: ${file.name}`, "ok");
+  voiceStatus(`✓ OpenVoice V2 reference loaded: ${file.name}`, "ok");
   $("generate").disabled = false; $("startVC").disabled = !apiKey();
-  log(`F5-TTS reference loaded from ${file.name}.`);
+  log(`OpenVoice V2 reference loaded from ${file.name}.`);
 }
 
 async function loadModel() {
-  const button = $("loadModel"); if (button) { button.disabled = true; button.textContent = "F5-TTS ready"; }
-  $("modelBadge") && ($("modelBadge").textContent = "F5-TTS ready", $("modelBadge").style.color = "#83e1aa");
-  $("modelInfo") && ($("modelInfo").textContent = "F5-TTS v1 Base • Python desktop engine • model downloads on first generation");
+  const button = $("loadModel"); if (button) { button.disabled = true; button.textContent = "OpenVoice V2 ready"; }
+  $("modelBadge") && ($("modelBadge").textContent = "OpenVoice V2 ready", $("modelBadge").style.color = "#83e1aa");
+  $("modelInfo") && ($("modelInfo").textContent = "OpenVoice V2 • local Python engine • model files download on first generation");
   $("cloneFile") && ($("cloneFile").disabled = false);
   $("recordVoice") && ($("recordVoice").disabled = true);
   $("generate") && ($("generate").disabled = !referenceBase64);
   $("progressBar") && ($("progressBar").style.width = "100%");
-  status("F5-TTS ready. Load your WAV reference, then generate speech.", "ok");
+  status("OpenVoice V2 ready. Load your WAV reference, then generate speech.", "ok");
   await refreshOutputs();
 }
 
 async function generate(text, mode = "manual") {
   if (!referenceBase64) { status("Load the WAV voice reference first.", "bad"); return; }
   const clean = String(text || "").trim().slice(0, mode === "conversion" ? 1200 : 1500); if (!clean || busy) return;
-  if (!window.f5TTS?.generate) { status("F5-TTS desktop engine is missing from this EXE.", "bad"); return; }
-  busy = true; status(mode === "conversion" ? "F5-TTS converting…" : "Generating F5-TTS speech…", "working");
+  const engine = window.openVoiceTTS || window.f5TTS;
+  if (!engine?.generate) { status("OpenVoice V2 desktop engine is missing from this EXE.", "bad"); return; }
+  busy = true; status(mode === "conversion" ? "OpenVoice V2 converting…" : "Generating OpenVoice V2 speech…", "working");
   try {
-    const result = await window.f5TTS.generate({ referenceBase64, referenceName, referenceText, text: clean });
+    const result = await engine.generate({ referenceBase64, referenceName, referenceText, text: clean });
     const bytes = Uint8Array.from(atob(result.base64), c => c.charCodeAt(0));
     const blob = new Blob([bytes], { type: "audio/wav" });
     const url = URL.createObjectURL(blob);
-    $("preview").src = url; $("preview").hidden = false; $("download").href = url; $("download").download = `voicechanger-f5-${Date.now()}.wav`; $("download").classList.remove("hidden");
-    await playWav(blob); status(`F5-TTS ready • ${((result.bytes || bytes.length) / 1000).toFixed(0)} KB`, "ok");
-  } catch (e) { status(`F5-TTS failed: ${e.message}`, "bad"); log(`F5-TTS ERROR: ${e.stack || e.message}`); }
+    $("preview").src = url; $("preview").hidden = false; $("download").href = url; $("download").download = `voicechanger-openvoice-${Date.now()}.wav`; $("download").classList.remove("hidden");
+    await playWav(blob); status(`OpenVoice V2 ready • ${((result.bytes || bytes.length) / 1000).toFixed(0)} KB`, "ok");
+  } catch (e) { status(`OpenVoice V2 failed: ${e.message}`, "bad"); log(`OPENVOICE ERROR: ${e.stack || e.message}`); }
   finally { busy = false; }
 }
 
@@ -94,12 +95,11 @@ function stopVC() { manualStop = true; if (reconnectTimer) { clearTimeout(reconn
 async function startVC() {
   if (!referenceBase64) throw new Error("Load the WAV voice reference first.");
   const key = apiKey(); if (!key) throw new Error("Enter your Deepgram API key first.");
-  manualStop = false; running = true; $("startVC").disabled = true; status("Live voice conversion active — F5-TTS will generate each final phrase.", "working");
+  manualStop = false; running = true; $("startVC").disabled = true; status("Live voice conversion active — OpenVoice V2 will generate each final phrase.", "working");
   stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: false } });
   audioContext = new AudioContext(); await audioContext.resume(); sourceNode = audioContext.createMediaStreamSource(stream); processor = audioContext.createScriptProcessor(4096, 1, 1);
   processor.onaudioprocess = e => { if (!socket || socket.readyState !== WebSocket.OPEN) return; try { socket.send(pcm16(downsample(e.inputBuffer.getChannelData(0), audioContext.sampleRate)).buffer); } catch {} };
   sourceNode.connect(processor); processor.connect(audioContext.destination);
-  const ws = window.nativeDeepgram ? null : new WebSocket(`wss://api.deepgram.com/v1/listen?model=nova-3&language=en-US&interim_results=true&smart_format=true&punctuate=true&endpointing=450&encoding=linear16&sample_rate=16000`, ["token", key]);
   if (window.nativeDeepgram) {
     const id = window.nativeDeepgram.connect(`wss://api.deepgram.com/v1/listen?model=nova-3&language=en-US&interim_results=true&smart_format=true&punctuate=true&endpointing=450&encoding=linear16&sample_rate=16000`, ["token", key]);
     socket = { readyState: WebSocket.OPEN, send: data => window.nativeDeepgram.send(id, data), close: () => window.nativeDeepgram.close(id) };
@@ -112,6 +112,7 @@ async function startVC() {
       }
     }, 50);
   } else {
+    const ws = new WebSocket(`wss://api.deepgram.com/v1/listen?model=nova-3&language=en-US&interim_results=true&smart_format=true&punctuate=true&endpointing=450&encoding=linear16&sample_rate=16000`, ["token", key]);
     socket = ws;
     ws.onopen = () => { $("micDot")?.classList.add("live"); $("stopVC").disabled = false; status("Live voice conversion active.", "ok"); };
     ws.onmessage = e => { try { const d = JSON.parse(e.data); const t = d?.channel?.alternatives?.[0]?.transcript; if (t && d.is_final) void generate(t, "conversion"); } catch {} };
