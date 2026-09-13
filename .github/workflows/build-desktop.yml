@@ -46,7 +46,9 @@ jobs:
           if (Test-Path openvoice/build) { Remove-Item -Recurse -Force openvoice/build }
           New-Item -ItemType Directory -Path openvoice/dist -Force | Out-Null
           New-Item -ItemType Directory -Path openvoice/build -Force | Out-Null
-          python -m PyInstaller --noconfirm --clean --onefile --name openvoice-engine `
+          # Use onedir instead of onefile. Torch/OpenVoice contains many native DLLs;
+          # keeping them beside the EXE avoids onefile extraction/startup crashes on Windows.
+          python -m PyInstaller --noconfirm --clean --onedir --name openvoice-engine `
             --distpath openvoice/dist `
             --workpath openvoice/build `
             --collect-all openvoice `
@@ -58,8 +60,10 @@ jobs:
             --collect-all librosa `
             --collect-all soundfile `
             openvoice/engine.py
-          if (-not (Test-Path openvoice/dist/openvoice-engine.exe)) { throw 'OpenVoice V2 engine EXE was not produced.' }
-          Write-Host "Built OpenVoice V2 CPU engine: $((Get-Item openvoice/dist/openvoice-engine.exe).Length) bytes"
+          if (-not (Test-Path openvoice/dist/openvoice-engine/openvoice-engine.exe)) { throw 'OpenVoice V2 engine EXE was not produced.' }
+          Write-Host "Built OpenVoice V2 CPU engine: $((Get-Item openvoice/dist/openvoice-engine/openvoice-engine.exe).Length) bytes"
+          Write-Host 'OpenVoice engine directory:'
+          Get-ChildItem openvoice/dist/openvoice-engine -Recurse | Select-Object FullName,Length | Format-Table -AutoSize
 
       - name: Install web dependencies
         working-directory: web
@@ -116,12 +120,15 @@ jobs:
           $driverRoot = Join-Path $env:GITHUB_WORKSPACE 'desktop\driver'
           $driverPackage = Join-Path $driverRoot 'package'
           $exe = Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE 'desktop\dist') -Filter '*.exe' | Select-Object -First 1
+          $engineDir = Join-Path $env:GITHUB_WORKSPACE 'openvoice\dist\openvoice-engine'
           if (-not $exe) { throw 'Portable VoiceChanger EXE was not produced.' }
+          if (-not (Test-Path (Join-Path $engineDir 'openvoice-engine.exe'))) { throw 'OpenVoice engine directory is missing.' }
           if (Test-Path $packageRoot) { Remove-Item -Recurse -Force $packageRoot }
           New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
+          New-Item -ItemType Directory -Path (Join-Path $packageRoot 'openvoice') -Force | Out-Null
           New-Item -ItemType Directory -Path (Join-Path $packageRoot 'driver') -Force | Out-Null
           Copy-Item $exe.FullName (Join-Path $packageRoot $exe.Name) -Force
-          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'openvoice\dist\openvoice-engine.exe') (Join-Path $packageRoot 'openvoice-engine.exe') -Force
+          Copy-Item $engineDir (Join-Path $packageRoot 'openvoice\openvoice-engine') -Recurse -Force
           Copy-Item (Join-Path $driverRoot 'VoiceChangerDeviceInstaller.exe') (Join-Path $packageRoot 'VoiceChangerDeviceInstaller.exe') -Force
           Copy-Item (Join-Path $driverRoot 'install-voicechanger-driver.ps1') (Join-Path $packageRoot 'install-voicechanger-driver.ps1') -Force
           Copy-Item (Join-Path $driverRoot 'THIRD_PARTY_NOTICES.md') (Join-Path $packageRoot 'THIRD_PARTY_NOTICES.md') -Force
@@ -131,6 +138,7 @@ jobs:
           VoiceChanger Desktop - Windows package
 
           Voice cloning uses OpenVoice V2 locally on CPU for maximum Windows compatibility.
+          The OpenVoice engine is packaged as a folder because Torch/OpenVoice uses native DLLs.
           OpenVoice V2 and its official model are MIT licensed/free for commercial and research use.
           The first generation downloads model files from Hugging Face and caches them locally.
           No OpenVoice API key is required.
