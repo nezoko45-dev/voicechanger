@@ -21,6 +21,34 @@ jobs:
             web/package.json
             desktop/package.json
 
+      - name: Setup Python for F5-TTS
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: f5tts/requirements.txt
+
+      - name: Build F5-TTS Windows engine EXE
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --upgrade pip
+          python -m pip install -r f5tts/requirements.txt
+          if (Test-Path f5tts/dist) { Remove-Item -Recurse -Force f5tts/dist }
+          if (Test-Path f5tts/build) { Remove-Item -Recurse -Force f5tts/build }
+          python -m PyInstaller --noconfirm --clean --onefile --name f5tts-engine `
+            --collect-all f5_tts `
+            --collect-all vocos `
+            --collect-all cached_path `
+            --collect-all omegaconf `
+            --collect-all hydra `
+            --collect-all transformers `
+            --collect-all x_transformers `
+            --collect-all soundfile `
+            f5tts/engine.py
+          if (-not (Test-Path f5tts/dist/f5tts-engine.exe)) { throw 'F5-TTS engine EXE was not produced.' }
+          Write-Host "Built F5-TTS engine: $((Get-Item f5tts/dist/f5tts-engine.exe).Length) bytes"
+
       - name: Install web dependencies
         working-directory: web
         run: npm install
@@ -44,8 +72,6 @@ jobs:
           $actual = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actual -ne $expected) { throw "Driver package SHA256 mismatch. Expected $expected but received $actual." }
           Expand-Archive -Path $zip -DestinationPath $packageDir -Force
-          Write-Host 'Bundled VoiceChanger driver package:'
-          Get-ChildItem -Path $packageDir -Recurse -Include *.sys,*.inf,*.cat,*.dll | ForEach-Object { Write-Host $_.FullName }
 
       - name: Build VoiceChanger device installer helper
         shell: pwsh
@@ -56,14 +82,11 @@ jobs:
           $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
           if (-not $vs) { throw 'MSVC x64 toolchain was not found.' }
           $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
-          if (-not (Test-Path $vcvars)) { throw "vcvars64.bat was not found: $vcvars" }
           $source = Join-Path $env:GITHUB_WORKSPACE 'desktop\driver\VoiceChangerDeviceInstaller.cpp'
           $output = Join-Path $env:GITHUB_WORKSPACE 'desktop\driver\VoiceChangerDeviceInstaller.exe'
           $cmd = "call `"$vcvars`" && cl.exe /nologo /O2 /EHsc /MT `"$source`" /link setupapi.lib newdev.lib /OUT:`"$output`""
           cmd.exe /d /s /c $cmd
-          if ($LASTEXITCODE -ne 0) { throw "VoiceChangerDeviceInstaller compilation failed with exit code $LASTEXITCODE" }
-          if (-not (Test-Path $output)) { throw 'VoiceChangerDeviceInstaller.exe was not produced.' }
-          Write-Host "Built $output"
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $output)) { throw 'VoiceChangerDeviceInstaller.exe compilation failed.' }
 
       - name: Install desktop dependencies
         working-directory: desktop
@@ -82,40 +105,27 @@ jobs:
           $driverPackage = Join-Path $driverRoot 'package'
           $exe = Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE 'desktop\dist') -Filter '*.exe' | Select-Object -First 1
           if (-not $exe) { throw 'Portable VoiceChanger EXE was not produced.' }
-
           if (Test-Path $packageRoot) { Remove-Item -Recurse -Force $packageRoot }
           New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
           New-Item -ItemType Directory -Path (Join-Path $packageRoot 'driver') -Force | Out-Null
-
           Copy-Item $exe.FullName (Join-Path $packageRoot $exe.Name) -Force
           Copy-Item (Join-Path $driverRoot 'VoiceChangerDeviceInstaller.exe') (Join-Path $packageRoot 'VoiceChangerDeviceInstaller.exe') -Force
           Copy-Item (Join-Path $driverRoot 'install-voicechanger-driver.ps1') (Join-Path $packageRoot 'install-voicechanger-driver.ps1') -Force
           Copy-Item (Join-Path $driverRoot 'THIRD_PARTY_NOTICES.md') (Join-Path $packageRoot 'THIRD_PARTY_NOTICES.md') -Force
           Copy-Item $driverPackage (Join-Path $packageRoot 'driver\package') -Recurse -Force
           Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'README.md') (Join-Path $packageRoot 'README.md') -Force
-
           @'
           VoiceChanger Desktop - Windows package
 
-          Contents:
-          - VoiceChanger-Desktop-*.exe : portable desktop application
-          - VoiceChangerDeviceInstaller.exe : virtual audio device installer helper
-          - install-voicechanger-driver.ps1 : PowerShell driver installer
-          - driver\package\ : signed virtual audio driver files
-          - THIRD_PARTY_NOTICES.md : third-party driver notices
-          - README.md : project information
-
-          The portable EXE also contains the web UI and bundled driver resources.
-          If Windows blocks driver installation, run the installer helper as Administrator.
+          The portable EXE contains the F5-TTS voice cloning engine and web UI.
+          F5-TTS downloads its base model from Hugging Face on first generation and caches it locally.
+          The reference voice is selected from a WAV file in the app UI.
           '@ | Set-Content (Join-Path $packageRoot 'PACKAGE-README.txt') -Encoding UTF8
-
           $zipPath = Join-Path $env:GITHUB_WORKSPACE 'VoiceChanger-Desktop-Windows.zip'
           if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
           Compress-Archive -Path (Join-Path $packageRoot '*') -DestinationPath $zipPath -CompressionLevel Optimal
-
           Write-Host 'Complete package contents:'
           Get-ChildItem $packageRoot -Recurse | Select-Object FullName,Length | Format-Table -AutoSize
-          Write-Host "Created $zipPath"
 
       - name: Upload complete Windows ZIP
         uses: actions/upload-artifact@v4
