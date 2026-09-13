@@ -1,7 +1,5 @@
 // Low-latency Deepgram transport tuning.
-// This runs before main-fixed.js and rewrites only Deepgram listen URLs.
-// Pocket TTS already streams its first audio chunk from a worker; the main
-// latency problem was waiting too long to decide that the speaker stopped.
+// Loaded before main-fixed.js so its existing reconnecting STT client gets the fast settings.
 (() => {
   const NativeWebSocket = window.WebSocket;
   if (!NativeWebSocket || window.__voiceChangerFastLatency) return;
@@ -21,21 +19,18 @@
           url = parsed.toString();
         }
       } catch {}
-      return Reflect.construct(target, [url, protocols], new.target);
+      return Reflect.construct(target, protocols === undefined ? [url] : [url, protocols]);
     },
     get(target, prop, receiver) {
       return Reflect.get(target, prop, receiver);
     }
   });
 
-  // main-fixed currently waits 450ms after an interim pause before sending a
-  // short phrase to Pocket TTS. Reduce only that known debounce without
-  // globally changing application timers.
+  // main-fixed uses a 450ms short-pause debounce before handing text to Pocket TTS.
+  // Reduce that one known delay to 180ms without changing unrelated timers.
   const nativeSetTimeout = window.setTimeout.bind(window);
-  const nativeClearTimeout = window.clearTimeout.bind(window);
   window.setTimeout = function (handler, timeout, ...args) {
     if (timeout === 450 && typeof handler === 'function') timeout = 180;
     return nativeSetTimeout(handler, timeout, ...args);
   };
-  window.clearTimeout = function (id) { return nativeClearTimeout(id); };
 })();
