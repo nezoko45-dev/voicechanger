@@ -1,8 +1,9 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { ipcRenderer } = require('electron');
 
-// Keep the RVC bridge deliberately small and clone-safe. Everything crossing
-// the renderer boundary is a string, number, boolean, or plain object.
-contextBridge.exposeInMainWorld('voicechangerRvc', Object.freeze({
+// VoiceChanger Direct is a local-only desktop app. Use a plain preload bridge
+// so the RVC API is available directly to the renderer without contextBridge
+// availability/serialization issues.
+window.voicechangerRvc = Object.freeze({
   convertWav: (base64Wav, options = {}) => ipcRenderer.invoke('rvc:convert-wav', {
     base64Wav: String(base64Wav || ''),
     options: {
@@ -13,4 +14,6 @@ contextBridge.exposeInMainWorld('voicechangerRvc', Object.freeze({
   ensureModel: () => ipcRenderer.invoke('rvc:ensure-model'),
   getStatus: () => ipcRenderer.invoke('rvc:status'),
   stop: () => ipcRenderer.invoke('rvc:stop')
-}));
+});
+
+window.voicechangerDesktop = true;
