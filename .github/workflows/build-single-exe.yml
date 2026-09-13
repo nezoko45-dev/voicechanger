@@ -18,6 +18,16 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      - name: Reduce live voice latency
+        shell: pwsh
+        run: |
+          $p = 'desktop-browser/Program.cs'
+          $s = Get-Content $p -Raw
+          $s = $s.Replace('endpointing=400', 'endpointing=150')
+          $s = $s.Replace('createScriptProcessor(4096,1,1)', 'createScriptProcessor(2048,1,1)')
+          Set-Content -Path $p -Value $s -NoNewline
+          Write-Host 'Latency tuning applied: Deepgram endpointing 150ms, audio chunks 2048 samples.'
+
       - name: Restore
         run: dotnet restore desktop-browser/VoiceChanger.csproj
 
@@ -37,6 +47,6 @@ jobs:
       - name: Upload EXE
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceChanger-Local-OpenVoice-V2-ONNX
+          name: VoiceChanger-Local-OpenVoice-V2-ONNX-LowLatency
           path: dist/VoiceChanger.exe
           if-no-files-found: error
