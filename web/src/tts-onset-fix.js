@@ -1,8 +1,8 @@
 import { PocketTTS } from "pocket-tts-js";
 
-// Low-latency Pocket TTS bridge. Forward each valid chunk immediately instead
-// of buffering the entire utterance, so cloned speech can begin as soon as the
-// first audio is produced.
+// Low-latency, anti-stutter Pocket TTS bridge.
+// Keep a tiny startup buffer so playback begins quickly but has enough audio
+// queued to remain continuous when inference delivers chunks unevenly.
 const originalGenerate = PocketTTS.prototype.generate;
 
 function toFloat32(audio) {
@@ -31,7 +31,43 @@ PocketTTS.prototype.generate = function (text, options = {}) {
   if (typeof options?.onChunk !== "function") return originalGenerate.call(this, text, options);
 
   const userOnChunk = options.onChunk;
+  const sampleRate = Number(this.sampleRate) || 24000;
+  // ~120 ms is a small startup buffer: fast response without exposing
+  // normal Pocket TTS inference jitter as audible gaps.
+  const startupSamples = Math.round(sampleRate * 0.12);
   let firstChunk = true;
+  let started = false;
+  let buffered = [];
+  let bufferedSamples = 0;
+
+  const emit = (samples) => {
+    if (!samples?.length) return;
+    try {
+      if (firstChunk) {
+        const count = Math.min(Math.round(sampleRate * 0.002), Math.floor(samples.length / 2));
+        for (let i = 0; i < count; i++) samples[i] *= (i + 1) / Math.max(1, count);
+        firstChunk = false;
+      }
+      userOnChunk(samples);
+    } catch {
+      // Never let a bad audio callback crash the Electron renderer.
+    }
+  };
+
+  const flushBuffered = () => {
+    if (!bufferedSamples) return;
+    const joined = new Float32Array(bufferedSamples);
+    let offset = 0;
+    for (const part of buffered) {
+      joined.set(part, offset);
+      offset += part.length;
+    }
+    buffered = [];
+    bufferedSamples = 0;
+    started = true;
+    emit(joined);
+  };
+
   const wrappedOptions = {
     ...options,
     onChunk: (audio) => {
@@ -39,18 +75,33 @@ PocketTTS.prototype.generate = function (text, options = {}) {
         const samples = toFloat32(audio);
         if (!samples?.length) return;
         const clean = sanitize(samples);
-        // Tiny onset fade prevents a click without delaying the chunk.
-        if (firstChunk) {
-          const count = Math.min(Math.round((Number(this.sampleRate) || 24000) * 0.002), Math.floor(clean.length / 2));
-          for (let i = 0; i < count; i++) clean[i] *= (i + 1) / Math.max(1, count);
-          firstChunk = false;
+
+        if (!started) {
+          buffered.push(clean);
+          bufferedSamples += clean.length;
+          if (bufferedSamples >= startupSamples) flushBuffered();
+          return;
         }
-        userOnChunk(clean);
+
+        // After startup, forward chunks immediately. main-fixed.js schedules
+        // them on one continuous audio timeline to avoid chunk boundaries.
+        emit(clean);
       } catch {
         // Ignore malformed individual chunks instead of crashing Electron.
       }
     }
   };
 
-  return originalGenerate.call(this, text, wrappedOptions);
+  const result = originalGenerate.call(this, text, wrappedOptions);
+
+  // Flush very short utterances when generation completes so their audio is
+  // never stranded waiting for the startup threshold.
+  if (result && typeof result.then === "function") {
+    return result.finally(() => {
+      if (!started) flushBuffered();
+    });
+  }
+
+  if (!started) flushBuffered();
+  return result;
 };
