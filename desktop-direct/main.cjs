@@ -12,7 +12,8 @@ app.commandLine.appendSwitch('enable-features', 'AudioServiceOutOfProcess');
 const mime = { '.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon' };
 let server;
 let rvcProcess = null;
-const MODEL_URL = 'https://huggingface.co/0xShug0/audio.cpp-gguf/resolve/main/RVC-GGUF/rvc-f16.gguf';
+// Official audio.cpp GGUF repository. RVC is provided as a self-contained F16 GGUF package.
+const MODEL_URL = 'https://huggingface.co/audio-cpp/audio.cpp-gguf/resolve/main/RVC-GGUF/rvc-f16.gguf';
 
 function webRoot(){ return app.isPackaged ? path.join(process.resourcesPath,'web') : path.join(__dirname,'..','web','dist'); }
 function rvcRoot(){ return path.join(app.getPath('userData'),'rvc-pocket'); }
