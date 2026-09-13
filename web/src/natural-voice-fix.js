@@ -1,12 +1,9 @@
 import { PocketTTS } from "pocket-tts-js";
 
-// Naturalness pass for cloned speech:
-// 1) Clean the reference clip before voice cloning so Pocket TTS does not learn
-//    room noise, long silence, or an overly quiet recording.
-// 2) Give live STT text clearer conversational punctuation when Deepgram sends
-//    a final transcript without enough sentence cues.
-// 3) Keep the actual voice identity untouched; this is a prosody/input-quality
-//    improvement rather than a pitch-changing effect.
+// Naturalness pass for cloned speech. Keep this patch stack-safe: never spread
+// an entire audio buffer into Math.max(), because a multi-second recording can
+// contain hundreds of thousands of samples and that itself causes
+// "Maximum call stack size exceeded".
 
 const originalCloneVoice = PocketTTS.prototype.cloneVoice;
 const originalGenerate = PocketTTS.prototype.generate;
@@ -14,7 +11,15 @@ const originalGenerate = PocketTTS.prototype.generate;
 function trimSilence(samples, threshold = 0.012, pad = 0.08, sampleRate = 24000) {
   let first = 0;
   let last = samples.length - 1;
-  const peak = Math.max(0.04, ...samples.map((v) => Math.abs(v)));
+  let peak = 0;
+
+  // IMPORTANT: use a loop, not Math.max(...samples), so large recordings are safe.
+  for (let i = 0; i < samples.length; i++) {
+    const v = Number.isFinite(samples[i]) ? Math.abs(samples[i]) : 0;
+    if (v > peak) peak = v;
+  }
+
+  peak = Math.max(0.04, peak);
   const gate = Math.min(0.035, Math.max(threshold, peak * 0.025));
 
   while (first < samples.length && Math.abs(samples[first]) < gate) first++;
@@ -29,16 +34,12 @@ function trimSilence(samples, threshold = 0.012, pad = 0.08, sampleRate = 24000)
 
 function normalizeReference(samples) {
   let peak = 0;
-  let sum = 0;
-  for (const sample of samples) {
-    const v = Number.isFinite(sample) ? sample : 0;
-    peak = Math.max(peak, Math.abs(v));
-    sum += v * v;
+  for (let i = 0; i < samples.length; i++) {
+    const v = Number.isFinite(samples[i]) ? Math.abs(samples[i]) : 0;
+    if (v > peak) peak = v;
   }
   if (!peak) return samples;
 
-  // Keep headroom. Aggressive normalization can make room noise part of the
-  // cloned voice, so cap the gain instead of forcing every recording to 0 dBFS.
   const targetPeak = 0.78;
   const gain = Math.min(1.8, targetPeak / peak);
   const out = new Float32Array(samples.length);
@@ -54,9 +55,11 @@ PocketTTS.prototype.cloneVoice = function (audio, options = {}) {
   const input = audio instanceof Float32Array ? new Float32Array(audio) : new Float32Array(audio);
   const cleaned = trimSilence(input, 0.012, 0.08, inputRate);
   const normalized = normalizeReference(cleaned);
+
+  // Pass only the documented primitive option to the underlying implementation.
   return originalCloneVoice.call(this, normalized, {
     inputSampleRate: inputRate,
-    name: options?.name,
+    name: typeof options?.name === "string" ? options.name : "cloned-voice"
   });
 };
 
@@ -64,18 +67,13 @@ function naturalizeText(text) {
   let value = String(text || "").replace(/\s+/g, " ").trim();
   if (!value) return value;
 
-  // Restore a few high-value conversational pauses without rewriting the words.
   value = value
     .replace(/\s*([,!?;:])\s*/g, "$1 ")
     .replace(/\.{2,}/g, "…")
     .replace(/\b(uh|um|well|okay|ok|so|actually|honestly|yeah|yes|no)\s+(?=[A-Z])/gi, "$1, ");
 
-  // STT occasionally returns a sentence with no terminal punctuation. A real
-  // sentence boundary gives Pocket TTS a much more natural falling cadence.
   if (!/[.!?…]$/.test(value)) value += ".";
 
-  // Give questions an actual rising question boundary when the wording clearly
-  // looks interrogative and Deepgram omitted the question mark.
   if (/^(who|what|when|where|why|how|can|could|would|will|do|does|did|is|are|was|were|have|has|should|shall)\b/i.test(value)) {
     value = value.replace(/\.$/, "?");
   }
