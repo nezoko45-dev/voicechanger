@@ -1,8 +1,8 @@
 {
   "name": "voicechanger-direct",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "private": true,
-  "description": "VoiceChanger Direct - Deepgram, Pocket TTS, and native RVC Pocket voice conversion",
+  "description": "VoiceChanger Direct - Deepgram STT and low-latency Pocket TTS voice conversion",
   "main": "main.cjs",
   "scripts": {"start":"electron .","build":"electron-builder --win portable"},
   "devDependencies": {"electron":"^44.0.0","electron-builder":"^26.0.12"},
@@ -13,8 +13,7 @@
     "asar":true,
     "files":["main.cjs","preload.cjs","package.json"],
     "extraResources":[
-      {"from":"../web/dist","to":"web"},
-      {"from":"rvc-engine","to":"rvc-engine"}
+      {"from":"../web/dist","to":"web"}
     ],
     "directories":{"output":"dist"},
     "win":{"target":[{"target":"portable","arch":["x64"]}]}
