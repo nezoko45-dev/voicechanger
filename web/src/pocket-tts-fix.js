@@ -1,8 +1,9 @@
 import { PocketTTS } from "pocket-tts-js";
 
-// pocket-tts-js sends cloneVoice() arguments to a Web Worker. Always hand it a
-// fresh Float32Array and primitive options so browser structured cloning cannot
-// receive an AudioBuffer-backed view or an accidental non-cloneable object.
+// Keep cloneVoice() worker messages strictly structured-cloneable.
+// After cloning, run a tiny throwaway synthesis so ONNX sessions are warmed
+// before the first real conversion phrase. This removes the one-time EXE
+// inference/session startup hit from the first spoken reply.
 const originalCloneVoice = PocketTTS.prototype.cloneVoice;
 PocketTTS.prototype.cloneVoice = function (audio, options = {}) {
   let safeAudio;
@@ -27,8 +28,16 @@ PocketTTS.prototype.cloneVoice = function (audio, options = {}) {
     throw new TypeError("Pocket TTS clone inputSampleRate is invalid.");
   }
 
-  // Deliberately keep only the documented primitive option. The old app passed
-  // a generated name through the worker request, which can trigger structured-
-  // clone failures in some browser/package combinations.
-  return originalCloneVoice.call(this, safeAudio, { inputSampleRate: sampleRate });
+  return originalCloneVoice.call(this, safeAudio, { inputSampleRate: sampleRate }).then(async (voice) => {
+    try {
+      await this.generate("Hi.", {
+        voice,
+        onChunk: () => {}
+      });
+    } catch {
+      // Prewarm is an optimization only. Never make voice cloning fail because
+      // the throwaway warmup could not run.
+    }
+    return voice;
+  });
 };
