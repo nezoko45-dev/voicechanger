@@ -1,4 +1,4 @@
-name: Build Single VoiceChanger EXE
+name: Build Local OpenVoice VoiceChanger EXE
 
 on:
   workflow_dispatch:
@@ -10,20 +10,21 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-dotnet@v4
         with:
-          go-version: '1.23.x'
-      - name: Build
-        working-directory: desktop-browser
-        shell: pwsh
-        env:
-          CGO_ENABLED: '0'
-        run: go build -trimpath -ldflags="-s -w -H=windowsgui" -o VoiceChanger.exe .
+          dotnet-version: '8.0.x'
+      - name: Restore
+        run: dotnet restore desktop-browser/VoiceChanger.csproj
+      - name: Publish single EXE
+        run: dotnet publish desktop-browser/VoiceChanger.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o dist
       - name: Verify
         shell: pwsh
-        run: if (-not (Test-Path desktop-browser/VoiceChanger.exe)) { throw 'EXE was not created' }
+        run: |
+          if (-not (Test-Path dist/VoiceChanger.exe)) { throw 'VoiceChanger.exe was not created' }
+          Get-Item dist/VoiceChanger.exe | Select-Object Name,Length
       - name: Upload only the EXE
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceChanger-Windows-Single-EXE
-          path: desktop-browser/VoiceChanger.exe
+          name: VoiceChanger-Local-OpenVoice-V2-ONNX
+          path: dist/VoiceChanger.exe
+          if-no-files-found: error
