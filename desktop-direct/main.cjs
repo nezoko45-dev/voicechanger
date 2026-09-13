@@ -1,10 +1,35 @@
-const { app, BrowserWindow, session } = require('electron');
+const { app, BrowserWindow, session, dialog } = require('electron');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
+// Keep the Direct EXE self-contained and avoid Electron startup crashes caused by
+// preload/context-bridge code. The UI does not need Node/Electron IPC.
+app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
-app.commandLine.appendSwitch('enable-features', 'AudioServiceOutOfProcess');
+
+let server = null;
+let mainWindow = null;
+let shuttingDown = false;
+
+function logError(prefix, error) {
+  const message = error?.stack || error?.message || String(error);
+  console.error(`[VoiceChanger Direct] ${prefix}:`, message);
+  try {
+    const logFile = path.join(app.getPath('userData'), 'voicechanger-direct-error.log');
+    fs.mkdirSync(path.dirname(logFile), { recursive: true });
+    fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${prefix}: ${message}\n`);
+  } catch (_) {}
+}
+
+// Do not let a recoverable JavaScript exception turn into Electron's generic
+// "Uncaught Exception" dialog and terminate the app.
+process.on('uncaughtException', (error) => {
+  logError('uncaught exception', error);
+});
+process.on('unhandledRejection', (reason) => {
+  logError('unhandled rejection', reason);
+});
 
 const mime = {
   '.html': 'text/html; charset=utf-8',
@@ -13,13 +38,12 @@ const mime = {
   '.json': 'application/json',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
   '.ico': 'image/x-icon',
   '.wasm': 'application/wasm',
   '.onnx': 'application/octet-stream'
 };
-
-let server = null;
-let mainWindow = null;
 
 function webRoot() {
   return app.isPackaged
@@ -31,6 +55,7 @@ function startLocalServer() {
   return new Promise((resolve, reject) => {
     const root = path.resolve(webRoot());
     const index = path.join(root, 'index.html');
+
     if (!fs.existsSync(index)) {
       reject(new Error(`VoiceChanger UI missing: ${index}`));
       return;
@@ -65,8 +90,8 @@ function startLocalServer() {
           res.end(data);
         });
       } catch (error) {
-        console.error('[VoiceChanger Direct] HTTP error:', error);
-        res.writeHead(400);
+        logError('HTTP error', error);
+        if (!res.headersSent) res.writeHead(400);
         res.end('Bad request');
       }
     });
@@ -74,6 +99,10 @@ function startLocalServer() {
     server.once('error', reject);
     server.listen(0, '127.0.0.1', () => {
       const address = server.address();
+      if (!address || typeof address !== 'object') {
+        reject(new Error('Failed to start VoiceChanger local server.'));
+        return;
+      }
       resolve(`http://127.0.0.1:${address.port}/`);
     });
   });
@@ -81,11 +110,6 @@ function startLocalServer() {
 
 async function createWindow() {
   const url = await startLocalServer();
-  const preload = path.join(__dirname, 'preload.cjs');
-
-  if (!fs.existsSync(preload)) {
-    throw new Error(`VoiceChanger preload missing: ${preload}`);
-  }
 
   mainWindow = new BrowserWindow({
     width: 1180,
@@ -95,11 +119,10 @@ async function createWindow() {
     backgroundColor: '#090b12',
     title: 'VoiceChanger Direct',
     webPreferences: {
-      contextIsolation: false,
+      contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
-      webSecurity: true,
-      preload
+      sandbox: true,
+      webSecurity: true
     }
   });
 
@@ -113,11 +136,11 @@ async function createWindow() {
   });
 
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
-    console.error('[VoiceChanger Direct] renderer process gone:', details);
+    logError('renderer process gone', details);
   });
 
   mainWindow.webContents.on('did-fail-load', (_event, code, description, validatedURL) => {
-    console.error('[VoiceChanger Direct] page load failed:', code, description, validatedURL);
+    logError('page load failed', `${code} ${description} ${validatedURL}`);
   });
 
   await mainWindow.loadURL(url);
@@ -125,38 +148,44 @@ async function createWindow() {
 
 function closeServer() {
   if (!server) return;
-  try { server.close(); } catch (error) { console.error('[VoiceChanger Direct] server close:', error); }
+  try { server.close(); } catch (error) { logError('server close', error); }
   server = null;
 }
 
-process.on('uncaughtException', (error) => {
-  console.error('[VoiceChanger Direct] main uncaught exception:', error?.stack || error);
-});
-process.on('unhandledRejection', (reason) => {
-  console.error('[VoiceChanger Direct] main unhandled rejection:', reason?.stack || reason);
-});
-
 app.whenReady().then(async () => {
+  // Only grant permissions the browser UI actually needs.
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    callback(['media', 'microphone', 'speaker-selection', 'notifications'].includes(permission));
+    callback(permission === 'media' || permission === 'microphone' || permission === 'notifications');
   });
 
   try {
     await createWindow();
   } catch (error) {
-    console.error('[VoiceChanger Direct] startup failed:', error?.stack || error);
+    logError('startup failed', error);
+    try {
+      await dialog.showMessageBox({
+        type: 'error',
+        title: 'VoiceChanger Direct could not start',
+        message: 'VoiceChanger Direct failed to start safely.',
+        detail: error?.message || String(error)
+      });
+    } catch (_) {}
     app.quit();
     return;
   }
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow().catch((error) => console.error('[VoiceChanger Direct] window restart failed:', error));
+    if (BrowserWindow.getAllWindows().length === 0 && !shuttingDown) {
+      createWindow().catch((error) => logError('window restart failed', error));
     }
   });
 });
 
-app.on('before-quit', closeServer);
+app.on('before-quit', () => {
+  shuttingDown = true;
+  closeServer();
+});
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
