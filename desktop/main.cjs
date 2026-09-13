@@ -34,17 +34,17 @@ async function uninstallDriver(){if(process.platform!=='win32')throw new Error('
 function sendDeepgram(webContents,id,payload){if(!webContents.isDestroyed())webContents.send('deepgram:event',{id,...payload});}
 function connectDeepgram(event,url,protocols,clientId){const id=Number.isInteger(clientId)?clientId:nextDeepgramId++;const key=Array.isArray(protocols)&&protocols.length>=2&&protocols[0]==='token'?protocols[1]:'';if(!key){sendDeepgram(event.sender,id,{type:'error',message:'Deepgram subprotocol token is missing.'});sendDeepgram(event.sender,id,{type:'close',code:1008,reason:'Missing Deepgram token',wasClean:false});return id;}try{const ws=new WebSocket(url,{protocols:['token',key],perMessageDeflate:false,handshakeTimeout:15000});const timer=setInterval(()=>{if(ws.readyState===WebSocket.OPEN){try{ws.send(JSON.stringify({type:'KeepAlive'}));}catch{}}},3000);deepgramSockets.set(id,{ws,webContents:event.sender,timer});ws.on('open',()=>sendDeepgram(event.sender,id,{type:'open',protocol:ws.protocol||''}));ws.on('message',(data,isBinary)=>{if(!isBinary)sendDeepgram(event.sender,id,{type:'message',data:data.toString()});});ws.on('error',error=>sendDeepgram(event.sender,id,{type:'error',message:error.message}));ws.on('close',(code,reason)=>{clearInterval(timer);deepgramSockets.delete(id);sendDeepgram(event.sender,id,{type:'close',code:code||1006,reason:Buffer.isBuffer(reason)?reason.toString():String(reason||''),wasClean:code===1000});});}catch(e){sendDeepgram(event.sender,id,{type:'error',message:e.message});sendDeepgram(event.sender,id,{type:'close',code:1006,reason:e.message,wasClean:false});}return id;}
 
-function f5EnginePath(){return app.isPackaged?path.join(process.resourcesPath,'f5tts','f5tts-engine.exe'):path.join(__dirname,'..','f5tts','dist','f5tts-engine.exe');}
-function f5PythonPath(){return path.join(__dirname,'..','f5tts','engine.py');}
-function runF5Engine({referenceBase64,referenceName,referenceText,text}){
-  if(process.platform!=='win32')throw new Error('F5-TTS desktop engine is currently Windows-only.');
+function openVoiceEnginePath(){return app.isPackaged?path.join(process.resourcesPath,'openvoice','openvoice-engine.exe'):path.join(__dirname,'..','openvoice','dist','openvoice-engine.exe');}
+function openVoicePythonPath(){return path.join(__dirname,'..','openvoice','engine.py');}
+function runOpenVoiceEngine({referenceBase64,referenceName,text}){
+  if(process.platform!=='win32')throw new Error('OpenVoice V2 desktop engine is currently Windows-only.');
   if(!referenceBase64)throw new Error('No WAV reference was supplied.');
-  if(!text.trim())throw new Error('No text was supplied.');
-  const tempRoot=fs.mkdtempSync(path.join(os.tmpdir(),'voicechanger-f5-'));const safeName=path.basename(referenceName||'reference.wav').toLowerCase().endsWith('.wav')?path.basename(referenceName):'reference.wav';const ref=path.join(tempRoot,safeName);const out=path.join(tempRoot,'output.wav');fs.writeFileSync(ref,Buffer.from(referenceBase64,'base64'));
-  const exe=f5EnginePath();let command,args;
-  if(fs.existsSync(exe)){command=exe;args=['--ref-audio',ref,'--ref-text',referenceText||'','--text',text,'--output',out];}
-  else {command=process.env.PYTHON||'python';args=[f5PythonPath(),'--ref-audio',ref,'--ref-text',referenceText||'','--text',text,'--output',out];}
-  return new Promise((resolve,reject)=>{const child=spawn(command,args,{windowsHide:true,stdio:['ignore','pipe','pipe']});let stderr='';child.stdout.on('data',d=>console.log('[F5-TTS]',d.toString().trim()));child.stderr.on('data',d=>stderr+=d.toString());child.on('error',e=>{try{fs.rmSync(tempRoot,{recursive:true,force:true});}catch{}reject(new Error(`Could not start F5-TTS: ${e.message}`));});child.on('exit',code=>{try{if(code!==0)throw new Error(stderr||`F5-TTS exited with code ${code}`);const data=fs.readFileSync(out);resolve({base64:data.toString('base64'),bytes:data.length});}catch(e){reject(e);}finally{try{fs.rmSync(tempRoot,{recursive:true,force:true});}catch{}}});});
+  if(!String(text||'').trim())throw new Error('No text was supplied.');
+  const tempRoot=fs.mkdtempSync(path.join(os.tmpdir(),'voicechanger-openvoice-'));const safeName=path.basename(referenceName||'reference.wav').toLowerCase().endsWith('.wav')?path.basename(referenceName):'reference.wav';const ref=path.join(tempRoot,safeName);const out=path.join(tempRoot,'output.wav');fs.writeFileSync(ref,Buffer.from(referenceBase64,'base64'));
+  const exe=openVoiceEnginePath();let command,args;
+  if(fs.existsSync(exe)){command=exe;args=['--ref-audio',ref,'--text',String(text),'--output',out,'--language','English'];}
+  else {command=process.env.PYTHON||'python';args=[openVoicePythonPath(),'--ref-audio',ref,'--text',String(text),'--output',out,'--language','English'];}
+  return new Promise((resolve,reject)=>{const child=spawn(command,args,{windowsHide:true,stdio:['ignore','pipe','pipe']});let stderr='';child.stdout.on('data',d=>console.log('[OpenVoice V2]',d.toString().trim()));child.stderr.on('data',d=>stderr+=d.toString());child.on('error',e=>{try{fs.rmSync(tempRoot,{recursive:true,force:true});}catch{}reject(new Error(`Could not start OpenVoice V2: ${e.message}`));});child.on('exit',code=>{try{if(code!==0)throw new Error(stderr||`OpenVoice V2 exited with code ${code}`);const data=fs.readFileSync(out);resolve({base64:data.toString('base64'),bytes:data.length});}catch(e){reject(e);}finally{try{fs.rmSync(tempRoot,{recursive:true,force:true});}catch{}}});});
 }
 
 function webRoot(){return app.isPackaged?path.join(process.resourcesPath,'web'):path.join(__dirname,'..','web','dist');}
@@ -56,7 +56,7 @@ ipcMain.handle('native-audio:stop',()=>{stopNativePlayer();return true;});
 ipcMain.handle('voicechanger-driver:status',()=>getDriverStatus());
 ipcMain.handle('voicechanger-driver:install',()=>installDriver());
 ipcMain.handle('voicechanger-driver:uninstall',()=>uninstallDriver());
-ipcMain.handle('f5tts:generate',(_e,payload)=>runF5Engine(payload));
+ipcMain.handle('openvoice:generate',(_e,payload)=>runOpenVoiceEngine(payload));
 ipcMain.on('deepgram:connect',(event,{url,protocols,clientId})=>connectDeepgram(event,url,protocols,clientId));
 ipcMain.on('deepgram:send',(event,{id,data})=>{const s=deepgramSockets.get(id);if(!s||s.ws.readyState!==WebSocket.OPEN)return;try{s.ws.send(Buffer.from(data));}catch(e){sendDeepgram(event.sender,id,{type:'error',message:e.message});}});
 ipcMain.on('deepgram:close',(event,{id,code,reason})=>{const s=deepgramSockets.get(id);if(!s)return;try{s.ws.close(code||1000,reason||'');}catch{}});
