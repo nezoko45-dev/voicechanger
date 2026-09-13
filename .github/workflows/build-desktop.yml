@@ -21,37 +21,39 @@ jobs:
             web/package.json
             desktop/package.json
 
-      - name: Setup Python for F5-TTS
+      - name: Setup Python for OpenVoice V2
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.10'
           cache: pip
-          cache-dependency-path: f5tts/requirements.txt
+          cache-dependency-path: openvoice/requirements.txt
 
-      - name: Build F5-TTS Windows engine EXE
+      - name: Build OpenVoice V2 Windows engine EXE
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           python -m pip install --upgrade pip
-          python -m pip install -r f5tts/requirements.txt
-          if (Test-Path f5tts/dist) { Remove-Item -Recurse -Force f5tts/dist }
-          if (Test-Path f5tts/build) { Remove-Item -Recurse -Force f5tts/build }
-          New-Item -ItemType Directory -Path f5tts/dist -Force | Out-Null
-          New-Item -ItemType Directory -Path f5tts/build -Force | Out-Null
-          python -m PyInstaller --noconfirm --clean --onefile --name f5tts-engine `
-            --distpath f5tts/dist `
-            --workpath f5tts/build `
-            --collect-all f5_tts `
-            --collect-all vocos `
+          python -m pip install -r openvoice/requirements.txt
+          python -m unidic download
+          python -m pip install pyinstaller
+          if (Test-Path openvoice/dist) { Remove-Item -Recurse -Force openvoice/dist }
+          if (Test-Path openvoice/build) { Remove-Item -Recurse -Force openvoice/build }
+          New-Item -ItemType Directory -Path openvoice/dist -Force | Out-Null
+          New-Item -ItemType Directory -Path openvoice/build -Force | Out-Null
+          python -m PyInstaller --noconfirm --clean --onefile --name openvoice-engine `
+            --distpath openvoice/dist `
+            --workpath openvoice/build `
+            --collect-all openvoice `
+            --collect-all melo `
+            --collect-all unidic `
+            --collect-all unidic2 `
             --collect-all cached_path `
-            --collect-all omegaconf `
-            --collect-all hydra `
             --collect-all transformers `
-            --collect-all x_transformers `
+            --collect-all librosa `
             --collect-all soundfile `
-            f5tts/engine.py
-          if (-not (Test-Path f5tts/dist/f5tts-engine.exe)) { throw 'F5-TTS engine EXE was not produced.' }
-          Write-Host "Built F5-TTS engine: $((Get-Item f5tts/dist/f5tts-engine.exe).Length) bytes"
+            openvoice/engine.py
+          if (-not (Test-Path openvoice/dist/openvoice-engine.exe)) { throw 'OpenVoice V2 engine EXE was not produced.' }
+          Write-Host "Built OpenVoice V2 engine: $((Get-Item openvoice/dist/openvoice-engine.exe).Length) bytes"
 
       - name: Install web dependencies
         working-directory: web
@@ -113,6 +115,7 @@ jobs:
           New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
           New-Item -ItemType Directory -Path (Join-Path $packageRoot 'driver') -Force | Out-Null
           Copy-Item $exe.FullName (Join-Path $packageRoot $exe.Name) -Force
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'openvoice\dist\openvoice-engine.exe') (Join-Path $packageRoot 'openvoice-engine.exe') -Force
           Copy-Item (Join-Path $driverRoot 'VoiceChangerDeviceInstaller.exe') (Join-Path $packageRoot 'VoiceChangerDeviceInstaller.exe') -Force
           Copy-Item (Join-Path $driverRoot 'install-voicechanger-driver.ps1') (Join-Path $packageRoot 'install-voicechanger-driver.ps1') -Force
           Copy-Item (Join-Path $driverRoot 'THIRD_PARTY_NOTICES.md') (Join-Path $packageRoot 'THIRD_PARTY_NOTICES.md') -Force
@@ -121,8 +124,10 @@ jobs:
           @'
           VoiceChanger Desktop - Windows package
 
-          The portable EXE contains the F5-TTS voice cloning engine and web UI.
-          F5-TTS downloads its base model from Hugging Face on first generation and caches it locally.
+          Voice cloning uses OpenVoice V2 locally.
+          OpenVoice V2 and its official model are MIT licensed/free for commercial and research use.
+          The first generation downloads model files from Hugging Face and caches them locally.
+          No OpenVoice API key is required.
           The reference voice is selected from a WAV file in the app UI.
           '@ | Set-Content (Join-Path $packageRoot 'PACKAGE-README.txt') -Encoding UTF8
           $zipPath = Join-Path $env:GITHUB_WORKSPACE 'VoiceChanger-Desktop-Windows.zip'
