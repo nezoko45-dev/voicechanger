@@ -27,20 +27,26 @@ jobs:
         working-directory: web
         run: npm run build
 
-      - name: Download native RVC Pocket engine
+      - name: Download official audio.cpp RVC Pocket engine
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force desktop-direct/rvc-engine | Out-Null
-          gh release download release-0.5 --repo 0xShug0/audio.cpp --pattern audiocpp-windows-cpu-portable.zip --dir desktop-direct/rvc-engine
-          Expand-Archive -Path desktop-direct/rvc-engine/audiocpp-windows-cpu-portable.zip -DestinationPath desktop-direct/rvc-engine/extracted -Force
-          $cli = Get-ChildItem desktop-direct/rvc-engine/extracted -Filter audiocpp_cli.exe -Recurse | Select-Object -First 1
-          if (-not $cli) { throw 'audiocpp_cli.exe was not found in the RVC engine package.' }
-          Copy-Item $cli.FullName desktop-direct/rvc-engine/audiocpp_cli.exe -Force
-          Get-ChildItem $cli.Directory.FullName -File | Where-Object { $_.Name -ne 'audiocpp_cli.exe' } | Copy-Item -Destination desktop-direct/rvc-engine -Force
-          Remove-Item desktop-direct/rvc-engine/extracted -Recurse -Force
-          Remove-Item desktop-direct/rvc-engine/audiocpp-windows-cpu-portable.zip -Force
-        env:
-          GH_TOKEN: ${{ github.token }}
+          $ErrorActionPreference = 'Stop'
+          $engine = Join-Path $PWD 'desktop-direct/rvc-engine'
+          New-Item -ItemType Directory -Force $engine | Out-Null
+          $api = Invoke-RestMethod -Headers @{ 'User-Agent' = 'VoiceChanger-RVC-Pocket'; 'Accept' = 'application/vnd.github+json' } -Uri 'https://api.github.com/repos/0xShug0/audio.cpp/releases/tags/release-0.5'
+          $asset = $api.assets | Where-Object { $_.name -eq 'audiocpp-windows-cpu-portable.zip' } | Select-Object -First 1
+          if (-not $asset) { throw 'Could not find the official audio.cpp Windows CPU portable package.' }
+          $zip = Join-Path $env:TEMP 'audiocpp-rvc-pocket.zip'
+          Invoke-WebRequest -Headers @{ 'User-Agent' = 'VoiceChanger-RVC-Pocket'; 'Accept' = 'application/octet-stream' } -Uri $asset.browser_download_url -OutFile $zip
+          $extract = Join-Path $env:TEMP 'audiocpp-rvc-pocket-extracted'
+          Remove-Item $extract -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive -Path $zip -DestinationPath $extract -Force
+          $cli = Get-ChildItem $extract -Filter 'audiocpp_cli.exe' -Recurse | Select-Object -First 1
+          if (-not $cli) { throw 'audiocpp_cli.exe was not found in the official audio.cpp package.' }
+          Copy-Item (Join-Path $cli.Directory.FullName '*') $engine -Recurse -Force
+          if (-not (Test-Path (Join-Path $engine 'audiocpp_cli.exe'))) { throw 'RVC Pocket engine extraction failed.' }
+          Remove-Item $zip -Force -ErrorAction SilentlyContinue
+          Remove-Item $extract -Recurse -Force -ErrorAction SilentlyContinue
 
       - name: Install Direct desktop dependencies
         working-directory: desktop-direct
@@ -49,6 +55,14 @@ jobs:
       - name: Build VoiceChanger Direct EXE
         working-directory: desktop-direct
         run: npm run build
+
+      - name: Verify RVC Pocket engine is packaged
+        shell: pwsh
+        run: |
+          $app = Get-ChildItem desktop-direct/dist -Filter '*.exe' | Select-Object -First 1
+          if (-not $app) { throw 'VoiceChanger EXE was not produced.' }
+          Write-Host "Built $($app.FullName)"
+          if (-not (Test-Path 'desktop-direct/rvc-engine/audiocpp_cli.exe')) { throw 'RVC engine was not staged before packaging.' }
 
       - name: Upload Direct EXE
         uses: actions/upload-artifact@v4
