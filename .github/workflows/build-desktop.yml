@@ -73,9 +73,53 @@ jobs:
         working-directory: desktop
         run: npm run build
 
-      - name: Upload portable EXE
+      - name: Assemble complete Windows package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $packageRoot = Join-Path $env:GITHUB_WORKSPACE 'release-package'
+          $driverRoot = Join-Path $env:GITHUB_WORKSPACE 'desktop\driver'
+          $driverPackage = Join-Path $driverRoot 'package'
+          $exe = Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE 'desktop\dist') -Filter '*.exe' | Select-Object -First 1
+          if (-not $exe) { throw 'Portable VoiceChanger EXE was not produced.' }
+
+          if (Test-Path $packageRoot) { Remove-Item -Recurse -Force $packageRoot }
+          New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
+          New-Item -ItemType Directory -Path (Join-Path $packageRoot 'driver') -Force | Out-Null
+
+          Copy-Item $exe.FullName (Join-Path $packageRoot $exe.Name) -Force
+          Copy-Item (Join-Path $driverRoot 'VoiceChangerDeviceInstaller.exe') (Join-Path $packageRoot 'VoiceChangerDeviceInstaller.exe') -Force
+          Copy-Item (Join-Path $driverRoot 'install-voicechanger-driver.ps1') (Join-Path $packageRoot 'install-voicechanger-driver.ps1') -Force
+          Copy-Item (Join-Path $driverRoot 'THIRD_PARTY_NOTICES.md') (Join-Path $packageRoot 'THIRD_PARTY_NOTICES.md') -Force
+          Copy-Item $driverPackage (Join-Path $packageRoot 'driver\package') -Recurse -Force
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'README.md') (Join-Path $packageRoot 'README.md') -Force
+
+          @'
+          VoiceChanger Desktop - Windows package
+
+          Contents:
+          - VoiceChanger-Desktop-*.exe : portable desktop application
+          - VoiceChangerDeviceInstaller.exe : virtual audio device installer helper
+          - install-voicechanger-driver.ps1 : PowerShell driver installer
+          - driver\package\ : signed virtual audio driver files
+          - THIRD_PARTY_NOTICES.md : third-party driver notices
+          - README.md : project information
+
+          The portable EXE also contains the web UI and bundled driver resources.
+          If Windows blocks driver installation, run the installer helper as Administrator.
+          '@ | Set-Content (Join-Path $packageRoot 'PACKAGE-README.txt') -Encoding UTF8
+
+          $zipPath = Join-Path $env:GITHUB_WORKSPACE 'VoiceChanger-Desktop-Windows.zip'
+          if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
+          Compress-Archive -Path (Join-Path $packageRoot '*') -DestinationPath $zipPath -CompressionLevel Optimal
+
+          Write-Host 'Complete package contents:'
+          Get-ChildItem $packageRoot -Recurse | Select-Object FullName,Length | Format-Table -AutoSize
+          Write-Host "Created $zipPath"
+
+      - name: Upload complete Windows ZIP
         uses: actions/upload-artifact@v4
         with:
           name: VoiceChanger-Desktop-Windows
-          path: desktop/dist/*.exe
+          path: VoiceChanger-Desktop-Windows.zip
           if-no-files-found: error
