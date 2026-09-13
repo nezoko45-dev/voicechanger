@@ -27,6 +27,21 @@ jobs:
         working-directory: web
         run: npm run build
 
+      - name: Download native RVC Pocket engine
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force desktop-direct/rvc-engine | Out-Null
+          gh release download release-0.5 --repo 0xShug0/audio.cpp --pattern audiocpp-windows-cpu-portable.zip --dir desktop-direct/rvc-engine
+          Expand-Archive -Path desktop-direct/rvc-engine/audiocpp-windows-cpu-portable.zip -DestinationPath desktop-direct/rvc-engine/extracted -Force
+          $cli = Get-ChildItem desktop-direct/rvc-engine/extracted -Filter audiocpp_cli.exe -Recurse | Select-Object -First 1
+          if (-not $cli) { throw 'audiocpp_cli.exe was not found in the RVC engine package.' }
+          Copy-Item $cli.FullName desktop-direct/rvc-engine/audiocpp_cli.exe -Force
+          Get-ChildItem $cli.Directory.FullName -File | Where-Object { $_.Name -ne 'audiocpp_cli.exe' } | Copy-Item -Destination desktop-direct/rvc-engine -Force
+          Remove-Item desktop-direct/rvc-engine/extracted -Recurse -Force
+          Remove-Item desktop-direct/rvc-engine/audiocpp-windows-cpu-portable.zip -Force
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: Install Direct desktop dependencies
         working-directory: desktop-direct
         run: npm install
@@ -38,6 +53,6 @@ jobs:
       - name: Upload Direct EXE
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceChanger-Direct-Windows
+          name: VoiceChanger-Direct-Windows-RVC-Pocket
           path: desktop-direct/dist/*.exe
           if-no-files-found: error
