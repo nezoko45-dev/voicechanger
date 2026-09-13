@@ -25,12 +25,10 @@ let conversionGeneration = 0;
 let scheduledAudio = [];
 let nextAudioTime = 0;
 
-const MODEL_SOURCES = [
-  "https://huggingface.co/vlapky/pocket-tts-onnx/resolve/main/onnx",
-  "https://huggingface.co/akrv/pocket-tts-onnx/resolve/main/onnx",
-  "https://huggingface.co/lookbe/pocket-tts-onnx-v2/resolve/main/onnx",
-  "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/main/onnx"
-];
+// Browser build: use the official ONNX export. The package supplies its own
+// browser ONNX Runtime loader; overriding it with a second CDN was causing
+// browser-only failures that did not occur in Electron.
+const MODEL_SOURCE = "https://huggingface.co/vlapky/pocket-tts-onnx/resolve/main/onnx";
 
 function log(message) { const box = $("log"); if (box) box.textContent = `${new Date().toLocaleTimeString()} — ${message}\n${box.textContent}`; }
 function status(message, type = "") { const el = $("status"); if (el) { el.textContent = message; el.className = `status ${type}`; } }
@@ -120,58 +118,48 @@ async function loadModel() {
   const badge = $("modelBadge");
   if (badge) { badge.textContent = "Engine loading…"; badge.style.color = "#e9cf88"; }
   setProgress(1);
-  const errors = [];
-  for (let i = 0; i < MODEL_SOURCES.length; i++) {
-    const base = MODEL_SOURCES[i];
-    try {
-      const bundle = `${base}/english_2026-04`;
-      status(`Loading Pocket TTS mirror ${i + 1}/${MODEL_SOURCES.length}…`, "working");
-      log(`Trying model mirror: ${bundle}`);
-      try { tts?.destroy?.(); } catch {}
-      // Use one ONNX worker in the browser. This avoids requiring cross-origin
-      // isolation/SharedArrayBuffer on normal web hosting and is much more
-      // reliable than starting a 4-thread WASM runtime in a regular tab.
-      const candidate = new PocketTTS({
-        language: "english_2026-04",
-        quantized: true,
-        voiceCloning: true,
-        cache: true,
-        cacheName: "voicechanger-pocket-tts-browser-v9",
-        maxThreads: 1,
-        modelBaseUrl: base
-      });
-      const info = await candidate.load((p) => {
-        if (p?.total) {
-          const percent = Math.round((p.loaded / p.total) * 100);
-          setProgress(percent);
-          if (percent === 100 || percent % 10 === 0) log(`${p.label || "model"}: ${percent}% (${mb(p.total)})`);
-        } else if (p?.status) log(`Model: ${p.status}`);
-      });
-      tts = candidate;
-      $("modelInfo").textContent = `Ready • ${tts.sampleRate} Hz • INT8 • ${(info?.predefinedVoices || []).length} voices`;
-      if (badge) { badge.textContent = "AI ready"; badge.style.color = "#83e1aa"; badge.classList.add("ready"); }
-      $("cloneFile").disabled = false;
-      $("recordVoice").disabled = false;
-      setProgress(100);
-      status("Pocket TTS ready. Clone a voice to enable live conversion.", "ok");
-      button.disabled = false;
-      button.textContent = "Reload Pocket TTS";
-      log(`Pocket TTS loaded from mirror ${i + 1}.`);
-      await refreshOutputs();
-      return;
-    } catch (e) {
-      const message = e?.message || String(e);
-      errors.push(`Mirror ${i + 1}: ${message}`);
-      log(`MIRROR ${i + 1} FAILED: ${message}`);
-    }
+  status("Starting browser Pocket TTS…", "working");
+  log("Browser engine: Chrome/Edge mode");
+  log(`Loading official Pocket TTS ONNX export: ${MODEL_SOURCE}`);
+  try {
+    const candidate = new PocketTTS({
+      language: "english_2026-04",
+      quantized: true,
+      voiceCloning: true,
+      cache: true,
+      cacheName: "voicechanger-pocket-tts-chrome-edge-v1",
+      // Normal Chrome/Edge tabs work without SharedArrayBuffer. One worker is
+      // slower than Electron but avoids requiring cross-origin isolation.
+      maxThreads: 1,
+      modelBaseUrl: MODEL_SOURCE
+    });
+    const info = await candidate.load((p) => {
+      if (p?.total) {
+        const percent = Math.round((p.loaded / p.total) * 100);
+        setProgress(percent);
+        if (percent === 100 || percent % 10 === 0) log(`${p.label || "model"}: ${percent}% (${mb(p.total)})`);
+      } else if (p?.status) log(`Model: ${p.status}`);
+    });
+    tts = candidate;
+    $("modelInfo").textContent = `Ready • ${tts.sampleRate} Hz • INT8 • ${(info?.predefinedVoices || []).length} voices`;
+    if (badge) { badge.textContent = "AI ready"; badge.style.color = "#83e1aa"; badge.classList.add("ready"); }
+    $("cloneFile").disabled = false;
+    $("recordVoice").disabled = false;
+    setProgress(100);
+    status("Pocket TTS ready in Chrome/Edge. Clone a voice to enable live conversion.", "ok");
+    button.disabled = false;
+    button.textContent = "Reload Pocket TTS";
+    log("Browser Pocket TTS loaded successfully.");
+    await refreshOutputs();
+  } catch (e) {
+    const message = e?.stack || e?.message || String(e);
+    status("Pocket TTS failed to start in this browser.", "bad");
+    log(`BROWSER MODEL ERROR: ${message}`);
+    if (badge) { badge.textContent = "Engine failed"; badge.style.color = "#ff9eac"; }
+    button.disabled = false;
+    button.textContent = "Retry Pocket TTS";
+    setProgress(0);
   }
-  const detail = errors.join(" | ");
-  status("Pocket TTS could not load. Check the Activity log for the model error.", "bad");
-  log(`MODEL ERROR: ${detail}`);
-  if (badge) { badge.textContent = "Engine failed"; badge.style.color = "#ff9eac"; }
-  button.disabled = false;
-  button.textContent = "Retry Pocket TTS";
-  setProgress(0);
 }
 
 async function cloneAudio(blob, name) {
@@ -236,7 +224,45 @@ function cleanupConnection() {
   try { stream?.getTracks().forEach((t) => t.stop()); } catch {}
   stream = null; socket = null; running = false; $("micDot")?.classList.remove("live");
 }
-function stopVC() { manualStop = true; reconnectGeneration++; reconnectAttempts = 0; if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; } if (conversionTimer) { clearTimeout(conversionTimer); conversionTimer = null; } conversionBuffer = ""; conversionQueue.length = 0; lastInterimText = ""; conversionGeneration++; try { tts?.stop?.(); } catch {} stopPlayback(); const oldSocket = socket; cleanupConnection(); try { oldSocket?.close(1000, "User stopped VoiceChanger"); } catch {} $("startVC").disabled = !voiceRef || !apiKey(); $("stopVC").disabled = true; $("sttInfo").textContent = "VoiceChanger stopped."; }
+function stopVC() { manualStop = true; reconnectGeneration++; reconnectAttempts = 0; if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; } if (conversionTimer) { clearTimeout(conversionTimer); conversionTimer = null; } conversionBuffer = ""; conversionQueue.length = 0; lastInterimText = ""; conversionGeneration++; cleanupConnection(); $("stopVC").disabled = true; $("startVC").disabled = !voiceRef || !apiKey(); status("VoiceChanger stopped."); }
+
+async function startVC() {
+  if (!tts) throw new Error("Pocket TTS is still loading.");
+  if (!voiceRef) throw new Error("Clone a voice first.");
+  const key = apiKey(); if (!key) throw new Error("Enter your Deepgram API key first.");
+  if (!navigator.mediaDevices?.getUserMedia) throw new Error("Microphone access is unavailable. Use HTTPS or localhost in Chrome/Edge.");
+  manualStop = false; reconnectAttempts = 0; reconnectGeneration++; const generation = reconnectGeneration;
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  cleanupConnection();
+  stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  audioContext = new AudioContext(); await audioContext.resume();
+  sourceNode = audioContext.createMediaStreamSource(stream);
+  processor = audioContext.createScriptProcessor(4096, 1, 1);
+  sourceNode.connect(processor); processor.connect(audioContext.destination);
+  socket = new WebSocket(`wss://api.deepgram.com/v1/listen?model=nova-3&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&smart_format=true&punctuate=true`, ["token", key]);
+  const ws = socket;
+  ws.onopen = () => { if (generation !== reconnectGeneration) return; running = true; reconnectAttempts = 0; $("micDot")?.classList.add("live"); $("sttInfo").textContent = "Listening"; $("startVC").disabled = true; $("stopVC").disabled = false; status("Listening with Deepgram…", "ok"); log("Deepgram WebSocket connected."); };
+  ws.onmessage = (event) => {
+    if (generation !== reconnectGeneration) return;
+    try {
+      const data = JSON.parse(event.data);
+      const text = data?.channel?.alternatives?.[0]?.transcript?.trim() || "";
+      if (text) { $("transcript").textContent = text; $("transcript").dataset.interim = String(!data?.is_final); queueConversionText(text, !!data?.is_final); }
+    } catch (e) { log(`DEEPGRAM MESSAGE ERROR: ${e.message}`); }
+  };
+  ws.onerror = () => { if (generation === reconnectGeneration) log("Deepgram WebSocket error."); };
+  ws.onclose = (event) => {
+    if (generation !== reconnectGeneration || manualStop) return;
+    log(`Deepgram disconnected (${event.code}).`);
+    cleanupConnection();
+    if (reconnectAttempts < 5) { reconnectAttempts++; const delay = Math.min(1000 * (2 ** (reconnectAttempts - 1)), 10000); status(`Reconnecting to Deepgram in ${Math.round(delay / 1000)}s…`, "working"); reconnectTimer = setTimeout(() => startVC().catch((e) => log(`RECONNECT ERROR: ${e.message}`)), delay); }
+    else { status("Deepgram connection ended. Press Start to retry.", "bad"); $("startVC").disabled = !voiceRef || !apiKey(); }
+  };
+  processor.onaudioprocess = (event) => {
+    if (generation !== reconnectGeneration || !socket || socket.readyState !== WebSocket.OPEN) return;
+    const input = event.inputBuffer.getChannelData(0); const data = downsample(input, audioContext.sampleRate, 16000); socket.send(pcm16(data).buffer);
+  };
+}
 
 function bindUI() {
   $("loadModel")?.addEventListener("click", () => loadModel());
@@ -253,9 +279,6 @@ function bindUI() {
   refreshOutputs();
   $("startVC").disabled = true;
   $("stopVC").disabled = true;
-  // Browser builds used to leave the badge at "Engine offline" forever because
-  // Pocket TTS only loaded after clicking the hidden/manual loader. Start it
-  // automatically so a normal browser tab gets a real engine status.
   queueMicrotask(() => { void loadModel(); });
 }
 
