@@ -1,4 +1,4 @@
-name: Build VoiceChanger Browser EXE
+name: Build VoiceChanger EXE
 
 on:
   workflow_dispatch:
@@ -13,26 +13,24 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          python-version: '3.11'
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r desktop-browser/requirements.txt
-      - name: Build portable EXE
+          go-version: '1.23.x'
+      - name: Build single-file EXE
+        working-directory: desktop-browser
         shell: pwsh
+        env:
+          CGO_ENABLED: '0'
         run: |
-          pyinstaller --noconfirm --clean --onefile --name VoiceChangerBrowser --collect-all qwen_tts --collect-all torch --add-data "desktop-browser/web;web" --add-data "desktop-browser/tts_engine.py;." desktop-browser/launcher.py
-      - name: Package
+          go build -trimpath -ldflags="-s -w -H=windowsgui" -o VoiceChanger.exe .
+      - name: Package EXE only
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force release | Out-Null
-          Copy-Item dist/VoiceChangerBrowser.exe release/VoiceChangerBrowser.exe
-          Copy-Item desktop-browser/README.md release/README.txt
+          Copy-Item desktop-browser/VoiceChanger.exe release/VoiceChanger.exe
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceChangerBrowser-Windows
-          path: release/
+          name: VoiceChanger-Windows
+          path: release/VoiceChanger.exe
