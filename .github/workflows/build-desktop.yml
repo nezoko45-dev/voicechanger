@@ -28,11 +28,17 @@ jobs:
           cache: pip
           cache-dependency-path: openvoice/requirements.txt
 
-      - name: Build OpenVoice V2 Windows engine EXE
+      - name: Install CPU-only PyTorch
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           python -m pip install --upgrade pip
+          python -m pip install torch==2.1.2+cpu torchaudio==2.1.2+cpu --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Build OpenVoice V2 Windows engine EXE
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
           python -m pip install -r openvoice/requirements.txt
           python -m unidic download
           python -m pip install pyinstaller
@@ -53,7 +59,7 @@ jobs:
             --collect-all soundfile `
             openvoice/engine.py
           if (-not (Test-Path openvoice/dist/openvoice-engine.exe)) { throw 'OpenVoice V2 engine EXE was not produced.' }
-          Write-Host "Built OpenVoice V2 engine: $((Get-Item openvoice/dist/openvoice-engine.exe).Length) bytes"
+          Write-Host "Built OpenVoice V2 CPU engine: $((Get-Item openvoice/dist/openvoice-engine.exe).Length) bytes"
 
       - name: Install web dependencies
         working-directory: web
@@ -124,7 +130,7 @@ jobs:
           @'
           VoiceChanger Desktop - Windows package
 
-          Voice cloning uses OpenVoice V2 locally.
+          Voice cloning uses OpenVoice V2 locally on CPU for maximum Windows compatibility.
           OpenVoice V2 and its official model are MIT licensed/free for commercial and research use.
           The first generation downloads model files from Hugging Face and caches them locally.
           No OpenVoice API key is required.
