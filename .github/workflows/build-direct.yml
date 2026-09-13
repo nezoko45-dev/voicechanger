@@ -40,11 +40,54 @@ jobs:
         run: |
           $app = Get-ChildItem desktop-direct/dist -Filter '*.exe' | Select-Object -First 1
           if (-not $app) { throw 'VoiceChanger EXE was not produced.' }
+          if (-not (Test-Path web/dist/index.html)) { throw 'Browser build was not produced.' }
           Write-Host "Built $($app.FullName)"
+          Write-Host "Browser build: web/dist"
 
-      - name: Upload Direct EXE
+      - name: Stage complete Windows package
+        shell: pwsh
+        run: |
+          $pkg = 'VoiceChanger-Complete-Windows'
+          if (Test-Path $pkg) { Remove-Item $pkg -Recurse -Force }
+          New-Item -ItemType Directory -Path $pkg | Out-Null
+          New-Item -ItemType Directory -Path "$pkg/browser" | Out-Null
+          New-Item -ItemType Directory -Path "$pkg/browser-source" | Out-Null
+          New-Item -ItemType Directory -Path "$pkg/desktop" | Out-Null
+          New-Item -ItemType Directory -Path "$pkg/driver" | Out-Null
+
+          Copy-Item (Get-ChildItem desktop-direct/dist -Filter '*.exe' | Select-Object -First 1).FullName "$pkg/desktop/VoiceChanger-Direct-Windows.exe"
+          Copy-Item web/dist/* "$pkg/browser" -Recurse -Force
+
+          Copy-Item web/index.html "$pkg/browser-source/index.html"
+          Copy-Item web/package.json "$pkg/browser-source/package.json"
+          if (Test-Path web/package-lock.json) { Copy-Item web/package-lock.json "$pkg/browser-source/package-lock.json" }
+          if (Test-Path web/vite.config.js) { Copy-Item web/vite.config.js "$pkg/browser-source/vite.config.js" }
+          if (Test-Path web/src) { Copy-Item web/src "$pkg/browser-source/src" -Recurse -Force }
+          if (Test-Path web/scripts) { Copy-Item web/scripts "$pkg/browser-source/scripts" -Recurse -Force }
+
+          if (Test-Path desktop/driver) { Copy-Item desktop/driver/* "$pkg/driver" -Recurse -Force }
+          if (Test-Path desktop-direct/driver) { Copy-Item desktop-direct/driver/* "$pkg/driver" -Recurse -Force }
+
+          if (Test-Path README.md) { Copy-Item README.md "$pkg/README.md" }
+          if (Test-Path THIRD_PARTY_NOTICES.md) { Copy-Item THIRD_PARTY_NOTICES.md "$pkg/THIRD_PARTY_NOTICES.md" }
+
+          @'
+VoiceChanger Complete Windows Package
+
+Contents:
+- desktop/VoiceChanger-Direct-Windows.exe - Windows desktop app
+- browser/ - complete built browser app; open browser/index.html
+- browser-source/ - browser source/project files
+- driver/ - included virtual-audio-driver/package files
+- README.md - project documentation
+
+The browser app is intentionally included as a real folder in this package; it is not only embedded in the EXE.
+'@ | Set-Content "$pkg/PACKAGE-README.txt" -Encoding UTF8
+
+      - name: Upload complete Windows package
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceChanger-Direct-Windows
-          path: desktop-direct/dist/*.exe
+          name: VoiceChanger-Complete-Windows
+          path: VoiceChanger-Complete-Windows
           if-no-files-found: error
+          retention-days: 30
