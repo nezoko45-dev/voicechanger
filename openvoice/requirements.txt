@@ -1,0 +1,6 @@
+torch==2.1.2
+openvoice @ git+https://github.com/myshell-ai/OpenVoice.git
+MeloTTS @ git+https://github.com/myshell-ai/MeloTTS.git
+huggingface_hub>=0.24,<1.0
+soundfile>=0.12
+unidic
