@@ -46,10 +46,7 @@ internal static class Program
                 var ctx = await listener.GetContextAsync();
                 _ = Task.Run(() => Handle(ctx));
             }
-            catch
-            {
-                break;
-            }
+            catch { break; }
         }
     }
 
@@ -64,8 +61,7 @@ internal static class Program
 
     private static void LaunchBrowser(string url)
     {
-        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
-        catch { }
+        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); } catch { }
     }
 
     private static async Task Handle(HttpListenerContext ctx)
@@ -163,10 +159,7 @@ internal static class Program
             }
             File.Move(part, path, true);
         }
-        finally
-        {
-            try { if (File.Exists(part)) File.Delete(part); } catch { }
-        }
+        finally { try { if (File.Exists(part)) File.Delete(part); } catch { } }
     }
 
     private static float[] ExtractEmbedding(float[] samples)
@@ -232,18 +225,13 @@ internal static class Program
 
     private static void FFT(double[] re, double[] im)
     {
-        var n = re.Length;
-        var j0 = 0;
+        var n = re.Length; var j0 = 0;
         for (var i = 1; i < n; i++)
         {
             var bit = n >> 1;
             for (; (j0 & bit) != 0; bit >>= 1) j0 ^= bit;
             j0 ^= bit;
-            if (i < j0)
-            {
-                (re[i], re[j0]) = (re[j0], re[i]);
-                (im[i], im[j0]) = (im[j0], im[i]);
-            }
+            if (i < j0) { (re[i], re[j0]) = (re[j0], re[i]); (im[i], im[j0]) = (im[j0], im[i]); }
         }
         for (var len = 2; len <= n; len <<= 1)
         {
@@ -279,9 +267,10 @@ internal static class Program
 
     private static void ServeIndex(HttpListenerContext ctx)
     {
-        var html = Ui;
-        var data = Encoding.UTF8.GetBytes(html);
-        ctx.Response.ContentType = "text/html; charset=utf-8"; ctx.Response.ContentLength64 = data.Length; ctx.Response.OutputStream.Write(data);
+        var data = Encoding.UTF8.GetBytes(Ui);
+        ctx.Response.ContentType = "text/html; charset=utf-8";
+        ctx.Response.ContentLength64 = data.Length;
+        ctx.Response.OutputStream.Write(data);
     }
 
     private static void Json(HttpListenerContext ctx, int code, object value)
@@ -291,22 +280,25 @@ internal static class Program
 
     private static string Ui => """
 <!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>VoiceChanger — Local OpenVoice V2</title>
-<style>body{font-family:system-ui;background:#0d0f14;color:#eee;max-width:820px;margin:auto;padding:28px}h1{margin:0}.sub{color:#9da3b1}.card{background:#171a21;border:1px solid #2d313b;border-radius:14px;padding:18px;margin:14px 0;display:grid;gap:12px}input,select,button{font:inherit;border-radius:9px;border:1px solid #3a3f4b;background:#0d1015;color:#eee;padding:11px}button{cursor:pointer;background:#272d38}.status{padding:10px;border-radius:9px;background:#0d1015}.err{color:#ff9a9a}.ok{color:#9ff0ae}.note{font-size:13px;color:#8f96a5}audio{width:100%}.row{display:flex;gap:10px}.row>*{flex:1}</style></head>
-<body><h1>🎙️ VoiceChanger</h1><div class='sub'>Deepgram STT → local OpenVoice V2 ONNX tone cloning. No Replicate. No Python. No Electron.</div>
-<div class='card'><label>Deepgram API key<input id='dg' type='password' placeholder='Deepgram API key'></label><button id='save'>Save key</button><div id='status' class='status'>Checking local OpenVoice models…</div><div class='note'>Your Deepgram key stays in this browser. OpenVoice runs locally on this PC. The ONNX models are downloaded once to your Windows user profile.</div></div>
-<div class='card'><label>Voice reference WAV<input id='ref' type='file' accept='audio/*'></label><label>Voice style<select id='voice'></select></label><label>Cloning strength<input id='tau' type='range' min='.2' max='1.2' step='.05' value='.8'></label><div class='note'>Use a clean 3–15 second reference. The app converts it to 22.05 kHz PCM WAV locally.</div></div>
-<div class='card'><div class='row'><button id='start'>Start microphone</button><button id='stop' disabled>Stop</button></div><b>Live transcript</b><div id='transcript' class='status'></div><audio id='player' controls></audio></div>
+<style>body{font-family:system-ui;background:#0d0f14;color:#eee;max-width:820px;margin:auto;padding:28px}h1{margin:0}.sub{color:#9aa3b2}.card{background:#151923;border:1px solid #272d3a;border-radius:14px;padding:18px;margin-top:16px}label{display:block;margin:10px 0 6px}input,select,button{width:100%;box-sizing:border-box;padding:10px;border-radius:9px;border:1px solid #343b4a;background:#0f131b;color:#eee}button{cursor:pointer;background:#242b3a}.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}.status{margin-top:12px;padding:10px;border-radius:9px}.ok{background:#102417}.err{background:#30161a}.transcript{min-height:90px;white-space:pre-wrap;background:#0b0e13;padding:12px;border-radius:9px}small{color:#8f98a8}</style></head><body>
+<h1>VoiceChanger</h1><div class='sub'>Local OpenVoice V2 ONNX + Deepgram live speech</div>
+<div class='card'><label>Deepgram API key</label><input id='dg' type='password' placeholder='Paste your Deepgram API key'><button id='save'>Save key</button><label>Voice reference WAV</label><input id='ref' type='file' accept='audio/wav,audio/*'><div class='row'><div><label>Windows voice</label><select id='voice'></select></div><div><label>Clone tau</label><input id='tau' type='number' min='.2' max='1.2' step='.1' value='.8'></div></div><small>Speak continuously. Responses are generated from each finalized speech segment instead of waiting for a long pause.</small></div>
+<div class='card'><button id='start'>Start live voice</button><button id='stop' disabled>Stop</button><div id='status' class='status ok'>Ready.</div><label>Live transcript</label><div id='transcript' class='transcript'></div><audio id='player' controls></audio></div>
 <script>
-const $=id=>document.getElementById(id);let ws=null,stream=null,ctx=null,src=null,proc=null,working=false;
+const $=id=>document.getElementById(id);let ws=null,stream=null,ctx=null,src=null,proc=null,stopped=false;
+const pending=[];let active=0;const MAX_WORKERS=2;let playQueue=[];let playing=false;let segmentId=0;
 function st(t,e=false){$('status').textContent=t;$('status').className='status '+(e?'err':'ok')}
-$('dg').value=localStorage.getItem('vc.dg')||'';
-$('save').onclick=()=>{localStorage.setItem('vc.dg',$('dg').value.trim());st('Deepgram key saved.')};
+$('dg').value=localStorage.getItem('vc.dg')||'';$('save').onclick=()=>{localStorage.setItem('vc.dg',$('dg').value.trim());st('Deepgram key saved.')};
 async function init(){try{const r=await fetch('/api/models');const j=await r.json();st(j.ready?'Local OpenVoice models ready.':'Models will download automatically on first voice reply.');const v=await fetch('/api/voices');const x=await v.json();$('voice').innerHTML=(x.voices||[]).map(n=>`<option>${n}</option>`).join('')}catch(e){st(e.message,true)}}init();
-async function wavFromFile(file){const ab=await file.arrayBuffer();const ac=new AudioContext();const b=await ac.decodeAudioData(ab);const n=b.length, ch=b.numberOfChannels, out=new Float32Array(n);for(let c=0;c<ch;c++){const d=b.getChannelData(c);for(let i=0;i<n;i++)out[i]+=d[i]/ch}const rate=22050,m=Math.max(1,Math.round(n*rate/b.sampleRate)),y=new Float32Array(m);for(let i=0;i<m;i++){const p=i*b.sampleRate/rate,a=Math.min(n-1,Math.floor(p)),q=Math.min(n-1,a+1),f=p-a;y[i]=out[a]*(1-f)+out[q]*f}const buf=new ArrayBuffer(44+m*2),dv=new DataView(buf);const ws=(o,s)=>{for(let i=0;i<s.length;i++)dv.setUint8(o+i,s.charCodeAt(i))};ws(0,'RIFF');dv.setUint32(4,36+m*2,true);ws(8,'WAVE');ws(12,'fmt ');dv.setUint32(16,16,true);dv.setUint16(20,1,true);dv.setUint16(22,1,true);dv.setUint32(24,rate,true);dv.setUint32(28,rate*2,true);dv.setUint16(32,2,true);dv.setUint16(34,16,true);ws(36,'data');dv.setUint32(40,m*2,true);for(let i=0;i<m;i++)dv.setInt16(44+i*2,Math.max(-1,Math.min(1,y[i]))*32767,true);ac.close();return new Uint8Array(buf)}
+async function wavFromFile(file){const ab=await file.arrayBuffer();const ac=new AudioContext();const b=await ac.decodeAudioData(ab);const n=b.length,ch=b.numberOfChannels,out=new Float32Array(n);for(let c=0;c<ch;c++){const d=b.getChannelData(c);for(let i=0;i<n;i++)out[i]+=d[i]/ch}const rate=22050,m=Math.max(1,Math.round(n*rate/b.sampleRate)),y=new Float32Array(m);for(let i=0;i<m;i++){const p=i*b.sampleRate/rate,a=Math.min(n-1,Math.floor(p)),q=Math.min(n-1,a+1),f=p-a;y[i]=out[a]*(1-f)+out[q]*f}const buf=new ArrayBuffer(44+m*2),dv=new DataView(buf),ws=(o,s)=>{for(let i=0;i<s.length;i++)dv.setUint8(o+i,s.charCodeAt(i))};ws(0,'RIFF');dv.setUint32(4,36+m*2,true);ws(8,'WAVE');ws(12,'fmt ');dv.setUint32(16,16,true);dv.setUint16(20,1,true);dv.setUint16(22,1,true);dv.setUint32(24,rate,true);dv.setUint32(28,rate*2,true);dv.setUint16(32,2,true);dv.setUint16(34,16,true);ws(36,'data');dv.setUint32(40,m*2,true);for(let i=0;i<m;i++)dv.setInt16(44+i*2,Math.max(-1,Math.min(1,y[i]))*32767,true);ac.close();return new Uint8Array(buf)}
 function b64(a){let s='';for(let i=0;i<a.length;i+=0x8000)s+=String.fromCharCode(...a.subarray(i,i+0x8000));return btoa(s)}
-async function synth(text){if(working)return;const f=$('ref').files[0];if(!f)return st('Choose a voice reference first.',true);working=true;st('Running OpenVoice V2 locally… first run may download the ONNX models.');try{const wav=await wavFromFile(f);const r=await fetch('/api/clone',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,referenceWavBase64:b64(wav),tau:parseFloat($('tau').value)})});if(!r.ok){st(await r.text(),true);return}const blob=await r.blob();$('player').src=URL.createObjectURL(blob);await $('player').play().catch(()=>{});st('Local cloned voice ready.')}catch(e){st(e.message,true)}finally{working=false}}
-async function start(){const key=$('dg').value.trim();if(!key)return st('Enter your Deepgram API key.',true);if(!$('ref').files[0])return st('Choose a voice reference first.',true);stream=await navigator.mediaDevices.getUserMedia({audio:true});ctx=new AudioContext({sampleRate:16000});src=ctx.createMediaStreamSource(stream);proc=ctx.createScriptProcessor(4096,1,1);ws=new WebSocket('wss://api.deepgram.com/v1/listen?model=nova-3&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&smart_format=true&endpointing=400',['token',key]);ws.onopen=()=>{st('Deepgram connected — speak now.');$('start').disabled=true;$('stop').disabled=false};ws.onmessage=e=>{let d;try{d=JSON.parse(e.data)}catch{return}const t=d.channel?.alternatives?.[0]?.transcript||'';if(t)$('transcript').textContent=t;if(t&&d.is_final&&d.speech_final)synth(t)};ws.onerror=()=>st('Deepgram connection error.',true);ws.onclose=()=>{$('start').disabled=false;$('stop').disabled=true};proc.onaudioprocess=e=>{if(ws?.readyState!==1)return;const f=e.inputBuffer.getChannelData(0),b=new ArrayBuffer(f.length*2),v=new DataView(b);for(let i=0;i<f.length;i++){let s=Math.max(-1,Math.min(1,f[i]));v.setInt16(i*2,s<0?s*32768:s*32767,true)}ws.send(b)};src.connect(proc);proc.connect(ctx.destination)}
-function stop(){try{ws?.send(JSON.stringify({type:'Finalize'}));ws?.close();proc?.disconnect();src?.disconnect();stream?.getTracks().forEach(t=>t.stop());ctx?.close()}catch{}$('start').disabled=false;$('stop').disabled=true;st('Stopped.')}
+async function makeVoice(text,id){const f=$('ref').files[0];if(!f||stopped)return;try{const wav=await wavFromFile(f);const r=await fetch('/api/clone',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,referenceWavBase64:b64(wav),tau:parseFloat($('tau').value)})});if(!r.ok){st(await r.text(),true);return}const blob=await r.blob();playQueue.push({blob,id});pumpPlayback();st('Voice response ready.')}catch(e){st(e.message,true)}}
+async function worker(){while(!stopped){const item=pending.shift();if(!item)return;active++;try{await makeVoice(item.text,item.id)}finally{active--;drain()}}}
+function drain(){while(active<MAX_WORKERS&&pending.length)worker()}
+async function pumpPlayback(){if(playing)return;const item=playQueue.shift();if(!item)return;playing=true;try{$('player').src=URL.createObjectURL(item.blob);await $('player').play().catch(()=>{});await new Promise(resolve=>{$('player').onended=resolve})}finally{playing=false;pumpPlayback()}}
+function enqueue(text){text=(text||'').trim();if(text.length<2)return;pending.push({text,id:++segmentId});drain();}
+async function start(){const key=$('dg').value.trim();if(!key)return st('Enter your Deepgram API key.',true);if(!$('ref').files[0])return st('Choose a voice reference first.',true);stopped=false;pending.length=0;playQueue.length=0;stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});ctx=new AudioContext({sampleRate:16000});await ctx.resume();src=ctx.createMediaStreamSource(stream);proc=ctx.createScriptProcessor(2048,1,1);ws=new WebSocket('wss://api.deepgram.com/v1/listen?model=nova-3&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&smart_format=true&endpointing=150',['token',key]);ws.onopen=()=>{st('Deepgram connected — speak continuously.');$('start').disabled=true;$('stop').disabled=false};ws.onmessage=e=>{let d;try{d=JSON.parse(e.data)}catch{return}const t=d.channel?.alternatives?.[0]?.transcript||'';if(t)$('transcript').textContent=t;if(t&&d.is_final)enqueue(t)};ws.onerror=()=>st('Deepgram connection error.',true);ws.onclose=()=>{$('start').disabled=false;$('stop').disabled=true};proc.onaudioprocess=e=>{if(ws?.readyState!==1)return;const f=e.inputBuffer.getChannelData(0),b=new ArrayBuffer(f.length*2),v=new DataView(b);for(let i=0;i<f.length;i++){let s=Math.max(-1,Math.min(1,f[i]));v.setInt16(i*2,s<0?s*32768:s*32767,true)}ws.send(b)};src.connect(proc);proc.connect(ctx.destination)}
+function stop(){stopped=true;pending.length=0;try{ws?.send(JSON.stringify({type:'Finalize'}));ws?.close();proc?.disconnect();src?.disconnect();stream?.getTracks().forEach(t=>t.stop());ctx?.close()}catch{}$('start').disabled=false;$('stop').disabled=true;st('Stopped.')}
 $('start').onclick=start;$('stop').onclick=stop;
 </script></body></html>
 """;
