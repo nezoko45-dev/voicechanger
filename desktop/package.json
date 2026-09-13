@@ -1,51 +1,24 @@
 {
   "name": "voicechanger-desktop",
-  "version": "2.3.1",
+  "version": "2.4.0",
   "private": true,
-  "description": "Windows desktop STT/TTS VoiceChanger with Deepgram STT, Pocket TTS voice cloning, and Magic Mic virtual audio",
+  "description": "Windows desktop VoiceChanger with Deepgram STT, F5-TTS voice cloning, and Magic Mic virtual audio",
   "main": "main.cjs",
-  "scripts": {
-    "start": "electron .",
-    "build": "electron-builder --win portable"
-  },
-  "dependencies": {
-    "ws": "^8.18.3"
-  },
-  "devDependencies": {
-    "electron": "^44.0.0",
-    "electron-builder": "^26.0.12"
-  },
+  "scripts": {"start":"electron .","build":"electron-builder --win portable"},
+  "dependencies": {"ws":"^8.18.3"},
+  "devDependencies": {"electron":"^44.0.0","electron-builder":"^26.0.12"},
   "build": {
-    "appId": "dev.nezoko45.voicechanger",
-    "productName": "VoiceChanger Desktop",
-    "artifactName": "VoiceChanger-Desktop-${version}-${arch}.${ext}",
-    "asar": true,
-    "files": [
-      "main.cjs",
-      "preload.cjs",
-      "deepgram-proxy.cjs",
-      "package.json"
+    "appId":"dev.nezoko45.voicechanger",
+    "productName":"VoiceChanger Desktop",
+    "artifactName":"VoiceChanger-Desktop-${version}-${arch}.${ext}",
+    "asar":true,
+    "files":["main.cjs","preload.cjs","deepgram-proxy.cjs","package.json"],
+    "extraResources":[
+      {"from":"../web/dist","to":"web"},
+      {"from":"../f5tts/dist/f5tts-engine.exe","to":"f5tts/f5tts-engine.exe"},
+      {"from":"driver","to":"driver"}
     ],
-    "extraResources": [
-      {
-        "from": "../web/dist",
-        "to": "web"
-      },
-      {
-        "from": "driver",
-        "to": "driver"
-      }
-    ],
-    "directories": {
-      "output": "dist"
-    },
-    "win": {
-      "target": [
-        {
-          "target": "portable",
-          "arch": ["x64"]
-        }
-      ]
-    }
+    "directories":{"output":"dist"},
+    "win":{"target":[{"target":"portable","arch":["x64"]}]}
   }
 }
