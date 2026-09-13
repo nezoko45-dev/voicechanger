@@ -28,24 +28,29 @@ internal static class Program
     {
         Directory.CreateDirectory(ModelDir);
         Port = GetFreePort();
-        using var listener = new HttpListener();
+        var listener = new HttpListener();
         listener.Prefixes.Add($"http://127.0.0.1:{Port}/");
         listener.Start();
         var url = $"http://127.0.0.1:{Port}/";
-        _ = Task.Run(async () =>
-        {
-            while (listener.IsListening)
-            {
-                try
-                {
-                    var ctx = await listener.GetContextAsync();
-                    _ = Task.Run(() => Handle(ctx));
-                }
-                catch { break; }
-            }
-        });
+        ListenAsync(listener);
         LaunchBrowser(url);
         Application.Run(new System.Windows.Forms.ApplicationContext());
+    }
+
+    private static async Task ListenAsync(HttpListener listener)
+    {
+        while (listener.IsListening)
+        {
+            try
+            {
+                var ctx = await listener.GetContextAsync();
+                _ = Task.Run(() => Handle(ctx));
+            }
+            catch
+            {
+                break;
+            }
+        }
     }
 
     private static int GetFreePort()
@@ -114,12 +119,14 @@ internal static class Program
         var path = Path.Combine(Path.GetTempPath(), "vc_" + Guid.NewGuid().ToString("N") + ".wav");
         try
         {
-            using var synth = new SpeechSynthesizer();
-            synth.Rate = 0;
-            synth.Volume = 100;
-            synth.SetOutputToWaveFile(path);
-            synth.Speak(text);
-            synth.SetOutputToNull();
+            using (var synth = new SpeechSynthesizer())
+            {
+                synth.Rate = 0;
+                synth.Volume = 100;
+                synth.SetOutputToWaveFile(path);
+                synth.Speak(text);
+                synth.SetOutputToNull();
+            }
             return File.ReadAllBytes(path);
         }
         finally { try { File.Delete(path); } catch { } }
@@ -144,11 +151,22 @@ internal static class Program
     {
         using var response = Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead).GetAwaiter().GetResult();
         response.EnsureSuccessStatusCode();
-        using var input = response.Content.ReadAsStream();
-        using var output = File.Create(path + ".part");
-        input.CopyTo(output);
-        output.Flush();
-        File.Move(path + ".part", path, true);
+        var part = path + ".part";
+        try
+        {
+            if (File.Exists(part)) File.Delete(part);
+            using (var input = response.Content.ReadAsStream())
+            using (var output = File.Create(part))
+            {
+                input.CopyTo(output);
+                output.Flush(true);
+            }
+            File.Move(part, path, true);
+        }
+        finally
+        {
+            try { if (File.Exists(part)) File.Delete(part); } catch { }
+        }
     }
 
     private static float[] ExtractEmbedding(float[] samples)
@@ -215,7 +233,18 @@ internal static class Program
     private static void FFT(double[] re, double[] im)
     {
         var n = re.Length;
-        for (var i = 1, j = 0; i < n; i++) { var bit = n >> 1; for (; (j & bit) != 0; bit >>= 1) j ^= bit; j ^= bit; if (i < j) { (re[i], re[j]) = (re[j], re[i]); (im[i], im[j]) = (im[j], im[i]); } }
+        var j0 = 0;
+        for (var i = 1; i < n; i++)
+        {
+            var bit = n >> 1;
+            for (; (j0 & bit) != 0; bit >>= 1) j0 ^= bit;
+            j0 ^= bit;
+            if (i < j0)
+            {
+                (re[i], re[j0]) = (re[j0], re[i]);
+                (im[i], im[j0]) = (im[j0], im[i]);
+            }
+        }
         for (var len = 2; len <= n; len <<= 1)
         {
             var ang = -2 * Math.PI / len; var wr0 = Math.Cos(ang); var wi0 = Math.Sin(ang);
