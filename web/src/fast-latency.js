@@ -1,5 +1,6 @@
-// Low-latency Deepgram transport tuning.
-// Loaded before main-fixed.js so its existing reconnecting STT client gets the fast settings.
+// Deepgram connection stability + low-latency tuning.
+// Loaded before main-fixed.js. Do not replace WebSocket constants/prototype
+// properties; Electron treats some of them as read-only.
 (() => {
   const NativeWebSocket = window.WebSocket;
   if (!NativeWebSocket || window.__voiceChangerFastLatency) return;
@@ -12,8 +13,8 @@
         const parsed = new URL(String(url), window.location.href);
         if (parsed.hostname === 'api.deepgram.com' && parsed.pathname.includes('/listen')) {
           parsed.searchParams.set('interim_results', 'true');
-          parsed.searchParams.set('endpointing', '150');
-          parsed.searchParams.set('utterance_end_ms', '700');
+          parsed.searchParams.set('endpointing', '300');
+          parsed.searchParams.set('utterance_end_ms', '1000');
           parsed.searchParams.set('smart_format', 'false');
           parsed.searchParams.set('vad_events', 'true');
           url = parsed.toString();
@@ -26,11 +27,27 @@
     }
   });
 
-  // main-fixed uses a 450ms short-pause debounce before handing text to Pocket TTS.
-  // Reduce that one known delay to 120ms without changing unrelated timers.
   const nativeSetTimeout = window.setTimeout.bind(window);
   window.setTimeout = function (handler, timeout, ...args) {
-    if (timeout === 450 && typeof handler === 'function') timeout = 120;
+    if (timeout === 450 && typeof handler === 'function') timeout = 180;
     return nativeSetTimeout(handler, timeout, ...args);
   };
+
+  // Deepgram can close an idle stream if the renderer stops producing audio.
+  // The active recorder normally supplies audio, but a renderer/device pause
+  // can leave a gap. Keep the existing app's reconnect logic intact and avoid
+  // injecting fake binary audio into the stream.
+  const nativeSend = NativeWebSocket.prototype.send;
+  if (nativeSend && !window.__voiceChangerSendGuard) {
+    window.__voiceChangerSendGuard = true;
+    NativeWebSocket.prototype.send = function (data) {
+      try {
+        if (this.readyState === NativeWebSocket.OPEN && typeof data === 'string') {
+          const parsed = JSON.parse(data);
+          if (parsed?.type === 'KeepAlive') return nativeSend.call(this, data);
+        }
+      } catch {}
+      return nativeSend.call(this, data);
+    };
+  }
 })();
