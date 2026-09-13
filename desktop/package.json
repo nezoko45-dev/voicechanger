@@ -1,8 +1,8 @@
 {
   "name": "voicechanger-desktop",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "private": true,
-  "description": "Windows desktop VoiceChanger with Deepgram STT, F5-TTS voice cloning, and Magic Mic virtual audio",
+  "description": "Windows desktop VoiceChanger with Deepgram STT, OpenVoice V2 local voice cloning, and Magic Mic virtual audio",
   "main": "main.cjs",
   "scripts": {"start":"electron .","build":"electron-builder --win portable"},
   "dependencies": {"ws":"^8.18.3"},
@@ -15,7 +15,7 @@
     "files":["main.cjs","preload.cjs","deepgram-proxy.cjs","package.json"],
     "extraResources":[
       {"from":"../web/dist","to":"web"},
-      {"from":"../f5tts/dist/f5tts-engine.exe","to":"f5tts/f5tts-engine.exe"},
+      {"from":"../openvoice/dist/openvoice-engine.exe","to":"openvoice/openvoice-engine.exe"},
       {"from":"driver","to":"driver"}
     ],
     "directories":{"output":"dist"},
