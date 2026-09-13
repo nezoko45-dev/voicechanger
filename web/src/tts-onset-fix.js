@@ -1,8 +1,9 @@
 import { PocketTTS } from "pocket-tts-js";
 
-// Low-latency, anti-stutter Pocket TTS bridge.
-// Keep a tiny startup buffer so playback begins quickly but has enough audio
-// queued to remain continuous when inference delivers chunks unevenly.
+// Smooth full-utterance Pocket TTS playback.
+// Do not expose individual inference chunks to the audio scheduler. Collect the
+// complete sentence, join it into one PCM buffer, then hand it off as one
+// continuous audio stream. This removes chunk-boundary gaps and stuttering.
 const originalGenerate = PocketTTS.prototype.generate;
 
 function toFloat32(audio) {
@@ -31,41 +32,40 @@ PocketTTS.prototype.generate = function (text, options = {}) {
   if (typeof options?.onChunk !== "function") return originalGenerate.call(this, text, options);
 
   const userOnChunk = options.onChunk;
-  const sampleRate = Number(this.sampleRate) || 24000;
-  // ~120 ms is a small startup buffer: fast response without exposing
-  // normal Pocket TTS inference jitter as audible gaps.
-  const startupSamples = Math.round(sampleRate * 0.12);
-  let firstChunk = true;
-  let started = false;
-  let buffered = [];
-  let bufferedSamples = 0;
+  const parts = [];
+  let totalSamples = 0;
 
-  const emit = (samples) => {
-    if (!samples?.length) return;
-    try {
-      if (firstChunk) {
-        const count = Math.min(Math.round(sampleRate * 0.002), Math.floor(samples.length / 2));
-        for (let i = 0; i < count; i++) samples[i] *= (i + 1) / Math.max(1, count);
-        firstChunk = false;
-      }
-      userOnChunk(samples);
-    } catch {
-      // Never let a bad audio callback crash the Electron renderer.
-    }
-  };
+  const finish = () => {
+    if (!totalSamples) return;
 
-  const flushBuffered = () => {
-    if (!bufferedSamples) return;
-    const joined = new Float32Array(bufferedSamples);
+    const joined = new Float32Array(totalSamples);
     let offset = 0;
-    for (const part of buffered) {
+    for (const part of parts) {
       joined.set(part, offset);
       offset += part.length;
     }
-    buffered = [];
-    bufferedSamples = 0;
-    started = true;
-    emit(joined);
+
+    parts.length = 0;
+    totalSamples = 0;
+
+    // Tiny edge fades prevent clicks while preserving the complete sentence.
+    const sampleRate = Number(this.sampleRate) || 24000;
+    const fadeSamples = Math.min(
+      Math.round(sampleRate * 0.003),
+      Math.floor(joined.length / 2)
+    );
+    for (let i = 0; i < fadeSamples; i++) {
+      const gain = (i + 1) / Math.max(1, fadeSamples);
+      joined[i] *= gain;
+      joined[joined.length - 1 - i] *= gain;
+    }
+
+    try {
+      // One callback for the complete generated sentence.
+      userOnChunk(joined);
+    } catch {
+      // Never let the audio callback crash the renderer.
+    }
   };
 
   const wrappedOptions = {
@@ -74,34 +74,33 @@ PocketTTS.prototype.generate = function (text, options = {}) {
       try {
         const samples = toFloat32(audio);
         if (!samples?.length) return;
-        const clean = sanitize(samples);
-
-        if (!started) {
-          buffered.push(clean);
-          bufferedSamples += clean.length;
-          if (bufferedSamples >= startupSamples) flushBuffered();
-          return;
-        }
-
-        // After startup, forward chunks immediately. main-fixed.js schedules
-        // them on one continuous audio timeline to avoid chunk boundaries.
-        emit(clean);
+        parts.push(sanitize(samples));
+        totalSamples += samples.length;
       } catch {
-        // Ignore malformed individual chunks instead of crashing Electron.
+        // Ignore malformed inference chunks.
       }
     }
   };
 
   const result = originalGenerate.call(this, text, wrappedOptions);
 
-  // Flush very short utterances when generation completes so their audio is
-  // never stranded waiting for the startup threshold.
+  // Wait for Pocket TTS generation to finish, then send the sentence as one
+  // contiguous PCM buffer. This deliberately trades a little startup latency
+  // for smooth, uninterrupted full-sentence speech.
   if (result && typeof result.then === "function") {
-    return result.finally(() => {
-      if (!started) flushBuffered();
-    });
+    return result.then(
+      (value) => {
+        finish();
+        return value;
+      },
+      (error) => {
+        parts.length = 0;
+        totalSamples = 0;
+        throw error;
+      }
+    );
   }
 
-  if (!started) flushBuffered();
+  finish();
   return result;
 };
