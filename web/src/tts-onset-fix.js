@@ -1,10 +1,12 @@
-import { PocketTTS } from "pocket-tts-js";
+import { PocketTTS, chunksToWavBlob } from "pocket-tts-js";
 
 // Smooth full-utterance Pocket TTS playback.
-// Do not expose individual inference chunks to the audio scheduler. Collect the
-// complete sentence, join it into one PCM buffer, then hand it off as one
-// continuous audio stream. This removes chunk-boundary gaps and stuttering.
+// Conversion speech is routed through one HTMLAudioElement so the selected
+// Windows output device is actually honored. This avoids AudioContext.destination,
+// which always follows the default system output in the current Electron build.
 const originalGenerate = PocketTTS.prototype.generate;
+let selectedOutputAudio = null;
+let selectedOutputUrl = null;
 
 function toFloat32(audio) {
   if (audio instanceof Float32Array) return audio;
@@ -28,14 +30,73 @@ function sanitize(samples) {
   return samples;
 }
 
+function selectedDevice() {
+  return document.getElementById("outputDevice")?.value || "default";
+}
+
+async function playOnSelectedOutput(samples, sampleRate) {
+  if (!samples?.length) return;
+
+  if (selectedOutputAudio) {
+    try { selectedOutputAudio.pause(); } catch {}
+    selectedOutputAudio.removeAttribute("src");
+    try { selectedOutputAudio.load(); } catch {}
+  }
+  if (selectedOutputUrl) {
+    URL.revokeObjectURL(selectedOutputUrl);
+    selectedOutputUrl = null;
+  }
+
+  const blob = chunksToWavBlob([samples], sampleRate);
+  selectedOutputUrl = URL.createObjectURL(blob);
+  const audio = new Audio();
+  selectedOutputAudio = audio;
+  audio.preload = "auto";
+
+  const wanted = selectedDevice();
+  if (typeof audio.setSinkId === "function") {
+    try {
+      await audio.setSinkId(wanted);
+      const select = document.getElementById("outputDevice");
+      const label = select?.selectedOptions?.[0]?.text || wanted;
+      const logBox = document.getElementById("log");
+      if (logBox) logBox.textContent = `${new Date().toLocaleTimeString()} — Conversion output routed to: ${label}\n${logBox.textContent}`;
+    } catch (e) {
+      const logBox = document.getElementById("log");
+      if (logBox) logBox.textContent = `${new Date().toLocaleTimeString()} — OUTPUT DEVICE FAILED: ${e.message}\n${logBox.textContent}`;
+    }
+  }
+
+  await new Promise((resolve, reject) => {
+    let settled = false;
+    const done = (error) => {
+      if (settled) return;
+      settled = true;
+      audio.onended = null;
+      audio.onerror = null;
+      if (selectedOutputAudio === audio) selectedOutputAudio = null;
+      if (selectedOutputUrl) {
+        URL.revokeObjectURL(selectedOutputUrl);
+        selectedOutputUrl = null;
+      }
+      if (error) reject(error); else resolve();
+    };
+    audio.onended = () => done();
+    audio.onerror = () => done(new Error("Selected output audio playback failed."));
+    audio.src = selectedOutputUrl;
+    audio.play().catch(done);
+  });
+}
+
 PocketTTS.prototype.generate = function (text, options = {}) {
   if (typeof options?.onChunk !== "function") return originalGenerate.call(this, text, options);
 
   const userOnChunk = options.onChunk;
+  const routeToSelectedOutput = options.outputToSelectedDevice === true;
   const parts = [];
   let totalSamples = 0;
 
-  const finish = () => {
+  const finish = async () => {
     if (!totalSamples) return;
 
     const joined = new Float32Array(totalSamples);
@@ -58,6 +119,13 @@ PocketTTS.prototype.generate = function (text, options = {}) {
       const gain = (i + 1) / Math.max(1, fadeSamples);
       joined[i] *= gain;
       joined[joined.length - 1 - i] *= gain;
+    }
+
+    if (routeToSelectedOutput) {
+      // Play the complete sentence through HTMLAudioElement.setSinkId so the
+      // user's selected VoiceMeeter/Magic Mic/Windows output is respected.
+      await playOnSelectedOutput(joined, sampleRate);
+      return;
     }
 
     try {
@@ -84,13 +152,10 @@ PocketTTS.prototype.generate = function (text, options = {}) {
 
   const result = originalGenerate.call(this, text, wrappedOptions);
 
-  // Wait for Pocket TTS generation to finish, then send the sentence as one
-  // contiguous PCM buffer. This deliberately trades a little startup latency
-  // for smooth, uninterrupted full-sentence speech.
   if (result && typeof result.then === "function") {
     return result.then(
-      (value) => {
-        finish();
+      async (value) => {
+        await finish();
         return value;
       },
       (error) => {
@@ -101,6 +166,5 @@ PocketTTS.prototype.generate = function (text, options = {}) {
     );
   }
 
-  finish();
-  return result;
+  return finish().then(() => result);
 };
