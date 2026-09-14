@@ -1,0 +1,63 @@
+name: Build VoiceChanger Echo
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'echo/**'
+      - 'openvoice/**'
+      - '.github/workflows/build-echo.yml'
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install OpenVoice build dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch==2.1.2+cpu torchvision==0.16.2+cpu torchaudio==2.1.2+cpu --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r openvoice/requirements.txt
+          python -m pip install pyinstaller
+      - name: Build OpenVoice engine EXE
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onefile --name openvoice-engine openvoice/engine.py
+      - name: Build echo backend EXE
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onefile --name VoiceChangerEchoBackend echo/backend.py
+      - name: Assemble Chrome package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release/VoiceChanger-Echo | Out-Null
+          Copy-Item echo/index.html release/VoiceChanger-Echo/index.html
+          Copy-Item dist/VoiceChangerEchoBackend.exe release/VoiceChanger-Echo/VoiceChangerEchoBackend.exe
+          Copy-Item dist/openvoice-engine.exe release/VoiceChanger-Echo/openvoice-engine.exe
+          @'
+          @echo off
+          cd /d "%~dp0"
+          start "VoiceChanger Echo Backend" VoiceChangerEchoBackend.exe
+          timeout /t 2 /nobreak >nul
+          start "VoiceChanger Echo UI" chrome.exe "%~dp0index.html"
+          if errorlevel 1 start "VoiceChanger Echo UI" msedge.exe "%~dp0index.html"
+          '@ | Set-Content -Encoding ASCII release/VoiceChanger-Echo/START-VOICECHANGER.bat
+          @'
+          VoiceChanger Echo
+          1. Run START-VOICECHANGER.bat.
+          2. Paste your Deepgram API key into the Chrome page.
+          3. Choose a voice sample you own or have permission to clone.
+          4. Press Start echo and speak.
+          5. Deepgram transcribes each final phrase; OpenVoice V2 generates the same phrase in the selected cloned voice and the browser plays it.
+          First OpenVoice generation can take longer because the V2 model is downloaded/cached locally.
+          '@ | Set-Content -Encoding UTF8 release/VoiceChanger-Echo/README.txt
+      - name: Zip release
+        shell: pwsh
+        run: Compress-Archive -Path release/VoiceChanger-Echo -DestinationPath release/VoiceChanger-Echo-Windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VoiceChanger-Echo-Windows
+          path: release/VoiceChanger-Echo-Windows.zip
