@@ -1,7 +1,8 @@
 const $=id=>document.getElementById(id);
 const mic=$("mic"),out=$("out"),voice=$("voice"),load=$("load"),start=$("start"),stop=$("stop");
 const cable=$("cable"),refresh=$("refresh"),status=$("status"),msg=$("msg"),deepgramKey=$("deepgramKey");
-let ws=null,sourceWs=null,running=false,cableId=null,backendReadyResolve=null,backendReadyReject=null;
+let ws=null,sourceWs=null,running=false,cableId=null;
+let backendReadyResolve=null,backendReadyReject=null;
 let stream=null,ctx=null,source=null,worklet=null,capturing=false;
 const RATE=48000,CHUNK=960;
 const say=x=>msg.textContent=x;
@@ -32,7 +33,8 @@ async function devices(){
     if([...mic.options].some(x=>x.value===keepMic))mic.value=keepMic;
     if([...out.options].some(x=>x.value===keepOut))out.value=keepOut;
     if(cableId!==null)out.value=cableId;
-    cable.disabled=cableId===null;cable.textContent=cableId===null?"VB-CABLE not detected":"Use VB-CABLE";
+    cable.disabled=cableId===null;
+    cable.textContent=cableId===null?"VB-CABLE not detected":"Use VB-CABLE";
     say(cableId===null?"WASAPI ready.":"VB-CABLE detected. Select it as the output for VRChat/Discord routing.");
   }catch(e){say("Audio device error: "+e.message)}
 }
@@ -50,45 +52,74 @@ async function makeWorklet(){
     "constructor(){super();this.buf=new Float32Array("+CHUNK+");this.used=0}",
     "process(inputs){const input=inputs[0]&&inputs[0][0];if(!input)return true;let p=0;",
     "while(p<input.length){const n=Math.min(input.length-p,this.buf.length-this.used);this.buf.set(input.subarray(p,p+n),this.used);this.used+=n;p+=n;",
-    "if(this.used===this.buf.length){this.port.postMessage(this.buf.slice(0));this.used=0}}return true}",
+    "if(this.used===this.buf.length){const out=this.buf.slice();this.port.postMessage(out,[out.buffer]);this.used=0}}return true}",
     "}registerProcessor('voicechanger-capture',CaptureProcessor);"
   ].join("\n");
-  const url=URL.createObjectURL(new Blob([code],{type:"application/javascript"}));await ctx.audioWorklet.addModule(url);URL.revokeObjectURL(url);
+  const url=URL.createObjectURL(new Blob([code],{type:"application/javascript"}));
+  await ctx.audioWorklet.addModule(url);URL.revokeObjectURL(url);
 }
 function floatToPcm16(x){
   const b=new ArrayBuffer(x.length*2),v=new DataView(b);
-  for(let i=0;i<x.length;i++){const n=Math.max(-1,Math.min(1,x[i]));v.setInt16(i*2,n<0?n*32768:n*32767,true)}return b;
+  for(let i=0;i<x.length;i++){const n=Math.max(-1,Math.min(1,x[i]));v.setInt16(i*2,n<0?n*32768:n*32767,true)}
+  return b;
 }
 async function stopCapture(){
-  capturing=false;try{worklet?.disconnect()}catch{}try{source?.disconnect()}catch{}try{await ctx?.close()}catch{}
-  stream?.getTracks().forEach(t=>t.stop());worklet=null;source=null;ctx=null;stream=null;
+  capturing=false;
+  try{worklet?.disconnect()}catch{}
+  try{source?.disconnect()}catch{}
+  try{await ctx?.close()}catch{}
+  stream?.getTracks().forEach(t=>t.stop());
+  worklet=null;source=null;ctx=null;stream=null;
 }
 async function startCapture(deviceName){
-  await stopCapture();await requestMicPermission();
+  await stopCapture();
+  await requestMicPermission();
   const list=await navigator.mediaDevices.enumerateDevices(),chosen=chooseElectronDevice(list,deviceName);
   if(!chosen)throw Error("No microphone was found by Electron.");
   stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:{exact:chosen.deviceId},channelCount:{ideal:1,max:1},sampleRate:{ideal:RATE},sampleSize:{ideal:16},echoCancellation:false,noiseSuppression:false,autoGainControl:false},video:false});
-  ctx=new AudioContext({sampleRate:RATE,latencyHint:"interactive"});await ctx.resume();await makeWorklet();
-  source=ctx.createMediaStreamSource(stream);worklet=new AudioWorkletNode(ctx,"voicechanger-capture",{numberOfInputs:1,numberOfOutputs:0});
-  worklet.port.onmessage=e=>{if(capturing&&sourceWs?.readyState===WebSocket.OPEN)sourceWs.send(floatToPcm16(e.data))};
-  source.connect(worklet);capturing=true;setStatus("Electron microphone active • "+(chosen.label||deviceName||"default"));
+  ctx=new AudioContext({sampleRate:RATE,latencyHint:"interactive"});
+  await ctx.resume();await makeWorklet();
+  source=ctx.createMediaStreamSource(stream);
+  worklet=new AudioWorkletNode(ctx,"voicechanger-capture",{numberOfInputs:1,numberOfOutputs:0});
+  worklet.port.onmessage=e=>{
+    if(capturing&&sourceWs?.readyState===WebSocket.OPEN)sourceWs.send(floatToPcm16(new Float32Array(e.data)));
+  };
+  source.connect(worklet);capturing=true;
+  setStatus("Electron microphone active • "+(chosen.label||deviceName||"default"));
 }
 function connectSource(){
   return new Promise((resolve,reject)=>{
     sourceWs=new WebSocket("ws://127.0.0.1:8765/source");sourceWs.binaryType="arraybuffer";
-    sourceWs.onopen=resolve;sourceWs.onerror=()=>reject(Error("Electron audio connection failed."));
+    sourceWs.onopen=resolve;
+    sourceWs.onerror=()=>reject(Error("Electron audio connection failed."));
     sourceWs.onclose=()=>{void stopCapture();if(running)say("Electron audio disconnected.")};
   });
 }
 function connectBackend(){
   return new Promise((resolve,reject)=>{
-    ws=new WebSocket("ws://127.0.0.1:8765/audio");ws.onopen=resolve;ws.onerror=()=>reject(Error("Backend connection failed."));
-    ws.onmessage=e=>{try{
-      const m=JSON.parse(e.data);
-      if(m.type==="status"){say(m.text);if(m.text.includes("Deepgram STT connected")){backendReadyResolve?.();backendReadyResolve=null;backendReadyReject=null}}
-      if(m.type==="error"){say("Backend: "+m.error);backendReadyReject?.(Error(m.error));backendReadyResolve=null;backendReadyReject=null}
-    }catch{}};
-    ws.onclose=()=>{backendReadyReject?.(Error("Backend connection closed."));backendReadyResolve=null;backendReadyReject=null;running=false;start.disabled=false;stop.disabled=true;void stopCapture()};
+    ws=new WebSocket("ws://127.0.0.1:8765/audio");
+    ws.onopen=resolve;
+    ws.onerror=()=>reject(Error("Backend connection failed."));
+    ws.onmessage=e=>{
+      try{
+        const m=JSON.parse(e.data);
+        if(m.type==="status"){
+          say(m.text);
+          if(m.text.includes("Deepgram STT connected")){
+            backendReadyResolve?.();backendReadyResolve=null;backendReadyReject=null;
+          }
+        }
+        if(m.type==="error"){
+          say("Backend: "+m.error);
+          backendReadyReject?.(Error(m.error));backendReadyResolve=null;backendReadyReject=null;
+        }
+      }catch{}
+    };
+    ws.onclose=()=>{
+      backendReadyReject?.(Error("Backend connection closed."));
+      backendReadyResolve=null;backendReadyReject=null;
+      running=false;start.disabled=false;stop.disabled=true;void stopCapture();
+    };
   });
 }
 function waitForBackendReady(){
@@ -97,27 +128,55 @@ function waitForBackendReady(){
   });
 }
 load.onclick=async()=>{
-  const f=voice.files[0];if(!f){say("Choose a WAV first.");return}load.disabled=true;say("Loading reference voice...");
-  try{const b=new Uint8Array(await f.arrayBuffer());let s="";for(let i=0;i<b.length;i+=32768)s+=String.fromCharCode(...b.subarray(i,i+32768));
-    const r=await fetch("/target",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({wav:btoa(s)})}),j=await r.json();
-    if(!j.ok)throw Error(j.error);say("Reference voice loaded.");await health();
-  }catch(e){say("Voice load failed: "+e.message)}finally{load.disabled=false}
+  const f=voice.files[0];
+  if(!f){say("Choose a WAV first.");return}
+  load.disabled=true;say("Loading reference voice...");
+  try{
+    const b=new Uint8Array(await f.arrayBuffer());let s="";
+    for(let i=0;i<b.length;i+=32768)s+=String.fromCharCode(...b.subarray(i,i+32768));
+    const r=await fetch("/target",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({wav:btoa(s)})});
+    const j=await r.json();if(!j.ok)throw Error(j.error);
+    say("Reference voice loaded.");await health();
+  }catch(e){say("Voice load failed: "+e.message)}
+  finally{load.disabled=false}
 };
 start.onclick=async()=>{
   if(running)return;
   try{
-    const h=await health();if(!h?.voice){say("Load a reference WAV first.");return}
-    if(!mic.value){say("Choose a microphone.");return}if(!out.value){say("Choose an output device.");return}
-    await requestMicPermission();if(!sourceWs||sourceWs.readyState!==WebSocket.OPEN)await connectSource();if(!ws||ws.readyState!==WebSocket.OPEN)await connectBackend();
-    running=true;start.disabled=true;stop.disabled=false;
+    const h=await health();
+    if(!h?.voice){say("Load a reference WAV first.");return}
+    if(!deepgramKey.value.trim()){say("Enter your Deepgram API key first.");deepgramKey.focus();return}
+    if(!mic.value){say("Choose a microphone.");return}
+    if(!out.value){say("Choose an output device.");return}
+    if(!sourceWs||sourceWs.readyState!==WebSocket.OPEN)await connectSource();
+    if(!ws||ws.readyState!==WebSocket.OPEN)await connectBackend();
+    running=true;start.disabled=true;stop.disabled=true;
+    const ready=waitForBackendReady();
+    ws.send(JSON.stringify({type:"start",inputName:mic.options[mic.selectedIndex]?.dataset.name||"",outputId:out.value,deepgramKey:deepgramKey.value.trim()}));
+    await ready;
     await startCapture(mic.options[mic.selectedIndex]?.dataset.name||"");
-    ws.send(JSON.stringify({type:"start",inputName:mic.options[mic.selectedIndex]?.dataset.name||"",outputId:out.value}));
-  }catch(e){running=false;start.disabled=false;stop.disabled=true;say("Start failed: "+e.message);try{ws?.close()}catch{}try{sourceWs?.close()}catch{}}
+    stop.disabled=false;
+    say("Deepgram is listening • speak normally");
+  }catch(e){
+    running=false;start.disabled=false;stop.disabled=true;
+    say("Start failed: "+e.message);
+    try{ws?.close()}catch{}try{sourceWs?.close()}catch{}
+  }
 };
 stop.onclick=async()=>{
-  try{ws?.send(JSON.stringify({type:"stop"}))}catch{}await stopCapture();try{sourceWs?.close()}catch{}try{ws?.close()}catch{}
+  try{ws?.send(JSON.stringify({type:"stop"}))}catch{}
+  await stopCapture();
+  try{sourceWs?.close()}catch{}try{ws?.close()}catch{}
   running=false;start.disabled=false;stop.disabled=true;say("Stopped.");
 };
-cable.onclick=()=>{if(cableId===null){say("VB-CABLE was not detected. Install it, then Refresh devices.");return}out.value=cableId;say("VB-CABLE selected as the WASAPI output.")};
+cable.onclick=()=>{
+  if(cableId===null){say("VB-CABLE was not detected. Install it, then Refresh devices.");return}
+  out.value=cableId;say("VB-CABLE selected as the WASAPI output.");
+};
 refresh.onclick=async()=>{await health();await devices()};
-(async()=>{deepgramKey.value=localStorage.getItem("deepgramKey")||"";deepgramKey.addEventListener("input",()=>localStorage.setItem("deepgramKey",deepgramKey.value));await health();await devices();try{await connectSource()}catch{say("Electron audio is waiting for the backend...")}})();
+(async()=>{
+  deepgramKey.value=localStorage.getItem("deepgramKey")||"";
+  deepgramKey.addEventListener("input",()=>localStorage.setItem("deepgramKey",deepgramKey.value));
+  await health();await devices();
+  try{await connectSource()}catch{say("Electron audio is waiting for the backend...")}
+})();
