@@ -5,6 +5,8 @@ let running=false,voiceLoaded=false,voicemeeterId=null;
 
 const say=x=>msg.textContent=x;
 const setStatus=x=>status.innerHTML='<span class="dot"></span>'+x;
+const inputChannels=d=>Number(d?.inputChannels??d?.maxInputChannels??0);
+const outputChannels=d=>Number(d?.outputChannels??d?.maxOutputChannels??0);
 
 async function health(){
   try{
@@ -26,15 +28,15 @@ async function devices(){
     mic.innerHTML="";out.innerHTML="";voicemeeterId=j.voicemeeterId??null;
     for(const d of j.devices){
       const name=String(d.name||"Audio device");
-      if(d.inputChannels>0)add(mic,d,name+" [mic]");
-      if(d.outputChannels>0)add(out,d,name+" [output]");
+      if(inputChannels(d)>0)add(mic,d,name+" [mic]");
+      if(outputChannels(d)>0)add(out,d,name+" [output]");
     }
     if([...mic.options].some(x=>x.value===oldMic))mic.value=oldMic;
     if([...out.options].some(x=>x.value===oldOut))out.value=oldOut;
     if(voicemeeterId!==null)out.value=String(voicemeeterId);
     vm.disabled=voicemeeterId===null;
     vm.textContent=voicemeeterId===null?"Voicemeeter not detected":"Use Voicemeeter";
-    say(voicemeeterId===null?"Choose your output device.":"Voicemeeter detected and selected.");
+    say(voicemeeterId===null?"Choose an output device. If Voicemeeter is installed, use the device whose name starts with 'Voicemeeter'.":"Voicemeeter detected and selected.");
   }catch(e){say("Audio device error: "+e.message)}
 }
 async function loadVoice(){
@@ -56,7 +58,7 @@ async function startAudio(){
     const h=await health();
     if(!voiceLoaded&&!h?.voice){say("Load a reference WAV first.");return}
     if(!mic.value){say("Choose your microphone.");return}
-    if(!out.value){say("Choose Voicemeeter as the output.");return}
+    if(!out.value){say("Choose a Voicemeeter output device.");return}
     start.disabled=true;stop.disabled=true;say("Starting mic → OpenVoice → Voicemeeter...");
     const r=await fetch("/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({inputId:Number(mic.value),outputId:Number(out.value)})});
     const j=await r.json();if(!j.ok)throw Error(j.error);
@@ -74,7 +76,10 @@ load.onclick=loadVoice;
 start.onclick=startAudio;
 stop.onclick=stopAudio;
 vm.onclick=()=>{
-  if(voicemeeterId===null){say("Voicemeeter was not detected.");return}
+  if(voicemeeterId===null){
+    say("No Voicemeeter virtual playback device was detected. Check Windows Sound > Playback for a device beginning with 'Voicemeeter'.");
+    return
+  }
   out.value=String(voicemeeterId);say("Voicemeeter selected as output.");
 };
 refresh.onclick=async()=>{await health();await devices()};
