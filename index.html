@@ -31,6 +31,8 @@ button:disabled{opacity:.45;cursor:not-allowed}
 (function(){
 "use strict";
 var running=false,ctx=null,stream=null,source=null,processor=null,stt=null,tts=null,playAt=0;
+var lastSpoken="";
+var sentenceBuffer="";
 
 function $(id){return document.getElementById(id)}
 function status(s){$("status").textContent=s}
@@ -44,6 +46,26 @@ function downsample(a,rate){
     o[i]=Math.max(-32768,Math.min(32767,Math.round(x*32767)));
   }
   return o.buffer;
+}
+
+/* Remove immediate repeated words such as:
+   "hello hello how are you" -> "hello how are you" */
+function removeRepeatedWords(text){
+  var words=text.trim().split(/\s+/),out=[];
+  for(var i=0;i<words.length;i++){
+    var current=words[i];
+    var previous=out.length?out[out.length-1]:"";
+    if(current.replace(/[.,!?;:]+$/,"").toLowerCase()===
+       previous.replace(/[.,!?;:]+$/,"").toLowerCase()) continue;
+    out.push(current);
+  }
+  return out.join(" ");
+}
+
+/* Return exactly one complete sentence, if one exists. */
+function firstCompleteSentence(text){
+  var m=text.match(/^\s*(.+?[.!?](?:["'”’)]*)?)(?:\s|$)/);
+  return m?m[1].trim():"";
 }
 
 function play(buf){
@@ -71,10 +93,25 @@ function connectSTT(key){
       if(typeof e.data!=="string")return;
       var m;try{m=JSON.parse(e.data)}catch(_){return}
       if(m.type==="TurnInfo"){
-        var text=String(m.transcript||"").trim();
-        if(text){
+        var text=removeRepeatedWords(String(m.transcript||"").trim());
+        if(!text)return;
+
+        sentenceBuffer=text;
+        var sentence=firstCompleteSentence(sentenceBuffer);
+
+        /* Only send one complete sentence to Amalthea.
+           This prevents partial-turn repeats and repeated TTS. */
+        if(sentence){
+          var clean=removeRepeatedWords(sentence);
+          var keyText=clean.toLowerCase().replace(/\s+/g," ");
+          if(keyText!==lastSpoken){
+            lastSpoken=keyText;
+            $("transcript").textContent=clean;
+            speak(clean);
+          }
+          sentenceBuffer=sentenceBuffer.slice(sentence.length).trim();
+        }else{
           $("transcript").textContent=text;
-          speak(text);
         }
       }
       if(m.type==="Error")status("STT error: "+(m.description||"Unknown error"));
@@ -119,7 +156,7 @@ async function start(){
   if(running)return;
   var key=$("key").value.trim();
   if(!key){status("Enter your Deepgram API key or temporary token first.");$("key").focus();return}
-  $("start").disabled=true;$("stop").disabled=false;running=true;playAt=0;
+  $("start").disabled=true;$("stop").disabled=false;running=true;playAt=0;lastSpoken="";sentenceBuffer="";
   try{
     ctx=new AudioContext({latencyHint:"interactive"});
     await ctx.resume();
@@ -136,12 +173,12 @@ async function start(){
     };
     var mute=ctx.createGain();mute.gain.value=0;
     source.connect(processor);processor.connect(mute);mute.connect(ctx.destination);
-    status("RUNNING — continuous Flux STT → Amalthea TTS.");
+    status("RUNNING — one complete sentence at a time.");
   }catch(e){stop();status("Start failed: "+(e.message||e))}
 }
 
 function stop(){
-  running=false;
+  running=false;sentenceBuffer="";lastSpoken="";
   try{if(stt&&stt.readyState===WebSocket.OPEN)stt.send(JSON.stringify({type:"CloseStream"}))}catch(_){}
   try{if(tts&&tts.readyState===WebSocket.OPEN)tts.send(JSON.stringify({type:"Close"}))}catch(_){}
   try{if(processor)processor.disconnect()}catch(_){}
