@@ -10,7 +10,7 @@ button:disabled{opacity:.45}.danger{background:#a43d55}.row{display:flex;align-i
 </style></head><body><main><div class="card">
 <h1>Flux + Deepgram TTS</h1><p>Deepgram Flux STT + Keyterms → Deepgram Aura TTS → Tone.js pitch</p>
 <label>Deepgram API key / temporary token</label><input id="key" type="password" placeholder="Paste Deepgram key or token">
-<label>Words to recognize accurately</label><input id="terms" value="avatar, VRChat, Voicemeeter, Deepgram, Aura, voice changer" placeholder="avatar, VRChat, names, jargon">
+<label>Words to recognize accurately</label><input id="terms" value="avatar, VRChat, Voicemeeter, Deepgram, Aura, voice changer, ChilloutVR, OpenVoice, voice conversion, speech recognition, Tone.js" placeholder="avatar, VRChat, names, jargon">
 <label>Pitch: <span id="pitchValue">1.00x</span></label>
 <div class="row"><input id="pitch" type="range" min="0.70" max="1.50" step="0.01" value="1"></div>
 <button id="start">Start listening</button><button id="stop" class="danger" disabled>Stop</button>
@@ -23,7 +23,6 @@ var running=false,ctx=null,mic=null,proc=null,stt=null,player=null,sourceNode=nu
 function $(x){return document.getElementById(x)}
 function status(x){$("status").textContent=x}
 function clean(x){var a=x.trim().split(/\s+/),o=[];for(var i=0;i<a.length;i++){var c=a[i],p=o[o.length-1]||"";if(c.replace(/[.,!?;:]+$/,"").toLowerCase()===p.replace(/[.,!?;:]+$/,"").toLowerCase())continue;o.push(c)}return o.join(" ")}
-function sentence(x){var m=x.match(/^\s*(.+?[.!?](?:["'”’)]*)?)(?:\s|$)/);return m?m[1].trim():""}
 function b64(b){var x=atob(b),u=new Uint8Array(x.length);for(var i=0;i<x.length;i++)u[i]=x.charCodeAt(i);return u}
 function down(a,r){var q=r/16000,n=Math.floor(a.length/q),o=new Int16Array(n);for(var i=0;i<n;i++){var p=i*q,j=Math.floor(p),f=p-j,x=(a[j]||0)+((a[j+1]||a[j]||0)-(a[j]||0))*f;o[i]=Math.max(-32768,Math.min(32767,Math.round(x*32767)))}return o.buffer}
 function pcm(bytes){
@@ -60,7 +59,7 @@ function speak(x){queue.push(x);next()}
 function next(){if(busy||!queue.length||!running)return;tts(queue.shift())}
 function flux(key){
  return new Promise(function(resolve,reject){
-  var q=new URLSearchParams({model:"flux-general-en",encoding:"linear16",sample_rate:"16000",eot_threshold:"0.8",eot_timeout_ms:"7000"});
+  var q=new URLSearchParams({model:"flux-general-en",encoding:"linear16",sample_rate:"16000",eot_threshold:"0.85",eot_timeout_ms:"7000",numerals:"true"});
   var terms=$("terms").value.split(",").map(function(x){return x.trim()}).filter(Boolean);
   terms.forEach(function(term){q.append("keyterm",term)});
   stt=new WebSocket("wss://api.deepgram.com/v2/listen?"+q,["token",key]);
@@ -77,9 +76,12 @@ function flux(key){
    var m;try{m=JSON.parse(e.data)}catch(_){return}
    if(m.type==="TurnInfo"){
     var t=clean(String(m.transcript||""));if(!t)return;
-    var s=sentence(t);
-    if(s){s=clean(s);var id=s.toLowerCase().replace(/\s+/g," ");if(id!==last){last=id;$("transcript").textContent=s;speak(s)}}
-    else $("transcript").textContent=t;
+    $("transcript").textContent=t;
+    if(m.event==="EndOfTurn"){
+      var finalText=clean(t);
+      var id=finalText.toLowerCase().replace(/\s+/g," ");
+      if(finalText&&id!==last){last=id;speak(finalText)}
+    }
    }
    if(m.type==="Error")status("Flux error: "+(m.description||"Unknown error"));
   };
@@ -96,7 +98,7 @@ async function start(){
   var src=ctx.createMediaStreamSource(mic);proc=ctx.createScriptProcessor(4096,1,1);
   proc.onaudioprocess=function(e){if(running&&stt&&stt.readyState===1)stt.send(down(e.inputBuffer.getChannelData(0),ctx.sampleRate))};
   var mute=ctx.createGain();mute.gain.value=0;src.connect(proc);proc.connect(mute);mute.connect(ctx.destination);
-  status("RUNNING — Flux STT + custom keyterms + Deepgram Aura TTS + pitch.");
+  status("RUNNING — Flux speech recognition + custom vocabulary + Aura TTS + pitch.");
  }catch(e){stop();status("Start failed: "+e.message)}
 }
 function stop(){
