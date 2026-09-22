@@ -82,7 +82,7 @@ const $=id=>document.getElementById(id);
 let refSession=null,convSession=null,targetEmbedding=null,refAudio=null,selectedReferenceFile=null;
 let running=false,processing=false,stream=null,permissionStream=null,captureCtx=null,outCtx=null,micSource=null,captureNode=null;
 let inputBuffer=new Float32Array(0),ttsBuffer=new Float32Array(0),sourceEmbedding=null,playbackTime=0,lastGain=null,convertedCount=0;
-let dgStt=null,dgTts=null,sttKeepAlive=null,ttsOpenPromise=null,ttsAudioProcessing=false,lastFinalTranscript='';
+let dgStt=null,dgTts=null,sttKeepAlive=null,ttsOpenPromise=null,ttsAudioProcessing=false,ttsFlushPending=false,lastFinalTranscript='';
 
 function status(t,k=''){ $('status').innerHTML='<span class="dot '+(k==='live'?'live':k==='busy'?'busy':'')+'"></span>'+t }
 function detail(t){$('detail').textContent=t}
@@ -278,7 +278,7 @@ function openDeepgramTTS(key){
     try{
      const m=JSON.parse(e.data);
      if(m.type==='Warning')console.warn('Deepgram TTS warning',m);
-     if(m.type==='Flushed')detail('Deepgram TTS flushed • OpenVoice conversion queue continuing');
+     if(m.type==='Flushed'){ttsFlushPending=true;detail('Deepgram TTS finished this reply • sending buffered audio to OpenVoice…');processTTSBuffer();}
     }catch{}
     return;
    }
@@ -287,6 +287,7 @@ function openDeepgramTTS(key){
     const f32=new Float32Array(pcm.length);
     for(let i=0;i<pcm.length;i++)f32[i]=pcm[i]/32768;
     ttsBuffer=concat(ttsBuffer,f32);
+    detail('Deepgram TTS audio received: '+(ttsBuffer.length/DG_SAMPLE_RATE).toFixed(2)+' s buffered');
     const max=DG_SAMPLE_RATE*8;
     if(ttsBuffer.length>max)ttsBuffer=ttsBuffer.slice(-max);
     processTTSBuffer();
@@ -312,10 +313,11 @@ async function processTTSBuffer(){
  if(ttsAudioProcessing)return;
  ttsAudioProcessing=true;
  try{
-  const need=Math.round(CHUNK_SEC*DG_SAMPLE_RATE);
-  while(running&&ttsBuffer.length>=need){
-   const chunk=ttsBuffer.slice(0,need);
-   ttsBuffer=ttsBuffer.slice(need);
+  const need=Math.round(CHUNK_SEC*DG_SAMPLE_RATE),minFinal=Math.round(.25*DG_SAMPLE_RATE);
+  while(running&&(ttsBuffer.length>=need||(ttsFlushPending&&ttsBuffer.length>=minFinal))){
+   const take=ttsBuffer.length>=need?need:ttsBuffer.length;
+   const chunk=ttsBuffer.slice(0,take);
+   ttsBuffer=ttsBuffer.slice(take);
    if(rms(chunk)<.003)continue;
    const t0=performance.now();
    status('OpenVoice cloning buffered TTS…','busy');
@@ -323,6 +325,7 @@ async function processTTSBuffer(){
    if(!running)break;
    scheduleAudio(audio);
    convertedCount++;
+   if(ttsFlushPending&&ttsBuffer.length<minFinal)ttsFlushPending=false;
    const ms=Math.round(performance.now()-t0);
    detail('Pipeline: Deepgram TTS → '+ms+' ms OpenVoice → output queue • buffer '+(ttsBuffer.length/DG_SAMPLE_RATE).toFixed(2)+' s');
    status('Live • Deepgram → OpenVoice V2 → Voicemeeter','live');
@@ -361,9 +364,12 @@ function connectDeepgramSTT(key){
    if(text){
     $('heard').textContent=(m.is_final?'Final: ':'Live: ')+text;
    }
-   if(m.is_final&&m.speech_final&&text&&text!==lastFinalTranscript){
-    lastFinalTranscript=text;
-    sendTextToTTS(text).catch(err=>{console.error(err);status('Deepgram TTS error');detail(err.message||String(err))});
+   if(m.is_final&&m.speech_final&&text){
+    if(text!==lastFinalTranscript){
+      lastFinalTranscript=text;
+      detail('Deepgram heard: “'+text+'” • sending to TTS…');
+      sendTextToTTS(text).catch(err=>{console.error(err);status('Deepgram TTS error');detail(err.message||String(err))});
+    }
    }
   }catch(err){console.warn('STT message parse error',err)}
  };
@@ -406,7 +412,7 @@ async function start(){
   await captureCtx.resume();await outCtx.resume();
   if($('out').value&&typeof outCtx.setSinkId==='function')await outCtx.setSinkId($('out').value);
   await captureMicForDeepgram();
-  inputBuffer=new Float32Array(0);ttsBuffer=new Float32Array(0);sourceEmbedding=null;playbackTime=0;lastGain=null;convertedCount=0;lastFinalTranscript='';
+  inputBuffer=new Float32Array(0);ttsBuffer=new Float32Array(0);sourceEmbedding=null;playbackTime=0;lastGain=null;convertedCount=0;lastFinalTranscript='';ttsFlushPending=false;
   running=true;$('stop').disabled=false;
   connectDeepgramSTT(key);
   await openDeepgramTTS(key);
