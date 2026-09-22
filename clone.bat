@@ -3,42 +3,41 @@ setlocal
 cd /d "%~dp0"
 title OpenVoice V2 Clone
 
-echo.
-echo OpenVoice V2 clone launcher
-echo.
-
+echo OpenVoice V2 Clone
+echo ------------------
 where py >nul 2>nul
 if errorlevel 1 (
- echo Python launcher "py" was not found.
+ echo Python was not found. Install Python 3.13 x64.
+ pause
+ exit /b 1
+)
+
+py -3.13 -c "import sys; print('Using Python '+sys.version)" 2>nul
+if errorlevel 1 (
+ echo Python 3.13 was not found.
+ echo Python 3.14 is newer, but this OpenVoice setup is pinned to 3.13.
+ echo Install Python 3.13 x64 and run this again.
  pause
  exit /b 1
 )
 
 if not exist ".venv\Scripts\python.exe" (
- echo Creating local Python environment...
- py -3.9 -m venv .venv
+ echo Creating Python 3.13 environment...
+ py -3.13 -m venv .venv
  if errorlevel 1 (
-  echo Could not create the Python environment.
-  pause
-  exit /b 1
- )
-
- echo Installing OpenVoice dependencies...
- ".venv\Scripts\python.exe" -m pip install --upgrade pip
- ".venv\Scripts\python.exe" -m pip install torch torchaudio librosa faster-whisper wavmark
- if errorlevel 1 (
-  echo Dependency installation failed.
+  echo Could not create the Python 3.13 environment.
   pause
   exit /b 1
  )
 )
 
+".venv\Scripts\python.exe" --version
 if not exist "clone_server.py" (
  echo clone_server.py is missing.
  pause
  exit /b 1
 )
 
-echo Starting clone program...
+echo Starting OpenVoice clone...
 ".venv\Scripts\python.exe" clone_server.py
 pause
