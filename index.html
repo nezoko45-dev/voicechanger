@@ -4,7 +4,7 @@
 <label>Microphone</label><select id="mic"></select>
 <label>Output</label><select id="out"></select>
 <div class="row"><button id="cable">Detecting VB-CABLE...</button><button id="refresh">Refresh devices</button></div>
-<div class="info"><b>VB-CABLE routing:</b><br>VoiceChanger → <b>CABLE Input</b> → VRChat/Discord uses <b>CABLE Output</b> as its microphone.</div>
+<div class="info"><b>VB-CABLE routing:</b><br>Electron microphone → OpenVoice → WASAPI output → <b>CABLE Input</b>. VRChat/Discord uses <b>CABLE Output</b> as its microphone.</div>
 <label>Voice WAV</label><input id="voice" type="file" accept=".wav,audio/wav"><button id="load">Load Voice</button>
 <div><button id="start">Start</button><button id="stop" disabled>Stop</button></div>
-<p id="msg">Load a voice, then choose an output. VB-CABLE bypasses VoiceMeeter strips.</p></main><script type="module" src="/app.js"></script></body></html>
+<p id="msg">Load a voice, choose your microphone and output, then Start. Chrome controls the app; Electron supplies the microphone audio.</p></main><script type="module" src="/app.js"></script></body></html>
