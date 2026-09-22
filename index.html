@@ -1,73 +1,43 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Local Speech-to-Speech Voice Changer</title>
+<title>OpenVoice V2 Clone</title>
 <style>
-body{margin:0;background:#080b11;color:#fff;font:16px Arial}main{max-width:650px;margin:40px auto;padding:20px}
-.card{background:#121824;border:1px solid #303a4d;border-radius:18px;padding:24px}
-input{width:100%;box-sizing:border-box;padding:13px;margin:8px 0 14px;background:#080d15;color:#fff;border:1px solid #40506a;border-radius:10px}
-button{padding:13px 18px;border:0;border-radius:10px;background:#765cff;color:#fff;font-weight:bold;cursor:pointer;margin:4px}
-button:disabled{opacity:.45}.danger{background:#a43d55}.box{margin-top:14px;padding:13px;background:#080d15;border-radius:10px;white-space:pre-wrap}
-small{color:#aeb8c9;line-height:1.5}
+body{margin:0;background:#080b11;color:#fff;font:16px Arial}main{max-width:620px;margin:50px auto;padding:20px}
+.card{background:#121824;border:1px solid #303a4d;border-radius:18px;padding:26px}
+input{width:100%;box-sizing:border-box;padding:13px;margin:10px 0 16px;background:#080d15;color:#fff;border:1px solid #40506a;border-radius:10px}
+button{padding:13px 20px;border:0;border-radius:10px;background:#765cff;color:#fff;font-weight:bold;cursor:pointer;margin:4px}
+button:disabled{opacity:.45;cursor:not-allowed}.box{margin-top:14px;padding:13px;background:#080d15;border-radius:10px;white-space:pre-wrap}
+small{color:#aeb8c9;line-height:1.55}
 </style></head><body><main><div class="card">
-<h1>Speech-to-Speech Voice Changer</h1>
-<p>Raw microphone speech → local voice converter → Chrome audio</p>
-<label>Local converter URL</label>
-<input id="url" value="http://127.0.0.1:8000/convert" placeholder="http://127.0.0.1:8000/convert">
-<label>Reference / target voice WAV</label>
+<h1>OpenVoice V2 Voice Clone</h1>
+<p>Upload one reference WAV and create the reusable OpenVoice voice embedding.</p>
 <input id="voice" type="file" accept=".wav,audio/wav">
-<button id="start">Start listening</button><button id="stop" class="danger" disabled>Stop</button>
-<div id="status" class="box">Ready.</div>
-<div class="box"><small>This browser app does not use STT or TTS. It sends each detected speech segment to your local converter, so your words and delivery stay in the audio path. The converter must expose POST /convert and return WAV/PCM audio.</small></div>
+<button id="clone" disabled>Clone this voice</button>
+<div id="status" class="box">Choose a WAV file.</div>
+<div class="box"><small>The browser talks only to the local clone service. There is no external API and no URL field. The clone service listens on 127.0.0.1:8000 and returns a clear connection error instead of the generic “Failed to fetch” message.</small></div>
 </div></main>
 <script>
 (function(){
 "use strict";
-var running=false,stream=null,ctx=null,source=null,processor=null,silence=null,chunks=[],speaking=false,lastVoice=0;
-function $(x){return document.getElementById(x)}
-function status(x){$("status").textContent=x}
-function rms(a){var s=0;for(var i=0;i<a.length;i++)s+=a[i]*a[i];return Math.sqrt(s/a.length)}
-function down(a,r){var q=r/16000,n=Math.floor(a.length/q),o=new Int16Array(n);for(var i=0;i<n;i++){var p=i*q,j=Math.floor(p),f=p-j,x=(a[j]||0)+((a[j+1]||a[j]||0)-(a[j]||0))*f;o[i]=Math.max(-32768,Math.min(32767,Math.round(x*32767)))}return o}
-function wav(parts,sr){
- var len=parts.reduce(function(n,x){return n+x.length},0),b=new ArrayBuffer(44+len*2),v=new DataView(b),p=44;
- function w(o,s){for(var i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))}
- w(0,"RIFF");v.setUint32(4,36+len*2,true);w(8,"WAVE");w(12,"fmt ");v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,"data");v.setUint32(40,len*2,true);
- parts.forEach(function(a){for(var i=0;i<a.length;i++,p+=2)v.setInt16(p,a[i],true)});return new Blob([b],{type:"audio/wav"})
-}
-async function convert(blob){
- var fd=new FormData();fd.append("audio",blob,"speech.wav");
- var voice=$("voice").files[0];if(voice)fd.append("reference",voice,voice.name);
- var r=await fetch($("url").value.trim(),{method:"POST",body:fd});
- if(!r.ok)throw Error("Converter returned HTTP "+r.status);
- var out=await r.blob(),u=URL.createObjectURL(out),a=new Audio(u);
- a.onended=function(){URL.revokeObjectURL(u)};await a.play()
-}
-async function flush(){
- if(!chunks.length)return;var x=chunks;chunks=[];status("Converting speech…");
- try{await convert(wav(x,16000));status("Listening — speak naturally.")}catch(e){status("Converter error: "+e.message)}
-}
-async function start(){
- if(running)return;
- running=true;$("start").disabled=true;$("stop").disabled=false;
+var voice=document.getElementById("voice"),btn=document.getElementById("clone"),status=document.getElementById("status");
+function setStatus(s){status.textContent=s}
+voice.onchange=function(){btn.disabled=!voice.files.length;setStatus(voice.files.length?"Ready to clone: "+voice.files[0].name:"Choose a WAV file.")};
+btn.onclick=async function(){
+ if(!voice.files.length)return;
+ btn.disabled=true;setStatus("Creating OpenVoice clone…");
  try{
-  ctx=new AudioContext({latencyHint:"interactive"});await ctx.resume();
-  stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
-  source=ctx.createMediaStreamSource(stream);processor=ctx.createScriptProcessor(2048,1,1);
-  silence=ctx.createGain();silence.gain.value=0;source.connect(processor);processor.connect(silence);silence.connect(ctx.destination);
-  processor.onaudioprocess=function(e){
-   if(!running)return;var a=e.inputBuffer.getChannelData(0),level=rms(a),v=level>0.012;
-   if(v){speaking=true;lastVoice=performance.now();chunks.push(down(a,ctx.sampleRate))}
-   else if(speaking&&performance.now()-lastVoice>650){speaking=false;flush()}
-  };
-  status("Listening — speak naturally.");
- }catch(e){stop();status("Start failed: "+e.message)}
-}
-function stop(){
- running=false;speaking=false;chunks=[];$("start").disabled=false;$("stop").disabled=true;
- try{if(processor)processor.disconnect()}catch(_){}
- try{if(stream)stream.getTracks().forEach(function(t){t.stop()})}catch(_){}
- try{if(ctx)ctx.close()}catch(_){}
- processor=null;source=null;stream=null;ctx=null;status("Stopped. Ready.")
-}
-$("start").onclick=start;$("stop").onclick=stop;
+  var fd=new FormData();fd.append("reference",voice.files[0],voice.files[0].name);
+  var r=await fetch("http://127.0.0.1:8000/clone",{method:"POST",body:fd,mode:"cors"});
+  if(!r.ok){var t=await r.text().catch(function(){return""});throw Error("Local clone service returned HTTP "+r.status+(t?": "+t:""))}
+  var data=await r.json();
+  if(!data.ok)throw Error(data.error||"Clone failed");
+  setStatus("Clone complete!\nSaved: "+(data.file||"voice_embedding.pth"));
+ }catch(e){
+  var m=String(e&&e.message||e);
+  if(m==="Failed to fetch"||m.indexOf("NetworkError")>=0)
+   m="Could not connect to the local clone service. Start clone.bat first, then try again.";
+  setStatus("Clone error: "+m);
+ }finally{btn.disabled=false}
+};
 })();
 </script></body></html>
