@@ -7,7 +7,7 @@
 :root{color-scheme:dark}body{margin:0;background:#090d14;color:#eef2f7;font:15px system-ui,sans-serif}
 main{max-width:620px;margin:48px auto;padding:0 18px}.card{background:#121925;border:1px solid #293449;border-radius:18px;padding:22px}
 h1{margin:0 0 8px}p{color:#9eabc0;line-height:1.5}label{display:block;font-size:12px;color:#b8c2d2;margin:14px 0 6px}
-input{width:100%;box-sizing:border-box;background:#0a1019;color:#fff;border:1px solid #344057;border-radius:10px;padding:12px}
+input,select{width:100%;box-sizing:border-box;background:#0a1019;color:#fff;border:1px solid #344057;border-radius:10px;padding:12px}
 button{border:0;border-radius:10px;padding:12px 18px;background:#705cff;color:#fff;font-weight:700;cursor:pointer}
 button:disabled{opacity:.45;cursor:not-allowed}.stop{background:#a23d55}.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
 .status{margin-top:16px;white-space:pre-wrap;background:#090e16;border-radius:10px;padding:12px;font:12px ui-monospace,monospace;line-height:1.5}
@@ -16,14 +16,22 @@ button:disabled{opacity:.45;cursor:not-allowed}.stop{background:#a23d55}.row{dis
 </head>
 <body><main><div class="card">
 <h1>Deepgram Continuous Voice</h1>
-<p>Continuous microphone → Deepgram STT WebSocket → Deepgram TTS WebSocket → Chrome audio → Voicemeeter.</p>
+<p>Continuous microphone → Deepgram STT → expressive Flux TTS → Chrome audio → Voicemeeter.</p>
 <label>Deepgram API key / temporary token</label>
 <input id="key" type="password" autocomplete="off" placeholder="Paste your Deepgram key or temporary token">
-<label>TTS voice</label>
-<input id="voice" value="aura-2-asteria-en">
+<label>Flux TTS voice</label>
+<input id="voice" value="flux-haley-en">
+<label>Expressivity: -2 calm → 0 natural → +2 animated</label>
+<select id="expressivity">
+<option value="-2">-2 — Calm</option>
+<option value="-1">-1 — Subdued</option>
+<option value="0" selected>0 — Natural</option>
+<option value="1">+1 — Expressive</option>
+<option value="2">+2 — Animated</option>
+</select>
 <div class="row"><button id="start">Start listening</button><button id="stop" class="stop" disabled>Stop</button></div>
 <div id="status" class="status">Ready.</div>
 <div class="transcript" id="transcript">—</div>
-<p class="small">STT stays connected continuously. Interim transcripts are shown live; completed speech is sent to the persistent TTS WebSocket. Audio is scheduled chunk-by-chunk so TTS does not wait for a whole file.</p>
+<p class="small">STT stays connected continuously. Completed speech is sent as a Flux TTS turn and audio streams back immediately. Expressivity is fixed for each Flux connection, so choose it before pressing Start.</p>
 </div></main>
 <script src="./app.js"></script></body></html>
