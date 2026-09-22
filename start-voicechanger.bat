@@ -11,7 +11,7 @@ echo.
 where node >nul 2>&1
 if errorlevel 1 (
  echo Node.js 20+ is required.
- echo Install Node.js, then run this BAT again.
+ echo Install Node.js 20 or newer, then run this BAT again.
  pause
  exit /b 1
 )
@@ -22,18 +22,19 @@ if not exist "package.json" (
  exit /b 1
 )
 
-if not exist "node_modules\onnxruntime-node" (
- echo Installing dependencies...
- call npm install
- if errorlevel 1 (
-  echo npm install failed.
-  pause
-  exit /b 1
- )
+echo Checking Node dependencies...
+call npm install
+if errorlevel 1 (
+ echo.
+ echo npm install failed.
+ echo Keep this window open and read the error above.
+ pause
+ exit /b 1
 )
 
-echo Starting VoiceChanger...
-start "VoiceChanger" cmd /k "cd /d ""%~dp0"" && node server.mjs"
+echo.
+echo Starting VoiceChanger server...
+start "VoiceChanger Server" /D "%~dp0" cmd /k "node server.mjs"
 
 set /a n=0
 :wait
@@ -45,13 +46,16 @@ timeout /t 1 /nobreak >nul
 goto wait
 
 :open
+echo Server is online.
 start "" "http://127.0.0.1:8765/"
 echo VoiceChanger is ready.
+echo You can close this launcher window.
 pause
 exit /b 0
 
 :fail
-echo VoiceChanger failed to start.
-echo Check the VoiceChanger command window.
+echo.
+echo VoiceChanger did not start within 30 seconds.
+echo Check the "VoiceChanger Server" window for the actual error.
 pause
 exit /b 1
