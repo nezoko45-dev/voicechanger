@@ -1,136 +1,292 @@
-let running=false,ctx=null,stream=null,source=null,processor=null,stt=null,tts=null,ttsReady=false;
-let playAt=0,sttKeepAlive=null;
+let running=false;
+let ctx=null;
+let stream=null;
+let source=null;
+let processor=null;
+let stt=null;
+let tts=null;
+let sttKeepAlive=null;
+let playAt=0;
+let ttsPending=0;
 
 const $=id=>document.getElementById(id);
-function say(t,k=""){
+
+function status(message,kind=""){
   const el=$("status");
-  if(el){el.textContent=t;el.className="status "+k;}
+  if(!el)return;
+  el.textContent=message;
+  el.className="status "+kind;
 }
-function authProtocols(token){return ["token",token]}
-function int16ToFloat32(buf){
-  const a=new Int16Array(buf),out=new Float32Array(a.length);
-  for(let i=0;i<a.length;i++)out[i]=Math.max(-1,Math.min(1,a[i]/32768));
-  return out;
+
+function protocols(token){
+  return ["token",token];
 }
-function playPCM16(data,sampleRate=48000){
-  if(!ctx||!running)return;
-  const f=int16ToFloat32(data),b=ctx.createBuffer(1,f.length,sampleRate);
-  b.copyToChannel(f,0);
-  const s=ctx.createBufferSource();s.buffer=b;s.connect(ctx.destination);
-  const now=ctx.currentTime;
-  if(playAt<now)playAt=now+0.015;
-  s.start(playAt);playAt+=b.duration;
-}
+
 function downsampleTo16k(input,inRate){
-  const ratio=inRate/16000,len=Math.floor(input.length/ratio),out=new Int16Array(len);
-  for(let i=0;i<len;i++){
-    const pos=i*ratio,idx=Math.floor(pos),frac=pos-idx;
-    const a=input[idx]||0,b=input[idx+1]||a,v=a+(b-a)*frac;
-    out[i]=Math.max(-32768,Math.min(32767,Math.round(v*32767)));
+  const ratio=inRate/16000;
+  const length=Math.floor(input.length/ratio);
+  const out=new Int16Array(length);
+
+  for(let i=0;i<length;i++){
+    const p=i*ratio;
+    const a=Math.floor(p);
+    const b=Math.min(a+1,input.length-1);
+    const frac=p-a;
+    const sample=(input[a]||0)+((input[b]||input[a]||0)-(input[a]||0))*frac;
+    out[i]=Math.max(-32768,Math.min(32767,Math.round(sample*32767)));
   }
   return out.buffer;
 }
-function makeProcessor(){
+
+function pcm16ToFloat32(buffer){
+  const pcm=new Int16Array(buffer);
+  const out=new Float32Array(pcm.length);
+  for(let i=0;i<pcm.length;i++)out[i]=pcm[i]/32768;
+  return out;
+}
+
+function playPCM(buffer,sampleRate=24000){
+  if(!ctx||!running)return;
+  const samples=pcm16ToFloat32(buffer);
+  if(!samples.length)return;
+
+  const audio=ctx.createBuffer(1,samples.length,sampleRate);
+  audio.copyToChannel(samples,0);
+
+  const node=ctx.createBufferSource();
+  node.buffer=audio;
+  node.connect(ctx.destination);
+
+  const now=ctx.currentTime;
+  if(playAt<now+0.01)playAt=now+0.01;
+  node.start(playAt);
+  playAt+=audio.duration;
+  ttsPending=Math.max(0,ttsPending+audio.duration);
+  node.onended=()=>{ttsPending=Math.max(0,ttsPending-audio.duration)};
+}
+
+function makeAudioProcessor(){
+  // 4096 samples at 48 kHz is ~85 ms: close to Flux's recommended small streaming chunks.
   const p=ctx.createScriptProcessor(4096,1,1);
+
   p.onaudioprocess=e=>{
     if(!running||!stt||stt.readyState!==WebSocket.OPEN)return;
     const pcm=downsampleTo16k(e.inputBuffer.getChannelData(0),ctx.sampleRate);
     if(pcm.byteLength)stt.send(pcm);
   };
-  const mute=ctx.createGain();mute.gain.value=0;
-  source.connect(p);p.connect(mute);mute.connect(ctx.destination);
+
+  const mute=ctx.createGain();
+  mute.gain.value=0;
+  source.connect(p);
+  p.connect(mute);
+  mute.connect(ctx.destination);
   return p;
 }
-function connectTTS(token){
+
+function connectFluxSTT(token){
   return new Promise((resolve,reject)=>{
-    const model=$("voice")?.value.trim()||"flux-haley-en";
-    const expressivity=$("expressivity")?.value||"0";
-    const url="wss://api.deepgram.com/v2/speak?model="+encodeURIComponent(model)+"&encoding=linear16&sample_rate=48000&expressivity="+encodeURIComponent(expressivity);
-    tts=new WebSocket(url,authProtocols(token));
+    const params=new URLSearchParams({
+      model:"flux-general-en",
+      encoding:"linear16",
+      sample_rate:"16000",
+      eot_threshold:"0.70",
+      eot_timeout_ms:"5000"
+    });
+
+    stt=new WebSocket(
+      "wss://api.deepgram.com/v2/listen?"+params.toString(),
+      protocols(token)
+    );
+    stt.binaryType="arraybuffer";
+
+    stt.onopen=()=>{
+      status("Flux STT connected. Continuous microphone streaming is ON.","ok");
+      resolve();
+    };
+
+    stt.onmessage=e=>{
+      let msg;
+      try{msg=JSON.parse(e.data)}catch{return}
+
+      if(msg.type==="TurnInfo"){
+        const text=String(msg.transcript||"").trim();
+        if(text){
+          $("transcript").textContent=text;
+          sendToAmalthea(text);
+        }
+        return;
+      }
+
+      if(msg.type==="Error"){
+        status("Flux STT error: "+(msg.description||"Unknown error"),"err");
+      }
+    };
+
+    stt.onerror=()=>{
+      reject(new Error("Flux STT WebSocket error. Check the Deepgram key/token."));
+    };
+
+    stt.onclose=()=>{
+      if(running)status("Flux STT disconnected.","err");
+    };
+  });
+}
+
+function connectAmalthea(token){
+  return new Promise((resolve,reject)=>{
+    const params=new URLSearchParams({
+      model:"aura-2-amalthea-en",
+      encoding:"linear16",
+      sample_rate:"24000"
+    });
+
+    tts=new WebSocket(
+      "wss://api.deepgram.com/v1/speak?"+params.toString(),
+      protocols(token)
+    );
     tts.binaryType="arraybuffer";
-    tts.onopen=()=>{ttsReady=true;say("Flux TTS connected. Listening continuously.","ok");resolve()};
+
+    tts.onopen=()=>{
+      status("Flux STT + Amalthea TTS connected. Speak normally.","ok");
+      resolve();
+    };
+
     tts.onmessage=e=>{
       if(typeof e.data==="string"){
         try{
-          const m=JSON.parse(e.data);
-          if(m.type==="Warning")say("Flux warning: "+(m.description||"Unknown warning"),"err");
-          if(m.type==="Error")say("Flux error: "+(m.description||m.message||"Unknown error"),"err");
+          const msg=JSON.parse(e.data);
+          if(msg.type==="Error"||msg.type==="Warning"){
+            status("Amalthea TTS: "+(msg.description||msg.message||"Unknown response"),"err");
+          }
         }catch{}
         return;
       }
-      if(e.data instanceof ArrayBuffer)playPCM16(e.data,48000);
-      else if(e.data?.arrayBuffer)e.data.arrayBuffer().then(b=>playPCM16(b,48000));
-    };
-    tts.onerror=()=>reject(Error("Deepgram Flux TTS WebSocket error."));
-    tts.onclose=()=>{ttsReady=false;if(running)say("Flux TTS WebSocket closed.","err")};
-  });
-}
-function connectSTT(token){
-  return new Promise((resolve,reject)=>{
-    const url="wss://api.deepgram.com/v1/listen?model=nova-3&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&endpointing=300&utterance_end_ms=1000&smart_format=true";
-    stt=new WebSocket(url,authProtocols(token));stt.binaryType="arraybuffer";
-    stt.onopen=()=>{say("STT connected. Microphone is streaming continuously.","ok");resolve()};
-    stt.onmessage=e=>{
-      let m;try{m=JSON.parse(e.data)}catch{return}
-      if(m.type!=="Results")return;
-      const alt=m.channel?.alternatives?.[0],text=alt?.transcript?.trim()||"";
-      if(text)$("transcript").textContent=text;
-      if(m.is_final&&m.speech_final&&text&&ttsReady){
-        tts.send(JSON.stringify({type:"Speak",text}));
-        tts.send(JSON.stringify({type:"Flush"}));
+
+      if(e.data instanceof ArrayBuffer){
+        playPCM(e.data,24000);
+      }else if(e.data?.arrayBuffer){
+        e.data.arrayBuffer().then(b=>playPCM(b,24000));
       }
     };
-    stt.onerror=()=>reject(Error("Deepgram STT WebSocket error."));
-    stt.onclose=()=>{if(running)say("STT WebSocket closed.","err")};
+
+    tts.onerror=()=>{
+      reject(new Error("Amalthea TTS WebSocket error."));
+    };
+
+    tts.onclose=()=>{
+      if(running)status("Amalthea TTS disconnected.","err");
+    };
   });
 }
+
+function sendToAmalthea(text){
+  if(!tts||tts.readyState!==WebSocket.OPEN)return;
+
+  // One persistent TTS socket; each transcript is one turn.
+  tts.send(JSON.stringify({type:"Speak",text}));
+  tts.send(JSON.stringify({type:"Flush"}));
+}
+
 async function start(){
   if(running)return;
-  const key=$("key"),startBtn=$("start"),stopBtn=$("stop");
-  const token=key?.value.trim();
-  if(!token){say("Paste your Deepgram API key or temporary token first.","err");key?.focus();return;}
-  startBtn.disabled=true;stopBtn.disabled=false;running=true;playAt=0;
+
+  const token=$("key").value.trim();
+  if(!token){
+    status("Paste your Deepgram API key or temporary token first.","err");
+    $("key").focus();
+    return;
+  }
+
+  $("start").disabled=true;
+  $("stop").disabled=false;
+  running=true;
+  playAt=0;
+  ttsPending=0;
+
   try{
     ctx=new AudioContext({latencyHint:"interactive"});
     await ctx.resume();
-    stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+
+    stream=await navigator.mediaDevices.getUserMedia({
+      audio:{
+        channelCount:1,
+        echoCancellation:false,
+        noiseSuppression:false,
+        autoGainControl:false
+      }
+    });
+
     source=ctx.createMediaStreamSource(stream);
-    await connectSTT(token);
-    await connectTTS(token);
-    processor=makeProcessor();
-    sttKeepAlive=setInterval(()=>{if(stt?.readyState===WebSocket.OPEN)stt.send(JSON.stringify({type:"KeepAlive"}))},8000);
-    say("Continuous STT + expressive Flux TTS is ON. Speak normally.","ok");
-  }catch(e){
-    const msg=e?.message||String(e);
-    stop();
-    say("Start error: "+msg,"err");
+
+    // Open both persistent sockets before the microphone starts sending audio.
+    await connectFluxSTT(token);
+    await connectAmalthea(token);
+
+    processor=makeAudioProcessor();
+
+    // Flux v2 needs activity during silence; keep the session alive.
+    sttKeepAlive=setInterval(()=>{
+      if(stt?.readyState===WebSocket.OPEN){
+        stt.send(JSON.stringify({type:"KeepAlive"}));
+      }
+    },5000);
+
+    status("RUNNING — continuous Flux STT + Amalthea Filipino TTS.","ok");
+  }catch(error){
+    const message=error?.message||String(error);
+    stop(false);
+    status("Start error: "+message,"err");
   }
 }
-function stop(){
+
+function stop(showStatus=true){
   running=false;
+
   if(sttKeepAlive)clearInterval(sttKeepAlive);
   sttKeepAlive=null;
-  try{if(stt?.readyState===WebSocket.OPEN)stt.send(JSON.stringify({type:"CloseStream"}))}catch{}
-  try{if(tts?.readyState===WebSocket.OPEN)tts.send(JSON.stringify({type:"Close"}))}catch{}
+
+  try{
+    if(stt?.readyState===WebSocket.OPEN)
+      stt.send(JSON.stringify({type:"CloseStream"}));
+  }catch{}
+
+  try{
+    if(tts?.readyState===WebSocket.OPEN)
+      tts.send(JSON.stringify({type:"Close"}));
+  }catch{}
+
   try{processor?.disconnect()}catch{}
   try{source?.disconnect()}catch{}
   try{stream?.getTracks().forEach(t=>t.stop())}catch{}
   try{ctx?.close()}catch{}
-  stt=null;tts=null;ttsReady=false;processor=null;source=null;stream=null;ctx=null;
-  const startBtn=$("start"),stopBtn=$("stop");
-  if(stopBtn)stopBtn.disabled=true;
-  if(startBtn)startBtn.disabled=false;
-  say("Stopped.");
+
+  stt=null;
+  tts=null;
+  processor=null;
+  source=null;
+  stream=null;
+  ctx=null;
+  playAt=0;
+  ttsPending=0;
+
+  $("stop").disabled=true;
+  $("start").disabled=false;
+
+  if(showStatus)status("Stopped.");
 }
+
 function init(){
-  const startBtn=$("start"),stopBtn=$("stop");
-  if(!startBtn||!stopBtn){return;}
-  startBtn.disabled=false;
-  stopBtn.disabled=true;
-  startBtn.addEventListener("click",start);
-  stopBtn.addEventListener("click",stop);
-  say("Ready. Paste your Deepgram key, then press Start listening.");
+  $("start").disabled=false;
+  $("stop").disabled=true;
+  $("start").addEventListener("click",start);
+  $("stop").addEventListener("click",()=>stop(true));
+  status("Ready. Paste your Deepgram key/token, then press Start listening.");
 }
-if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init);
-else init();
-window.addEventListener("beforeunload",stop);
+
+if(document.readyState==="loading"){
+  document.addEventListener("DOMContentLoaded",init);
+}else{
+  init();
+}
+
+window.addEventListener("beforeunload",()=>stop(false));
