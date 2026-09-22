@@ -1,8 +1,0 @@
-fastapi
-uvicorn[standard]
-python-multipart
-numpy
-soundfile
-torch
-torchaudio
-git+https://github.com/myshell-ai/OpenVoice.git
