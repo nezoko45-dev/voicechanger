@@ -1,92 +1,12 @@
-const $=id=>document.getElementById(id);
-const mic=$("mic"),out=$("out"),voice=$("voice"),load=$("load"),start=$("start"),stop=$("stop");
-const vm=$("cable"),refresh=$("refresh"),status=$("status"),msg=$("msg");
-let running=false,voiceLoaded=false,voicemeeterId=null;
-
-const say=x=>msg.textContent=x;
-const setStatus=x=>status.innerHTML='<span class="dot"></span>'+x;
-const inputChannels=d=>Number(d?.inputChannels??d?.maxInputChannels??0);
-const outputChannels=d=>Number(d?.outputChannels??d?.maxOutputChannels??0);
-
-async function health(){
-  try{
-    const j=await fetch("/health",{cache:"no-store"}).then(r=>r.json());
-    setStatus(j.running?"VoiceChanger running • Mic → OpenVoice → Voicemeeter":j.voice?"Ready • Voice loaded":"Ready • Load a voice");
-    return j;
-  }catch{setStatus("Backend offline");return null}
-}
-function add(select,d,label){
-  const o=document.createElement("option");
-  o.value=String(d.id);o.dataset.name=d.name||"";o.textContent=label||d.name||"Audio device";
-  select.appendChild(o);
-}
-async function devices(){
-  try{
-    const j=await fetch("/devices",{cache:"no-store"}).then(r=>r.json());
-    if(!j.ok)throw Error(j.error);
-    const oldMic=mic.value,oldOut=out.value;
-    mic.innerHTML="";out.innerHTML="";voicemeeterId=j.voicemeeterId??null;
-    for(const d of j.devices){
-      const name=String(d.name||"Audio device");
-      if(inputChannels(d)>0)add(mic,d,name+" [mic]");
-      if(outputChannels(d)>0)add(out,d,name+" [output]");
-    }
-    if([...mic.options].some(x=>x.value===oldMic))mic.value=oldMic;
-    if([...out.options].some(x=>x.value===oldOut))out.value=oldOut;
-    if(voicemeeterId!==null)out.value=String(voicemeeterId);
-    vm.disabled=voicemeeterId===null;
-    vm.textContent=voicemeeterId===null?"Voicemeeter not detected":"Use Voicemeeter";
-    say(voicemeeterId===null?"Choose an output device. If Voicemeeter is installed, use the device whose name starts with 'Voicemeeter'.":"Voicemeeter detected and selected.");
-  }catch(e){say("Audio device error: "+e.message)}
-}
-async function loadVoice(){
-  const f=voice.files[0];
-  if(!f){say("Choose a reference WAV first.");return}
-  load.disabled=true;say("Loading OpenVoice reference...");
-  try{
-    const b=new Uint8Array(await f.arrayBuffer());let s="";
-    for(let i=0;i<b.length;i+=32768)s+=String.fromCharCode(...b.subarray(i,i+32768));
-    const r=await fetch("/target",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({wav:btoa(s)})});
-    const j=await r.json();if(!j.ok)throw Error(j.error);
-    voiceLoaded=true;say("OpenVoice reference loaded.");await health();
-  }catch(e){say("Voice load failed: "+e.message)}
-  finally{load.disabled=false}
-}
-async function startAudio(){
-  if(running)return;
-  try{
-    const h=await health();
-    if(!voiceLoaded&&!h?.voice){say("Load a reference WAV first.");return}
-    if(!mic.value){say("Choose your microphone.");return}
-    if(!out.value){say("Choose a Voicemeeter output device.");return}
-    start.disabled=true;stop.disabled=true;say("Starting mic → OpenVoice → Voicemeeter...");
-    const r=await fetch("/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({inputId:Number(mic.value),outputId:Number(out.value)})});
-    const j=await r.json();if(!j.ok)throw Error(j.error);
-    running=true;stop.disabled=false;setStatus("Running • microphone → OpenVoice V2 ONNX → Voicemeeter");
-    say("Live voice conversion is running.");
-  }catch(e){
-    running=false;start.disabled=false;stop.disabled=true;say("Start failed: "+e.message);await health();
-  }
-}
-async function stopAudio(){
-  try{await fetch("/stop",{method:"POST"})}catch{}
-  running=false;start.disabled=false;stop.disabled=true;say("Stopped.");await health();
-}
-load.onclick=loadVoice;
-start.onclick=startAudio;
-stop.onclick=stopAudio;
-vm.onclick=()=>{
-  if(voicemeeterId===null){
-    say("No Voicemeeter virtual playback device was detected. Check Windows Sound > Playback for a device beginning with 'Voicemeeter'.");
-    return
-  }
-  out.value=String(voicemeeterId);say("Voicemeeter selected as output.");
-};
-refresh.onclick=async()=>{await health();await devices()};
-setInterval(async()=>{
-  if(running){
-    const h=await health();
-    if(!h?.running){running=false;start.disabled=false;stop.disabled=true;say("Audio stopped.");}
-  }
-},1500);
-(async()=>{await health();await devices()})();
+const $=id=>document.getElementById(id);const keyEl=$("key"),micEl=$("mic"),outEl=$("out"),refreshEl=$("refresh"),startEl=$("start"),stopEl=$("stop"),statusEl=$("status"),heardEl=$("heard");const STT_MODEL="nova-3",TTS_MODEL="aura-2-amalthea-en",SAMPLE_RATE=48000;let running=false,stream=null,audioCtx=null,micSource=null,worklet=null,stt=null,tts=null,ttsAudioCtx=null,playbackTime=0;
+function status(t,live=false){statusEl.innerHTML='<span class="dot '+(live?"live":"")+'"></span>'+t}function say(t){heardEl.textContent=t||"Waiting for speech…"}function saveKey(){const k=keyEl.value.trim();if(k)localStorage.setItem("deepgram_api_key",k)}function loadKey(){keyEl.value=localStorage.getItem("deepgram_api_key")||""}
+function addOption(sel,id,name){const o=document.createElement("option");o.value=id;o.textContent=name;sel.appendChild(o)}
+async function devices(){try{const bm=micEl.value,bo=outEl.value,list=await navigator.mediaDevices.enumerateDevices();micEl.innerHTML="";outEl.innerHTML="";let n=0;for(const d of list){if(d.kind==="audioinput")addOption(micEl,d.deviceId,d.label||("Microphone "+(++n)));if(d.kind==="audiooutput")addOption(outEl,d.deviceId,d.label||("Output "+(++n)))}if([...micEl.options].some(o=>o.value===bm))micEl.value=bm;if([...outEl.options].some(o=>o.value===bo))outEl.value=bo}catch(e){status("Device error: "+e.message)}}
+function dg(url,key){return new WebSocket(url,["token",key])}
+function connectSTT(key){const q=new URLSearchParams({model:STT_MODEL,language:"en-US",encoding:"linear16",sample_rate:String(SAMPLE_RATE),channels:"1",interim_results:"true",smart_format:"true",endpointing:"300",utterance_end_ms:"1000"}),ws=dg("wss://api.deepgram.com/v1/listen?"+q,key);ws.binaryType="arraybuffer";ws.onopen=()=>status("Listening • Deepgram STT connected",true);ws.onmessage=e=>{if(typeof e.data!=="string")return;let j;try{j=JSON.parse(e.data)}catch{return}if(j.type!=="Results")return;const t=j.channel?.alternatives?.[0]?.transcript?.trim()||"";if(t)say(t);if(j.is_final&&j.speech_final&&t)echoText(t)};ws.onerror=()=>status("Deepgram STT error — check the key and connection");ws.onclose=()=>{if(running)status("STT disconnected")};return ws}
+function ensureTTS(key){if(tts&&(tts.readyState===WebSocket.OPEN||tts.readyState===WebSocket.CONNECTING))return tts;const q=new URLSearchParams({model:TTS_MODEL,encoding:"linear16",sample_rate:String(SAMPLE_RATE)}),ws=dg("wss://api.deepgram.com/v1/speak?"+q,key);ws.binaryType="arraybuffer";ws.onmessage=e=>{if(e.data instanceof ArrayBuffer)queuePCM(e.data);else if(e.data instanceof Blob)e.data.arrayBuffer().then(queuePCM)};ws.onerror=()=>status("Deepgram TTS error");ws.onclose=()=>{if(tts===ws)tts=null};tts=ws;return ws}
+function echoText(text){if(!running||!text)return;const ws=ensureTTS(keyEl.value.trim()),send=()=>{if(ws.readyState!==WebSocket.OPEN)return;ws.send(JSON.stringify({type:"Speak",text}));ws.send(JSON.stringify({type:"Flush"}))};if(ws.readyState===WebSocket.OPEN)send();else ws.addEventListener("open",send,{once:true})}
+async function queuePCM(buffer){if(!ttsAudioCtx)return;if(ttsAudioCtx.state==="suspended")await ttsAudioCtx.resume();const b=new Uint8Array(buffer),u=b.byteLength-b.byteLength%2;if(!u)return;const s=new Int16Array(b.buffer,b.byteOffset,u/2),a=ttsAudioCtx.createBuffer(1,s.length,SAMPLE_RATE),c=a.getChannelData(0);for(let i=0;i<s.length;i++)c[i]=s[i]/32768;const src=ttsAudioCtx.createBufferSource();src.buffer=a;src.connect(ttsAudioCtx.destination);const now=ttsAudioCtx.currentTime;if(playbackTime<now+.03)playbackTime=now+.03;src.start(playbackTime);playbackTime+=a.duration}
+async function start(){if(running)return;const key=keyEl.value.trim();if(!key){status("Paste your Deepgram API key first");return}saveKey();try{startEl.disabled=true;status("Requesting microphone…");stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:micEl.value?{exact:micEl.value}:undefined,channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:false}});audioCtx=new AudioContext({sampleRate:SAMPLE_RATE});ttsAudioCtx=new AudioContext({sampleRate:SAMPLE_RATE});await audioCtx.resume();await ttsAudioCtx.resume();if(outEl.value&&typeof ttsAudioCtx.setSinkId==="function")await ttsAudioCtx.setSinkId(outEl.value);stt=connectSTT(key);await audioCtx.audioWorklet.addModule("./pcm-worklet.js");micSource=audioCtx.createMediaStreamSource(stream);worklet=new AudioWorkletNode(audioCtx,"pcm-worklet");worklet.port.onmessage=e=>{if(!running||!stt||stt.readyState!==WebSocket.OPEN)return;if(ttsAudioCtx&&playbackTime>ttsAudioCtx.currentTime+.06)return;stt.send(e.data)};micSource.connect(worklet);const silent=audioCtx.createGain();silent.gain.value=0;worklet.connect(silent);silent.connect(audioCtx.destination);running=true;stopEl.disabled=false;status("Live • mic → STT → Amalthea TTS → output",true)}catch(e){console.error(e);await stop();status("Start failed: "+e.message);startEl.disabled=false}}
+async function stop(){running=false;if(worklet){try{worklet.disconnect()}catch{}worklet=null}if(micSource){try{micSource.disconnect()}catch{}micSource=null}if(stt){try{stt.send(JSON.stringify({type:"CloseStream"}))}catch{}try{stt.close()}catch{}stt=null}if(tts){try{tts.send(JSON.stringify({type:"Close"}))}catch{}try{tts.close()}catch{}tts=null}if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}if(audioCtx){try{await audioCtx.close()}catch{}audioCtx=null}if(ttsAudioCtx){try{await ttsAudioCtx.close()}catch{}ttsAudioCtx=null}playbackTime=0;startEl.disabled=false;stopEl.disabled=true;status("Stopped")}
+refreshEl.onclick=devices;startEl.onclick=start;stopEl.onclick=stop;keyEl.onchange=saveKey;keyEl.onblur=saveKey;navigator.mediaDevices?.addEventListener?.("devicechange",devices);loadKey();devices();
