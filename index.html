@@ -3,134 +3,185 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Flux Voice</title>
+<title>Deepgram WebSocket STT</title>
 <style>
 body{margin:0;background:#080b11;color:#fff;font:16px Arial,sans-serif}
 main{max-width:600px;margin:50px auto;padding:20px}
 .card{background:#121824;border:1px solid #303a4d;border-radius:18px;padding:24px}
 input{width:100%;padding:13px;margin:8px 0 16px;box-sizing:border-box;background:#080d15;color:#fff;border:1px solid #40506a;border-radius:10px}
-button{padding:14px 20px;border:0;border-radius:10px;background:#765cff;color:white;font-weight:bold;font-size:15px;cursor:pointer}
-button:disabled{opacity:.45}
+button{padding:14px 20px;border:0;border-radius:10px;background:#765cff;color:#fff;font-weight:bold;font-size:15px;cursor:pointer}
+button:disabled{opacity:.45;cursor:not-allowed}
 #stop{background:#a43d55;margin-left:8px}
 #status,#transcript{margin-top:16px;padding:13px;background:#080d15;border-radius:10px;white-space:pre-wrap}
 </style>
 </head>
 <body>
 <main><div class="card">
-<h1>Flux Continuous Voice</h1>
-<p>Continuous Flux STT → Amalthea Filipino TTS</p>
+<h1>Deepgram WebSocket STT</h1>
+<p>Chrome microphone → Deepgram Flux WebSocket. Continuous listening only.</p>
 <label>Deepgram API key / temporary token</label>
 <input id="key" type="password" placeholder="Paste your Deepgram key or token">
 <button id="start" type="button">Start listening</button>
 <button id="stop" type="button" disabled>Stop</button>
-<div id="status">Ready. The Start button is active.</div>
+<div id="status">Ready.</div>
 <div id="transcript">—</div>
 </div></main>
 
 <script>
 (function(){
 "use strict";
-var running=false,ctx=null,stream=null,source=null,processor=null,stt=null,tts=null,keep=null,playAt=0;
+var running=false,ctx=null,stream=null,source=null,processor=null,stt=null;
 
 function $(id){return document.getElementById(id)}
 function status(s){$("status").textContent=s}
 function auth(k){return ["token",k]}
 
 function downsample(a,rate){
- var ratio=rate/16000,n=Math.floor(a.length/ratio),o=new Int16Array(n);
- for(var i=0;i<n;i++){var p=i*ratio,j=Math.floor(p),f=p-j,x=(a[j]||0)+((a[j+1]||a[j]||0)-(a[j]||0))*f;o[i]=Math.max(-32768,Math.min(32767,Math.round(x*32767)))}
- return o.buffer;
-}
-
-function play(buf){
- if(!ctx||!running)return;
- var pcm=new Int16Array(buf),f=new Float32Array(pcm.length);
- for(var i=0;i<pcm.length;i++)f[i]=pcm[i]/32768;
- var b=ctx.createBuffer(1,f.length,24000);b.copyToChannel(f,0);
- var n=ctx.createBufferSource();n.buffer=b;n.connect(ctx.destination);
- if(playAt<ctx.currentTime+.01)playAt=ctx.currentTime+.01;
- n.start(playAt);playAt+=b.duration;
+  var ratio=rate/16000,n=Math.floor(a.length/ratio),o=new Int16Array(n);
+  for(var i=0;i<n;i++){
+    var p=i*ratio,j=Math.floor(p),f=p-j;
+    var x=(a[j]||0)+((a[j+1]||a[j]||0)-(a[j]||0))*f;
+    o[i]=Math.max(-32768,Math.min(32767,Math.round(x*32767)));
+  }
+  return o.buffer;
 }
 
 function connectSTT(key){
- return new Promise(function(resolve,reject){
-  var q=new URLSearchParams({model:"flux-general-en",encoding:"linear16",sample_rate:"16000",eot_threshold:"0.70",eot_timeout_ms:"5000"});
-  stt=new WebSocket("wss://api.deepgram.com/v2/listen?"+q,auth(key));
-  stt.onopen=function(){status("Flux STT connected — continuously listening.");resolve()};
-  stt.onmessage=function(e){
-   var m;try{m=JSON.parse(e.data)}catch(_){return}
-   if(m.type==="TurnInfo"){
-    var text=String(m.transcript||"").trim();
-    if(text){
-     $("transcript").textContent=text;
-     if(tts&&tts.readyState===1){
-      tts.send(JSON.stringify({type:"Speak",text:text}));
-      tts.send(JSON.stringify({type:"Flush"}));
-     }
-    }
-   }
-   if(m.type==="Error")status("Flux STT error: "+(m.description||"Unknown error"));
-  };
-  stt.onerror=function(){reject(new Error("Flux STT connection failed"))};
-  stt.onclose=function(){if(running)status("Flux STT disconnected")};
- });
-}
+  return new Promise(function(resolve,reject){
+    var q=new URLSearchParams({
+      model:"flux-general-en",
+      encoding:"linear16",
+      sample_rate:"16000"
+    });
 
-function connectTTS(key){
- return new Promise(function(resolve,reject){
-  var q=new URLSearchParams({model:"aura-2-amalthea-en",encoding:"linear16",sample_rate:"24000"});
-  tts=new WebSocket("wss://api.deepgram.com/v1/speak?"+q,auth(key));
-  tts.binaryType="arraybuffer";
-  tts.onopen=function(){status("Flux STT + Amalthea TTS connected.");resolve()};
-  tts.onmessage=function(e){
-   if(typeof e.data==="string"){
-    try{var m=JSON.parse(e.data);if(m.type==="Error")status("Amalthea TTS error: "+(m.description||m.message||"Unknown error"))}catch(_){}
-   }else if(e.data instanceof ArrayBuffer)play(e.data);
-   else if(e.data&&e.data.arrayBuffer)e.data.arrayBuffer().then(play);
-  };
-  tts.onerror=function(){reject(new Error("Amalthea TTS connection failed"))};
-  tts.onclose=function(){if(running)status("Amalthea TTS disconnected")};
- });
+    stt=new WebSocket(
+      "wss://api.deepgram.com/v2/listen?"+q.toString(),
+      auth(key)
+    );
+
+    stt.binaryType="arraybuffer";
+
+    stt.onopen=function(){
+      status("Connected to Deepgram WebSocket — listening continuously.");
+      resolve();
+    };
+
+    stt.onmessage=function(e){
+      if(typeof e.data!=="string")return;
+      var m;
+      try{m=JSON.parse(e.data)}catch(_){return}
+
+      if(m.type==="Connected"){
+        status("Deepgram Flux WebSocket connected.");
+      }
+
+      if(m.type==="TurnInfo"){
+        var text=String(m.transcript||"").trim();
+        if(text)$("transcript").textContent=text;
+      }
+
+      if(m.type==="Error"){
+        status("Deepgram error: "+(m.description||"Unknown error"));
+      }
+    };
+
+    stt.onerror=function(){
+      reject(new Error("Deepgram WebSocket connection failed"));
+    };
+
+    stt.onclose=function(){
+      if(running)status("Deepgram WebSocket disconnected.");
+    };
+  });
 }
 
 async function start(){
- if(running)return;
- var key=$("key").value.trim();
- if(!key){status("Enter your Deepgram API key/token first.");$("key").focus();return}
- $("start").disabled=true;$("stop").disabled=false;running=true;playAt=0;
- try{
-  ctx=new AudioContext({latencyHint:"interactive"});await ctx.resume();
-  stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
-  source=ctx.createMediaStreamSource(stream);
-  await connectSTT(key);await connectTTS(key);
-  processor=ctx.createScriptProcessor(4096,1,1);
-  processor.onaudioprocess=function(e){
-   if(running&&stt&&stt.readyState===1)stt.send(downsample(e.inputBuffer.getChannelData(0),ctx.sampleRate));
-  };
-  var mute=ctx.createGain();mute.gain.value=0;
-  source.connect(processor);processor.connect(mute);mute.connect(ctx.destination);
-  keep=setInterval(function(){if(stt&&stt.readyState===1)stt.send(JSON.stringify({type:"KeepAlive"}))},5000);
-  status("RUNNING — continuous Flux STT + Amalthea TTS.");
- }catch(e){stop();status("Start failed: "+(e.message||e))}
+  if(running)return;
+
+  var key=$("key").value.trim();
+  if(!key){
+    status("Enter your Deepgram API key or temporary token first.");
+    $("key").focus();
+    return;
+  }
+
+  $("start").disabled=true;
+  $("stop").disabled=false;
+  running=true;
+
+  try{
+    ctx=new AudioContext({latencyHint:"interactive"});
+    await ctx.resume();
+
+    stream=await navigator.mediaDevices.getUserMedia({
+      audio:{
+        channelCount:1,
+        echoCancellation:false,
+        noiseSuppression:false,
+        autoGainControl:false
+      }
+    });
+
+    source=ctx.createMediaStreamSource(stream);
+
+    await connectSTT(key);
+
+    processor=ctx.createScriptProcessor(4096,1,1);
+
+    processor.onaudioprocess=function(e){
+      if(!running||!stt||stt.readyState!==WebSocket.OPEN)return;
+      stt.send(
+        downsample(
+          e.inputBuffer.getChannelData(0),
+          ctx.sampleRate
+        )
+      );
+    };
+
+    var mute=ctx.createGain();
+    mute.gain.value=0;
+
+    source.connect(processor);
+    processor.connect(mute);
+    mute.connect(ctx.destination);
+
+    status("RUNNING — continuous Deepgram Flux WebSocket STT.");
+  }catch(e){
+    stop();
+    status("Start failed: "+(e.message||e));
+  }
 }
 
 function stop(){
- running=false;if(keep)clearInterval(keep);keep=null;
- try{if(stt&&stt.readyState===1)stt.send(JSON.stringify({type:"CloseStream"}))}catch(_){}
- try{if(tts&&tts.readyState===1)tts.send(JSON.stringify({type:"Close"}))}catch(_){}
- try{processor&&processor.disconnect()}catch(_){}
- try{source&&source.disconnect()}catch(_){}
- try{stream&&stream.getTracks().forEach(function(t){t.stop()})}catch(_){}
- try{ctx&&ctx.close()}catch(_){}
- stt=null;tts=null;processor=null;source=null;stream=null;ctx=null;
- $("start").disabled=false;$("stop").disabled=true;status("Stopped. Start button is ready.");
+  running=false;
+
+  try{
+    if(stt&&stt.readyState===WebSocket.OPEN)
+      stt.send(JSON.stringify({type:"CloseStream"}));
+  }catch(_){}
+
+  try{if(processor)processor.disconnect()}catch(_){}
+  try{if(source)source.disconnect()}catch(_){}
+  try{if(stream)stream.getTracks().forEach(function(t){t.stop()})}catch(_){}
+  try{if(ctx)ctx.close()}catch(_){}
+  try{if(stt)stt.close()}catch(_){}
+
+  stt=null;
+  processor=null;
+  source=null;
+  stream=null;
+  ctx=null;
+
+  $("start").disabled=false;
+  $("stop").disabled=true;
+  status("Stopped. Ready.");
 }
 
 window.addEventListener("DOMContentLoaded",function(){
- $("start").disabled=false;
- $("stop").disabled=true;
- $("start").onclick=start;
- $("stop").onclick=stop;
+  $("start").disabled=false;
+  $("stop").disabled=true;
+  $("start").onclick=start;
+  $("stop").onclick=stop;
 });
 })();
 </script>
