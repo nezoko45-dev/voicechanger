@@ -190,24 +190,30 @@ async function convertPending(){
   }catch(e){console.error("OpenVoice conversion:",e)}
   finally{converting=false;if(pendingQueue.length)void convertPending()}
 }
+function inputChannels(d){return Number(d?.inputChannels??d?.maxInputChannels??0)}
+function outputChannels(d){return Number(d?.outputChannels??d?.maxOutputChannels??0)}
 function deviceId(list,value,kind){
   const n=Number(value);
-  if(Number.isFinite(n)&&list.some(d=>d.id===n))return n;
-  const d=list.find(x=>kind==="input"?x.inputChannels>0:x.outputChannels>0);
+  if(Number.isFinite(n)&&list.some(d=>Number(d.id)===n))return n;
+  const d=list.find(x=>kind==="input"?inputChannels(x)>0:outputChannels(x)>0);
   return d?.id;
 }
 function findVoicemeeter(list){
-  return list.find(d=>{
+  const candidates=list.filter(d=>outputChannels(d)>0&&String(d.name||"").toLowerCase().includes("voicemeeter"));
+  const score=d=>{
     const n=String(d.name||"").toLowerCase();
-    return d.outputChannels>0&&n.includes("voicemeeter input");
-  })?.id;
+    if(n.includes("voicemeeter input"))return 100;
+    if(n.includes("voicemeeter aux input"))return 95;
+    if(/voicemeeter\s+(in\s*\d+|vaio3\s+input)/.test(n))return 90;
+    return 50;
+  };
+  candidates.sort((a,b)=>score(b)-score(a));
+  return candidates[0]?.id;
 }
 async function devices(){
   await loadAudio();
   const probe=new aud.RtAudio(aud.RtAudioApi.WINDOWS_WASAPI);
-  const list=probe.getDevices();
-  try{probe.closeStream?.()}catch{}
-  return list;
+  try{return probe.getDevices()}finally{try{probe.closeStream?.()}catch{}}
 }
 async function stopAudio(){
   running=false;
@@ -238,7 +244,12 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==="OPTIONS"){res.writeHead(204,{"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"content-type"});return res.end()}
   const pathname=decodeURIComponent(new URL(req.url||"/","http://127.0.0.1:"+PORT).pathname);
   if(pathname==="/health"&&req.method==="GET")return reply(res,200,{ok:true,models:!!(refModel&&convModel),voice:!!target,running,wasapi:process.platform==="win32",inputId,outputId,underruns});
-  if(pathname==="/devices"&&req.method==="GET"){try{return reply(res,200,{ok:true,devices:await devices(),voicemeeterId:findVoicemeeter(await devices())})}catch(e){return reply(res,500,{ok:false,error:e.message})}}
+  if(pathname==="/devices"&&req.method==="GET"){
+    try{
+      const list=await devices();
+      return reply(res,200,{ok:true,devices:list,voicemeeterId:findVoicemeeter(list)});
+    }catch(e){return reply(res,500,{ok:false,error:e.message})}
+  }
   if(pathname==="/target"&&req.method==="POST"){
     try{
       const body=await readJson(req);if(typeof body.wav!=="string"||!body.wav)throw Error("No WAV data was provided.");
