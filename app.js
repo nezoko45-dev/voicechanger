@@ -43,20 +43,27 @@ function makeProcessor(){
 }
 function connectTTS(token){
  return new Promise((resolve,reject)=>{
-   const model=$("voice").value.trim()||"aura-2-asteria-en";
-   tts=new WebSocket("wss://api.deepgram.com/v1/speak?model="+encodeURIComponent(model)+"&encoding=linear16&sample_rate=48000",authProtocols(token));
+   const model=$("voice").value.trim()||"flux-haley-en";
+   const expressivity=$("expressivity").value;
+   const url="wss://api.deepgram.com/v2/speak?model="+encodeURIComponent(model)+"&encoding=linear16&sample_rate=48000&expressivity="+encodeURIComponent(expressivity);
+   tts=new WebSocket(url,authProtocols(token));
    tts.binaryType="arraybuffer";
-   tts.onopen=()=>{ttsReady=true;say("STT + TTS connected. Listening continuously.","ok");resolve()};
+   tts.onopen=()=>{ttsReady=true;say("STT + Flux TTS connected. Listening continuously.","ok");resolve()};
    tts.onmessage=e=>{
      if(typeof e.data==="string"){
-       try{const m=JSON.parse(e.data);if(m.type==="Metadata")return;if(m.type==="Flushed")return;if(m.type==="Warning")say("TTS warning: "+m.description,"err")}catch{}
+       try{
+         const m=JSON.parse(e.data);
+         if(m.type==="SpeechStarted"||m.type==="SpeechMetadata")return;
+         if(m.type==="Warning")say("Flux warning: "+(m.description||"Unknown warning"),"err");
+         if(m.type==="Error")say("Flux error: "+(m.description||m.message||"Unknown error"),"err");
+       }catch{}
        return;
      }
      if(e.data instanceof ArrayBuffer)playPCM16(e.data,48000);
      else if(e.data?.arrayBuffer)e.data.arrayBuffer().then(b=>playPCM16(b,48000));
    };
-   tts.onerror=()=>reject(Error("Deepgram TTS WebSocket error."));
-   tts.onclose=()=>{ttsReady=false;if(running)say("TTS WebSocket closed.","err")};
+   tts.onerror=()=>reject(Error("Deepgram Flux TTS WebSocket error."));
+   tts.onclose=()=>{ttsReady=false;if(running)say("Flux TTS WebSocket closed.","err")};
  });
 }
 function connectSTT(token){
@@ -89,7 +96,7 @@ async function start(){
    await connectSTT(token);await connectTTS(token);
    processor=makeProcessor();
    sttKeepAlive=setInterval(()=>{if(stt?.readyState===WebSocket.OPEN)stt.send(JSON.stringify({type:"KeepAlive"}))},8000);
-   say("Continuous STT is ON. Speak normally.","ok");
+   say("Continuous STT + expressive Flux TTS is ON. Speak normally.","ok");
  }catch(e){stop();say("Start error: "+e.message,"err")}
 }
 function stop(){
