@@ -1,14 +1,10 @@
 {
   "name": "voicechanger",
-  "version": "2.0.0",
-  "description": "OpenVoice V2 live voice changer for Windows",
+  "version": "3.0.0",
+  "description": "Chrome-based OpenVoice V2 live voice changer for Windows",
   "private": true,
-  "main": "electron-main.js",
-  "type": "commonjs",
+  "type": "module",
   "scripts": {
-    "start": "electron ."
-  },
-  "devDependencies": {
-    "electron": "^43.7.1"
+    "start": "node server.mjs"
   }
 }
