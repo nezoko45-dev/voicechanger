@@ -1,7 +1,7 @@
 const $=id=>document.getElementById(id);
 const mic=$("mic"),out=$("out"),voice=$("voice"),load=$("load"),start=$("start"),stop=$("stop");
-const cable=$("cable"),refresh=$("refresh"),status=$("status"),msg=$("msg");
-let ws=null,sourceWs=null,running=false,cableId=null;
+const cable=$("cable"),refresh=$("refresh"),status=$("status"),msg=$("msg"),deepgramKey=$("deepgramKey");
+let ws=null,sourceWs=null,running=false,cableId=null,backendReadyResolve=null,backendReadyReject=null;
 let stream=null,ctx=null,source=null,worklet=null,capturing=false;
 const RATE=48000,CHUNK=960;
 const say=x=>msg.textContent=x;
@@ -83,8 +83,17 @@ function connectSource(){
 function connectBackend(){
   return new Promise((resolve,reject)=>{
     ws=new WebSocket("ws://127.0.0.1:8765/audio");ws.onopen=resolve;ws.onerror=()=>reject(Error("Backend connection failed."));
-    ws.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==="status")say(m.text);if(m.type==="error")say("Backend: "+m.error)}catch{}};
-    ws.onclose=()=>{running=false;start.disabled=false;stop.disabled=true;void stopCapture()};
+    ws.onmessage=e=>{try{
+      const m=JSON.parse(e.data);
+      if(m.type==="status"){say(m.text);if(m.text.includes("Deepgram STT connected")){backendReadyResolve?.();backendReadyResolve=null;backendReadyReject=null}}
+      if(m.type==="error"){say("Backend: "+m.error);backendReadyReject?.(Error(m.error));backendReadyResolve=null;backendReadyReject=null}
+    }catch{}};
+    ws.onclose=()=>{backendReadyReject?.(Error("Backend connection closed."));backendReadyResolve=null;backendReadyReject=null;running=false;start.disabled=false;stop.disabled=true;void stopCapture()};
+  });
+}
+function waitForBackendReady(){
+  return new Promise((resolve,reject)=>{
+    backendReadyResolve=resolve;backendReadyReject=reject;
   });
 }
 load.onclick=async()=>{
@@ -111,4 +120,4 @@ stop.onclick=async()=>{
 };
 cable.onclick=()=>{if(cableId===null){say("VB-CABLE was not detected. Install it, then Refresh devices.");return}out.value=cableId;say("VB-CABLE selected as the WASAPI output.")};
 refresh.onclick=async()=>{await health();await devices()};
-(async()=>{await health();await devices();try{await connectSource()}catch{say("Electron audio is waiting for the backend...")}})();
+(async()=>{deepgramKey.value=localStorage.getItem("deepgramKey")||"";deepgramKey.addEventListener("input",()=>localStorage.setItem("deepgramKey",deepgramKey.value));await health();await devices();try{await connectSource()}catch{say("Electron audio is waiting for the backend...")}})();
