@@ -1,0 +1,26 @@
+name: Build VoiceChanger EXE
+on:
+  push:
+    branches: [exe-audio-engine]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Publish
+        run: dotnet publish VoiceChangerExe/VoiceChangerExe.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force package | Out-Null
+          Copy-Item publish/VoiceChangerExe.exe package/VoiceChanger.exe
+          Copy-Item start-voicechanger.bat package/start-voicechanger.bat
+          Compress-Archive -Path package/* -DestinationPath VoiceChanger-Windows.zip -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VoiceChanger-Windows
+          path: VoiceChanger-Windows.zip
