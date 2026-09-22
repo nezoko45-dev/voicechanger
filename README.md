@@ -1,36 +1,32 @@
-# Simple WebGPU Voice Cloner
+# Deepgram Continuous STT/TTS Voice App
 
-This repo is now the simple browser-only version.
+Simple browser-only pipeline:
 
-## What it does
+headset mic → Deepgram STT WebSocket → Deepgram TTS WebSocket → Chrome audio → Voicemeeter → VRChat
 
-headset mic → RVC voice conversion → Chrome output → Voicemeeter → VRChat
+## How it works
 
-There is no Python, Electron, Deepgram STT, or Deepgram TTS.
+- The microphone stays open continuously.
+- Browser audio is downsampled to 16 kHz PCM and streamed continuously to Deepgram's `/v1/listen` WebSocket.
+- Interim STT results appear immediately.
+- When Deepgram marks a completed speech segment, that transcript is sent to one persistent Deepgram `/v1/speak` WebSocket.
+- TTS audio is played as raw 48 kHz PCM chunks as they arrive instead of waiting for a complete audio file.
+- KeepAlive messages keep the STT connection alive during silence.
 
-## One-time voice model
+Deepgram documents `interim_results=true` for ongoing transcription updates and the `speech_final` result for finalized speech segments. citeturn0search7
 
-1. Select your RVC v2 .onnx target voice model.
-2. Click Build voice model once.
-3. The target model is saved in the browser's IndexedDB.
-4. ContentVec and RMVPE are downloaded automatically the first time and saved locally too.
-5. Next time, the app can reuse the saved models without asking for the support files again.
+Deepgram's TTS WebSocket supports continuous text input with `Speak` and `Flush` messages and streams audio back over the same connection. citeturn0search5turn0search0
 
-The UI has only one model picker: your target RVC voice model.
+## Setup
 
-## Requirements
+1. Open the app.
+2. Paste a Deepgram API key or temporary token.
+3. Leave the TTS voice as `aura-2-asteria-en` or enter another Aura voice.
+4. Click Start listening.
+5. Route Chrome's output through Voicemeeter if you want VRChat to receive it.
 
-- Chrome/Edge with WebGPU and hardware acceleration.
-- An RVC v2 target voice model (.onnx; .pth may work through the runtime converter).
-- A microphone.
-- Voicemeeter if you want to send converted browser audio into VRChat.
+For browser WebSockets, Deepgram supports authentication through the `Sec-WebSocket-Protocol` mechanism because browsers cannot set arbitrary Authorization headers on WebSocket connections. citeturn0search3
 
-RVC-Web-Runtime is browser-based and currently uses WebGPU for ContentVec/RMVPE while the main RVC synthesis stage runs through WASM. The runtime is alpha and processes audio in chunks.
+## Important
 
-## Voicemeeter
-
-Set Chrome's Windows playback/output device to the Voicemeeter input you want. In Voicemeeter, route that input to the virtual microphone bus used by VRChat.
-
-## Important distinction
-
-This app stores and reuses a trained RVC target voice model. It does not train a new RVC model from a random WAV recording in the browser. RVC requires a target voice model plus its feature and pitch support models.
+This is an STT → TTS echo/voice app, not an audio-to-audio voice clone. Deepgram STT turns your microphone into text, and Deepgram TTS generates the response voice from that text.
