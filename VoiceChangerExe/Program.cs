@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 
@@ -11,7 +12,7 @@ listener.Start();
 Console.Title = "VoiceChanger Audio Engine";
 Console.WriteLine("VoiceChanger.exe");
 Console.WriteLine("Control page: http://127.0.0.1:8765");
-Console.WriteLine("Audio stays inside the EXE: microphone -> OpenVoice/ONNX -> output.");
+Console.WriteLine("Pipeline: Electron mic -> Deepgram STT + local WebSocket -> OpenVoice/ONNX -> Voicemeeter.");
 
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; engine.Stop(); };
 
@@ -33,6 +34,12 @@ async Task Handle(HttpListenerContext ctx)
         ctx.Response.Headers["Access-Control-Allow-Headers"] = "content-type";
 
         if (req.HttpMethod == "OPTIONS") { ctx.Response.StatusCode = 204; ctx.Response.Close(); return; }
+
+        if (path == "/audio" && req.HttpMethod == "GET" && req.IsWebSocketRequest)
+        {
+            await HandleAudioSocket(ctx);
+            return;
+        }
 
         if (path == "/health" && req.HttpMethod == "GET")
         {
@@ -61,8 +68,12 @@ async Task Handle(HttpListenerContext ctx)
             var body = await ReadJson(ctx);
             int? inputId = body.TryGetProperty("inputId", out var i) && i.ValueKind != JsonValueKind.Null ? i.GetInt32() : null;
             int? outputId = body.TryGetProperty("outputId", out var o) && o.ValueKind != JsonValueKind.Null ? o.GetInt32() : null;
-            await engine.StartAsync(inputId, outputId);
-            await Json(ctx, 200, new { ok = true });
+            bool external = body.TryGetProperty("external", out var x) && x.ValueKind == JsonValueKind.True;
+
+            if (external) await engine.StartExternalAsync(outputId);
+            else await engine.StartAsync(inputId, outputId);
+
+            await Json(ctx, 200, new { ok = true, external });
             return;
         }
 
@@ -78,6 +89,7 @@ async Task Handle(HttpListenerContext ctx)
             var relative = path == "/" ? "index.html" : path.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
             var file = Path.GetFullPath(Path.Combine(root, "wwwroot", relative));
             var webroot = Path.GetFullPath(Path.Combine(root, "wwwroot")) + Path.DirectorySeparatorChar;
+
             if (file.StartsWith(webroot, StringComparison.OrdinalIgnoreCase) && File.Exists(file))
             {
                 var ext = Path.GetExtension(file).ToLowerInvariant();
@@ -89,6 +101,7 @@ async Task Handle(HttpListenerContext ctx)
                     ".json" => "application/json; charset=utf-8",
                     _ => "application/octet-stream"
                 };
+
                 var data = await File.ReadAllBytesAsync(file);
                 ctx.Response.ContentLength64 = data.Length;
                 await ctx.Response.OutputStream.WriteAsync(data);
@@ -103,6 +116,45 @@ async Task Handle(HttpListenerContext ctx)
     {
         Console.WriteLine("[ERROR] " + ex.Message);
         try { await Json(ctx, 500, new { ok = false, error = ex.Message }); } catch { }
+    }
+}
+
+async Task HandleAudioSocket(HttpListenerContext ctx)
+{
+    using var wsContext = await ctx.AcceptWebSocketAsync(null);
+    var socket = wsContext.WebSocket;
+    var buffer = new byte[64 * 1024];
+
+    Console.WriteLine("[WS] Electron audio connected.");
+
+    try
+    {
+        while (socket.State == WebSocketState.Open)
+        {
+            using var ms = new MemoryStream();
+            WebSocketReceiveResult result;
+
+            do
+            {
+                result = await socket.ReceiveAsync(buffer, CancellationToken.None);
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "closed", CancellationToken.None);
+                    return;
+                }
+                if (result.MessageType != WebSocketMessageType.Binary)
+                    continue;
+                ms.Write(buffer, 0, result.Count);
+            }
+            while (!result.EndOfMessage);
+
+            if (ms.Length > 0)
+                engine.PushPcm16(ms.ToArray());
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine("[WS] " + ex.Message);
     }
 }
 
