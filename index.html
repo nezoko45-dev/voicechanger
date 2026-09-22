@@ -9,8 +9,8 @@
 <label for="mic">Microphone</label><select id="mic"></select>
 <label for="out">Output</label><select id="out"></select>
 <div class="row"><button id="cable" class="secondary">Detecting VB-CABLE...</button><button id="refresh" class="secondary">Refresh devices</button></div></div>
-<div class="card"><label for="voice">Reference voice WAV</label><input id="voice" type="file" accept=".wav,audio/wav">
+<div class="card"><label for="deepgramKey">Deepgram API key</label><input id="deepgramKey" type="password" placeholder="Paste your Deepgram API key"><p style="color:#8b949e;margin:8px 0 0;font-size:13px">Used only by this local app for streaming speech detection. It is stored in this Electron profile.</p><label for="voice">Reference voice WAV</label><input id="voice" type="file" accept=".wav,audio/wav">
 <div class="row"><button id="load">Load Voice</button><button id="start">Start Voice Changer</button></div><button id="stop" class="danger" disabled style="margin-top:10px">Stop</button></div>
-<div class="card route"><b>Audio path</b><br>Microphone → <b>Electron</b> → OpenVoice ONNX → WASAPI → selected output<br><br>For VRChat/Discord with VB-CABLE: select <b>CABLE Input</b> here, then select <b>CABLE Output</b> as the microphone in VRChat/Discord.</div>
+<div class="card route"><b>Audio path</b><br>Microphone → <b>Electron</b> → <b>Deepgram STT</b> → complete speech buffer → <b>OpenVoice V2 ONNX</b> → WASAPI → selected output<br><br>For VRChat/Discord with VB-CABLE: select <b>CABLE Input</b> here, then select <b>CABLE Output</b> as the microphone in VRChat/Discord.</div>
 <p id="msg">Load a reference WAV, choose your microphone and output, then Start.</p>
 </main><script type="module" src="/app.js"></script></body></html>
