@@ -1,32 +1,43 @@
-# Deepgram Continuous STT/TTS Voice App
+# Flux Continuous Voice
 
-Simple browser-only pipeline:
+Simple browser voice pipeline:
 
-headset mic → Deepgram STT WebSocket → Deepgram TTS WebSocket → Chrome audio → Voicemeeter → VRChat
+**Microphone → Deepgram Flux STT → Deepgram Aura-2 Amalthea TTS → Chrome audio → Voicemeeter/VRChat**
 
-## How it works
+## What this build does
 
-- The microphone stays open continuously.
-- Browser audio is downsampled to 16 kHz PCM and streamed continuously to Deepgram's `/v1/listen` WebSocket.
-- Interim STT results appear immediately.
-- When Deepgram marks a completed speech segment, that transcript is sent to one persistent Deepgram `/v1/speak` WebSocket.
-- TTS audio is played as raw 48 kHz PCM chunks as they arrive instead of waiting for a complete audio file.
-- KeepAlive messages keep the STT connection alive during silence.
+- Keeps the microphone and Flux STT WebSocket connected continuously.
+- Sends raw 16 kHz PCM to Deepgram Flux over `/v2/listen`.
+- Uses Flux's turn detection instead of repeatedly stopping/restarting recognition.
+- Keeps one persistent TTS WebSocket for the conversation.
+- Sends each completed transcript as a TTS turn.
+- Plays raw 24 kHz PCM as a scheduled audio queue to reduce gaps and chopped endings.
+- Sends Flux KeepAlive messages during silence.
 
-Deepgram documents `interim_results=true` for ongoing transcription updates and the `speech_final` result for finalized speech segments. citeturn0search7
+## Important voice detail
 
-Deepgram's TTS WebSocket supports continuous text input with `Speak` and `Flush` messages and streams audio back over the same connection. citeturn0search5turn0search0
+Deepgram's **Amalthea** voice is **Aura-2**, model `aura-2-amalthea-en`, with a Filipino English accent. Amalthea is not currently part of the Flux TTS voice catalog.
 
-## Setup
+Therefore this version intentionally uses:
 
-1. Open the app.
-2. Paste a Deepgram API key or temporary token.
-3. Leave the TTS voice as `aura-2-asteria-en` or enter another Aura voice.
-4. Click Start listening.
-5. Route Chrome's output through Voicemeeter if you want VRChat to receive it.
+- **Flux STT:** `flux-general-en`
+- **Amalthea TTS:** `aura-2-amalthea-en`
 
-For browser WebSockets, Deepgram supports authentication through the `Sec-WebSocket-Protocol` mechanism because browsers cannot set arbitrary Authorization headers on WebSocket connections. citeturn0search3
+That is the combination that matches the requested continuous Flux listening plus Filipino Amalthea output.
 
-## Important
+## Run it
 
-This is an STT → TTS echo/voice app, not an audio-to-audio voice clone. Deepgram STT turns your microphone into text, and Deepgram TTS generates the response voice from that text.
+1. Open `index.html` from a local web server or GitHub Pages.
+2. Paste a Deepgram API key or short-lived token into the page.
+3. Click **Start listening**.
+4. Allow microphone access.
+5. Speak normally.
+6. Route Chrome audio to Voicemeeter if you want the generated voice sent into VRChat.
+
+The key is entered at runtime and is not stored in this repository.
+
+## Browser authentication
+
+Browsers cannot set an arbitrary Authorization header on a WebSocket constructor, so the app uses Deepgram's documented `Sec-WebSocket-Protocol` authentication form: `token, YOUR_KEY`.
+
+For public production deployments, use short-lived Deepgram tokens from a backend instead of exposing a long-lived API key to the browser.
