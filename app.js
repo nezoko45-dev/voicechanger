@@ -8,15 +8,19 @@ const setStatus=t=>status.innerHTML='<span class="dot"></span>'+t;
 async function devices(){
  try{
   const p=await navigator.mediaDevices.getUserMedia({audio:true,video:false});p.getTracks().forEach(t=>t.stop());
-  const all=await navigator.mediaDevices.enumerateDevices();mic.innerHTML="";out.innerHTML="";
+  const all=await navigator.mediaDevices.enumerateDevices();
+  mic.innerHTML="";out.innerHTML="";
   all.filter(d=>d.kind==="audioinput").forEach(d=>{const o=document.createElement("option");o.value=d.deviceId;o.textContent=d.label||"Microphone";mic.appendChild(o)});
-  const outputs=all.filter(d=>d.kind==="audiooutput");
-  outputs.forEach(d=>{const o=document.createElement("option");o.value=d.deviceId;o.textContent=d.label||"Audio output";out.appendChild(o)});
-  const vm=outputs.find(d=>/voicemeeter/i.test(d.label));voicemeeterId=vm?.deviceId||null;
-  if(voicemeeterId)out.value=voicemeeterId;
-  cable.textContent=voicemeeterId?"Voicemeeter detected":"Voicemeeter not detected";
-  say(voicemeeterId?"Voicemeeter output selected.":"Select a Voicemeeter playback device.");
- }catch(e){say("Microphone permission failed: "+e.message)}
+
+  const backend=await fetch("/devices",{cache:"no-store"}).then(r=>r.json());
+  if(!backend.ok)throw Error(backend.error||"Could not read Windows audio devices.");
+  backend.devices.filter(d=>d.output===true).forEach(d=>{const o=document.createElement("option");o.value=String(d.id);o.textContent=d.name;out.appendChild(o)});
+
+  voicemeeterId=backend.voicemeeterId??null;
+  if(voicemeeterId!==null)out.value=String(voicemeeterId);
+  cable.textContent=voicemeeterId!==null?"Voicemeeter detected":"Voicemeeter not detected";
+  say(voicemeeterId!==null?"Voicemeeter output selected.":"Select a Windows playback output.");
+ }catch(e){say("Device setup failed: "+e.message)}
 }
 
 async function loadVoice(){
@@ -101,7 +105,7 @@ async function startAudio(){
   if(!voiceLoaded)return say("Load your reference WAV first.");
   if(!mic.value)return say("Select your microphone.");
   start.disabled=true;stop.disabled=true;say("Starting Electron mic → Deepgram + OpenVoice/ONNX...");
-  const r=await fetch("/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({external:true,outputId:null})});
+  const r=await fetch("/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({external:true,outputId:Number(out.value)})});
   const j=await r.json();if(!j.ok)throw Error(j.error||"Audio engine failed.");
   await connectLocal();await connectDeepgram();running=true;await startCapture();
   stop.disabled=false;setStatus("Running • Mic → Deepgram STT + OpenVoice/ONNX → Voicemeeter");say("Live pipeline running. Converted audio is sent to Voicemeeter.");
