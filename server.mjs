@@ -172,13 +172,12 @@ server.listen(PORT,"127.0.0.1",async()=>{console.log("VoiceChanger ready: http:/
         }catch(e){console.error("audio:",e);if(ws.readyState===1)ws.send(JSON.stringify({type:"error",error:e.message}))}
       });
       ws.on("close",async()=>{if(activeSocket===ws){activeSocket=null;await stopWasapi()}})
-    })
-  wss.on("connection",ws=>{});
+    });
   const sourceWss=new WebSocketServer({server,path:"/source"});
   sourceWss.on("connection",ws=>{
     sourceSocket=ws;
-    ws.on("message",raw=>{
-      if(typeof raw==="string"){
+    ws.on("message",(raw,isBinary)=>{
+      if(!isBinary){
         try{
           const m=JSON.parse(raw);
           if(m.type==="ready")emitStatus("Electron microphone active • "+(m.deviceName||"selected microphone"));
@@ -186,7 +185,7 @@ server.listen(PORT,"127.0.0.1",async()=>{console.log("VoiceChanger ready: http:/
         }catch{}
         return;
       }
-      if(Buffer.isBuffer(raw)||raw instanceof ArrayBuffer)pushCapture(Buffer.from(raw));
+      if(isBinary)pushCapture(Buffer.from(raw));
     });
     ws.on("close",()=>{if(sourceSocket===ws){sourceSocket=null;if(rtStarted)emitStatus("Electron audio source disconnected")}}});
   });
