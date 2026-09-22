@@ -1,4 +1,8 @@
 const { app, BrowserWindow, session } = require("electron");
+
+// Keep the renderer on the stable CPU audio/inference path. WebGPU crashes can
+// take down the whole Electron renderer on some Windows GPU/driver combinations.
+app.disableHardwareAcceleration();
 const path = require("node:path");
 
 app.commandLine.appendSwitch("disable-renderer-backgrounding");
@@ -21,9 +25,22 @@ function createWindow() {
     }
   });
 
+  win.webContents.on("render-process-gone", (_event, details) => {
+    console.error(`Renderer exited: ${details.reason} (exitCode ${details.exitCode ?? "n/a"})`);
+  });
+
   win.once("ready-to-show", () => win.show());
-  win.loadFile(path.join(__dirname, "index.html"));
+  win.loadFile(path.join(__dirname, "index.html")).catch((err) => {
+    console.error("Failed to load VoiceChanger UI:", err);
+  });
 }
+
+process.on("uncaughtException", (err) => console.error("Electron main-process error:", err));
+process.on("unhandledRejection", (err) => console.error("Electron promise error:", err));
+
+app.on("child-process-gone", (_event, details) => {
+  console.error(`Electron child process exited: ${details.type} / ${details.name ?? "unknown"} / ${details.reason}`);
+});
 
 app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
