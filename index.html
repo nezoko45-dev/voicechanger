@@ -8,8 +8,9 @@ input{width:100%;box-sizing:border-box;padding:13px;margin:8px 0 14px;background
 button{padding:13px 18px;border:0;border-radius:10px;background:#765cff;color:white;font-weight:bold;cursor:pointer;margin:4px}
 button:disabled{opacity:.45}.danger{background:#a43d55}.row{display:flex;align-items:center;gap:12px;margin:14px 0}.row input{margin:0}.box{margin-top:14px;padding:13px;background:#080d15;border-radius:10px;white-space:pre-wrap}
 </style></head><body><main><div class="card">
-<h1>Flux + Deepgram TTS</h1><p>Deepgram Flux STT → Deepgram Aura TTS → Tone.js pitch</p>
+<h1>Flux + Deepgram TTS</h1><p>Deepgram Flux STT + Keyterms → Deepgram Aura TTS → Tone.js pitch</p>
 <label>Deepgram API key / temporary token</label><input id="key" type="password" placeholder="Paste Deepgram key or token">
+<label>Words to recognize accurately</label><input id="terms" value="avatar, VRChat, Voicemeeter, Deepgram, Aura, voice changer" placeholder="avatar, VRChat, names, jargon">
 <label>Pitch: <span id="pitchValue">1.00x</span></label>
 <div class="row"><input id="pitch" type="range" min="0.70" max="1.50" step="0.01" value="1"></div>
 <button id="start">Start listening</button><button id="stop" class="danger" disabled>Stop</button>
@@ -59,9 +60,17 @@ function speak(x){queue.push(x);next()}
 function next(){if(busy||!queue.length||!running)return;tts(queue.shift())}
 function flux(key){
  return new Promise(function(resolve,reject){
-  var q=new URLSearchParams({model:"flux-general-en",encoding:"linear16",sample_rate:"16000"});
+  var q=new URLSearchParams({model:"flux-general-en",encoding:"linear16",sample_rate:"16000",eot_threshold:"0.8",eot_timeout_ms:"7000"});
+  var terms=$("terms").value.split(",").map(function(x){return x.trim()}).filter(Boolean);
+  terms.forEach(function(term){q.append("keyterm",term)});
   stt=new WebSocket("wss://api.deepgram.com/v2/listen?"+q,["token",key]);
-  stt.onopen=function(){status("Flux connected — listening continuously.");resolve()};
+  stt.onopen=function(){
+    status("Flux connected — custom vocabulary active.");
+    if(terms.length){
+      try{stt.send(JSON.stringify({type:"Configure",keyterms:terms}))}catch(_){}
+    }
+    resolve()
+  };
   stt.onerror=function(){reject(Error("Deepgram Flux WebSocket failed"))};
   stt.onclose=function(){if(running)status("Flux disconnected.")};
   stt.onmessage=function(e){
@@ -87,7 +96,7 @@ async function start(){
   var src=ctx.createMediaStreamSource(mic);proc=ctx.createScriptProcessor(4096,1,1);
   proc.onaudioprocess=function(e){if(running&&stt&&stt.readyState===1)stt.send(down(e.inputBuffer.getChannelData(0),ctx.sampleRate))};
   var mute=ctx.createGain();mute.gain.value=0;src.connect(proc);proc.connect(mute);mute.connect(ctx.destination);
-  status("RUNNING — Flux STT + Deepgram Aura TTS + Tone.js.");
+  status("RUNNING — Flux STT + custom keyterms + Deepgram Aura TTS + pitch.");
  }catch(e){stop();status("Start failed: "+e.message)}
 }
 function stop(){
