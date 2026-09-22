@@ -4,6 +4,6 @@
   "private":true,
   "type":"module",
   "engines":{"node":">=20"},
-  "scripts":{"start":"node server.mjs"},
-  "dependencies":{"audify":"^1.10.1","onnxruntime-node":"^1.22.0","ws":"^8.18.3"}
+  "scripts":{"start":"node server.mjs","electron":"electron electron/main.cjs"},
+  "dependencies":{"audify":"^1.10.1","electron":"^42.11.3","onnxruntime-node":"^1.22.0","ws":"^8.18.3"}
 }
