@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Deepgram WebSocket STT</title>
+<title>Deepgram Voice — Amalthea</title>
 <style>
 body{margin:0;background:#080b11;color:#fff;font:16px Arial,sans-serif}
-main{max-width:600px;margin:50px auto;padding:20px}
+main{max-width:620px;margin:50px auto;padding:20px}
 .card{background:#121824;border:1px solid #303a4d;border-radius:18px;padding:24px}
 input{width:100%;padding:13px;margin:8px 0 16px;box-sizing:border-box;background:#080d15;color:#fff;border:1px solid #40506a;border-radius:10px}
 button{padding:14px 20px;border:0;border-radius:10px;background:#765cff;color:#fff;font-weight:bold;font-size:15px;cursor:pointer}
@@ -17,8 +17,8 @@ button:disabled{opacity:.45;cursor:not-allowed}
 </head>
 <body>
 <main><div class="card">
-<h1>Deepgram WebSocket STT</h1>
-<p>Chrome microphone → Deepgram Flux WebSocket. Continuous listening only.</p>
+<h1>Amalthea Voice</h1>
+<p>Continuous Deepgram Flux STT → Deepgram Aura-2 Amalthea TTS</p>
 <label>Deepgram API key / temporary token</label>
 <input id="key" type="password" placeholder="Paste your Deepgram key or token">
 <button id="start" type="button">Start listening</button>
@@ -30,7 +30,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 <script>
 (function(){
 "use strict";
-var running=false,ctx=null,stream=null,source=null,processor=null,stt=null;
+var running=false,ctx=null,stream=null,source=null,processor=null,stt=null,tts=null,playAt=0;
 
 function $(id){return document.getElementById(id)}
 function status(s){$("status").textContent=s}
@@ -46,6 +46,18 @@ function downsample(a,rate){
   return o.buffer;
 }
 
+function play(buf){
+  if(!ctx||!running)return;
+  var pcm=new Int16Array(buf),f=new Float32Array(pcm.length);
+  for(var i=0;i<pcm.length;i++)f[i]=pcm[i]/32768;
+  var b=ctx.createBuffer(1,f.length,24000);
+  b.copyToChannel(f,0);
+  var n=ctx.createBufferSource();
+  n.buffer=b;n.connect(ctx.destination);
+  if(playAt<ctx.currentTime+.01)playAt=ctx.currentTime+.01;
+  n.start(playAt);playAt+=b.duration;
+}
+
 function connectSTT(key){
   return new Promise(function(resolve,reject){
     var q=new URLSearchParams({
@@ -53,135 +65,98 @@ function connectSTT(key){
       encoding:"linear16",
       sample_rate:"16000"
     });
-
-    stt=new WebSocket(
-      "wss://api.deepgram.com/v2/listen?"+q.toString(),
-      auth(key)
-    );
-
-    stt.binaryType="arraybuffer";
-
-    stt.onopen=function(){
-      status("Connected to Deepgram WebSocket — listening continuously.");
-      resolve();
-    };
-
+    stt=new WebSocket("wss://api.deepgram.com/v2/listen?"+q,auth(key));
+    stt.onopen=function(){status("Deepgram Flux connected — continuously listening.");resolve()};
     stt.onmessage=function(e){
       if(typeof e.data!=="string")return;
-      var m;
-      try{m=JSON.parse(e.data)}catch(_){return}
-
-      if(m.type==="Connected"){
-        status("Deepgram Flux WebSocket connected.");
-      }
-
+      var m;try{m=JSON.parse(e.data)}catch(_){return}
       if(m.type==="TurnInfo"){
         var text=String(m.transcript||"").trim();
-        if(text)$("transcript").textContent=text;
+        if(text){
+          $("transcript").textContent=text;
+          speak(text);
+        }
       }
-
-      if(m.type==="Error"){
-        status("Deepgram error: "+(m.description||"Unknown error"));
-      }
+      if(m.type==="Error")status("STT error: "+(m.description||"Unknown error"));
     };
-
-    stt.onerror=function(){
-      reject(new Error("Deepgram WebSocket connection failed"));
-    };
-
-    stt.onclose=function(){
-      if(running)status("Deepgram WebSocket disconnected.");
-    };
+    stt.onerror=function(){reject(new Error("Deepgram STT WebSocket connection failed"))};
+    stt.onclose=function(){if(running)status("Deepgram STT disconnected.")};
   });
+}
+
+function connectTTS(key){
+  return new Promise(function(resolve,reject){
+    var q=new URLSearchParams({
+      model:"aura-2-amalthea-en",
+      encoding:"linear16",
+      sample_rate:"24000"
+    });
+    tts=new WebSocket("wss://api.deepgram.com/v1/speak?"+q,auth(key));
+    tts.binaryType="arraybuffer";
+    tts.onopen=function(){status("Flux STT + Amalthea TTS connected.");resolve()};
+    tts.onmessage=function(e){
+      if(typeof e.data==="string"){
+        try{
+          var m=JSON.parse(e.data);
+          if(m.type==="Error")status("Amalthea TTS error: "+(m.description||m.message||"Unknown error"));
+        }catch(_){}
+      }else if(e.data instanceof ArrayBuffer)play(e.data);
+      else if(e.data&&e.data.arrayBuffer)e.data.arrayBuffer().then(play);
+    };
+    tts.onerror=function(){reject(new Error("Amalthea TTS WebSocket connection failed"))};
+    tts.onclose=function(){if(running)status("Amalthea TTS disconnected.")};
+  });
+}
+
+function speak(text){
+  if(tts&&tts.readyState===WebSocket.OPEN){
+    tts.send(JSON.stringify({type:"Speak",text:text}));
+    tts.send(JSON.stringify({type:"Flush"}));
+  }
 }
 
 async function start(){
   if(running)return;
-
   var key=$("key").value.trim();
-  if(!key){
-    status("Enter your Deepgram API key or temporary token first.");
-    $("key").focus();
-    return;
-  }
-
-  $("start").disabled=true;
-  $("stop").disabled=false;
-  running=true;
-
+  if(!key){status("Enter your Deepgram API key or temporary token first.");$("key").focus();return}
+  $("start").disabled=true;$("stop").disabled=false;running=true;playAt=0;
   try{
     ctx=new AudioContext({latencyHint:"interactive"});
     await ctx.resume();
-
     stream=await navigator.mediaDevices.getUserMedia({
-      audio:{
-        channelCount:1,
-        echoCancellation:false,
-        noiseSuppression:false,
-        autoGainControl:false
-      }
+      audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}
     });
-
     source=ctx.createMediaStreamSource(stream);
-
+    await connectTTS(key);
     await connectSTT(key);
-
     processor=ctx.createScriptProcessor(4096,1,1);
-
     processor.onaudioprocess=function(e){
-      if(!running||!stt||stt.readyState!==WebSocket.OPEN)return;
-      stt.send(
-        downsample(
-          e.inputBuffer.getChannelData(0),
-          ctx.sampleRate
-        )
-      );
+      if(running&&stt&&stt.readyState===WebSocket.OPEN)
+        stt.send(downsample(e.inputBuffer.getChannelData(0),ctx.sampleRate));
     };
-
-    var mute=ctx.createGain();
-    mute.gain.value=0;
-
-    source.connect(processor);
-    processor.connect(mute);
-    mute.connect(ctx.destination);
-
-    status("RUNNING — continuous Deepgram Flux WebSocket STT.");
-  }catch(e){
-    stop();
-    status("Start failed: "+(e.message||e));
-  }
+    var mute=ctx.createGain();mute.gain.value=0;
+    source.connect(processor);processor.connect(mute);mute.connect(ctx.destination);
+    status("RUNNING — continuous Flux STT → Amalthea TTS.");
+  }catch(e){stop();status("Start failed: "+(e.message||e))}
 }
 
 function stop(){
   running=false;
-
-  try{
-    if(stt&&stt.readyState===WebSocket.OPEN)
-      stt.send(JSON.stringify({type:"CloseStream"}));
-  }catch(_){}
-
+  try{if(stt&&stt.readyState===WebSocket.OPEN)stt.send(JSON.stringify({type:"CloseStream"}))}catch(_){}
+  try{if(tts&&tts.readyState===WebSocket.OPEN)tts.send(JSON.stringify({type:"Close"}))}catch(_){}
   try{if(processor)processor.disconnect()}catch(_){}
   try{if(source)source.disconnect()}catch(_){}
   try{if(stream)stream.getTracks().forEach(function(t){t.stop()})}catch(_){}
   try{if(ctx)ctx.close()}catch(_){}
   try{if(stt)stt.close()}catch(_){}
-
-  stt=null;
-  processor=null;
-  source=null;
-  stream=null;
-  ctx=null;
-
-  $("start").disabled=false;
-  $("stop").disabled=true;
-  status("Stopped. Ready.");
+  try{if(tts)tts.close()}catch(_){}
+  stt=null;tts=null;processor=null;source=null;stream=null;ctx=null;
+  $("start").disabled=false;$("stop").disabled=true;status("Stopped. Ready.");
 }
 
 window.addEventListener("DOMContentLoaded",function(){
-  $("start").disabled=false;
-  $("stop").disabled=true;
-  $("start").onclick=start;
-  $("stop").onclick=stop;
+  $("start").disabled=false;$("stop").disabled=true;
+  $("start").onclick=start;$("stop").onclick=stop;
 });
 })();
 </script>
