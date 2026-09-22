@@ -1,17 +1,25 @@
-OPENVOICE V2 CLONE-ONLY APP
+OPENVOICE V2 CLONE-ONLY
 
-1. Put the OpenVoice V2 repository files/dependencies on this machine.
+This version uses NO Flask and NO local web server.
+
+HOW TO CLONE:
+1. Make sure OpenVoice V2 is installed locally.
 2. Put the V2 converter checkpoint here:
    checkpoints_v2\converter\config.json
    checkpoints_v2\converter\checkpoint.pth
-3. Double-click clone.bat.
-4. Open index.html.
-5. Select a WAV reference and click Clone this voice.
+3. Drag your reference .WAV file directly onto clone.bat.
+4. Wait for OpenVoice to extract the voice embedding.
+5. The reusable embedding is saved to:
+   cloned_voice\voice_embedding.pth
 
-The browser no longer asks you to type a converter URL.
-The local server enables CORS, including OPTIONS preflight, so the browser does not fail with the generic "Failed to fetch" message.
+The browser is not used to launch the clone. Windows blocks normal web pages
+from directly starting a .bat file, so drag-and-drop onto clone.bat is the
+simple no-server workflow.
 
-The clone is saved as:
-cloned_voice\voice_embedding.pth
+This creates an OpenVoice speaker/tone-color embedding. It does not train a
+new neural network from scratch.
 
-This is the reusable OpenVoice speaker/tone-color embedding. It is not a full newly trained neural network.
+No Flask.
+No HTTP server.
+No URL.
+No external API.
