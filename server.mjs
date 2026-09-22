@@ -2,7 +2,6 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
-import * as ort from "onnxruntime-node";
 import {WebSocketServer} from "ws";
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
@@ -12,7 +11,7 @@ const MODEL_DIR=path.join(ROOT,"models");
 const BASE="https://huggingface.co/TigreGotico/voiceclonnx-openvoice-v2/resolve/main/";
 const FILES={ref:"tone_ref_encoder_q8.onnx",conv:"tone_converter_q8.onnx"};
 
-let refModel=null,convModel=null,target=null,loading=null;
+let refModel=null,convModel=null,target=null,loading=null,ort=null;
 
 function reply(res,status,data){
   res.writeHead(status,{"Content-Type":"application/json; charset=utf-8","Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"content-type"});
@@ -35,6 +34,7 @@ async function getModel(kind){
 }
 
 async function loadModels(){
+  if(!ort)ort=await import("onnxruntime-node");
   if(refModel&&convModel)return;
   if(loading)return loading;
   loading=(async()=>{
