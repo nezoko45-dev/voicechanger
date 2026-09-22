@@ -24,6 +24,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 <label>Gemini API key</label>
 <input id="gkey" type="password" placeholder="Paste your Gemini API key">
 <button id="start" type="button">Start listening</button>
+<button id="test" type="button">Test Gemini TTS</button>
 <button id="stop" type="button" disabled>Stop</button>
 <div id="status">Ready.</div>
 <div id="transcript">—</div>
@@ -36,6 +37,7 @@ var running=false,ctx=null,stream=null,source=null,processor=null,stt=null;
 var lastSentence="";
 var ttsBusy=false;
 var queue=[];
+var outputGain=null;
 
 function $(id){return document.getElementById(id)}
 function status(s){$("status").textContent=s}
@@ -75,16 +77,20 @@ function base64ToBytes(b64){
 
 /* Gemini TTS returns 24 kHz PCM. */
 function playGeminiPcm(bytes){
-  if(!ctx||!running)return;
-  var pcm=new Int16Array(bytes.buffer,bytes.byteOffset,Math.floor(bytes.byteLength/2));
+  if(!ctx)return;
+  var usable=bytes.byteLength-(bytes.byteLength%2);
+  if(usable<4)throw new Error("Gemini returned empty/invalid PCM audio.");
+  var pcm=new Int16Array(bytes.buffer,bytes.byteOffset,usable/2);
   var f=new Float32Array(pcm.length);
   for(var i=0;i<pcm.length;i++)f[i]=pcm[i]/32768;
   var b=ctx.createBuffer(1,f.length,24000);
   b.copyToChannel(f,0);
+  if(!outputGain){outputGain=ctx.createGain();outputGain.gain.value=1;outputGain.connect(ctx.destination);}
   var n=ctx.createBufferSource();
   n.buffer=b;
-  n.connect(ctx.destination);
+  n.connect(outputGain);
   n.start();
+  status("Gemini audio received: "+Math.round(bytes.byteLength/1024)+" KB — playing now.");
 }
 
 async function geminiTTS(text){
@@ -96,10 +102,10 @@ async function geminiTTS(text){
 
   try{
     var res=await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-tts-preview:generateContent?key="+encodeURIComponent(key),
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-tts-preview:generateContent",
       {
         method:"POST",
-        headers:{"Content-Type":"application/json"},
+        headers:{"Content-Type":"application/json","x-goog-api-key":key},
         body:JSON.stringify({
           contents:[{
             parts:[{
@@ -151,6 +157,16 @@ function speak(text){
 function speakNext(){
   if(ttsBusy||!queue.length||!running)return;
   geminiTTS(queue.shift());
+}
+
+async function testGemini(){
+  var key=$("gkey").value.trim();
+  if(!key){status("Enter your Gemini API key first.");$("gkey").focus();return;}
+  if(!ctx)ctx=new AudioContext({latencyHint:"interactive"});
+  await ctx.resume();
+  var wasRunning=running;
+  await geminiTTS("Hello! Gemini TTS is working.");
+  if(!wasRunning)status("Gemini test finished. Press Start listening for Flux.");
 }
 
 function connectFlux(key){
@@ -228,6 +244,7 @@ async function start(){
   lastSentence="";
   queue=[];
   ttsBusy=false;
+  outputGain=null;
 
   try{
     ctx=new AudioContext({latencyHint:"interactive"});
@@ -283,6 +300,7 @@ function stop(){
   source=null;
   stream=null;
   ctx=null;
+  outputGain=null;
 
   $("start").disabled=false;
   $("stop").disabled=true;
@@ -293,6 +311,7 @@ window.addEventListener("DOMContentLoaded",function(){
   $("start").disabled=false;
   $("stop").disabled=true;
   $("start").onclick=start;
+  $("test").onclick=testGemini;
   $("stop").onclick=stop;
 });
 })();
