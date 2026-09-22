@@ -1,6 +1,5 @@
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
-using Microsoft.ML.OnnxRuntime;
 using System.Collections.Concurrent;
 
 public sealed class AudioEngine : IDisposable
@@ -17,9 +16,11 @@ public sealed class AudioEngine : IDisposable
     private CancellationTokenSource? workerCts;
     private Task? worker;
     private bool running;
+    private bool externalInput;
     private int inputId = -1, outputId = -1;
     private long underruns;
     private int queuedBlocks;
+    private readonly List<float> captureSamples = new();
 
     public AudioEngine(string root)
     {
@@ -33,6 +34,7 @@ public sealed class AudioEngine : IDisposable
     {
         ok = true,
         running,
+        externalInput,
         models = voice.Ready,
         voice = voice.HasTarget,
         inputId = inputId < 0 ? (int?)null : inputId,
@@ -45,11 +47,6 @@ public sealed class AudioEngine : IDisposable
     {
         enumerator ??= new MMDeviceEnumerator();
         var list = new List<object>();
-        for (uint i = 0; i < enumerator.EnumerateAudioEndPoints(DataFlow.All, DeviceState.Active).Count; i++)
-        {
-            var devices = enumerator.EnumerateAudioEndPoints(DataFlow.All, DeviceState.Active);
-            break;
-        }
         foreach (var d in enumerator.EnumerateAudioEndPoints(DataFlow.All, DeviceState.Active))
         {
             list.Add(new
@@ -69,10 +66,12 @@ public sealed class AudioEngine : IDisposable
         enumerator ??= new MMDeviceEnumerator();
         var devices = enumerator.EnumerateAudioEndPoints(flow, DeviceState.Active);
         if (id >= 0 && id < devices.Count) return devices[id];
+
         var fallback = flow == DataFlow.Capture
             ? devices.FirstOrDefault()
             : devices.FirstOrDefault(d => d.FriendlyName.Contains("Voicemeeter", StringComparison.OrdinalIgnoreCase))
               ?? devices.FirstOrDefault();
+
         return fallback ?? throw new Exception($"No {flow} audio device found.");
     }
 
@@ -86,10 +85,7 @@ public sealed class AudioEngine : IDisposable
         return null;
     }
 
-    public async Task SetTargetAsync(byte[] wav)
-    {
-        await voice.SetTargetAsync(wav);
-    }
+    public async Task SetTargetAsync(byte[] wav) => await voice.SetTargetAsync(wav);
 
     public async Task StartAsync(int? requestedInput, int? requestedOutput)
     {
@@ -98,22 +94,10 @@ public sealed class AudioEngine : IDisposable
         await voice.LoadAsync();
 
         var inDev = GetDevice(requestedInput ?? -1, DataFlow.Capture);
-        var outDev = GetDevice(requestedOutput ?? FindVoicemeeter() ?? -1, DataFlow.Render);
+        await StartOutputAsync(requestedOutput);
 
         inputId = DeviceIndex(inDev, DataFlow.Capture);
-        outputId = DeviceIndex(outDev, DataFlow.Render);
-
-        const int rate = 48000;
-        const int channels = 1;
-        const int blockSamples = 1920;
-
-        outputBuffer = new BufferedWaveProvider(new WaveFormat(rate, 16, channels))
-        {
-            DiscardOnBufferOverflow = true,
-            BufferDuration = TimeSpan.FromMilliseconds(1200)
-        };
-        output = new WasapiOut(outDev, AudioClientShareMode.Shared, true, 30);
-        output.Init(outputBuffer);
+        externalInput = false;
 
         capture = new WasapiCapture(inDev);
         capture.DataAvailable += Capture_DataAvailable;
@@ -123,36 +107,76 @@ public sealed class AudioEngine : IDisposable
         };
 
         running = true;
+        capture.StartRecording();
+        Console.WriteLine($"Audio started. Input={inDev.FriendlyName} Output={output?.Device.FriendlyName}");
+    }
+
+    public async Task StartExternalAsync(int? requestedOutput)
+    {
+        Stop();
+        if (!voice.HasTarget) throw new Exception("Choose a reference WAV voice first.");
+        await voice.LoadAsync();
+        await StartOutputAsync(requestedOutput);
+        externalInput = true;
+        running = true;
+        Console.WriteLine($"External audio started. Output={output?.Device.FriendlyName}");
+    }
+
+    private async Task StartOutputAsync(int? requestedOutput)
+    {
+        var outDev = GetDevice(requestedOutput ?? FindVoicemeeter() ?? -1, DataFlow.Render);
+        outputId = DeviceIndex(outDev, DataFlow.Render);
+
+        const int rate = 48000;
+        outputBuffer = new BufferedWaveProvider(new WaveFormat(rate, 16, 1))
+        {
+            DiscardOnBufferOverflow = true,
+            BufferDuration = TimeSpan.FromMilliseconds(1200)
+        };
+
+        output = new WasapiOut(outDev, AudioClientShareMode.Shared, true, 30);
+        output.Init(outputBuffer);
         workerCts = new CancellationTokenSource();
         worker = Task.Run(() => ProcessLoop(workerCts.Token));
         output.Play();
-        capture.StartRecording();
-
-        Console.WriteLine($"Audio started. Input={inDev.FriendlyName} Output={outDev.FriendlyName}");
     }
 
     private int DeviceIndex(MMDevice selected, DataFlow flow)
     {
         enumerator ??= new MMDeviceEnumerator();
         var devices = enumerator.EnumerateAudioEndPoints(flow, DeviceState.Active);
-        for (int i = 0; i < devices.Count; i++) if (devices[i].ID == selected.ID) return i;
+        for (int i = 0; i < devices.Count; i++)
+            if (devices[i].ID == selected.ID) return i;
         return -1;
     }
 
-    private readonly List<float> captureSamples = new();
     private void Capture_DataAvailable(object? sender, WaveInEventArgs e)
     {
-        if (!running) return;
+        if (!running || externalInput) return;
         var mono48 = CaptureToMono48(e.Buffer, e.BytesRecorded, capture!.WaveFormat);
+        PushSamples(mono48);
+    }
+
+    public void PushPcm16(byte[] pcm)
+    {
+        if (!running || !externalInput || pcm.Length < 2) return;
+        var samples = new float[pcm.Length / 2];
+        for (int i = 0; i < samples.Length; i++)
+            samples[i] = BitConverter.ToInt16(pcm, i * 2) / 32768f;
+        PushSamples(samples);
+    }
+
+    private void PushSamples(float[] samples)
+    {
         lock (gate)
         {
-            captureSamples.AddRange(mono48);
+            captureSamples.AddRange(samples);
             const int chunk = 28800; // 600 ms at 48 kHz
             while (captureSamples.Count >= chunk)
             {
-                var a = captureSamples.Take(chunk).ToArray();
+                var block = captureSamples.Take(chunk).ToArray();
                 captureSamples.RemoveRange(0, chunk);
-                queue.Enqueue(a);
+                queue.Enqueue(block);
                 Interlocked.Increment(ref queuedBlocks);
             }
         }
@@ -167,6 +191,7 @@ public sealed class AudioEngine : IDisposable
                 await Task.Delay(2, token).ConfigureAwait(false);
                 continue;
             }
+
             Interlocked.Decrement(ref queuedBlocks);
             try
             {
@@ -190,6 +215,7 @@ public sealed class AudioEngine : IDisposable
     {
         int channels = Math.Max(1, f.Channels);
         var mono = new List<float>(bytes / Math.Max(1, f.BitsPerSample / 8) / channels);
+
         if (f.Encoding == WaveFormatEncoding.IeeeFloat && f.BitsPerSample == 32)
         {
             for (int p = 0; p + 4 * channels <= bytes; p += 4 * channels)
@@ -211,6 +237,7 @@ public sealed class AudioEngine : IDisposable
         else throw new Exception($"Unsupported microphone format: {f.Encoding} {f.BitsPerSample}-bit.");
 
         if (f.SampleRate == 48000) return mono.ToArray();
+
         int n = Math.Max(1, (int)Math.Round(mono.Count * 48000.0 / f.SampleRate));
         var outp = new float[n];
         for (int i = 0; i < n; i++)
@@ -218,8 +245,8 @@ public sealed class AudioEngine : IDisposable
             double q = i * (mono.Count - 1.0) / Math.Max(1, n - 1);
             int j = (int)Math.Floor(q);
             double frac = q - j;
-            outp[i] = (float)((mono[Math.Min(j, mono.Count - 1)] * (1 - frac)) +
-                              (mono[Math.Min(j + 1, mono.Count - 1)] * frac));
+            outp[i] = (float)(mono[Math.Min(j, mono.Count - 1)] * (1 - frac) +
+                              mono[Math.Min(j + 1, mono.Count - 1)] * frac);
         }
         return outp;
     }
@@ -250,6 +277,7 @@ public sealed class AudioEngine : IDisposable
         while (queue.TryDequeue(out _)) { }
         lock (gate) captureSamples.Clear();
         inputId = outputId = -1;
+        externalInput = false;
     }
 
     public void Dispose()
