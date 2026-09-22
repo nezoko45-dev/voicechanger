@@ -27,6 +27,11 @@ if not exist "server.mjs" (
   exit /b 1
 )
 
+echo Closing any old VoiceChanger server using port 8765...
+for /f "tokens=5" %%P in ('netstat -ano ^| findstr ":8765" ^| findstr "LISTENING"') do (
+  taskkill /F /PID %%P >nul 2>&1
+)
+
 echo Starting local VoiceChanger server...
 start "VoiceChanger Local Server" /D "%~dp0" cmd /k "node server.mjs"
 
