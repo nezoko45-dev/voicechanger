@@ -9,7 +9,7 @@ const MODEL_DIR=path.join(ROOT,"models");
 const BASE="https://huggingface.co/TigreGotico/voiceclonnx-openvoice-v2/resolve/main/";
 const FILES={ref:"tone_ref_encoder_q8.onnx",conv:"tone_converter_q8.onnx"};
 let refModel=null,convModel=null,target=null,loading=null,ort=null;
-let aud=null,rt=null,rtStarted=false,activeSocket=null,inputId=null,outputId=null;
+let aud=null,rt=null,rtStarted=false,activeSocket=null,sourceSocket=null,inputId=null,outputId=null;
 let captureParts=[],captureSamples=0,converting=false,pending=null,outputQueue=Buffer.alloc(0);
 let outputTail=null,outputTailSamples=0,outputStarted=false,underruns=0;
 
@@ -112,7 +112,7 @@ async function convertPending(){
   finally{converting=false;if(pending)void convertPending()}
 }
 function pushCapture(pcm){
-  if(!activeSocket)return;
+  if(!activeSocket||!rtStarted)return;
   const x=pcm16ToFloat(pcm),need=Math.round(WASAPI_RATE*CHUNK_SECONDS);
   captureParts.push(x);captureSamples+=x.length;
   if(captureSamples>=need){
@@ -129,20 +129,20 @@ async function stopWasapi(){
   if(rt){try{if(rtStarted)rt.stop()}catch{}try{rt.closeStream()}catch{}}
   rt=null;rtStarted=false;captureParts=[];captureSamples=0;pending=null;outputQueue=Buffer.alloc(0);outputTail=null;outputTailSamples=0;outputStarted=false;underruns=0;
 }
-async function startWasapi(inId,outId){
+async function startWasapi(outId){
   await loadWasapi();await stopWasapi();const list=await devices();
-  inputId=findDevice(list,inId,"input");outputId=findDevice(list,outId,"output");
-  if(inputId===undefined||outputId===undefined)throw Error("Could not find a WASAPI microphone or output device.");
+  outputId=findDevice(list,outId,"output");
+  if(outputId===undefined)throw Error("Could not find the WASAPI output device.");
   rt=new aud.RtAudio(aud.RtAudioApi.WINDOWS_WASAPI);
   rt.openStream(
     {deviceId:outputId,nChannels:1,firstChannel:0},
-    {deviceId:inputId,nChannels:1,firstChannel:0},
+    null,
     aud.RtAudioFormat.RTAUDIO_SINT16,WASAPI_RATE,FRAME,"VoiceChanger",
-    pcm=>{pushCapture(pcm);rt.write(takeOutput(FRAME*2))}
+    ()=>rt.write(takeOutput(FRAME*2))
   );
   rt.start();rtStarted=true;
-  console.log("WASAPI started. input="+inputId+" output="+outputId);
-  emitStatus("WASAPI listening • VB-CABLE/selected output");
+  console.log("WASAPI output started. output="+outputId);
+  emitStatus("WASAPI output ready • Electron is supplying microphone audio");
 }
 const MIME={".html":"text/html; charset=utf-8",".js":"text/javascript; charset=utf-8",".css":"text/css; charset=utf-8",".json":"application/json; charset=utf-8"};
 const server=http.createServer(async(req,res)=>{
@@ -167,11 +167,28 @@ server.listen(PORT,"127.0.0.1",async()=>{console.log("VoiceChanger ready: http:/
         try{
           const m=JSON.parse(raw);
           if(m.type==="devices"){ws.send(JSON.stringify({type:"devices",devices:await devices()}));return}
-          if(m.type==="start"){if(!target)throw Error("Load a reference WAV first.");await startWasapi(m.inputId,m.outputId);return}
-          if(m.type==="stop"){await stopWasapi();emitStatus("WASAPI stopped");return}
+          if(m.type==="start"){if(!target)throw Error("Load a reference WAV first.");await startWasapi(m.outputId);if(!sourceSocket||sourceSocket.readyState!==1)throw Error("Electron audio source is not connected.");sourceSocket.send(JSON.stringify({type:"start",deviceName:m.inputName||""}));emitStatus("Starting Electron microphone...");return}
+          if(m.type==="stop"){if(sourceSocket?.readyState===1)sourceSocket.send(JSON.stringify({type:"stop"}));await stopWasapi();emitStatus("Stopped");return}
         }catch(e){console.error("audio:",e);if(ws.readyState===1)ws.send(JSON.stringify({type:"error",error:e.message}))}
       });
       ws.on("close",async()=>{if(activeSocket===ws){activeSocket=null;await stopWasapi()}})
     })
+  wss.on("connection",ws=>{});
+  const sourceWss=new WebSocketServer({server,path:"/source"});
+  sourceWss.on("connection",ws=>{
+    sourceSocket=ws;
+    ws.on("message",raw=>{
+      if(typeof raw==="string"){
+        try{
+          const m=JSON.parse(raw);
+          if(m.type==="ready")emitStatus("Electron microphone active • "+(m.deviceName||"selected microphone"));
+          if(m.type==="error"&&activeSocket?.readyState===1)activeSocket.send(JSON.stringify({type:"error",error:"Electron: "+m.error}));
+        }catch{}
+        return;
+      }
+      if(Buffer.isBuffer(raw)||raw instanceof ArrayBuffer)pushCapture(Buffer.from(raw));
+    });
+    ws.on("close",()=>{if(sourceSocket===ws){sourceSocket=null;if(rtStarted)emitStatus("Electron audio source disconnected")}}});
+  });
   }catch(e){console.error("WebSocket backend unavailable:",e.message)}
 })();
