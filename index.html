@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VoiceChanger • OpenVoice V2 Live</title>
+<title>VoiceChanger • OpenVoice V2 Electron</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0d1117;color:#e6edf3;font:15px system-ui,-apple-system,Segoe UI,sans-serif}main{max-width:820px;margin:auto;padding:30px}h1{margin:0 0 6px;font-size:30px}.sub{color:#8b949e;margin:0 0 22px}.card{background:#161b22;border:1px solid #30363d;border-radius:14px;padding:18px;margin-bottom:14px}label{display:block;font-weight:700;margin:12px 0 7px}input,select,button{width:100%;font:inherit}input,select{background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:9px;padding:10px}input[type=file]{padding:8px}button{border:0;border-radius:9px;padding:12px;cursor:pointer;background:#238636;color:#fff;font-weight:700}button.stop{background:#da3633}button.secondary{background:#30363d}button:disabled{opacity:.45;cursor:not-allowed}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}#status{padding:12px;border:1px solid #30363d;border-radius:9px;background:#0d1117}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#8b949e;margin-right:8px}.dot.live{background:#2ea043}.dot.busy{background:#d29922}.small{font-size:13px;color:#8b949e;line-height:1.5}.bar{height:9px;background:#0d1117;border:1px solid #30363d;border-radius:9px;overflow:hidden;margin-top:10px}.bar>i{display:block;height:100%;width:0;background:#238636;transition:width .2s}.warn{border-color:#9e6a03}#heard{min-height:42px;padding:10px;border-radius:9px;background:#0d1117;border:1px solid #30363d;line-height:1.45}
 </style>
@@ -11,7 +11,7 @@
 <body>
 <main>
 <h1>OpenVoice V2 • Live Voice Changer</h1>
-<p class="sub">Mic → OpenVoice V2 FP32 ONNX Runtime → continuous output → Voicemeeter → VRChat</p>
+<p class="sub">Electron → microphone → OpenVoice V2 FP32 ONNX Runtime → clean output → Voicemeeter → VRChat</p>
 
 <div class="card">
 <div id="status"><span class="dot"></span>Ready</div>
@@ -67,8 +67,8 @@
 
 const REF_MODEL='https://huggingface.co/TigreGotico/voiceclonnx-openvoice-v2/resolve/main/tone_ref_encoder.onnx';
 const CONV_MODEL='https://huggingface.co/TigreGotico/voiceclonnx-openvoice-v2/resolve/main/tone_converter.onnx';
-const MODEL_SR=22050,NFFT=1024,HOP=256,PAD=384,BINS=513,CHUNK_SEC=.90;
-const CHUNK_IN=Math.round(MODEL_SR*CHUNK_SEC),CAPTURE_SR=48000,FADE_SEC=.090,OUTPUT_LEVEL=.82;
+const MODEL_SR=22050,NFFT=1024,HOP=256,PAD=384,BINS=513,CHUNK_SEC=1.00;
+const CHUNK_IN=Math.round(MODEL_SR*CHUNK_SEC),CAPTURE_SR=48000,FADE_SEC=.015,OUTPUT_LEVEL=.82;
 const $=id=>document.getElementById(id);
 
 let refSession=null,convSession=null,targetEmbedding=null,refAudio=null,selectedReferenceFile=null;
@@ -229,10 +229,10 @@ async function processLoop(){
  if(processing)return;processing=true;
  try{while(running){
   const need=Math.round(CHUNK_IN*CAPTURE_SR/MODEL_SR);if(inputBuffer.length<need){await new Promise(r=>setTimeout(r,12));continue}
-  const chunk=inputBuffer.slice(0,need);inputBuffer=inputBuffer.slice(Math.floor(need*.90));const level=rms(chunk);if(level<.008)continue;
-  status('Converting live audio…','busy');detail('OpenVoice V2 FP32 inference • chunk '+(++convertedCount)+' • overlap crossfade');
+  const chunk=inputBuffer.slice(0,need);inputBuffer=inputBuffer.slice(need);const level=rms(chunk);if(level<.008)continue;
+  status('Converting live audio…','busy');detail('OpenVoice V2 FP32 inference • chunk '+(++convertedCount)+' • non-overlapping audio');
   const t0=performance.now(),audio=await convertChunk(chunk);if(!running)break;scheduleAudio(audio);const ms=Math.round(performance.now()-t0);
-  progress(Math.min(100,Math.round((CHUNK_SEC*1000/Math.max(1,ms))*100)));detail('OpenVoice V2 FP32 • '+ms+' ms inference • normalized 0.82 peak • output queued');status('Live • OpenVoice V2 → output','live')
+  progress(Math.min(100,Math.round((CHUNK_SEC*1000/Math.max(1,ms))*100)));detail('OpenVoice V2 FP32 • '+ms+' ms inference • clean non-overlapping output queued');status('Live • OpenVoice V2 → output','live')
  }}catch(e){console.error(e);status('Conversion error');detail(e.stack||e.message||String(e));await stop()}finally{processing=false}
 }
 async function loadModels(){
