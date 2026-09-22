@@ -10,7 +10,8 @@ const BASE="https://huggingface.co/TigreGotico/voiceclonnx-openvoice-v2/resolve/
 const FILES={ref:"tone_ref_encoder_q8.onnx",conv:"tone_converter_q8.onnx"};
 let refModel=null,convModel=null,target=null,loading=null,ort=null;
 let aud=null,rt=null,rtStarted=false,activeSocket=null,sourceSocket=null,inputId=null,outputId=null;
-let captureParts=[],captureSamples=0,converting=false,pendingQueue=[],outputQueue=Buffer.alloc(0);
+let deepgramWs=null,deepgramKey="",speechActive=false,speechBuffer=[],speechSamples=0,preBuffer=[],preSamples=0,speechTimer=null,speechGeneration=0;
+let converting=false,pendingQueue=[],outputQueue=Buffer.alloc(0);
 let outputStarted=false,underruns=0;
 
 function reply(res,status,data){res.writeHead(status,{"Content-Type":"application/json; charset=utf-8","Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"content-type"});res.end(JSON.stringify(data));}
@@ -64,11 +65,14 @@ function spectrogram(x){
   return {data:out,frames};
 }
 async function embed(x){
-  const s=spectrogram(x),o=await refModel.run({spec:new ort.Tensor("float32",s.data,[1,s.frames,513])});
+  const s=spectrogram(x);return await embedSpec(s);
+}
+async function embedSpec(s){
+  const o=await refModel.run({spec:new ort.Tensor("float32",s.data,[1,s.frames,513])});
   return Float32Array.from(o.tone_embedding.data);
 }
 async function convert(x){
-  const s=spectrogram(x),src=await embed(x);
+  const s=spectrogram(x),src=await embedSpec(s);
   const o=await convModel.run({
     spec:new ort.Tensor("float32",s.data,[1,513,s.frames]),
     spec_lengths:new ort.Tensor("int64",BigInt64Array.from([BigInt(s.frames)]),[1]),
@@ -94,6 +98,74 @@ function takeOutput(bytes){
   underruns++;const b=Buffer.alloc(bytes);outputQueue.copy(b);outputQueue=Buffer.alloc(0);return b;
 }
 function emitStatus(text){if(activeSocket?.readyState===1)activeSocket.send(JSON.stringify({type:"status",text}))}
+function clearSpeechTimer(){if(speechTimer){clearTimeout(speechTimer);speechTimer=null}}
+function resetSpeechState(){
+  clearSpeechTimer();speechActive=false;speechBuffer=[];speechSamples=0;speechGeneration++;
+}
+function pushPreBuffer(x){
+  preBuffer.push(x);preSamples+=x.length;
+  const max=Math.round(WASAPI_RATE*0.75);
+  while(preSamples>max&&preBuffer.length){
+    const first=preBuffer.shift();preSamples-=first.length;
+  }
+}
+function appendSpeech(x){speechBuffer.push(x);speechSamples+=x.length}
+function queueSpeechUtterance(generation){
+  if(generation!==speechGeneration||speechSamples<Math.round(WASAPI_RATE*0.15))return;
+  const all=new Float32Array(speechSamples);let p=0;
+  for(const part of speechBuffer){all.set(part,p);p+=part.length}
+  pendingQueue.push(all);
+  if(pendingQueue.length>3)pendingQueue.splice(0,pendingQueue.length-3);
+  speechBuffer=[];speechSamples=0;speechActive=false;
+  emitStatus("OpenVoice is converting the completed speech...");
+  void convertPending();
+}
+function finishSpeechLater(){
+  clearSpeechTimer();
+  const g=speechGeneration;
+  speechTimer=setTimeout(()=>{speechTimer=null;queueSpeechUtterance(g)},250);
+}
+function handleDeepgramMessage(raw){
+  let m;try{m=JSON.parse(raw.toString())}catch{return}
+  if(m.type==="SpeechStarted"){
+    if(!speechActive){
+      speechGeneration++;
+      speechBuffer=preBuffer.slice();
+      speechSamples=preSamples;
+      speechActive=true;
+      emitStatus("Deepgram detected speech...");
+    }
+    clearSpeechTimer();
+    return;
+  }
+  if(m.type==="Results"){
+    const alt=m.channel?.alternatives?.[0];
+    const text=alt?.transcript?.trim();
+    if(text&&m.is_final)emitStatus("Deepgram: "+text);
+    if(m.speech_final)finishSpeechLater();
+  }
+  if(m.type==="UtteranceEnd"&&m.last_word_end>=0)finishSpeechLater();
+}
+async function startDeepgram(key){
+  if(!key)throw Error("Enter your Deepgram API key first.");
+  if(deepgramWs){try{deepgramWs.close()}catch{}deepgramWs=null}
+  deepgramKey=String(key).trim();
+  const {WebSocket}=await import("ws");
+  const url="wss://api.deepgram.com/v1/listen?model=nova-3&language=en-US&encoding=linear16&sample_rate="+WASAPI_RATE+"&channels=1&interim_results=true&vad_events=true&endpointing=300&utterance_end_ms=1000";
+  await new Promise((resolve,reject)=>{
+    const ws=new WebSocket(url,{headers:{Authorization:"Token "+deepgramKey}});
+    let settled=false;
+    ws.on("open",()=>{deepgramWs=ws;settled=true;emitStatus("Deepgram STT connected • waiting for speech");resolve()});
+    ws.on("message",data=>handleDeepgramMessage(data));
+    ws.on("error",err=>{if(!settled){settled=true;reject(Error("Deepgram connection failed: "+err.message))}else console.error("Deepgram:",err.message)});
+    ws.on("close",()=>{if(deepgramWs===ws)deepgramWs=null;if(rtStarted)emitStatus("Deepgram STT disconnected")});
+  });
+}
+async function stopDeepgram(){
+  clearSpeechTimer();
+  if(deepgramWs){try{deepgramWs.send(JSON.stringify({type:"CloseStream"}))}catch{}try{deepgramWs.close()}catch{}}
+  deepgramWs=null;deepgramKey="";resetSpeechState();preBuffer=[];preSamples=0;
+}
 async function convertPending(){
   if(converting||pendingQueue.length===0)return;
   converting=true;
@@ -112,18 +184,11 @@ async function convertPending(){
   }
 }
 function pushCapture(pcm){
-  if(!activeSocket||!rtStarted)return;
-  const x=pcm16ToFloat(pcm),need=Math.round(WASAPI_RATE*CHUNK_SECONDS);
-  captureParts.push(x);captureSamples+=x.length;
-  if(captureSamples>=need){
-    const all=new Float32Array(captureSamples);let p=0;for(const part of captureParts){all.set(part,p);p+=part.length}
-    captureParts=[];captureSamples=0;
-    pendingQueue.push(all);
-    // Keep only a small backlog. Dropping the oldest unprocessed block is
-    // preferable to allowing latency to grow forever.
-    if(pendingQueue.length>3)pendingQueue.splice(0,pendingQueue.length-3);
-    void convertPending();
-  }
+  if(!rtStarted)return;
+  const x=pcm16ToFloat(pcm);
+  if(deepgramWs?.readyState===1)deepgramWs.send(pcm);
+  pushPreBuffer(x);
+  if(speechActive)appendSpeech(x);
 }
 function findDevice(list,id,kind){
   if(id!==null&&id!==undefined&&id!==""){const n=Number(id);if(Number.isFinite(n)&&list.some(d=>d.id===n))return n}
@@ -132,7 +197,7 @@ function findDevice(list,id,kind){
 async function devices(){await loadWasapi();const probe=new aud.RtAudio(aud.RtAudioApi.WINDOWS_WASAPI);const list=probe.getDevices();try{probe.closeStream?.()}catch{}return list}
 async function stopWasapi(){
   if(rt){try{if(rtStarted)rt.stop()}catch{}try{rt.closeStream()}catch{}}
-  rt=null;rtStarted=false;captureParts=[];captureSamples=0;pending=null;outputQueue=Buffer.alloc(0);outputStarted=false;underruns=0;pendingQueue=[];
+  rt=null;rtStarted=false;outputQueue=Buffer.alloc(0);outputStarted=false;underruns=0;pendingQueue=[];resetSpeechState();preBuffer=[];preSamples=0;
 }
 async function startWasapi(outId){
   await loadWasapi();await stopWasapi();const list=await devices();
@@ -153,7 +218,7 @@ const MIME={".html":"text/html; charset=utf-8",".js":"text/javascript; charset=u
 const server=http.createServer(async(req,res)=>{
   if(req.method==="OPTIONS"){res.writeHead(204,{"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"content-type"});return res.end()}
   const pathname=decodeURIComponent(new URL(req.url||"/","http://127.0.0.1:"+PORT).pathname);
-  if(pathname==="/health"&&req.method==="GET")return reply(res,200,{ok:true,models:!!(refModel&&convModel),voice:!!target,wasapi:process.platform==="win32",running:rtStarted,inputId,outputId,underruns});
+  if(pathname==="/health"&&req.method==="GET")return reply(res,200,{ok:true,models:!!(refModel&&convModel),voice:!!target,deepgram:!!deepgramWs,wasapi:process.platform==="win32",running:rtStarted,inputId,outputId,underruns});
   if(pathname==="/devices"&&req.method==="GET"){try{return reply(res,200,{ok:true,devices:await devices()})}catch(e){return reply(res,500,{ok:false,error:e.message})}}
   if(pathname==="/target"&&req.method==="POST"){try{const chunks=[];for await(const c of req)chunks.push(c);const body=JSON.parse(Buffer.concat(chunks));if(typeof body.wav!=="string"||!body.wav)throw Error("No WAV data was provided.");const wav=wavDecode(Buffer.from(body.wav,"base64"));await loadModels();target=await embed(resample(wav.samples,wav.rate));return reply(res,200,{ok:true})}catch(e){console.error(e);return reply(res,500,{ok:false,error:e.message})}}
   if(req.method==="GET"){
@@ -172,11 +237,11 @@ server.listen(PORT,"127.0.0.1",async()=>{console.log("VoiceChanger ready: http:/
         try{
           const m=JSON.parse(raw);
           if(m.type==="devices"){ws.send(JSON.stringify({type:"devices",devices:await devices()}));return}
-          if(m.type==="start"){if(!target)throw Error("Load a reference WAV first.");await startWasapi(m.outputId);if(!sourceSocket||sourceSocket.readyState!==1)throw Error("Electron audio source is not connected.");sourceSocket.send(JSON.stringify({type:"start",deviceName:m.inputName||""}));emitStatus("Starting Electron microphone...");return}
-          if(m.type==="stop"){if(sourceSocket?.readyState===1)sourceSocket.send(JSON.stringify({type:"stop"}));await stopWasapi();emitStatus("Stopped");return}
+          if(m.type==="start"){if(!target)throw Error("Load a reference WAV first.");await startWasapi(m.outputId);await startDeepgram(m.deepgramKey);if(!sourceSocket||sourceSocket.readyState!==1)throw Error("Electron audio source is not connected.");emitStatus("Deepgram STT ready • start speaking");return}
+          if(m.type==="stop"){if(sourceSocket?.readyState===1)sourceSocket.send(JSON.stringify({type:"stop"}));await stopDeepgram();await stopWasapi();emitStatus("Stopped");return}
         }catch(e){console.error("audio:",e);if(ws.readyState===1)ws.send(JSON.stringify({type:"error",error:e.message}))}
       });
-      ws.on("close",async()=>{if(activeSocket===ws){activeSocket=null;await stopWasapi()}})
+      ws.on("close",async()=>{if(activeSocket===ws){activeSocket=null;await stopDeepgram();await stopWasapi()}})
     });
   const sourceWss=new WebSocketServer({server,path:"/source"});
   sourceWss.on("connection",ws=>{
