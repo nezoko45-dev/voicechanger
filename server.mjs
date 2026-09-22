@@ -45,7 +45,7 @@ const server=http.createServer(async(req,res)=>{
 
   if(req.method==="GET"){
     const relative=pathname==="/"?"/index.html":pathname;
-    const file=path.resolve(ROOT+"."+relative);
+    const file=path.resolve(ROOT, "."+relative);
     const rootWithSep=ROOT.endsWith(path.sep)?ROOT:ROOT+path.sep;
 
     if(
