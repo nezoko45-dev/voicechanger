@@ -1,37 +1,56 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Deepgram Continuous Voice</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Flux Continuous Voice</title>
 <style>
-:root{color-scheme:dark}body{margin:0;background:#090d14;color:#eef2f7;font:15px system-ui,sans-serif}
-main{max-width:620px;margin:48px auto;padding:0 18px}.card{background:#121925;border:1px solid #293449;border-radius:18px;padding:22px}
-h1{margin:0 0 8px}p{color:#9eabc0;line-height:1.5}label{display:block;font-size:12px;color:#b8c2d2;margin:14px 0 6px}
-input,select{width:100%;box-sizing:border-box;background:#0a1019;color:#fff;border:1px solid #344057;border-radius:10px;padding:12px}
-button{border:0;border-radius:10px;padding:12px 18px;background:#705cff;color:#fff;font-weight:700;cursor:pointer}
-button:disabled{opacity:.45;cursor:not-allowed}.stop{background:#a23d55}.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
-.status{margin-top:16px;white-space:pre-wrap;background:#090e16;border-radius:10px;padding:12px;font:12px ui-monospace,monospace;line-height:1.5}
-.transcript{margin-top:12px;background:#090e16;border-radius:10px;padding:14px;min-height:42px}.small{font-size:12px}.ok{border:1px solid #2d8a5b}.err{border:1px solid #9c3c54}
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:#080b11;color:#f3f5f8;font:15px system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:620px;margin:48px auto;padding:0 18px}
+.card{background:#111722;border:1px solid #293244;border-radius:18px;padding:24px}
+h1{margin:0 0 8px;font-size:28px}
+p{color:#9da8ba;line-height:1.5}
+label{display:block;font-size:12px;color:#b9c2d0;margin:16px 0 7px}
+input{width:100%;background:#080d15;color:#fff;border:1px solid #344057;border-radius:10px;padding:12px}
+.row{display:flex;gap:10px;margin-top:18px}
+button{border:0;border-radius:10px;padding:13px 18px;background:#735cff;color:#fff;font-weight:750;cursor:pointer}
+button:disabled{opacity:.45;cursor:not-allowed}
+.stop{background:#a33e56}
+.status,.transcript{margin-top:16px;background:#080d14;border:1px solid #263143;border-radius:10px;padding:13px;line-height:1.5}
+.status{font:12px ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap}
+.transcript{min-height:48px}
+.ok{border-color:#287a52}
+.err{border-color:#963b53}
+.small{font-size:12px}
 </style>
 </head>
-<body><main><div class="card">
-<h1>Deepgram Continuous Voice</h1>
-<p>Continuous microphone → Deepgram STT → expressive Flux TTS → Chrome audio → Voicemeeter.</p>
-<label>Deepgram API key / temporary token</label>
-<input id="key" type="password" autocomplete="off" placeholder="Paste your Deepgram key or temporary token">
-<label>Flux TTS voice</label>
-<input id="voice" value="flux-haley-en">
-<label>Expressivity: -2 calm → 0 natural → +2 animated</label>
-<select id="expressivity">
-<option value="-2">-2 — Calm</option>
-<option value="-1">-1 — Subdued</option>
-<option value="0" selected>0 — Natural</option>
-<option value="1">+1 — Expressive</option>
-<option value="2">+2 — Animated</option>
-</select>
-<div class="row"><button id="start">Start listening</button><button id="stop" class="stop" disabled>Stop</button></div>
+<body>
+<main>
+<div class="card">
+<h1>Flux Continuous Voice</h1>
+<p>Continuous microphone → Flux STT → Amalthea TTS → Chrome audio. No chunked stop/start listening.</p>
+
+<label for="key">Deepgram API key or temporary token</label>
+<input id="key" type="password" autocomplete="off" placeholder="Paste your Deepgram key/token">
+
+<div class="row">
+<button id="start">Start listening</button>
+<button id="stop" class="stop" disabled>Stop</button>
+</div>
+
 <div id="status" class="status">Ready.</div>
-<div class="transcript" id="transcript">—</div>
-<p class="small">STT stays connected continuously. Completed speech is sent as a Flux TTS turn and audio streams back immediately. Expressivity is fixed for each Flux connection, so choose it before pressing Start.</p>
-</div></main>
-<script src="./app.js"></script></body></html>
+<div id="transcript" class="transcript">—</div>
+
+<p class="small">
+The listener remains connected while you talk and during silence. Flux STT detects each end-of-turn and the completed transcript is sent to the persistent Amalthea TTS stream. Audio is scheduled continuously to reduce gaps and chopping.
+</p>
+<p class="small">
+Note: Amalthea is a Filipino Aura-2 voice, not a Flux TTS voice. This build therefore uses Flux for continuous STT and Aura-2 Amalthea for the requested Filipino TTS voice.
+</p>
+</div>
+</main>
+<script src="./app.js"></script>
+</body>
+</html>
