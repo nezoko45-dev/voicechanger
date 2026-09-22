@@ -1,7 +1,7 @@
 name: Build VoiceChanger EXE
 on:
   push:
-    branches: [exe-audio-engine]
+    branches: [exe-audio-engine, deepgram-electron]
   workflow_dispatch:
 jobs:
   build:
