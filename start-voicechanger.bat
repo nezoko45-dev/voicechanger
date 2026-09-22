@@ -1,10 +1,10 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-title VoiceChanger
+title VoiceChanger - Chrome
 
 echo ==========================================
-echo VOICECHANGER - ELECTRON
+echo VOICECHANGER - CHROME APP
 echo ==========================================
 echo.
 
@@ -16,41 +16,14 @@ if errorlevel 1 (
   exit /b 1
 )
 
-if not exist "package.json" (
-  echo ERROR: package.json is missing.
-  pause
-  exit /b 1
-)
-
 if not exist "server.mjs" (
   echo ERROR: server.mjs is missing.
   pause
   exit /b 1
 )
 
-echo Checking server syntax...
-node --check server.mjs
-if errorlevel 1 (
-  echo.
-  echo ERROR: server.mjs has a JavaScript syntax error.
-  echo The launcher will NOT start the broken backend.
-  pause
-  exit /b 1
-)
-
-echo.
-echo Installing/checking dependencies...
-call npm install
-if errorlevel 1 (
-  echo.
-  echo ERROR: npm install failed.
-  pause
-  exit /b 1
-)
-
-echo.
-echo Starting VoiceChanger backend...
-start "VoiceChanger Backend" /D "%~dp0" cmd /k "node server.mjs"
+echo Starting the local web server...
+start "VoiceChanger Server" /D "%~dp0" cmd /k "node server.mjs"
 
 set /a n=0
 
@@ -59,27 +32,28 @@ set /a n+=1
 curl.exe -s -f --max-time 2 http://127.0.0.1:8765/health >nul 2>&1
 if not errorlevel 1 goto launch
 
-if %n% GEQ 45 goto fail
+if %n% GEQ 30 goto fail
 
 timeout /t 1 /nobreak >nul
 goto wait
 
 :launch
-echo Backend is online.
-echo Launching the real Electron application...
-start "" /D "%~dp0" cmd /c "npm run electron"
+echo.
+echo Server is online.
+echo Opening VoiceChanger in Chrome...
+start "" "chrome.exe" --new-window "http://127.0.0.1:8765/"
 
 echo.
-echo VoiceChanger is now running as a real Electron desktop app.
-echo Electron handles the UI and microphone capture.
-echo The Node backend handles OpenVoice and WASAPI output.
+echo VoiceChanger is now running from localhost.
+echo Use the app's "Allow / Detect Microphones" button.
+echo Do NOT open index.html directly from a file.
 echo.
 exit /b 0
 
 :fail
 echo.
-echo ERROR: VoiceChanger backend did not start within 45 seconds.
+echo ERROR: The local VoiceChanger server did not start.
+echo Check the "VoiceChanger Server" window for the exact error.
 echo.
-echo Check the "VoiceChanger Backend" window for the exact error.
 pause
 exit /b 1
