@@ -1,1 +1,123 @@
-(()=>{const $=id=>document.getElementById(id),status=$("status"),transcript=$("transcript");let ctx,stream,source,processor,stt,tts,running=false,loaded=false,queue=Promise.resolve();function say(t,k=""){status.textContent=t;status.className="status "+k}function socket(url){const k=$("key").value.trim();if(!k)throw Error("Enter a Deepgram API key or temporary token.");return new WebSocket(url,["token",k])}function resample(a,from,to){if(from===to)return a;const r=from/to,o=new Float32Array(Math.max(1,Math.round(a.length/r)));for(let i=0;i<o.length;i++){const p=i*r,x=Math.floor(p),y=Math.min(x+1,a.length-1),f=p-x;o[i]=(a[x]||0)*(1-f)+(a[y]||0)*f}return o}function pcm(a){const o=new Int16Array(a.length);for(let i=0;i<a.length;i++)o[i]=Math.max(-32768,Math.min(32767,Math.round(a[i]*32767)));return o}async function load(){const ref=$("ref").files[0];if(!ref)return say("Select your reference WAV first.","err");try{$("load").disabled=true;say("Loading reference into local OpenVoice V2...");const b=new FormData;b.append("reference",ref,ref.name);const r=await fetch("/api/reference",{method:"POST",body:b});if(!r.ok)throw Error(await r.text());loaded=true;$("start").disabled=false;say("Voice loaded. Press Start listening.","ok")}catch(e){loaded=false;$("start").disabled=true;say("Voice load error: "+e.message,"err")}finally{$("load").disabled=false}}function sttConnect(){const q=new URLSearchParams({model:"nova-3",language:"en-US",encoding:"linear16",sample_rate:"16000",channels:"1",interim_results:"true",smart_format:"true",endpointing:"500"});stt=socket("wss://api.deepgram.com/v1/listen?"+q);stt.binaryType="arraybuffer";stt.onopen=()=>say("Listening continuously...","ok");stt.onerror=()=>say("Deepgram STT WebSocket error.","err");stt.onclose=()=>running&&say("Deepgram STT disconnected.","err");stt.onmessage=e=>{if(typeof e.data!=="string")return;try{const m=JSON.parse(e.data),t=m.channel?.alternatives?.[0]?.transcript||"";if(t)transcript.textContent=t;if(m.type==="Results"&&m.is_final&&m.speech_final&&t.trim())queue=queue.then(()=>ttsClone(t.trim())).catch(x=>say("Pipeline error: "+x.message,"err"))}catch{}}}function ttsConnect(){const q=new URLSearchParams({model:$("voice").value.trim()||"aura-2-asteria-en",encoding:"linear16",sample_rate:"22050"});tts=socket("wss://api.deepgram.com/v1/speak?"+q);tts.binaryType="arraybuffer";tts.onerror=()=>say("Deepgram TTS WebSocket error.","err")}async function ttsClone(text){if(!tts||tts.readyState!==1)throw Error("TTS WebSocket is not connected.");say("Deepgram TTS → OpenVoice: "+text);const parts=[];await new Promise((resolve,reject)=>{const old=tts.onmessage,timer=setTimeout(()=>{tts.onmessage=old;reject(Error("TTS timed out."))},30000);tts.onmessage=e=>{if(typeof e.data!=="string"){parts.push(e.data);return}try{const m=JSON.parse(e.data);if(m.type==="Flushed"){clearTimeout(timer);tts.onmessage=old;resolve()}if(m.type==="Error"){clearTimeout(timer);tts.onmessage=old;reject(Error(m.description||"Deepgram TTS error"))}}catch{}};tts.send(JSON.stringify({type:"Speak",text}));tts.send(JSON.stringify({type:"Flush"}))});const n=parts.reduce((a,b)=>a+b.byteLength,0),data=new Uint8Array(n);let p=0;for(const c of parts){data.set(new Uint8Array(c),p);p+=c.byteLength}const r=await fetch("/api/convert",{method:"POST",headers:{"Content-Type":"application/octet-stream"},body:data});if(!r.ok)throw Error(await r.text());const audio=await r.blob();await play(await audio.arrayBuffer());say("Playing cloned audio.","ok")}async function play(buf){if(!ctx)ctx=new AudioContext;if(ctx.state==="suspended")await ctx.resume();const b=await ctx.decodeAudioData(buf.slice(0)),s=ctx.createBufferSource();s.buffer=b;s.connect(ctx.destination);s.start();await new Promise(r=>s.onended=r)}async function start(){if(!loaded)return say("Load the reference voice first.","err");try{$("start").disabled=true;$("stop").disabled=false;running=true;ctx=new AudioContext;await ctx.resume();stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});source=ctx.createMediaStreamSource(stream);processor=ctx.createScriptProcessor(2048,1,1);processor.onaudioprocess=e=>{if(!stt||stt.readyState!==1)return;const a=resample(e.inputBuffer.getChannelData(0),ctx.sampleRate,16000);stt.send(pcm(a).buffer)};source.connect(processor);processor.connect(ctx.destination);sttConnect();ttsConnect()}catch(e){stop();say("Start error: "+e.message,"err")}}function stop(){running=false;try{processor?.disconnect()}catch{}try{source?.disconnect()}catch{}try{stream?.getTracks().forEach(t=>t.stop())}catch{}try{stt?.close()}catch{}try{tts?.close()}catch{}processor=source=stream=stt=tts=null;$("stop").disabled=true;$("start").disabled=!loaded;say(loaded?"Stopped. Voice remains loaded.":"Select a reference WAV.")}$("load").onclick=load;$("start").onclick=start;$("stop").onclick=stop;addEventListener("beforeunload",stop)})();
+import { createRVC, runPipelineInWorker } from "https://cdn.jsdelivr.net/npm/rvc-web-runtime@1.0.5/+esm";
+
+const $=id=>document.getElementById(id);
+const status=$("status");
+let rvc=null, files=null, audioCtx=null, mediaStream=null, worklet=null, running=false;
+let queue=[], processing=false, playAt=0;
+
+function say(text,kind=""){status.textContent=text;status.className="status "+kind}
+function needFiles(){
+ const model=$("model").files[0], content=$("content").files[0], rmvpe=$("rmvpe").files[0];
+ if(!model||!content||!rmvpe) throw Error("Select the RVC .onnx, ContentVec .onnx, and RMVPE .onnx files.");
+ return {model,contentVec:content,rmvpe};
+}
+async function loadVoice(){
+ try{
+  $("load").disabled=true;
+  files=needFiles();
+  if(!("gpu" in navigator)) throw Error("This Chrome build does not expose WebGPU.");
+  rvc=createRVC();
+  say("Voice model ready. Starting the local browser runtime...");
+  const gpu=await navigator.gpu.requestAdapter();
+  if(!gpu) throw Error("No WebGPU adapter was found. Enable hardware acceleration in Chrome.");
+  say("WebGPU detected. Voice model loaded. Press Start continuous mic.","ok");
+  $("start").disabled=false;
+ }catch(e){
+  files=null;$("start").disabled=true;say("Load error: "+e.message,"err");
+ }finally{$("load").disabled=false}
+}
+
+function makeWorklet(){
+ const code=`
+ class MicChunker extends AudioWorkletProcessor{
+   constructor(){super();this.buf=[];this.n=0;this.target=sampleRate*2.5}
+   process(inputs){
+     const ch=inputs[0]?.[0]; if(!ch)return true;
+     for(let i=0;i<ch.length;i++){this.buf.push(ch[i]);this.n++}
+     while(this.n>=this.target){
+       const out=new Float32Array(Math.floor(this.target));
+       for(let i=0;i<out.length;i++)out[i]=this.buf[i];
+       this.buf=this.buf.slice(out.length);this.n-=out.length;
+       this.port.postMessage(out,[out.buffer]);
+     }
+     return true;
+   }
+ }
+ registerProcessor("mic-chunker",MicChunker);`;
+ const blob=new Blob([code],{type:"application/javascript"});
+ return URL.createObjectURL(blob);
+}
+
+async function start(){
+ if(!files)return say("Load the voice model first.","err");
+ try{
+  $("start").disabled=true;$("stop").disabled=false;running=true;queue=[];processing=false;playAt=0;
+  audioCtx=new AudioContext({latencyHint:"interactive"});
+  await audioCtx.resume();
+  mediaStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+  const src=audioCtx.createMediaStreamSource(mediaStream);
+  const url=makeWorklet();
+  await audioCtx.audioWorklet.addModule(url);
+  URL.revokeObjectURL(url);
+  worklet=new AudioWorkletNode(audioCtx,"mic-chunker",{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1]});
+  const mute=audioCtx.createGain();mute.gain.value=0;
+  src.connect(worklet);worklet.connect(mute);mute.connect(audioCtx.destination);
+  worklet.port.onmessage=e=>{
+   if(!running)return;
+   queue.push(e.data);
+   if(queue.length>3)queue.shift();
+   processQueue();
+  };
+  say("Continuous microphone is ON. Capturing 2.5-second chunks...","ok");
+ }catch(e){stop();say("Start error: "+e.message,"err")}
+}
+
+async function processQueue(){
+ if(processing||!running||!queue.length)return;
+ processing=true;
+ const audio=queue.shift();
+ try{
+  say("Converting live mic chunk locally...");
+  const result=await runPipelineInWorker(
+   rvc,files,audio,audioCtx.sampleRate,
+   {onEvent:e=>{if(e.type==="stage")say("WebGPU/RVC: "+e.stage);}},
+   {
+    contentVecBackend:"webgpu",
+    rmvpeBackend:"webgpu",
+    rvcBackend:"wasm",
+    pitchShift:Number($("pitch").value),
+    medianFilter:true,
+    chunkDuration:2.5,
+    padDuration:.35,
+    inputSampleRate:16000,
+    outputSampleRate:48000,
+    timeout:120000
+   }
+  );
+  if(result.state!=="success"||!result.outputWav)throw Error(result.errorMessage||"RVC conversion failed.");
+  await playWav(result.outputWav);
+  say("Voice converted. Mic remains continuous.","ok");
+ }catch(e){say("Conversion error: "+e.message,"err")}
+ finally{processing=false;if(running)processQueue()}
+}
+
+async function playWav(blob){
+ const buf=await blob.arrayBuffer();
+ const decoded=await audioCtx.decodeAudioData(buf.slice(0));
+ const src=audioCtx.createBufferSource();src.buffer=decoded;src.connect(audioCtx.destination);
+ const now=audioCtx.currentTime;
+ if(playAt<now)playAt=now+.03;
+ src.start(playAt);playAt+=decoded.duration;
+}
+
+function stop(){
+ running=false;queue=[];
+ try{worklet?.disconnect()}catch{}
+ try{mediaStream?.getTracks().forEach(t=>t.stop())}catch{}
+ worklet=null;mediaStream=null;processing=false;
+ $("stop").disabled=true;$("start").disabled=!files;
+ say(files?"Stopped. Voice model remains loaded.":"Load an RVC voice model first.");
+}
+
+$("load").onclick=loadVoice;$("start").onclick=start;$("stop").onclick=stop;
+addEventListener("beforeunload",stop);
