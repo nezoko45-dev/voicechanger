@@ -181,7 +181,7 @@ async function embeddingFromAudio(audio){
  return new Float32Array(result[refSession.outputNames[0]].data)
 }
 function smoothEmbedding(next){
- if(!sourceEmbedding){sourceEmbedding=next;return}const y=new Float32Array(next.length);for(let i=0;i<next.length;i++)y[i]=sourceEmbedding[i]*.78+next[i]*.22;sourceEmbedding=y
+ if(!sourceEmbedding){sourceEmbedding=next;return}const y=new Float32Array(next.length);for(let i=0;i<next.length;i++)y[i]=sourceEmbedding[i]*.90+next[i]*.10;sourceEmbedding=y
 }
 async function convertChunk(audio){
  const modelAudio=resampleLinear(audio,CAPTURE_SR,MODEL_SR),spec=makeSpectrogram(modelAudio),src=await embeddingFromAudio(modelAudio);smoothEmbedding(src);
