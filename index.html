@@ -25,8 +25,8 @@
 <p id="refName" class="small">No reference loaded.</p>
 
 <label for="mic">Microphone input</label>
-<select id="mic"><option value="">Detecting microphones…</option></select>
-<p id="micInfo" class="small">Microphone devices are listed after browser permission is granted.</p>
+<select id="mic"><option value="">Click “Allow / Detect” first</option></select>
+<p id="micInfo" class="small">Chrome only exposes the full microphone list after permission is granted.</p>
 
 <label for="out">Output / Voicemeeter</label>
 <select id="out"><option value="">Detecting outputs…</option></select>
@@ -47,7 +47,7 @@
 <div class="card">
 <b>Live pipeline</b>
 <div id="heard" style="margin-top:10px">Waiting for microphone…</div>
-<p class="small">Choose the actual microphone you want to convert. The selected device ID is passed directly to getUserMedia when Live Conversion starts.</p>
+<p class="small">The selected microphone is explicitly passed to the live capture stream. Multiple physical and virtual microphone inputs can be selected here once Chrome permission is active.</p>
 </div>
 
 <div class="card warn">
@@ -72,7 +72,7 @@ const CHUNK_IN=Math.round(MODEL_SR*CHUNK_SEC),CAPTURE_SR=48000,FADE_SEC=.018;
 const $=id=>document.getElementById(id);
 
 let refSession=null,convSession=null,targetEmbedding=null,refAudio=null;
-let running=false,processing=false,stream=null,captureCtx=null,outCtx=null,micSource=null,captureNode=null;
+let running=false,processing=false,stream=null,permissionStream=null,captureCtx=null,outCtx=null,micSource=null,captureNode=null;
 let inputBuffer=new Float32Array(0),sourceEmbedding=null,playbackTime=0,lastGain=null,convertedCount=0;
 
 function status(t,k=''){ $('status').innerHTML='<span class="dot '+(k==='live'?'live':k==='busy'?'busy':'')+'"></span>'+t }
@@ -83,12 +83,15 @@ function addOption(s,id,name){const o=document.createElement('option');o.value=i
 
 async function requestMicPermission(){
  try{
-  detail('Requesting microphone permission so Chrome can reveal the real device names…');
-  const temp=await navigator.mediaDevices.getUserMedia({audio:true});
-  temp.getTracks().forEach(t=>t.stop());
+  if(permissionStream){permissionStream.getTracks().forEach(t=>t.stop());permissionStream=null}
+  detail('Requesting microphone access. Keeping the permission stream active while devices are detected…');
+  permissionStream=await navigator.mediaDevices.getUserMedia({
+   audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}
+  });
   await devices();
-  status('Microphones detected');
-  detail('Choose the microphone you want to convert.');
+  const count=[...$('mic').options].filter(o=>o.value).length;
+  status(count>1?count+' microphones detected':'Microphone access granted');
+  detail(count>1?'All available microphone inputs are now selectable. Choose one from the dropdown.':'Chrome currently exposed one microphone input. If you have more, check Chrome site microphone permissions and Windows sound devices.');
  }catch(e){
   status('Microphone permission failed');
   detail('Chrome blocked microphone access: '+(e.message||e));
@@ -102,8 +105,7 @@ async function devices(){
   const inputs=list.filter(d=>d.kind==='audioinput');
   const outputs=list.filter(d=>d.kind==='audiooutput');
 
-  $('mic').innerHTML='';
-  $('out').innerHTML='';
+  $('mic').innerHTML='';$('out').innerHTML='';
 
   if(!inputs.length){
    addOption($('mic'),'','No microphones found');
@@ -127,7 +129,9 @@ async function devices(){
   if(oldO&&[...$('out').options].some(o=>o.value===oldO))$('out').value=oldO;
 
   const selected=$('mic').selectedOptions[0];
-  $('micInfo').textContent=selected&&selected.value?'Selected microphone: '+selected.textContent:'No microphone selected yet.';
+  $('micInfo').textContent=selected&&selected.value
+   ? 'Detected '+inputs.length+' microphone input'+(inputs.length===1?'':'s')+'. Selected: '+selected.textContent
+   : 'No microphone selected yet.';
  }catch(e){detail('Device error: '+e.message)}
 }
 
@@ -145,145 +149,102 @@ async function cachedFetch(url){
 }
 
 function reflectIndex(i,n){if(n<=1)return 0;while(i<0||i>=n)i=i<0?-i:i>=n?2*n-i-2:i;return i}
-
 function makeSpectrogram(x){
- const padded=new Float32Array(x.length+PAD*2);
- for(let i=0;i<padded.length;i++)padded[i]=x[reflectIndex(i-PAD,x.length)];
+ const padded=new Float32Array(x.length+PAD*2);for(let i=0;i<padded.length;i++)padded[i]=x[reflectIndex(i-PAD,x.length)];
  const frames=Math.max(1,Math.floor((padded.length-NFFT)/HOP)+1),out=new Float32Array(frames*BINS);
  const re=new Float32Array(NFFT),im=new Float32Array(NFFT),bitrev=new Uint16Array(NFFT),hann=new Float32Array(NFFT);
  for(let i=0;i<NFFT;i++){let v=i,r=0;for(let b=0;b<10;b++){r=(r<<1)|(v&1);v>>=1}bitrev[i]=r;hann[i]=.5-.5*Math.cos(2*Math.PI*i/(NFFT-1))}
  for(let f=0;f<frames;f++){
-  const off=f*HOP;
-  for(let n=0;n<NFFT;n++){re[bitrev[n]]=padded[off+n]*hann[n];im[bitrev[n]]=0}
-  for(let len=2;len<=NFFT;len<<=1){
-   const half=len>>1;
-   for(let i=0;i<NFFT;i+=len)for(let j=0;j<half;j++){
-    const a=-2*Math.PI*j/len,wr=Math.cos(a),wi=Math.sin(a),p=i+j,q=p+half;
-    const tr=re[q]*wr-im[q]*wi,ti=re[q]*wi+im[q]*wr;
-    re[q]=re[p]-tr;im[q]=im[p]-ti;re[p]+=tr;im[p]+=ti;
-   }
-  }
+  const off=f*HOP;for(let n=0;n<NFFT;n++){re[bitrev[n]]=padded[off+n]*hann[n];im[bitrev[n]]=0}
+  for(let len=2;len<=NFFT;len<<=1){const half=len>>1;for(let i=0;i<NFFT;i+=len)for(let j=0;j<half;j++){
+   const a=-2*Math.PI*j/len,wr=Math.cos(a),wi=Math.sin(a),p=i+j,q=p+half,tr=re[q]*wr-im[q]*wi,ti=re[q]*wi+im[q]*wr;
+   re[q]=re[p]-tr;im[q]=im[p]-ti;re[p]+=tr;im[p]+=ti;
+  }}
   for(let k=0;k<BINS;k++)out[f*BINS+k]=Math.sqrt(re[k]*re[k]+im[k]*im[k]+1e-6)
  }
  return {data:out,frames}
 }
-
 function resampleLinear(x,from,to){
- if(from===to)return new Float32Array(x);
- const len=Math.max(1,Math.round(x.length*to/from)),y=new Float32Array(len),ratio=from/to;
- for(let i=0;i<len;i++){const p=i*ratio,j=Math.floor(p),f=p-j,a=x[Math.min(j,x.length-1)],b=x[Math.min(j+1,x.length-1)];y[i]=a+(b-a)*f}
- return y
+ if(from===to)return new Float32Array(x);const len=Math.max(1,Math.round(x.length*to/from)),y=new Float32Array(len),ratio=from/to;
+ for(let i=0;i<len;i++){const p=i*ratio,j=Math.floor(p),f=p-j,a=x[Math.min(j,x.length-1)],b=x[Math.min(j+1,x.length-1)];y[i]=a+(b-a)*f}return y
 }
-
 async function decodeReference(file){
- if(!file)throw new Error('Choose a WAV reference voice first.');
- const ab=await file.arrayBuffer(),ctx=new AudioContext({sampleRate:MODEL_SR});
- try{
-  const b=await ctx.decodeAudioData(ab.slice(0)),mono=new Float32Array(b.length);
+ if(!file)throw new Error('Choose a WAV reference voice first.');const ab=await file.arrayBuffer(),ctx=new AudioContext({sampleRate:MODEL_SR});
+ try{const b=await ctx.decodeAudioData(ab.slice(0)),mono=new Float32Array(b.length);
   for(let ch=0;ch<b.numberOfChannels;ch++){const d=b.getChannelData(ch);for(let i=0;i<d.length;i++)mono[i]+=d[i]/b.numberOfChannels}
   return resampleLinear(mono,b.sampleRate,MODEL_SR)
  }finally{try{await ctx.close()}catch{}}
 }
-
 function rms(x){let s=0;for(let i=0;i<x.length;i++)s+=x[i]*x[i];return Math.sqrt(s/Math.max(1,x.length))}
 async function embeddingFromAudio(audio){
- const spec=makeSpectrogram(audio),t=new ort.Tensor('float32',spec.data,[1,spec.frames,BINS]);
- const result=await refSession.run({spec:t});return new Float32Array(result[refSession.outputNames[0]].data)
+ const spec=makeSpectrogram(audio),t=new ort.Tensor('float32',spec.data,[1,spec.frames,BINS]),result=await refSession.run({spec:t});
+ return new Float32Array(result[refSession.outputNames[0]].data)
 }
 function smoothEmbedding(next){
- if(!sourceEmbedding){sourceEmbedding=next;return}
- const y=new Float32Array(next.length);for(let i=0;i<next.length;i++)y[i]=sourceEmbedding[i]*.78+next[i]*.22;sourceEmbedding=y
+ if(!sourceEmbedding){sourceEmbedding=next;return}const y=new Float32Array(next.length);for(let i=0;i<next.length;i++)y[i]=sourceEmbedding[i]*.78+next[i]*.22;sourceEmbedding=y
 }
-
 async function convertChunk(audio){
- const modelAudio=resampleLinear(audio,CAPTURE_SR,MODEL_SR),spec=makeSpectrogram(modelAudio),src=await embeddingFromAudio(modelAudio);
- smoothEmbedding(src);
- const specT=new ort.Tensor('float32',spec.data,[1,BINS,spec.frames]);
- const lenT=new ort.Tensor('int64',new BigInt64Array([BigInt(spec.frames)]),[1]);
+ const modelAudio=resampleLinear(audio,CAPTURE_SR,MODEL_SR),spec=makeSpectrogram(modelAudio),src=await embeddingFromAudio(modelAudio);smoothEmbedding(src);
+ const specT=new ort.Tensor('float32',spec.data,[1,BINS,spec.frames]),lenT=new ort.Tensor('int64',new BigInt64Array([BigInt(spec.frames)]),[1]);
  const srcT=new ort.Tensor('float32',sourceEmbedding,[1,256,1]),tgtT=new ort.Tensor('float32',targetEmbedding,[1,256,1]);
- const result=await convSession.run({spec:specT,spec_lengths:lenT,src_g:srcT,tgt_g:tgtT});
- return new Float32Array(result[convSession.outputNames[0]].data)
+ const result=await convSession.run({spec:specT,spec_lengths:lenT,src_g:srcT,tgt_g:tgtT});return new Float32Array(result[convSession.outputNames[0]].data)
 }
-
 function scheduleAudio(samples){
- if(!outCtx)return;
- const clean=new Float32Array(samples.length);let peak=0;
- for(let i=0;i<samples.length;i++){const v=Math.max(-1,Math.min(1,samples[i]));clean[i]=v;peak=Math.max(peak,Math.abs(v))}
+ if(!outCtx)return;const clean=new Float32Array(samples.length);
+ for(let i=0;i<samples.length;i++)clean[i]=Math.max(-1,Math.min(1,samples[i]));
  const b=outCtx.createBuffer(1,clean.length,MODEL_SR);b.copyToChannel(clean,0);
  const src=outCtx.createBufferSource(),gain=outCtx.createGain();src.buffer=b;src.connect(gain);gain.connect(outCtx.destination);
- const now=outCtx.currentTime;if(playbackTime<now+.035)playbackTime=now+.035;
- const start=Math.max(now+.02,playbackTime-FADE_SEC),end=start+b.duration;
+ const now=outCtx.currentTime;if(playbackTime<now+.035)playbackTime=now+.035;const start=Math.max(now+.02,playbackTime-FADE_SEC),end=start+b.duration;
  if(lastGain){try{lastGain.gain.cancelScheduledValues(start);lastGain.gain.setValueAtTime(1,start);lastGain.gain.linearRampToValueAtTime(0,Math.min(end,start+FADE_SEC))}catch{}}
  gain.gain.setValueAtTime(0,start);gain.gain.linearRampToValueAtTime(1,start+FADE_SEC);gain.gain.setValueAtTime(1,Math.max(start+FADE_SEC,end-FADE_SEC));gain.gain.linearRampToValueAtTime(0,end);
  src.start(start);playbackTime=end;lastGain=gain
 }
-
 async function processLoop(){
  if(processing)return;processing=true;
- try{
-  while(running){
-   const need=Math.round(CHUNK_IN*CAPTURE_SR/MODEL_SR);
-   if(inputBuffer.length<need){await new Promise(r=>setTimeout(r,12));continue}
-   const chunk=inputBuffer.slice(0,need);inputBuffer=inputBuffer.slice(Math.floor(need*.90));
-   const level=rms(chunk);if(level<.008)continue;
-   status('Converting live audio…','busy');detail('OpenVoice V2 FP32 inference • chunk '+(++convertedCount));
-   const t0=performance.now(),audio=await convertChunk(chunk);if(!running)break;scheduleAudio(audio);
-   const ms=Math.round(performance.now()-t0);progress(Math.min(100,Math.round((CHUNK_SEC*1000/Math.max(1,ms))*100)));
-   detail('OpenVoice V2 FP32 • '+ms+' ms inference • output queued');status('Live • OpenVoice V2 → output','live')
-  }
- }catch(e){console.error(e);status('Conversion error');detail(e.stack||e.message||String(e));await stop()}
- finally{processing=false}
+ try{while(running){
+  const need=Math.round(CHUNK_IN*CAPTURE_SR/MODEL_SR);if(inputBuffer.length<need){await new Promise(r=>setTimeout(r,12));continue}
+  const chunk=inputBuffer.slice(0,need);inputBuffer=inputBuffer.slice(Math.floor(need*.90));const level=rms(chunk);if(level<.008)continue;
+  status('Converting live audio…','busy');detail('OpenVoice V2 FP32 inference • chunk '+(++convertedCount));
+  const t0=performance.now(),audio=await convertChunk(chunk);if(!running)break;scheduleAudio(audio);const ms=Math.round(performance.now()-t0);
+  progress(Math.min(100,Math.round((CHUNK_SEC*1000/Math.max(1,ms))*100)));detail('OpenVoice V2 FP32 • '+ms+' ms inference • output queued');status('Live • OpenVoice V2 → output','live')
+ }}catch(e){console.error(e);status('Conversion error');detail(e.stack||e.message||String(e));await stop()}finally{processing=false}
 }
-
 async function loadModels(){
  $('load').disabled=true;
  try{
   status('Downloading OpenVoice V2 FP32 models…','busy');detail('Downloading the full-precision models and caching them locally.');progress(5);
   const [refBytes,convBytes]=await Promise.all([cachedFetch(REF_MODEL),cachedFetch(CONV_MODEL)]);progress(45);
   ort.env.wasm.wasmPaths='https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.22.0/';
-  refSession=null;convSession=null;
   try{
    refSession=await ort.InferenceSession.create(refBytes,{executionProviders:['webgpu'],graphOptimizationLevel:'all'});
    convSession=await ort.InferenceSession.create(convBytes,{executionProviders:['webgpu'],graphOptimizationLevel:'all'});
-  }catch(webgpuError){
-   console.warn('WebGPU unavailable for FP32 model; using WASM:',webgpuError);
-   detail('WebGPU could not load the model; retrying with WASM CPU.');
+  }catch(e){
+   console.warn('WebGPU unavailable; using WASM',e);detail('WebGPU could not load the FP32 model; retrying with WASM CPU.');
    refSession=await ort.InferenceSession.create(refBytes,{executionProviders:['wasm'],graphOptimizationLevel:'all'});
    convSession=await ort.InferenceSession.create(convBytes,{executionProviders:['wasm'],graphOptimizationLevel:'all'});
   }
-  progress(100);status('OpenVoice V2 FP32 ready');detail('Models loaded successfully. Choose a reference voice and start.');
-  if(targetEmbedding)$('start').disabled=false
+  progress(100);status('OpenVoice V2 FP32 ready');detail('Models loaded successfully. Choose a reference voice and start.');if(targetEmbedding)$('start').disabled=false
  }catch(e){console.error(e);status('Model load failed');detail(e.stack||e.message||String(e));progress(0)}
  finally{$('load').disabled=false}
 }
-
 async function loadReference(file){
  try{
   $('start').disabled=true;status('Preparing reference voice…','busy');detail('Extracting target voice embedding.');
-  refAudio=await decodeReference(file);if(!refSession)throw new Error('Load OpenVoice V2 first.');
-  targetEmbedding=await embeddingFromAudio(refAudio);
-  $('refName').textContent=file.name+' • '+(refAudio.length/MODEL_SR).toFixed(1)+' s reference';
-  status('Reference voice ready');detail('Target voice embedding ready. Start Live Conversion.');$('start').disabled=false
+  refAudio=await decodeReference(file);if(!refSession)throw new Error('Load OpenVoice V2 first.');targetEmbedding=await embeddingFromAudio(refAudio);
+  $('refName').textContent=file.name+' • '+(refAudio.length/MODEL_SR).toFixed(1)+' s reference';status('Reference voice ready');detail('Target voice embedding ready. Start Live Conversion.');$('start').disabled=false
  }catch(e){console.error(e);refAudio=null;targetEmbedding=null;$('refName').textContent='Reference failed: '+e.message;status('Reference load failed');detail(e.message)}
 }
-
 async function start(){
- if(running)return;
- if(!refSession||!convSession){status('Load OpenVoice V2 first');return}
- if(!targetEmbedding){status('Load a reference voice first');return}
+ if(running)return;if(!refSession||!convSession){status('Load OpenVoice V2 first');return}if(!targetEmbedding){status('Load a reference voice first');return}
  try{
-  $('start').disabled=true;
-  const selectedMic=$('mic').value;
-  if(!selectedMic){throw new Error('Select a microphone input first.')}
+  $('start').disabled=true;const selectedMic=$('mic').value;if(!selectedMic)throw new Error('Select a microphone input first.');
+  // Keep the permission stream alive until the exact selected input is opened.
+  if(permissionStream){permissionStream.getTracks().forEach(t=>t.stop());permissionStream=null}
   stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:{exact:selectedMic},channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
-  captureCtx=new AudioContext({sampleRate:CAPTURE_SR});outCtx=new AudioContext({sampleRate:48000});
-  await captureCtx.resume();await outCtx.resume();
+  captureCtx=new AudioContext({sampleRate:CAPTURE_SR});outCtx=new AudioContext({sampleRate:48000});await captureCtx.resume();await outCtx.resume();
   if($('out').value&&typeof outCtx.setSinkId==='function')await outCtx.setSinkId($('out').value);
-
   const code='class VCInput extends AudioWorkletProcessor{process(inputs){const i=inputs[0]&&inputs[0][0];if(i&&i.length){const c=new Float32Array(i);this.port.postMessage(c,[c.buffer])}return true}}registerProcessor("vc-input",VCInput);';
-  const url=URL.createObjectURL(new Blob([code],{type:'application/javascript'}));
-  await captureCtx.audioWorklet.addModule(url);URL.revokeObjectURL(url);
-
+  const url=URL.createObjectURL(new Blob([code],{type:'application/javascript'}));await captureCtx.audioWorklet.addModule(url);URL.revokeObjectURL(url);
   micSource=captureCtx.createMediaStreamSource(stream);captureNode=new AudioWorkletNode(captureCtx,'vc-input');
   captureNode.port.onmessage=e=>{if(running){inputBuffer=concat(inputBuffer,e.data);const max=Math.round(CAPTURE_SR*3);if(inputBuffer.length>max)inputBuffer=inputBuffer.slice(-max)}};
   const silent=captureCtx.createGain();silent.gain.value=0;micSource.connect(captureNode);captureNode.connect(silent);silent.connect(captureCtx.destination);
@@ -292,13 +253,10 @@ async function start(){
  }catch(e){console.error(e);await stop();status('Start failed');detail(e.message||String(e))}
  finally{$('start').disabled=running}
 }
-
 async function stop(){
- running=false;processing=false;
- try{captureNode?.disconnect()}catch{}try{micSource?.disconnect()}catch{}
+ running=false;processing=false;try{captureNode?.disconnect()}catch{}try{micSource?.disconnect()}catch{}
  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
- if(captureCtx){try{await captureCtx.close()}catch{}captureCtx=null}
- if(outCtx){try{await outCtx.close()}catch{}outCtx=null}
+ if(captureCtx){try{await captureCtx.close()}catch{}captureCtx=null}if(outCtx){try{await outCtx.close()}catch{}outCtx=null}
  captureNode=null;micSource=null;inputBuffer=new Float32Array(0);playbackTime=0;lastGain=null;sourceEmbedding=null;
  $('stop').disabled=true;$('start').disabled=!refSession||!convSession||!targetEmbedding;status('Stopped');detail('Ready')
 }
