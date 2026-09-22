@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VoiceChanger</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>🎙️ VoiceChanger</h1>
+  <p class="sub">Chrome controls it. The EXE owns the audio.</p>
+
+  <label>Microphone</label>
+  <select id="input"></select>
+
+  <label>Voicemeeter output</label>
+  <select id="output"></select>
+
+  <label>Voice reference (.wav)</label>
+  <input id="voice" type="file" accept=".wav,audio/wav">
+
+  <div class="buttons">
+    <button id="start">START</button>
+    <button id="stop" class="secondary">STOP</button>
+  </div>
+
+  <div id="status" class="status">Connecting…</div>
+  <pre id="details"></pre>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
