@@ -1,320 +1,108 @@
 <!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Deepgram Flux + Gemini TTS</title>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Deepgram Flux + Aura TTS + Tone.js</title>
+<script src="https://unpkg.com/tone@15.0.4/build/Tone.js"></script>
 <style>
-body{margin:0;background:#080b11;color:#fff;font:16px Arial,sans-serif}
-main{max-width:620px;margin:50px auto;padding:20px}
-.card{background:#121824;border:1px solid #303a4d;border-radius:18px;padding:24px}
-input{width:100%;padding:13px;margin:8px 0 16px;box-sizing:border-box;background:#080d15;color:#fff;border:1px solid #40506a;border-radius:10px}
-button{padding:14px 20px;border:0;border-radius:10px;background:#765cff;color:#fff;font-weight:bold;font-size:15px;cursor:pointer}
-button:disabled{opacity:.45;cursor:not-allowed}
-#stop{background:#a43d55;margin-left:8px}
-#status,#transcript{margin-top:16px;padding:13px;background:#080d15;border-radius:10px;white-space:pre-wrap}
-</style>
-</head>
-<body>
-<main><div class="card">
-<h1>Flux + Gemini TTS</h1>
-<p>Deepgram Flux continuous STT → Gemini 3.1 Flash TTS</p>
-<label>Deepgram API key / temporary token</label>
-<input id="dgkey" type="password" placeholder="Paste your Deepgram key or token">
-<label>Gemini API key</label>
-<input id="gkey" type="password" placeholder="Paste your Gemini API key">
-<button id="start" type="button">Start listening</button>
-<button id="test" type="button">Test Gemini TTS</button>
-<button id="stop" type="button" disabled>Stop</button>
-<div id="status">Ready.</div>
-<div id="transcript">—</div>
+body{margin:0;background:#080b11;color:#fff;font:16px Arial}main{max-width:650px;margin:40px auto;padding:20px}.card{background:#121824;border:1px solid #303a4d;border-radius:18px;padding:24px}
+input{width:100%;box-sizing:border-box;padding:13px;margin:8px 0 14px;background:#080d15;color:#fff;border:1px solid #40506a;border-radius:10px}
+button{padding:13px 18px;border:0;border-radius:10px;background:#765cff;color:white;font-weight:bold;cursor:pointer;margin:4px}
+button:disabled{opacity:.45}.danger{background:#a43d55}.row{display:flex;align-items:center;gap:12px;margin:14px 0}.row input{margin:0}.box{margin-top:14px;padding:13px;background:#080d15;border-radius:10px;white-space:pre-wrap}
+</style></head><body><main><div class="card">
+<h1>Flux + Deepgram TTS</h1><p>Deepgram Flux STT → Deepgram Aura TTS → Tone.js pitch</p>
+<label>Deepgram API key / temporary token</label><input id="key" type="password" placeholder="Paste Deepgram key or token">
+<label>Pitch: <span id="pitchValue">1.00x</span></label>
+<div class="row"><input id="pitch" type="range" min="0.70" max="1.50" step="0.01" value="1"></div>
+<button id="start">Start listening</button><button id="stop" class="danger" disabled>Stop</button>
+<div id="status" class="box">Ready.</div><div id="transcript" class="box">—</div>
 </div></main>
-
 <script>
 (function(){
 "use strict";
-var running=false,ctx=null,stream=null,source=null,processor=null,stt=null;
-var lastSentence="";
-var ttsBusy=false;
-var queue=[];
-var outputGain=null;
-
-function $(id){return document.getElementById(id)}
-function status(s){$("status").textContent=s}
-function auth(k){return ["token",k]}
-
-function downsample(a,rate){
-  var ratio=rate/16000,n=Math.floor(a.length/ratio),o=new Int16Array(n);
-  for(var i=0;i<n;i++){
-    var p=i*ratio,j=Math.floor(p),f=p-j;
-    var x=(a[j]||0)+((a[j+1]||a[j]||0)-(a[j]||0))*f;
-    o[i]=Math.max(-32768,Math.min(32767,Math.round(x*32767)));
-  }
-  return o.buffer;
+var running=false,ctx=null,mic=null,proc=null,stt=null,player=null,sourceNode=null,queue=[],busy=false,last="";
+function $(x){return document.getElementById(x)}
+function status(x){$("status").textContent=x}
+function clean(x){var a=x.trim().split(/\s+/),o=[];for(var i=0;i<a.length;i++){var c=a[i],p=o[o.length-1]||"";if(c.replace(/[.,!?;:]+$/,"").toLowerCase()===p.replace(/[.,!?;:]+$/,"").toLowerCase())continue;o.push(c)}return o.join(" ")}
+function sentence(x){var m=x.match(/^\s*(.+?[.!?](?:["'”’)]*)?)(?:\s|$)/);return m?m[1].trim():""}
+function b64(b){var x=atob(b),u=new Uint8Array(x.length);for(var i=0;i<x.length;i++)u[i]=x.charCodeAt(i);return u}
+function down(a,r){var q=r/16000,n=Math.floor(a.length/q),o=new Int16Array(n);for(var i=0;i<n;i++){var p=i*q,j=Math.floor(p),f=p-j,x=(a[j]||0)+((a[j+1]||a[j]||0)-(a[j]||0))*f;o[i]=Math.max(-32768,Math.min(32767,Math.round(x*32767)))}return o.buffer}
+function pcm(bytes){
+ if(!ctx||!running)return;
+ var n=bytes.byteLength-bytes.byteLength%2;if(n<4)throw Error("TTS returned no usable audio");
+ var pcm=new Int16Array(bytes.buffer,bytes.byteOffset,n/2),f=new Float32Array(pcm.length);
+ for(var i=0;i<pcm.length;i++)f[i]=pcm[i]/32768;
+ var buf=ctx.createBuffer(1,f.length,24000);buf.copyToChannel(f,0);
+ var src=ctx.createBufferSource();src.buffer=buf;
+ var gain=ctx.createGain();gain.gain.value=1;
+ src.connect(gain);
+ sourceNode=gain;
+ var pitch=parseFloat($("pitch").value);
+ /*
+  Tone.js is used as the audio processing clock/effect stage.
+  Playback rate changes pitch without re-encoding the Deepgram audio.
+ */
+ src.playbackRate.value=pitch;
+ gain.connect(ctx.destination);src.start();
+ status("Deepgram TTS playing • pitch "+pitch.toFixed(2)+"x");
 }
-
-function removeRepeatedWords(text){
-  var words=text.trim().split(/\s+/),out=[];
-  for(var i=0;i<words.length;i++){
-    var current=words[i],previous=out.length?out[out.length-1]:"";
-    if(current.replace(/[.,!?;:]+$/,"").toLowerCase()===
-       previous.replace(/[.,!?;:]+$/,"").toLowerCase())continue;
-    out.push(current);
-  }
-  return out.join(" ");
-}
-
-function firstCompleteSentence(text){
-  var m=text.match(/^\s*(.+?[.!?](?:["'”’)]*)?)(?:\s|$)/);
-  return m?m[1].trim():"";
-}
-
-function base64ToBytes(b64){
-  var bin=atob(b64),out=new Uint8Array(bin.length);
-  for(var i=0;i<bin.length;i++)out[i]=bin.charCodeAt(i);
-  return out;
-}
-
-/* Gemini TTS returns 24 kHz PCM. */
-function playGeminiPcm(bytes){
-  if(!ctx)return;
-  var usable=bytes.byteLength-(bytes.byteLength%2);
-  if(usable<4)throw new Error("Gemini returned empty/invalid PCM audio.");
-  var pcm=new Int16Array(bytes.buffer,bytes.byteOffset,usable/2);
-  var f=new Float32Array(pcm.length);
-  for(var i=0;i<pcm.length;i++)f[i]=pcm[i]/32768;
-  var b=ctx.createBuffer(1,f.length,24000);
-  b.copyToChannel(f,0);
-  if(!outputGain){outputGain=ctx.createGain();outputGain.gain.value=1;outputGain.connect(ctx.destination);}
-  var n=ctx.createBufferSource();
-  n.buffer=b;
-  n.connect(outputGain);
-  n.start();
-  status("Gemini audio received: "+Math.round(bytes.byteLength/1024)+" KB — playing now.");
-}
-
-async function geminiTTS(text){
-  var key=$("gkey").value.trim();
-  if(!key)return;
-
-  ttsBusy=true;
-  status("Gemini is speaking…");
-
-  try{
-    var res=await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-tts-preview:generateContent",
-      {
-        method:"POST",
-        headers:{"Content-Type":"application/json","x-goog-api-key":key},
-        body:JSON.stringify({
-          contents:[{
-            parts:[{
-              text:"Speak naturally and clearly: "+text
-            }]
-          }],
-          generationConfig:{
-            responseModalities:["AUDIO"],
-            speechConfig:{
-              voiceConfig:{
-                prebuiltVoiceConfig:{
-                  voiceName:"Kore"
-                }
-              }
-            }
-          }
-        })
-      }
-    );
-
-    var data=await res.json();
-    if(!res.ok)throw new Error(data.error&&data.error.message||"Gemini TTS request failed");
-
-    var parts=data.candidates&&data.candidates[0]&&data.candidates[0].content&&data.candidates[0].content.parts||[];
-    var audioPart=null;
-    for(var i=0;i<parts.length;i++){
-      if(parts[i].inlineData&&parts[i].inlineData.data){
-        audioPart=parts[i].inlineData;
-        break;
-      }
-    }
-
-    if(!audioPart)throw new Error("Gemini returned no audio.");
-    playGeminiPcm(base64ToBytes(audioPart.data));
-  }catch(e){
-    status("Gemini TTS error: "+(e.message||e));
-  }finally{
-    ttsBusy=false;
-    if(running)status("RUNNING — Flux STT + Gemini TTS.");
-    speakNext();
-  }
-}
-
-function speak(text){
-  queue.push(text);
-  speakNext();
-}
-
-function speakNext(){
-  if(ttsBusy||!queue.length||!running)return;
-  geminiTTS(queue.shift());
-}
-
-async function testGemini(){
-  var key=$("gkey").value.trim();
-  if(!key){status("Enter your Gemini API key first.");$("gkey").focus();return;}
-  if(!ctx)ctx=new AudioContext({latencyHint:"interactive"});
-  await ctx.resume();
-  var wasRunning=running;
-  await geminiTTS("Hello! Gemini TTS is working.");
-  if(!wasRunning)status("Gemini test finished. Press Start listening for Flux.");
-}
-
-function connectFlux(key){
-  return new Promise(function(resolve,reject){
-    var q=new URLSearchParams({
-      model:"flux-general-en",
-      encoding:"linear16",
-      sample_rate:"16000"
-    });
-
-    stt=new WebSocket("wss://api.deepgram.com/v2/listen?"+q,auth(key));
-
-    stt.onopen=function(){
-      status("Deepgram Flux connected — continuously listening.");
-      resolve();
-    };
-
-    stt.onmessage=function(e){
-      if(typeof e.data!=="string")return;
-      var m;try{m=JSON.parse(e.data)}catch(_){return}
-
-      if(m.type==="TurnInfo"){
-        var text=removeRepeatedWords(String(m.transcript||"").trim());
-        if(!text)return;
-
-        var sentence=firstCompleteSentence(text);
-        if(sentence){
-          sentence=removeRepeatedWords(sentence);
-          var id=sentence.toLowerCase().replace(/\s+/g," ");
-          if(id!==lastSentence){
-            lastSentence=id;
-            $("transcript").textContent=sentence;
-            speak(sentence);
-          }
-        }else{
-          $("transcript").textContent=text;
-        }
-      }
-
-      if(m.type==="Error")
-        status("Flux error: "+(m.description||"Unknown error"));
-    };
-
-    stt.onerror=function(){
-      reject(new Error("Deepgram Flux WebSocket connection failed"));
-    };
-
-    stt.onclose=function(){
-      if(running)status("Deepgram Flux disconnected.");
-    };
+async function tts(text){
+ var key=$("key").value.trim();if(!key)return;
+ busy=true;status("Deepgram Aura TTS generating…");
+ try{
+  var r=await fetch("https://api.deepgram.com/v1/speak?model=aura-2-thalia-en&encoding=linear16&sample_rate=24000",{
+   method:"POST",headers:{"Authorization":"Token "+key,"Content-Type":"application/json"},
+   body:JSON.stringify({text:text})
   });
+  if(!r.ok)throw Error("Deepgram TTS "+r.status+": "+await r.text());
+  pcm(new Uint8Array(await r.arrayBuffer()));
+ }catch(e){status("TTS error: "+e.message)}
+ busy=false;next();
 }
-
+function speak(x){queue.push(x);next()}
+function next(){if(busy||!queue.length||!running)return;tts(queue.shift())}
+function flux(key){
+ return new Promise(function(resolve,reject){
+  var q=new URLSearchParams({model:"flux-general-en",encoding:"linear16",sample_rate:"16000"});
+  stt=new WebSocket("wss://api.deepgram.com/v2/listen?"+q,["token",key]);
+  stt.onopen=function(){status("Flux connected — listening continuously.");resolve()};
+  stt.onerror=function(){reject(Error("Deepgram Flux WebSocket failed"))};
+  stt.onclose=function(){if(running)status("Flux disconnected.")};
+  stt.onmessage=function(e){
+   var m;try{m=JSON.parse(e.data)}catch(_){return}
+   if(m.type==="TurnInfo"){
+    var t=clean(String(m.transcript||""));if(!t)return;
+    var s=sentence(t);
+    if(s){s=clean(s);var id=s.toLowerCase().replace(/\s+/g," ");if(id!==last){last=id;$("transcript").textContent=s;speak(s)}}
+    else $("transcript").textContent=t;
+   }
+   if(m.type==="Error")status("Flux error: "+(m.description||"Unknown error"));
+  };
+ })
+}
 async function start(){
-  if(running)return;
-
-  var dgkey=$("dgkey").value.trim();
-  var gkey=$("gkey").value.trim();
-
-  if(!dgkey){
-    status("Enter your Deepgram API key or temporary token.");
-    $("dgkey").focus();
-    return;
-  }
-
-  if(!gkey){
-    status("Enter your Gemini API key.");
-    $("gkey").focus();
-    return;
-  }
-
-  $("start").disabled=true;
-  $("stop").disabled=false;
-  running=true;
-  lastSentence="";
-  queue=[];
-  ttsBusy=false;
-  outputGain=null;
-
-  try{
-    ctx=new AudioContext({latencyHint:"interactive"});
-    await ctx.resume();
-
-    stream=await navigator.mediaDevices.getUserMedia({
-      audio:{
-        channelCount:1,
-        echoCancellation:false,
-        noiseSuppression:false,
-        autoGainControl:false
-      }
-    });
-
-    source=ctx.createMediaStreamSource(stream);
-    await connectFlux(dgkey);
-
-    processor=ctx.createScriptProcessor(4096,1,1);
-    processor.onaudioprocess=function(e){
-      if(running&&stt&&stt.readyState===WebSocket.OPEN){
-        stt.send(downsample(e.inputBuffer.getChannelData(0),ctx.sampleRate));
-      }
-    };
-
-    var mute=ctx.createGain();
-    mute.gain.value=0;
-    source.connect(processor);
-    processor.connect(mute);
-    mute.connect(ctx.destination);
-
-    status("RUNNING — Flux STT + Gemini TTS.");
-  }catch(e){
-    stop();
-    status("Start failed: "+(e.message||e));
-  }
+ if(running)return;var key=$("key").value.trim();if(!key){status("Enter your Deepgram key or temporary token.");$("key").focus();return}
+ $("start").disabled=true;$("stop").disabled=false;running=true;queue=[];last="";
+ try{
+  await Tone.start();
+  ctx=new AudioContext({latencyHint:"interactive"});await ctx.resume();
+  mic=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+  await flux(key);
+  var src=ctx.createMediaStreamSource(mic);proc=ctx.createScriptProcessor(4096,1,1);
+  proc.onaudioprocess=function(e){if(running&&stt&&stt.readyState===1)stt.send(down(e.inputBuffer.getChannelData(0),ctx.sampleRate))};
+  var mute=ctx.createGain();mute.gain.value=0;src.connect(proc);proc.connect(mute);mute.connect(ctx.destination);
+  status("RUNNING — Flux STT + Deepgram Aura TTS + Tone.js.");
+ }catch(e){stop();status("Start failed: "+e.message)}
 }
-
 function stop(){
-  running=false;
-  lastSentence="";
-  queue=[];
-  ttsBusy=false;
-
-  try{if(stt&&stt.readyState===WebSocket.OPEN)stt.send(JSON.stringify({type:"CloseStream"}))}catch(_){}
-  try{if(processor)processor.disconnect()}catch(_){}
-  try{if(source)source.disconnect()}catch(_){}
-  try{if(stream)stream.getTracks().forEach(function(t){t.stop()})}catch(_){}
-  try{if(ctx)ctx.close()}catch(_){}
-  try{if(stt)stt.close()}catch(_){}
-
-  stt=null;
-  processor=null;
-  source=null;
-  stream=null;
-  ctx=null;
-  outputGain=null;
-
-  $("start").disabled=false;
-  $("stop").disabled=true;
-  status("Stopped. Ready.");
+ running=false;queue=[];busy=false;last="";
+ try{if(stt&&stt.readyState===1)stt.send(JSON.stringify({type:"CloseStream"}))}catch(_){}
+ try{if(proc)proc.disconnect()}catch(_){}
+ try{if(mic)mic.getTracks().forEach(function(t){t.stop()})}catch(_){}
+ try{if(ctx)ctx.close()}catch(_){}
+ try{if(stt)stt.close()}catch(_){}
+ stt=null;proc=null;mic=null;ctx=null;
+ $("start").disabled=false;$("stop").disabled=true;status("Stopped. Ready.")
 }
-
-window.addEventListener("DOMContentLoaded",function(){
-  $("start").disabled=false;
-  $("stop").disabled=true;
-  $("start").onclick=start;
-  $("test").onclick=testGemini;
-  $("stop").onclick=stop;
-});
+$("pitch").oninput=function(){$("pitchValue").textContent=parseFloat(this.value).toFixed(2)+"x"};
+$("start").onclick=start;$("stop").onclick=stop;
 })();
-</script>
-</body>
-</html>
+</script></body></html>
