@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Deepgram Flux Voice</title>
+<title>Deepgram Flux + Gemini TTS</title>
 <style>
 body{margin:0;background:#080b11;color:#fff;font:16px Arial,sans-serif}
 main{max-width:620px;margin:50px auto;padding:20px}
@@ -17,10 +17,12 @@ button:disabled{opacity:.45;cursor:not-allowed}
 </head>
 <body>
 <main><div class="card">
-<h1>Deepgram Flux</h1>
-<p>Continuous Deepgram Flux speech-to-text — one complete sentence at a time.</p>
+<h1>Flux + Gemini TTS</h1>
+<p>Deepgram Flux continuous STT → Gemini 3.1 Flash TTS</p>
 <label>Deepgram API key / temporary token</label>
-<input id="key" type="password" placeholder="Paste your Deepgram key or token">
+<input id="dgkey" type="password" placeholder="Paste your Deepgram key or token">
+<label>Gemini API key</label>
+<input id="gkey" type="password" placeholder="Paste your Gemini API key">
 <button id="start" type="button">Start listening</button>
 <button id="stop" type="button" disabled>Stop</button>
 <div id="status">Ready.</div>
@@ -32,6 +34,8 @@ button:disabled{opacity:.45;cursor:not-allowed}
 "use strict";
 var running=false,ctx=null,stream=null,source=null,processor=null,stt=null;
 var lastSentence="";
+var ttsBusy=false;
+var queue=[];
 
 function $(id){return document.getElementById(id)}
 function status(s){$("status").textContent=s}
@@ -63,6 +67,92 @@ function firstCompleteSentence(text){
   return m?m[1].trim():"";
 }
 
+function base64ToBytes(b64){
+  var bin=atob(b64),out=new Uint8Array(bin.length);
+  for(var i=0;i<bin.length;i++)out[i]=bin.charCodeAt(i);
+  return out;
+}
+
+/* Gemini TTS returns 24 kHz PCM. */
+function playGeminiPcm(bytes){
+  if(!ctx||!running)return;
+  var pcm=new Int16Array(bytes.buffer,bytes.byteOffset,Math.floor(bytes.byteLength/2));
+  var f=new Float32Array(pcm.length);
+  for(var i=0;i<pcm.length;i++)f[i]=pcm[i]/32768;
+  var b=ctx.createBuffer(1,f.length,24000);
+  b.copyToChannel(f,0);
+  var n=ctx.createBufferSource();
+  n.buffer=b;
+  n.connect(ctx.destination);
+  n.start();
+}
+
+async function geminiTTS(text){
+  var key=$("gkey").value.trim();
+  if(!key)return;
+
+  ttsBusy=true;
+  status("Gemini is speaking…");
+
+  try{
+    var res=await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-tts-preview:generateContent?key="+encodeURIComponent(key),
+      {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          contents:[{
+            parts:[{
+              text:"Speak naturally and clearly: "+text
+            }]
+          }],
+          generationConfig:{
+            responseModalities:["AUDIO"],
+            speechConfig:{
+              voiceConfig:{
+                prebuiltVoiceConfig:{
+                  voiceName:"Kore"
+                }
+              }
+            }
+          }
+        })
+      }
+    );
+
+    var data=await res.json();
+    if(!res.ok)throw new Error(data.error&&data.error.message||"Gemini TTS request failed");
+
+    var parts=data.candidates&&data.candidates[0]&&data.candidates[0].content&&data.candidates[0].content.parts||[];
+    var audioPart=null;
+    for(var i=0;i<parts.length;i++){
+      if(parts[i].inlineData&&parts[i].inlineData.data){
+        audioPart=parts[i].inlineData;
+        break;
+      }
+    }
+
+    if(!audioPart)throw new Error("Gemini returned no audio.");
+    playGeminiPcm(base64ToBytes(audioPart.data));
+  }catch(e){
+    status("Gemini TTS error: "+(e.message||e));
+  }finally{
+    ttsBusy=false;
+    if(running)status("RUNNING — Flux STT + Gemini TTS.");
+    speakNext();
+  }
+}
+
+function speak(text){
+  queue.push(text);
+  speakNext();
+}
+
+function speakNext(){
+  if(ttsBusy||!queue.length||!running)return;
+  geminiTTS(queue.shift());
+}
+
 function connectFlux(key){
   return new Promise(function(resolve,reject){
     var q=new URLSearchParams({
@@ -70,6 +160,7 @@ function connectFlux(key){
       encoding:"linear16",
       sample_rate:"16000"
     });
+
     stt=new WebSocket("wss://api.deepgram.com/v2/listen?"+q,auth(key));
 
     stt.onopen=function(){
@@ -92,6 +183,7 @@ function connectFlux(key){
           if(id!==lastSentence){
             lastSentence=id;
             $("transcript").textContent=sentence;
+            speak(sentence);
           }
         }else{
           $("transcript").textContent=text;
@@ -114,10 +206,19 @@ function connectFlux(key){
 
 async function start(){
   if(running)return;
-  var key=$("key").value.trim();
-  if(!key){
-    status("Enter your Deepgram API key or temporary token first.");
-    $("key").focus();
+
+  var dgkey=$("dgkey").value.trim();
+  var gkey=$("gkey").value.trim();
+
+  if(!dgkey){
+    status("Enter your Deepgram API key or temporary token.");
+    $("dgkey").focus();
+    return;
+  }
+
+  if(!gkey){
+    status("Enter your Gemini API key.");
+    $("gkey").focus();
     return;
   }
 
@@ -125,6 +226,8 @@ async function start(){
   $("stop").disabled=false;
   running=true;
   lastSentence="";
+  queue=[];
+  ttsBusy=false;
 
   try{
     ctx=new AudioContext({latencyHint:"interactive"});
@@ -140,7 +243,7 @@ async function start(){
     });
 
     source=ctx.createMediaStreamSource(stream);
-    await connectFlux(key);
+    await connectFlux(dgkey);
 
     processor=ctx.createScriptProcessor(4096,1,1);
     processor.onaudioprocess=function(e){
@@ -155,7 +258,7 @@ async function start(){
     processor.connect(mute);
     mute.connect(ctx.destination);
 
-    status("RUNNING — Flux only.");
+    status("RUNNING — Flux STT + Gemini TTS.");
   }catch(e){
     stop();
     status("Start failed: "+(e.message||e));
@@ -165,6 +268,8 @@ async function start(){
 function stop(){
   running=false;
   lastSentence="";
+  queue=[];
+  ttsBusy=false;
 
   try{if(stt&&stt.readyState===WebSocket.OPEN)stt.send(JSON.stringify({type:"CloseStream"}))}catch(_){}
   try{if(processor)processor.disconnect()}catch(_){}
@@ -173,7 +278,12 @@ function stop(){
   try{if(ctx)ctx.close()}catch(_){}
   try{if(stt)stt.close()}catch(_){}
 
-  stt=null;processor=null;source=null;stream=null;ctx=null;
+  stt=null;
+  processor=null;
+  source=null;
+  stream=null;
+  ctx=null;
+
   $("start").disabled=false;
   $("stop").disabled=true;
   status("Stopped. Ready.");
