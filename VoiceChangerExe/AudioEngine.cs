@@ -108,7 +108,7 @@ public sealed class AudioEngine : IDisposable
 
         running = true;
         capture.StartRecording();
-        Console.WriteLine($"Audio started. Input={inDev.FriendlyName} Output={output?.Device.FriendlyName}");
+        Console.WriteLine($"Audio started. Input={inDev.FriendlyName} OutputId={outputId}");
     }
 
     public async Task StartExternalAsync(int? requestedOutput)
@@ -119,7 +119,7 @@ public sealed class AudioEngine : IDisposable
         await StartOutputAsync(requestedOutput);
         externalInput = true;
         running = true;
-        Console.WriteLine($"External audio started. Output={output?.Device.FriendlyName}");
+        Console.WriteLine($"External audio started. OutputId={outputId}");
     }
 
     private async Task StartOutputAsync(int? requestedOutput)
