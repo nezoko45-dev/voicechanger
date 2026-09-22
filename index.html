@@ -5,87 +5,44 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>VoiceChanger • OpenVoice V2 Live</title>
 <style>
-:root{color-scheme:dark}*{box-sizing:border-box}
-body{margin:0;background:#0d1117;color:#e6edf3;font:15px system-ui,-apple-system,Segoe UI,sans-serif}
-main{max-width:820px;margin:auto;padding:30px}
-h1{margin:0 0 6px;font-size:30px}.sub{color:#8b949e;margin:0 0 22px}
-.card{background:#161b22;border:1px solid #30363d;border-radius:14px;padding:18px;margin-bottom:14px}
-label{display:block;font-weight:700;margin:12px 0 7px}
-input,select,button{width:100%;font:inherit}
-input,select{background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:9px;padding:10px}
-input[type=file]{padding:8px}
-button{border:0;border-radius:9px;padding:12px;cursor:pointer;background:#238636;color:#fff;font-weight:700}
-button.stop{background:#da3633}button.secondary{background:#30363d}
-button:disabled{opacity:.45;cursor:not-allowed}
-.row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
-#status{padding:12px;border:1px solid #30363d;border-radius:9px;background:#0d1117}
-.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#8b949e;margin-right:8px}
-.dot.live{background:#2ea043}.dot.busy{background:#d29922}
-.small{font-size:13px;color:#8b949e;line-height:1.5}
-.bar{height:9px;background:#0d1117;border:1px solid #30363d;border-radius:9px;overflow:hidden;margin-top:10px}
-.bar>i{display:block;height:100%;width:0;background:#238636;transition:width .2s}
-#heard{min-height:42px;padding:10px;border-radius:9px;background:#0d1117;border:1px solid #30363d;line-height:1.45}
-.ok{border-color:#238636}.warn{border-color:#9e6a03}
-code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0d1117;color:#e6edf3;font:15px system-ui,-apple-system,Segoe UI,sans-serif}main{max-width:820px;margin:auto;padding:30px}h1{margin:0 0 6px;font-size:30px}.sub{color:#8b949e;margin:0 0 22px}.card{background:#161b22;border:1px solid #30363d;border-radius:14px;padding:18px;margin-bottom:14px}label{display:block;font-weight:700;margin:12px 0 7px}input,select,button{width:100%;font:inherit}input,select{background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:9px;padding:10px}input[type=file]{padding:8px}button{border:0;border-radius:9px;padding:12px;cursor:pointer;background:#238636;color:#fff;font-weight:700}button.stop{background:#da3633}button.secondary{background:#30363d}button:disabled{opacity:.45;cursor:not-allowed}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}#status{padding:12px;border:1px solid #30363d;border-radius:9px;background:#0d1117}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#8b949e;margin-right:8px}.dot.live{background:#2ea043}.dot.busy{background:#d29922}.small{font-size:13px;color:#8b949e;line-height:1.5}.bar{height:9px;background:#0d1117;border:1px solid #30363d;border-radius:9px;overflow:hidden;margin-top:10px}.bar>i{display:block;height:100%;width:0;background:#238636;transition:width .2s}.warn{border-color:#9e6a03}#heard{min-height:42px;padding:10px;border-radius:9px;background:#0d1117;border:1px solid #30363d;line-height:1.45}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
 </style>
 </head>
 <body>
 <main>
 <h1>OpenVoice V2 • Live Voice Changer</h1>
-<p class="sub">Mic → OpenVoice V2 ONNX Runtime → continuous 48 kHz output → Voicemeeter → VRChat</p>
+<p class="sub">Mic → OpenVoice V2 FP32 ONNX Runtime → continuous output → Voicemeeter → VRChat</p>
 
 <div class="card">
-  <div id="status"><span class="dot"></span>Ready</div>
-  <div class="bar"><i id="progress"></i></div>
-  <p id="detail" class="small">Load your reference voice, then start.</p>
+<div id="status"><span class="dot"></span>Ready</div>
+<div class="bar"><i id="progress"></i></div>
+<p id="detail" class="small">Load your reference voice, then load OpenVoice V2.</p>
 </div>
 
 <div class="card">
-  <label for="ref">Reference voice (.wav)</label>
-  <input id="ref" type="file" accept=".wav,audio/wav">
-  <p id="refName" class="small">No reference loaded.</p>
-
-  <label for="mic">Microphone</label>
-  <select id="mic"></select>
-
-  <label for="out">Output / Voicemeeter</label>
-  <select id="out"></select>
-
-  <div class="row">
-    <button id="refresh" class="secondary">Refresh devices</button>
-    <button id="load">Load OpenVoice V2</button>
-  </div>
-  <div class="row">
-    <button id="start" disabled>Start Live Conversion</button>
-    <button id="stop" class="stop" disabled>Stop</button>
-  </div>
+<label for="ref">Reference voice (.wav)</label>
+<input id="ref" type="file" accept=".wav,audio/wav">
+<p id="refName" class="small">No reference loaded.</p>
+<label for="mic">Microphone</label><select id="mic"></select>
+<label for="out">Output / Voicemeeter</label><select id="out"></select>
+<div class="row"><button id="refresh" class="secondary">Refresh devices</button><button id="load">Load OpenVoice V2</button></div>
+<div class="row"><button id="start" disabled>Start Live Conversion</button><button id="stop" class="stop" disabled>Stop</button></div>
 </div>
 
 <div class="card">
-  <b>Live pipeline</b>
-  <div id="heard" style="margin-top:10px">Waiting for microphone…</div>
-  <p class="small">
-    The browser captures audio continuously. Each short audio window is converted by the OpenVoice V2 tone-color converter,
-    then resampled from 22.05 kHz to the selected output rate and queued into one persistent AudioContext.
-    This avoids opening and closing an audio device for every chunk.
-  </p>
+<b>Live pipeline</b>
+<div id="heard" style="margin-top:10px">Waiting for microphone…</div>
+<p class="small">The browser captures audio continuously. Audio is converted in short windows and queued into one persistent AudioContext so the output device is not repeatedly opened and closed.</p>
 </div>
 
 <div class="card warn">
-  <b>First launch</b>
-  <p class="small">
-    The page downloads the quantized OpenVoice V2 ONNX models from Hugging Face: about 43 MB total.
-    They run locally in your browser with ONNX Runtime Web; your microphone/reference audio is not sent to a voice server.
-    Chrome/Edge WebGPU is attempted first, with WASM fallback. ONNX Runtime Web supports browser inference and WebGPU on current Chromium builds. 
-  </p>
+<b>FP32 model build</b>
+<p class="small">This version deliberately uses the FP32 OpenVoice V2 ONNX models instead of the quantized Q8 models. The Q8 models contain ConvInteger nodes that are not supported by the WebGPU execution provider used by this browser build.</p>
 </div>
 
 <div class="card">
-  <b>Important for VRChat</b>
-  <p class="small">
-    Select the Voicemeeter virtual input/output that VRChat uses. The converted signal is generated as normal audio;
-    VRChat receives it through the Windows/Voicemeeter microphone path, not through this page directly.
-  </p>
+<b>Important for VRChat</b>
+<p class="small">Select the Voicemeeter virtual output that feeds the microphone device selected inside VRChat. The converted signal is ordinary audio routed through Windows/Voicemeeter.</p>
 </div>
 </main>
 
@@ -93,397 +50,199 @@ code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
 <script>
 'use strict';
 
-const REF_MODEL='https://huggingface.co/TigreGotico/voiceclonnx-openvoice-v2/resolve/main/tone_ref_encoder_q8.onnx';
-const CONV_MODEL='https://huggingface.co/TigreGotico/voiceclonnx-openvoice-v2/resolve/main/tone_converter_q8.onnx';
-const MODEL_SR=22050;
-const NFFT=1024;
-const HOP=256;
-const PAD=384;
-const BINS=513;
-const CHUNK_SEC=0.90;
-const CHUNK_IN=Math.round(MODEL_SR*CHUNK_SEC);
-const CAPTURE_SR=48000;
-const FADE_SEC=0.018;
+const REF_MODEL='https://huggingface.co/TigreGotico/voiceclonnx-openvoice-v2/resolve/main/tone_ref_encoder.onnx';
+const CONV_MODEL='https://huggingface.co/TigreGotico/voiceclonnx-openvoice-v2/resolve/main/tone_converter.onnx';
+const MODEL_SR=22050,NFFT=1024,HOP=256,PAD=384,BINS=513;
+const CHUNK_SEC=.90,CHUNK_IN=Math.round(MODEL_SR*CHUNK_SEC),CAPTURE_SR=48000,FADE_SEC=.018;
 const $=id=>document.getElementById(id);
+let refSession=null,convSession=null,targetEmbedding=null,refAudio=null;
+let running=false,processing=false,stream=null,captureCtx=null,outCtx=null,micSource=null,captureNode=null;
+let inputBuffer=new Float32Array(0),sourceEmbedding=null,playbackTime=0,lastGain=null,convertedCount=0;
 
-let refAudio=null, targetEmbedding=null;
-let refSession=null, convSession=null;
-let running=false, processing=false;
-let stream=null, captureCtx=null, micSource=null, captureNode=null;
-let outCtx=null, playbackTime=0, lastGain=null;
-let inputBuffer=new Float32Array(0);
-let sourceEmbedding=null;
-let outputDevice='';
-let convertedCount=0;
-
-function status(t,kind=''){
-  $('status').innerHTML='<span class="dot '+(kind==='live'?'live':kind==='busy'?'busy':'')+'"></span>'+t;
-}
+function status(t,k=''){ $('status').innerHTML='<span class="dot '+(k==='live'?'live':k==='busy'?'busy':'')+'"></span>'+t }
 function detail(t){$('detail').textContent=t}
 function progress(v){$('progress').style.width=Math.max(0,Math.min(100,v))+'%'}
-function concat(a,b){
-  const x=new Float32Array(a.length+b.length);x.set(a);x.set(b,a.length);return x;
-}
-function addOption(sel,id,name){
-  const o=document.createElement('option');o.value=id;o.textContent=name;sel.appendChild(o);
-}
+function concat(a,b){const x=new Float32Array(a.length+b.length);x.set(a);x.set(b,a.length);return x}
+function addOption(s,id,name){const o=document.createElement('option');o.value=id;o.textContent=name;s.appendChild(o)}
+
 async function devices(){
-  try{
-    const oldM=$('mic').value,oldO=$('out').value;
-    const list=await navigator.mediaDevices.enumerateDevices();
-    $('mic').innerHTML='';$('out').innerHTML='';
-    let mi=0,oi=0;
-    for(const d of list){
-      if(d.kind==='audioinput')addOption($('mic'),d.deviceId,d.label||('Microphone '+(++mi)));
-      if(d.kind==='audiooutput')addOption($('out'),d.deviceId,d.label||('Output '+(++oi)));
-    }
-    if([...$('mic').options].some(o=>o.value===oldM))$('mic').value=oldM;
-    if([...$('out').options].some(o=>o.value===oldO))$('out').value=oldO;
-  }catch(e){detail('Device error: '+e.message)}
+ try{
+  const oldM=$('mic').value,oldO=$('out').value,list=await navigator.mediaDevices.enumerateDevices();
+  $('mic').innerHTML='';$('out').innerHTML='';let mi=0,oi=0;
+  for(const d of list){if(d.kind==='audioinput')addOption($('mic'),d.deviceId,d.label||('Microphone '+(++mi)));if(d.kind==='audiooutput')addOption($('out'),d.deviceId,d.label||('Output '+(++oi)))}
+  if([...$('mic').options].some(o=>o.value===oldM))$('mic').value=oldM;
+  if([...$('out').options].some(o=>o.value===oldO))$('out').value=oldO;
+ }catch(e){detail('Device error: '+e.message)}
 }
 
 async function cachedFetch(url){
-  const key='ov2-'+url;
-  try{
-    const cache=await caches.open('voicechanger-openvoice-v2');
-    const hit=await cache.match(key);
-    if(hit)return new Uint8Array(await hit.arrayBuffer());
-    const r=await fetch(url,{mode:'cors'});
-    if(!r.ok)throw new Error('Model download failed: '+r.status);
-    const ab=await r.arrayBuffer();
-    await cache.put(key,new Response(ab,{headers:{'Content-Type':'application/octet-stream'}}));
-    return new Uint8Array(ab);
-  }catch(e){
-    if(e.message&&e.message.includes('Model download failed'))throw e;
-    const r=await fetch(url);
-    if(!r.ok)throw new Error('Model download failed: '+r.status);
-    return new Uint8Array(await r.arrayBuffer());
-  }
+ const key='ov2-fp32-'+url;
+ try{
+  const cache=await caches.open('voicechanger-openvoice-v2-fp32');
+  const hit=await cache.match(key);if(hit)return new Uint8Array(await hit.arrayBuffer());
+  const r=await fetch(url,{mode:'cors'});if(!r.ok)throw new Error('Model download failed: '+r.status);
+  const ab=await r.arrayBuffer();await cache.put(key,new Response(ab,{headers:{'Content-Type':'application/octet-stream'}}));return new Uint8Array(ab);
+ }catch(e){
+  if(e.message&&e.message.includes('Model download failed'))throw e;
+  const r=await fetch(url);if(!r.ok)throw new Error('Model download failed: '+r.status);return new Uint8Array(await r.arrayBuffer());
+ }
 }
 
-function reflectIndex(i,n){
-  if(n<=1)return 0;
-  while(i<0||i>=n)i=i<0?-i:i>=n?2*n-i-2:i;
-  return i;
-}
+function reflectIndex(i,n){if(n<=1)return 0;while(i<0||i>=n)i=i<0?-i:i>=n?2*n-i-2:i;return i}
 
 function makeSpectrogram(x){
-  const padded=new Float32Array(x.length+PAD*2);
-  for(let i=0;i<padded.length;i++)padded[i]=x[reflectIndex(i-PAD,x.length)];
-  const frames=Math.max(1,Math.floor((padded.length-NFFT)/HOP)+1);
-  const out=new Float32Array(frames*BINS);
-  const re=new Float32Array(NFFT),im=new Float32Array(NFFT);
-  const cos=new Float32Array(NFFT*NFFT/2);
-  const sin=new Float32Array(NFFT*NFFT/2);
-  // Precompute only the angles used by the radix-2 FFT.
-  for(let k=0;k<NFFT;k++){
-    for(let n=0;n<NFFT;n++){
-      const idx=k*NFFT+n;
-      if(idx<cos.length){
-        const a=-2*Math.PI*k*n/NFFT;
-        cos[idx]=Math.cos(a);sin[idx]=Math.sin(a);
-      }
-    }
+ const padded=new Float32Array(x.length+PAD*2);
+ for(let i=0;i<padded.length;i++)padded[i]=x[reflectIndex(i-PAD,x.length)];
+ const frames=Math.max(1,Math.floor((padded.length-NFFT)/HOP)+1),out=new Float32Array(frames*BINS);
+ const re=new Float32Array(NFFT),im=new Float32Array(NFFT),bitrev=new Uint16Array(NFFT),hann=new Float32Array(NFFT);
+ for(let i=0;i<NFFT;i++){let v=i,r=0;for(let b=0;b<10;b++){r=(r<<1)|(v&1);v>>=1}bitrev[i]=r;hann[i]=.5-.5*Math.cos(2*Math.PI*i/(NFFT-1))}
+ for(let f=0;f<frames;f++){
+  const off=f*HOP;
+  for(let n=0;n<NFFT;n++){re[bitrev[n]]=padded[off+n]*hann[n];im[bitrev[n]]=0}
+  for(let len=2;len<=NFFT;len<<=1){
+   const half=len>>1;
+   for(let i=0;i<NFFT;i+=len)for(let j=0;j<half;j++){
+    const a=-2*Math.PI*j/len,wr=Math.cos(a),wi=Math.sin(a),p=i+j,q=p+half;
+    const tr=re[q]*wr-im[q]*wi,ti=re[q]*wi+im[q]*wr;
+    re[q]=re[p]-tr;im[q]=im[p]-ti;re[p]+=tr;im[p]+=ti;
+   }
   }
-  // Iterative radix-2 FFT. The model only needs the first 513 bins.
-  const bitrev=new Uint16Array(NFFT);
-  let bits=10;
-  for(let i=0;i<NFFT;i++){
-    let v=i,r=0;
-    for(let b=0;b<bits;b++){r=(r<<1)|(v&1);v>>=1}
-    bitrev[i]=r;
-  }
-  const hann=new Float32Array(NFFT);
-  for(let n=0;n<NFFT;n++)hann[n]=0.5-0.5*Math.cos(2*Math.PI*n/(NFFT-1));
-
-  for(let f=0;f<frames;f++){
-    const off=f*HOP;
-    for(let n=0;n<NFFT;n++){re[bitrev[n]]=padded[off+n]*hann[n];im[bitrev[n]]=0}
-    for(let len=2;len<=NFFT;len<<=1){
-      const half=len>>1,step=NFFT/len;
-      for(let i=0;i<NFFT;i+=len){
-        for(let j=0;j<half;j++){
-          const ang=-2*Math.PI*j/len;
-          const wr=Math.cos(ang),wi=Math.sin(ang);
-          const p=i+j,q=p+half;
-          const tr=re[q]*wr-im[q]*wi,ti=re[q]*wi+im[q]*wr;
-          re[q]=re[p]-tr;im[q]=im[p]-ti;
-          re[p]+=tr;im[p]+=ti;
-        }
-      }
-    }
-    for(let k=0;k<BINS;k++)out[f*BINS+k]=Math.sqrt(re[k]*re[k]+im[k]*im[k]+1e-6);
-  }
-  return {data:out,frames};
+  for(let k=0;k<BINS;k++)out[f*BINS+k]=Math.sqrt(re[k]*re[k]+im[k]*im[k]+1e-6)
+ }
+ return {data:out,frames}
 }
 
 function resampleLinear(x,from,to){
-  if(from===to)return new Float32Array(x);
-  const len=Math.max(1,Math.round(x.length*to/from));
-  const y=new Float32Array(len);
-  const ratio=from/to;
-  for(let i=0;i<len;i++){
-    const p=i*ratio, j=Math.floor(p), f=p-j;
-    const a=x[Math.min(j,x.length-1)];
-    const b=x[Math.min(j+1,x.length-1)];
-    y[i]=a+(b-a)*f;
-  }
-  return y;
+ if(from===to)return new Float32Array(x);
+ const len=Math.max(1,Math.round(x.length*to/from)),y=new Float32Array(len),ratio=from/to;
+ for(let i=0;i<len;i++){const p=i*ratio,j=Math.floor(p),f=p-j,a=x[Math.min(j,x.length-1)],b=x[Math.min(j+1,x.length-1)];y[i]=a+(b-a)*f}
+ return y
 }
 
 async function decodeReference(file){
-  if(!file)throw new Error('Choose a WAV reference voice first.');
-  const ab=await file.arrayBuffer();
-  const ctx=new AudioContext({sampleRate:MODEL_SR});
-  try{
-    const b=await ctx.decodeAudioData(ab.slice(0));
-    const mono=new Float32Array(b.length);
-    for(let ch=0;ch<b.numberOfChannels;ch++){
-      const d=b.getChannelData(ch);
-      for(let i=0;i<d.length;i++)mono[i]+=d[i]/b.numberOfChannels;
-    }
-    return resampleLinear(mono,b.sampleRate,MODEL_SR);
-  }finally{try{await ctx.close()}catch{}}
+ if(!file)throw new Error('Choose a WAV reference voice first.');
+ const ab=await file.arrayBuffer(),ctx=new AudioContext({sampleRate:MODEL_SR});
+ try{const b=await ctx.decodeAudioData(ab.slice(0)),mono=new Float32Array(b.length);
+  for(let ch=0;ch<b.numberOfChannels;ch++){const d=b.getChannelData(ch);for(let i=0;i<d.length;i++)mono[i]+=d[i]/b.numberOfChannels}
+  return resampleLinear(mono,b.sampleRate,MODEL_SR)
+ }finally{try{await ctx.close()}catch{}}
 }
 
-function rms(x){
-  let s=0;for(let i=0;i<x.length;i++)s+=x[i]*x[i];
-  return Math.sqrt(s/Math.max(1,x.length));
-}
-
+function rms(x){let s=0;for(let i=0;i<x.length;i++)s+=x[i]*x[i];return Math.sqrt(s/Math.max(1,x.length))}
 async function embeddingFromAudio(audio){
-  const spec=makeSpectrogram(audio);
-  const t=new ort.Tensor('float32',spec.data,[1,spec.frames,BINS]);
-  const result=await refSession.run({spec:t});
-  const out=result[refSession.outputNames[0]].data;
-  return new Float32Array(out);
+ const spec=makeSpectrogram(audio),t=new ort.Tensor('float32',spec.data,[1,spec.frames,BINS]);
+ const result=await refSession.run({spec:t});return new Float32Array(result[refSession.outputNames[0]].data)
 }
-
 function smoothEmbedding(next){
-  if(!sourceEmbedding){sourceEmbedding=next;return}
-  const a=.78,b=.22;
-  const y=new Float32Array(next.length);
-  for(let i=0;i<next.length;i++)y[i]=sourceEmbedding[i]*a+next[i]*b;
-  sourceEmbedding=y;
+ if(!sourceEmbedding){sourceEmbedding=next;return}
+ const y=new Float32Array(next.length);for(let i=0;i<next.length;i++)y[i]=sourceEmbedding[i]*.78+next[i]*.22;sourceEmbedding=y
 }
 
 async function convertChunk(audio){
-  const modelAudio=resampleLinear(audio,CAPTURE_SR,MODEL_SR);
-  const spec=makeSpectrogram(modelAudio);
-  const src=await embeddingFromAudio(modelAudio);
-  smoothEmbedding(src);
-
-  const specT=new ort.Tensor('float32',spec.data,[1,BINS,spec.frames]);
-  const lenT=new ort.Tensor('int64',new BigInt64Array([BigInt(spec.frames)]),[1]);
-  const srcT=new ort.Tensor('float32',sourceEmbedding,[1,256,1]);
-  const tgtT=new ort.Tensor('float32',targetEmbedding,[1,256,1]);
-
-  const result=await convSession.run({
-    spec:specT,
-    spec_lengths:lenT,
-    src_g:srcT,
-    tgt_g:tgtT
-  });
-  const d=result[convSession.outputNames[0]].data;
-  return new Float32Array(d);
+ const modelAudio=resampleLinear(audio,CAPTURE_SR,MODEL_SR),spec=makeSpectrogram(modelAudio),src=await embeddingFromAudio(modelAudio);
+ smoothEmbedding(src);
+ const specT=new ort.Tensor('float32',spec.data,[1,BINS,spec.frames]);
+ const lenT=new ort.Tensor('int64',new BigInt64Array([BigInt(spec.frames)]),[1]);
+ const srcT=new ort.Tensor('float32',sourceEmbedding,[1,256,1]),tgtT=new ort.Tensor('float32',targetEmbedding,[1,256,1]);
+ const result=await convSession.run({spec:specT,spec_lengths:lenT,src_g:srcT,tgt_g:tgtT});
+ return new Float32Array(result[convSession.outputNames[0]].data)
 }
 
 function scheduleAudio(samples){
-  if(!outCtx)return;
-  const clean=new Float32Array(samples.length);
-  let peak=0;
-  for(let i=0;i<samples.length;i++){
-    const v=Math.max(-1,Math.min(1,samples[i]));
-    clean[i]=v;peak=Math.max(peak,Math.abs(v));
-  }
-  if(peak>1){for(let i=0;i<clean.length;i++)clean[i]/=peak}
-  const b=outCtx.createBuffer(1,clean.length,MODEL_SR);
-  b.copyToChannel(clean,0);
-  const src=outCtx.createBufferSource();src.buffer=b;
-  const gain=outCtx.createGain();src.connect(gain);gain.connect(outCtx.destination);
-
-  const now=outCtx.currentTime;
-  if(playbackTime<now+.035)playbackTime=now+.035;
-  const start=Math.max(now+.02,playbackTime-FADE_SEC);
-  const end=start+b.duration;
-
-  if(lastGain){
-    try{
-      lastGain.gain.cancelScheduledValues(start);
-      lastGain.gain.setValueAtTime(1,start);
-      lastGain.gain.linearRampToValueAtTime(0,Math.min(end,start+FADE_SEC));
-    }catch{}
-  }
-  gain.gain.setValueAtTime(0,start);
-  gain.gain.linearRampToValueAtTime(1,start+FADE_SEC);
-  gain.gain.setValueAtTime(1,Math.max(start+FADE_SEC,end-FADE_SEC));
-  gain.gain.linearRampToValueAtTime(0,end);
-  src.start(start);
-  playbackTime=end;
-  lastGain=gain;
+ if(!outCtx)return;
+ const clean=new Float32Array(samples.length);let peak=0;
+ for(let i=0;i<samples.length;i++){const v=Math.max(-1,Math.min(1,samples[i]));clean[i]=v;peak=Math.max(peak,Math.abs(v))}
+ const b=outCtx.createBuffer(1,clean.length,MODEL_SR);b.copyToChannel(clean,0);
+ const src=outCtx.createBufferSource(),gain=outCtx.createGain();src.buffer=b;src.connect(gain);gain.connect(outCtx.destination);
+ const now=outCtx.currentTime;if(playbackTime<now+.035)playbackTime=now+.035;
+ const start=Math.max(now+.02,playbackTime-FADE_SEC),end=start+b.duration;
+ if(lastGain){try{lastGain.gain.cancelScheduledValues(start);lastGain.gain.setValueAtTime(1,start);lastGain.gain.linearRampToValueAtTime(0,Math.min(end,start+FADE_SEC))}catch{}}
+ gain.gain.setValueAtTime(0,start);gain.gain.linearRampToValueAtTime(1,start+FADE_SEC);gain.gain.setValueAtTime(1,Math.max(start+FADE_SEC,end-FADE_SEC));gain.gain.linearRampToValueAtTime(0,end);
+ src.start(start);playbackTime=end;lastGain=gain
 }
 
 async function processLoop(){
-  if(processing)return;
-  processing=true;
-  try{
-    while(running){
-      if(inputBuffer.length<Math.round(CHUNK_IN*CAPTURE_SR/MODEL_SR)){
-        await new Promise(r=>setTimeout(r,12));continue;
-      }
-      const n=Math.round(CHUNK_IN*CAPTURE_SR/MODEL_SR);
-      const chunk=inputBuffer.slice(0,n);
-      inputBuffer=inputBuffer.slice(Math.floor(n*.90));
-      const level=rms(chunk);
-      if(level<0.008)continue;
-
-      status('Converting live audio…','busy');
-      detail('OpenVoice V2 inference • chunk '+(++convertedCount)+' • input RMS '+level.toFixed(3));
-      const t0=performance.now();
-      const audio=await convertChunk(chunk);
-      if(!running)break;
-      scheduleAudio(audio);
-      const ms=Math.round(performance.now()-t0);
-      progress(Math.min(100,Math.round((CHUNK_SEC*1000/Math.max(1,ms))*100)));
-      detail('OpenVoice V2 • '+ms+' ms inference • output queued continuously');
-      status('Live • OpenVoice V2 → output','live');
-    }
-  }catch(e){
-    console.error(e);
-    status('Conversion error');
-    detail(e.stack||e.message||String(e));
-    stop();
-  }finally{processing=false}
+ if(processing)return;processing=true;
+ try{
+  while(running){
+   const need=Math.round(CHUNK_IN*CAPTURE_SR/MODEL_SR);
+   if(inputBuffer.length<need){await new Promise(r=>setTimeout(r,12));continue}
+   const chunk=inputBuffer.slice(0,need);inputBuffer=inputBuffer.slice(Math.floor(need*.90));
+   const level=rms(chunk);if(level<.008)continue;
+   status('Converting live audio…','busy');detail('OpenVoice V2 FP32 inference • chunk '+(++convertedCount));
+   const t0=performance.now(),audio=await convertChunk(chunk);if(!running)break;scheduleAudio(audio);
+   const ms=Math.round(performance.now()-t0);progress(Math.min(100,Math.round((CHUNK_SEC*1000/Math.max(1,ms))*100)));
+   detail('OpenVoice V2 FP32 • '+ms+' ms inference • output queued');status('Live • OpenVoice V2 → output','live')
+  }
+ }catch(e){console.error(e);status('Conversion error');detail(e.stack||e.message||String(e));await stop()}
+ finally{processing=false}
 }
 
 async function loadModels(){
-  $('load').disabled=true;
+ $('load').disabled=true;
+ try{
+  status('Downloading OpenVoice V2 FP32 models…','busy');detail('Downloading the full-precision models and caching them locally.');progress(5);
+  const [refBytes,convBytes]=await Promise.all([cachedFetch(REF_MODEL),cachedFetch(CONV_MODEL)]);progress(45);
+  ort.env.wasm.wasmPaths='https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.22.0/';
+  refSession=null;convSession=null;
   try{
-    status('Downloading OpenVoice V2 models…','busy');
-    detail('First launch downloads the ONNX weights and caches them in this browser.');
-    progress(5);
-    const [refBytes,convBytes]=await Promise.all([cachedFetch(REF_MODEL),cachedFetch(CONV_MODEL)]);
-    progress(45);
-    ort.env.wasm.wasmPaths='https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.22.0/';
-    const opts={executionProviders:['webgpu','wasm'],graphOptimizationLevel:'all'};
-    try{
-      refSession=await ort.InferenceSession.create(refBytes,opts);
-      convSession=await ort.InferenceSession.create(convBytes,opts);
-    }catch(first){
-      detail('WebGPU path failed; retrying with WASM CPU…');
-      refSession=await ort.InferenceSession.create(refBytes,{executionProviders:['wasm'],graphOptimizationLevel:'all'});
-      convSession=await ort.InferenceSession.create(convBytes,{executionProviders:['wasm'],graphOptimizationLevel:'all'});
-    }
-    progress(100);
-    detail('OpenVoice V2 loaded. Choose a reference voice and start.');
-    status('OpenVoice V2 ready');
-    if(refAudio) $('start').disabled=false;
-  }catch(e){
-    console.error(e);
-    status('Model load failed');
-    detail(e.stack||e.message||String(e));
-    progress(0);
-  }finally{$('load').disabled=false}
+   refSession=await ort.InferenceSession.create(refBytes,{executionProviders:['webgpu'],graphOptimizationLevel:'all'});
+   convSession=await ort.InferenceSession.create(convBytes,{executionProviders:['webgpu'],graphOptimizationLevel:'all'});
+  }catch(webgpuError){
+   console.warn('WebGPU unavailable for FP32 model; using WASM:',webgpuError);
+   detail('WebGPU could not load the model; retrying with WASM CPU.');
+   refSession=await ort.InferenceSession.create(refBytes,{executionProviders:['wasm'],graphOptimizationLevel:'all'});
+   convSession=await ort.InferenceSession.create(convBytes,{executionProviders:['wasm'],graphOptimizationLevel:'all'});
+  }
+  progress(100);status('OpenVoice V2 FP32 ready');detail('Models loaded successfully. Choose a reference voice and start.');
+  if(targetEmbedding)$('start').disabled=false
+ }catch(e){console.error(e);status('Model load failed');detail(e.stack||e.message||String(e));progress(0)}
+ finally{$('load').disabled=false}
 }
 
 async function loadReference(file){
-  try{
-    $('start').disabled=true;
-    status('Preparing reference voice…','busy');
-    detail('Decoding and extracting the target voice embedding.');
-    refAudio=await decodeReference(file);
-    if(!refSession)throw new Error('Load OpenVoice V2 first.');
-    targetEmbedding=await embeddingFromAudio(refAudio);
-    $('refName').textContent=file.name+' • '+(refAudio.length/MODEL_SR).toFixed(1)+' s reference';
-    detail('Target voice embedding ready. Start Live Conversion.');
-    status('Reference voice ready');
-    $('start').disabled=false;
-  }catch(e){
-    console.error(e);
-    refAudio=null;targetEmbedding=null;
-    $('refName').textContent='Reference failed: '+e.message;
-    status('Reference load failed');detail(e.message);
-  }
+ try{
+  $('start').disabled=true;status('Preparing reference voice…','busy');detail('Extracting target voice embedding.');
+  refAudio=await decodeReference(file);if(!refSession)throw new Error('Load OpenVoice V2 first.');
+  targetEmbedding=await embeddingFromAudio(refAudio);$('refName').textContent=file.name+' • '+(refAudio.length/MODEL_SR).toFixed(1)+' s reference';
+  status('Reference voice ready');detail('Target voice embedding ready. Start Live Conversion.');$('start').disabled=false
+ }catch(e){console.error(e);refAudio=null;targetEmbedding=null;$('refName').textContent='Reference failed: '+e.message;status('Reference load failed');detail(e.message)}
 }
 
 async function start(){
-  if(running)return;
-  if(!refSession||!convSession){status('Load OpenVoice V2 first');return}
-  if(!targetEmbedding){status('Load a reference voice first');return}
-  try{
-    $('start').disabled=true;
-    outputDevice=$('out').value||'';
-    stream=await navigator.mediaDevices.getUserMedia({
-      audio:{
-        deviceId:$('mic').value?{exact:$('mic').value}:undefined,
-        channelCount:1,
-        echoCancellation:false,
-        noiseSuppression:false,
-        autoGainControl:false
-      }
-    });
-    captureCtx=new AudioContext({sampleRate:CAPTURE_SR});
-    outCtx=new AudioContext({sampleRate:48000});
-    await captureCtx.resume();await outCtx.resume();
-    if(outputDevice&&typeof outCtx.setSinkId==='function')await outCtx.setSinkId(outputDevice);
-
-    const workletCode=
-      'class VCInput extends AudioWorkletProcessor{process(inputs){const i=inputs[0]&&inputs[0][0];if(i&&i.length){const c=new Float32Array(i);this.port.postMessage(c,[c.buffer]);}return true}}registerProcessor("vc-input",VCInput);';
-    const blob=new Blob([workletCode],{type:'application/javascript'});
-    const url=URL.createObjectURL(blob);
-    await captureCtx.audioWorklet.addModule(url);URL.revokeObjectURL(url);
-
-    micSource=captureCtx.createMediaStreamSource(stream);
-    captureNode=new AudioWorkletNode(captureCtx,'vc-input');
-    captureNode.port.onmessage=e=>{
-      if(!running)return;
-      inputBuffer=concat(inputBuffer,e.data);
-      const max=Math.round(CAPTURE_SR*3.0);
-      if(inputBuffer.length>max)inputBuffer=inputBuffer.slice(inputBuffer.length-max);
-    };
-    const silent=captureCtx.createGain();silent.gain.value=0;
-    micSource.connect(captureNode);captureNode.connect(silent);silent.connect(captureCtx.destination);
-
-    inputBuffer=new Float32Array(0);
-    sourceEmbedding=null;playbackTime=0;lastGain=null;convertedCount=0;
-    running=true;
-    $('stop').disabled=false;
-    status('Live • OpenVoice V2 conversion','live');
-    detail('Listening… speak normally. Initial latency is roughly one conversion window plus inference time.');
-    processLoop();
-  }catch(e){
-    console.error(e);
-    await stop();
-    status('Start failed');detail(e.message||String(e));
-  }finally{$('start').disabled=running}
+ if(running)return;
+ if(!refSession||!convSession){status('Load OpenVoice V2 first');return}
+ if(!targetEmbedding){status('Load a reference voice first');return}
+ try{
+  $('start').disabled=true;stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:$('mic').value?{exact:$('mic').value}:undefined,channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+  captureCtx=new AudioContext({sampleRate:CAPTURE_SR});outCtx=new AudioContext({sampleRate:48000});
+  await captureCtx.resume();await outCtx.resume();
+  if($('out').value&&typeof outCtx.setSinkId==='function')await outCtx.setSinkId($('out').value);
+  const code='class VCInput extends AudioWorkletProcessor{process(inputs){const i=inputs[0]&&inputs[0][0];if(i&&i.length){const c=new Float32Array(i);this.port.postMessage(c,[c.buffer])}return true}}registerProcessor("vc-input",VCInput);';
+  const url=URL.createObjectURL(new Blob([code],{type:'application/javascript'}));await captureCtx.audioWorklet.addModule(url);URL.revokeObjectURL(url);
+  micSource=captureCtx.createMediaStreamSource(stream);captureNode=new AudioWorkletNode(captureCtx,'vc-input');
+  captureNode.port.onmessage=e=>{if(running){inputBuffer=concat(inputBuffer,e.data);const max=Math.round(CAPTURE_SR*3);if(inputBuffer.length>max)inputBuffer=inputBuffer.slice(-max)}};
+  const silent=captureCtx.createGain();silent.gain.value=0;micSource.connect(captureNode);captureNode.connect(silent);silent.connect(captureCtx.destination);
+  inputBuffer=new Float32Array(0);sourceEmbedding=null;playbackTime=0;lastGain=null;convertedCount=0;running=true;$('stop').disabled=false;
+  status('Live • OpenVoice V2 FP32','live');detail('Listening… initial latency is roughly one conversion window plus inference time.');processLoop()
+ }catch(e){console.error(e);await stop();status('Start failed');detail(e.message||String(e))}
+ finally{$('start').disabled=running}
 }
 
 async function stop(){
-  running=false;processing=false;
-  try{if(captureNode)captureNode.disconnect()}catch{}
-  try{if(micSource)micSource.disconnect()}catch{}
-  if(stream){for(const t of stream.getTracks())t.stop();stream=null}
-  if(captureCtx){try{await captureCtx.close()}catch{}captureCtx=null}
-  if(outCtx){try{await outCtx.close()}catch{}outCtx=null}
-  captureNode=null;micSource=null;inputBuffer=new Float32Array(0);
-  playbackTime=0;lastGain=null;sourceEmbedding=null;
-  $('stop').disabled=true;
-  $('start').disabled=!refSession||!convSession||!targetEmbedding;
-  status('Stopped');detail('Ready');
+ running=false;processing=false;
+ try{captureNode?.disconnect()}catch{}try{micSource?.disconnect()}catch{}
+ if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
+ if(captureCtx){try{await captureCtx.close()}catch{}captureCtx=null}
+ if(outCtx){try{await outCtx.close()}catch{}outCtx=null}
+ captureNode=null;micSource=null;inputBuffer=new Float32Array(0);playbackTime=0;lastGain=null;sourceEmbedding=null;
+ $('stop').disabled=true;$('start').disabled=!refSession||!convSession||!targetEmbedding;status('Stopped');detail('Ready')
 }
 
 $('ref').addEventListener('change',e=>{const f=e.target.files[0];if(f)loadReference(f)});
-$('load').onclick=loadModels;
-$('start').onclick=start;
-$('stop').onclick=stop;
-$('refresh').onclick=devices;
-$('out').addEventListener('change',async()=>{
-  if(outCtx&&typeof outCtx.setSinkId==='function'){
-    try{await outCtx.setSinkId($('out').value)}catch(e){detail('Output selection failed: '+e.message)}
-  }
-});
-navigator.mediaDevices?.addEventListener?.('devicechange',devices);
-devices();
+$('load').onclick=loadModels;$('start').onclick=start;$('stop').onclick=stop;$('refresh').onclick=devices;
+$('out').addEventListener('change',async()=>{if(outCtx&&typeof outCtx.setSinkId==='function')try{await outCtx.setSinkId($('out').value)}catch(e){detail('Output selection failed: '+e.message)}});
+navigator.mediaDevices?.addEventListener?.('devicechange',devices);devices();
 </script>
 </body>
 </html>
