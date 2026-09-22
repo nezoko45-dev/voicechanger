@@ -4,13 +4,14 @@
 :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0d1117;color:#e6edf3;font:15px system-ui,-apple-system,Segoe UI,sans-serif}main{max-width:760px;margin:0 auto;padding:34px}h1{margin:0 0 8px;font-size:32px}.sub{color:#8b949e;margin:0 0 26px}.card{background:#161b22;border:1px solid #30363d;border-radius:14px;padding:20px;margin-bottom:16px}label{display:block;font-weight:600;margin:14px 0 7px}select,input,button{width:100%;font:inherit}select,input{background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:9px;padding:11px}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}button{border:0;border-radius:9px;padding:12px 14px;cursor:pointer;background:#238636;color:white;font-weight:700}button.secondary{background:#30363d}button.danger{background:#da3633}button:disabled{opacity:.45;cursor:not-allowed}#status{padding:12px;border-radius:9px;background:#0d1117;border:1px solid #30363d}#msg{color:#8b949e;line-height:1.5}.route{font-size:14px;line-height:1.6;color:#c9d1d9}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#8b949e;margin-right:8px}
 </style></head>
 <body><main>
-<h1>VoiceChanger</h1><p class="sub">Electron desktop UI + Electron microphone audio + OpenVoice + WASAPI output</p>
+<h1>VoiceChanger</h1><p class="sub">Simple local voice changer: microphone → OpenVoice V2 ONNX → Voicemeeter</p>
 <div class="card"><div id="status"><span class="dot"></span>Starting...</div>
 <label for="mic">Microphone</label><select id="mic"></select>
-<label for="out">Output</label><select id="out"></select>
-<div class="row"><button id="cable" class="secondary">Detecting VB-CABLE...</button><button id="refresh" class="secondary">Refresh devices</button></div></div>
-<div class="card"><label for="deepgramKey">Deepgram API key</label><input id="deepgramKey" type="password" placeholder="Paste your Deepgram API key"><p style="color:#8b949e;margin:8px 0 0;font-size:13px">Used only by this local app for streaming speech detection. It is stored in this Electron profile.</p><label for="voice">Reference voice WAV</label><input id="voice" type="file" accept=".wav,audio/wav">
-<div class="row"><button id="load">Load Voice</button><button id="start">Start Voice Changer</button></div><button id="stop" class="danger" disabled style="margin-top:10px">Stop</button></div>
-<div class="card route"><b>Audio path</b><br>Microphone → <b>Electron</b> → <b>Deepgram STT</b> → complete speech buffer → <b>OpenVoice V2 ONNX</b> → WASAPI → selected output<br><br>For VRChat/Discord with VB-CABLE: select <b>CABLE Input</b> here, then select <b>CABLE Output</b> as the microphone in VRChat/Discord.</div>
-<p id="msg">Load a reference WAV, choose your microphone and output, then Start.</p>
+<label for="out">Voicemeeter output</label><select id="out"></select>
+<div class="row"><button id="cable" class="secondary">Detecting Voicemeeter...</button><button id="refresh" class="secondary">Refresh devices</button></div></div>
+<div class="card"><label for="voice">Reference voice WAV</label><input id="voice" type="file" accept=".wav,audio/wav">
+<div class="row"><button id="load">Load Voice</button><button id="start">Start Voice Changer</button></div>
+<button id="stop" class="danger" disabled style="margin-top:10px">Stop</button></div>
+<div class="card route"><b>Audio path</b><br>Microphone → <b>WASAPI input</b> → <b>OpenVoice V2 ONNX Runtime</b> → <b>WASAPI output</b> → <b>Voicemeeter Input</b><br><br>In Voicemeeter, route the virtual input to the bus you want. For VRChat, use the corresponding <b>Voicemeeter Output</b> recording device as your microphone.</div>
+<p id="msg">Load a reference WAV, select your microphone and Voicemeeter output, then Start.</p>
 </main><script type="module" src="/app.js"></script></body></html>
