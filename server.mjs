@@ -55,12 +55,12 @@ function pushCapture(pcm){
   if(captureSamples>=need){const all=new Float32Array(captureSamples);let p=0;for(const part of captureParts){all.set(part,p);p+=part.length}captureParts=[];captureSamples=0;pending=all;void convertPending()}
 }
 function findDevice(list,id,kind){if(id!==null&&id!==undefined&&id!==""){const n=Number(id);if(Number.isFinite(n)&&list.some(d=>d.id===n))return n}const d=list.find(x=>kind==="input"?x.inputChannels>0:x.outputChannels>0);return d?.id}
-async function devices(){await loadWasapi();const probe=new aud.RtAudio(aud.RtAudioApi.RTAUDIO_API_WINDOWS_WASAPI);const list=probe.getDevices();try{probe.closeStream?.()}catch{}return list}
+async function devices(){await loadWasapi();const probe=new aud.RtAudio(aud.RtAudioApi.WINDOWS_WASAPI);const list=probe.getDevices();try{probe.closeStream?.()}catch{}return list}
 async function stopWasapi(){if(rt){try{if(rtStarted)rt.stop()}catch{}try{rt.closeStream()}catch{}}rt=null;rtStarted=false;captureParts=[];captureSamples=0;pending=null;outputQueue=Buffer.alloc(0)}
 async function startWasapi(inId,outId){
   await loadWasapi();await stopWasapi();const list=await devices();inputId=findDevice(list,inId,"input");outputId=findDevice(list,outId,"output");
   if(inputId===undefined||outputId===undefined)throw Error("Could not find a WASAPI microphone or output device.");
-  rt=new aud.RtAudio(aud.RtAudioApi.RTAUDIO_API_WINDOWS_WASAPI);
+  rt=new aud.RtAudio(aud.RtAudioApi.WINDOWS_WASAPI);
   rt.openStream({deviceId:outputId,nChannels:1,firstChannel:0},{deviceId:inputId,nChannels:1,firstChannel:0},aud.RtAudioFormat.RTAUDIO_SINT16,WASAPI_RATE,FRAME,"VoiceChanger",pcm=>{pushCapture(pcm);rt.write(takeOutput(FRAME*2))});
   rt.start();rtStarted=true;console.log("WASAPI started. input="+inputId+" output="+outputId);emitStatus("WASAPI listening");
 }
