@@ -87,13 +87,26 @@ async function startCapture(deviceName){
   source.connect(worklet);capturing=true;
   setStatus("Electron microphone active • "+(chosen.label||deviceName||"default"));
 }
-function connectSource(){
-  return new Promise((resolve,reject)=>{
-    sourceWs=new WebSocket("ws://127.0.0.1:8765/source");sourceWs.binaryType="arraybuffer";
-    sourceWs.onopen=resolve;
-    sourceWs.onerror=()=>reject(Error("Electron audio connection failed."));
-    sourceWs.onclose=()=>{void stopCapture();if(running)say("Electron audio disconnected.")};
-  });
+async function connectSource(){
+  let lastError=null;
+  for(let attempt=1;attempt<=15;attempt++){
+    try{
+      if(sourceWs){try{sourceWs.close()}catch{}}
+      await new Promise((resolve,reject)=>{
+        const s=new WebSocket("ws://127.0.0.1:8765/source");
+        sourceWs=s;s.binaryType="arraybuffer";
+        let settled=false;
+        s.onopen=()=>{settled=true;resolve()};
+        s.onerror=()=>{if(!settled){settled=true;reject(Error("Electron audio connection failed."))}};
+        s.onclose=()=>{if(!settled){settled=true;reject(Error("Electron audio connection closed."));}if(running){void stopCapture();say("Electron audio disconnected.")}};
+      });
+      return;
+    }catch(e){
+      lastError=e;
+      await new Promise(r=>setTimeout(r,400));
+    }
+  }
+  throw lastError||Error("Electron audio connection failed.");
 }
 function connectBackend(){
   return new Promise((resolve,reject)=>{
