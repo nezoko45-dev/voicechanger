@@ -1,1 +1,0 @@
-class Capture extends AudioWorkletProcessor{process(i){if(i[0]?.[0])this.port.postMessage(i[0][0].slice());return true}}registerProcessor("capture",Capture);
