@@ -71,7 +71,7 @@ const MODEL_SR=22050,NFFT=1024,HOP=256,PAD=384,BINS=513,CHUNK_SEC=.90;
 const CHUNK_IN=Math.round(MODEL_SR*CHUNK_SEC),CAPTURE_SR=48000,FADE_SEC=.018;
 const $=id=>document.getElementById(id);
 
-let refSession=null,convSession=null,targetEmbedding=null,refAudio=null;
+let refSession=null,convSession=null,targetEmbedding=null,refAudio=null,selectedReferenceFile=null;
 let running=false,processing=false,stream=null,permissionStream=null,captureCtx=null,outCtx=null,micSource=null,captureNode=null;
 let inputBuffer=new Float32Array(0),sourceEmbedding=null,playbackTime=0,lastGain=null,convertedCount=0;
 
@@ -223,13 +223,21 @@ async function loadModels(){
    refSession=await ort.InferenceSession.create(refBytes,{executionProviders:['wasm'],graphOptimizationLevel:'all'});
    convSession=await ort.InferenceSession.create(convBytes,{executionProviders:['wasm'],graphOptimizationLevel:'all'});
   }
-  progress(100);status('OpenVoice V2 FP32 ready');detail('Models loaded successfully. Choose a reference voice and start.');if(targetEmbedding)$('start').disabled=false
+  progress(100);
+  status('OpenVoice V2 FP32 ready');
+  detail(selectedReferenceFile
+    ? 'Models loaded. Preparing the selected reference voice…'
+    : 'Models loaded successfully. Choose a reference voice and start.');
+  if(selectedReferenceFile) await loadReference(selectedReferenceFile);
+  $('start').disabled=false
  }catch(e){console.error(e);status('Model load failed');detail(e.stack||e.message||String(e));progress(0)}
  finally{$('load').disabled=false}
 }
 async function loadReference(file){
  try{
-  $('start').disabled=true;status('Preparing reference voice…','busy');detail('Extracting target voice embedding.');
+  selectedReferenceFile=file;
+  $('start').disabled=false;
+  status('Preparing reference voice…','busy');detail('Extracting target voice embedding.');
   refAudio=await decodeReference(file);if(!refSession)throw new Error('Load OpenVoice V2 first.');targetEmbedding=await embeddingFromAudio(refAudio);
   $('refName').textContent=file.name+' • '+(refAudio.length/MODEL_SR).toFixed(1)+' s reference';status('Reference voice ready');detail('Target voice embedding ready. Start Live Conversion.');$('start').disabled=false
  }catch(e){console.error(e);refAudio=null;targetEmbedding=null;$('refName').textContent='Reference failed: '+e.message;status('Reference load failed');detail(e.message)}
@@ -251,18 +259,32 @@ async function start(){
   inputBuffer=new Float32Array(0);sourceEmbedding=null;playbackTime=0;lastGain=null;convertedCount=0;running=true;$('stop').disabled=false;
   status('Live • OpenVoice V2 FP32','live');detail('Using: '+($('mic').selectedOptions[0]?.textContent||'selected microphone')+' → OpenVoice → '+($('out').selectedOptions[0]?.textContent||'default output'));processLoop()
  }catch(e){console.error(e);await stop();status('Start failed');detail(e.message||String(e))}
- finally{$('start').disabled=running}
+ finally{$('start').disabled=false}
 }
 async function stop(){
  running=false;processing=false;try{captureNode?.disconnect()}catch{}try{micSource?.disconnect()}catch{}
  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
  if(captureCtx){try{await captureCtx.close()}catch{}captureCtx=null}if(outCtx){try{await outCtx.close()}catch{}outCtx=null}
  captureNode=null;micSource=null;inputBuffer=new Float32Array(0);playbackTime=0;lastGain=null;sourceEmbedding=null;
- $('stop').disabled=true;$('start').disabled=!refSession||!convSession||!targetEmbedding;status('Stopped');detail('Ready')
+ $('stop').disabled=true;$('start').disabled=false;status('Stopped');detail(
+ refSession&&convSession&&targetEmbedding
+ ? 'Ready — Start Live Conversion is available.'
+ : 'Ready — complete model loading and reference voice setup first.'
+)
 }
 
 $('permission').onclick=requestMicPermission;
-$('ref').addEventListener('change',e=>{const f=e.target.files[0];if(f)loadReference(f)});
+$('ref').addEventListener('change',e=>{
+ const f=e.target.files[0];
+ if(!f)return;
+ selectedReferenceFile=f;
+ if(refSession)loadReference(f);
+ else{
+  $('start').disabled=false;
+  status('Reference selected');
+  detail('Reference selected. Load OpenVoice V2 to prepare the voice embedding.');
+ }
+});
 $('load').onclick=loadModels;$('start').onclick=start;$('stop').onclick=stop;$('refresh').onclick=devices;
 $('mic').addEventListener('change',()=>{$('micInfo').textContent='Selected microphone: '+($('mic').selectedOptions[0]?.textContent||'none')});
 $('out').addEventListener('change',async()=>{if(outCtx&&typeof outCtx.setSinkId==='function')try{await outCtx.setSinkId($('out').value)}catch(e){detail('Output selection failed: '+e.message)}});
