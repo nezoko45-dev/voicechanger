@@ -177,6 +177,10 @@ function onInput(pcm){
   captureParts.push(Buffer.from(pcm));
   captureSamples+=Math.floor(pcm.length/2);
   if(captureSamples>=CONVERT_FRAMES)queueCapture();
+  // Audify's realtime stream is driven by the input callback.
+  // Feed the converted PCM into the same RtAudio stream here.
+  // This matches Audify's documented realtime input/output pattern.
+  try{rt?.write(takeOutput(FRAME*2))}catch(e){console.error("Audio output:",e.message)}
 }
 async function convertPending(){
   if(converting||pendingQueue.length===0)return;
@@ -233,8 +237,7 @@ async function startAudio(inId,outId){
     {deviceId:outputId,nChannels:1,firstChannel:0},
     {deviceId:inputId,nChannels:1,firstChannel:0},
     aud.RtAudioFormat.RTAUDIO_SINT16,AUDIO_RATE,FRAME,"VoiceChanger",
-    pcm=>onInput(pcm),
-    ()=>rt.write(takeOutput(FRAME*2))
+    pcm=>onInput(pcm)
   );
   rt.start();running=true;
   console.log("VoiceChanger audio started. Mic="+inputId+" Output="+outputId);
