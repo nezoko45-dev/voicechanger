@@ -80,15 +80,15 @@ async function convert(x){
 function pcm16ToFloat(buf){const x=new Float32Array(Math.floor(buf.length/2));for(let i=0;i<x.length;i++)x[i]=buf.readInt16LE(i*2)/32768;return x}
 function floatToPcm16(x){const b=Buffer.alloc(x.length*2);for(let i=0;i<x.length;i++){const v=Math.max(-1,Math.min(1,x[i]));b.writeInt16LE(v<0?v*32768:v*32767,i*2)}return b}
 function appendOutput(x){
-  let y=resample(x,RATE,WASAPI_RATE);
+  const y=resample(x,RATE,WASAPI_RATE);
   const fade=Math.min(Math.floor(WASAPI_RATE*0.025),Math.floor(y.length/4),outputTail?.length||0);
-  if(fade>0){
-    const tailStart=outputTail.length-fade;
+  if(fade>0&&outputQueue.length>=fade*2){
+    const qStart=outputQueue.length-fade*2;
+    const existing=outputQueue.subarray(qStart);
+    const existingFloat=pcm16ToFloat(existing);
     const blended=new Float32Array(fade);
-    for(let i=0;i<fade;i++){const a=i/(fade-1||1);blended[i]=outputTail[tailStart+i]*(1-a)+y[i]*a}
-    const q=Buffer.from(floatToPcm16(outputTail.subarray(0,tailStart)));
-    const b=Buffer.concat([q,floatToPcm16(blended),floatToPcm16(y.subarray(fade))]);
-    outputQueue=Buffer.concat([outputQueue,b]);
+    for(let i=0;i<fade;i++){const a=i/(fade-1||1);blended[i]=existingFloat[i]*(1-a)+y[i]*a}
+    outputQueue=Buffer.concat([outputQueue.subarray(0,qStart),floatToPcm16(blended),floatToPcm16(y.subarray(fade))]);
   }else outputQueue=Buffer.concat([outputQueue,floatToPcm16(y)]);
   outputTail=y.slice(Math.max(0,y.length-Math.floor(WASAPI_RATE*0.025)));
   outputTailSamples=outputTail.length;
