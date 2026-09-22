@@ -18,7 +18,7 @@ button:disabled{opacity:.45}.danger{background:#a43d55}.row{display:flex;align-i
 <script>
 (function(){
 "use strict";
-var running=false,ctx=null,mic=null,proc=null,stt=null,player=null,sourceNode=null,queue=[],busy=false,last="";
+var running=false,ctx=null,mic=null,proc=null,stt=null,player=null,sourceNode=null,queue=[],busy=false,last="",audioToken=0;
 function $(x){return document.getElementById(x)}
 function status(x){$("status").textContent=x}
 function clean(x){var a=x.trim().split(/\s+/),o=[];for(var i=0;i<a.length;i++){var c=a[i],p=o[o.length-1]||"";if(c.replace(/[.,!?;:]+$/,"").toLowerCase()===p.replace(/[.,!?;:]+$/,"").toLowerCase())continue;o.push(c)}return o.join(" ")}
@@ -26,23 +26,21 @@ function sentence(x){var m=x.match(/^\s*(.+?[.!?](?:["'”’)]*)?)(?:\s|$)/);re
 function b64(b){var x=atob(b),u=new Uint8Array(x.length);for(var i=0;i<x.length;i++)u[i]=x.charCodeAt(i);return u}
 function down(a,r){var q=r/16000,n=Math.floor(a.length/q),o=new Int16Array(n);for(var i=0;i<n;i++){var p=i*q,j=Math.floor(p),f=p-j,x=(a[j]||0)+((a[j+1]||a[j]||0)-(a[j]||0))*f;o[i]=Math.max(-32768,Math.min(32767,Math.round(x*32767)))}return o.buffer}
 function pcm(bytes){
- if(!ctx||!running)return;
+ if(!ctx||!running)return Promise.resolve();
  var n=bytes.byteLength-bytes.byteLength%2;if(n<4)throw Error("TTS returned no usable audio");
  var pcm=new Int16Array(bytes.buffer,bytes.byteOffset,n/2),f=new Float32Array(pcm.length);
  for(var i=0;i<pcm.length;i++)f[i]=pcm[i]/32768;
  var buf=ctx.createBuffer(1,f.length,24000);buf.copyToChannel(f,0);
  var src=ctx.createBufferSource();src.buffer=buf;
  var gain=ctx.createGain();gain.gain.value=1;
- src.connect(gain);
- sourceNode=gain;
- var pitch=parseFloat($("pitch").value);
- /*
-  Tone.js is used as the audio processing clock/effect stage.
-  Playback rate changes pitch without re-encoding the Deepgram audio.
- */
- src.playbackRate.value=pitch;
- gain.connect(ctx.destination);src.start();
+ src.connect(gain);gain.connect(ctx.destination);sourceNode=gain;
+ var pitch=parseFloat($("pitch").value);src.playbackRate.value=pitch;
  status("Deepgram TTS playing • pitch "+pitch.toFixed(2)+"x");
+ return new Promise(function(resolve){
+   var token=++audioToken;
+   src.onended=function(){if(token===audioToken)resolve()};
+   src.start();
+ });
 }
 async function tts(text){
  var key=$("key").value.trim();if(!key)return;
@@ -53,7 +51,7 @@ async function tts(text){
    body:JSON.stringify({text:text})
   });
   if(!r.ok)throw Error("Deepgram TTS "+r.status+": "+await r.text());
-  pcm(new Uint8Array(await r.arrayBuffer()));
+  await pcm(new Uint8Array(await r.arrayBuffer()));
  }catch(e){status("TTS error: "+e.message)}
  busy=false;next();
 }
@@ -93,7 +91,7 @@ async function start(){
  }catch(e){stop();status("Start failed: "+e.message)}
 }
 function stop(){
- running=false;queue=[];busy=false;last="";
+ running=false;queue=[];busy=false;last="";audioToken++;
  try{if(stt&&stt.readyState===1)stt.send(JSON.stringify({type:"CloseStream"}))}catch(_){}
  try{if(proc)proc.disconnect()}catch(_){}
  try{if(mic)mic.getTracks().forEach(function(t){t.stop()})}catch(_){}
