@@ -11,7 +11,7 @@
 <body>
 <main>
 <h1>OpenVoice V2 • Live Voice Changer</h1>
-<p class="sub">Electron → microphone → OpenVoice V2 FP32 ONNX Runtime → clean output → Voicemeeter → VRChat</p>
+<p class="sub">Electron → Deepgram STT → Deepgram TTS → OpenVoice V2 cloning → buffered continuous output → Voicemeeter → VRChat</p>
 
 <div class="card">
 <div id="status"><span class="dot"></span>Ready</div>
@@ -20,6 +20,13 @@
 </div>
 
 <div class="card">
+<label for="dgKey">Deepgram API key</label>
+<input id="dgKey" type="password" placeholder="Paste your Deepgram API key">
+<p class="small">Used locally by this Electron app for continuous Deepgram STT/TTS WebSockets. The key is stored only in this app's localStorage.</p>
+
+<label for="ttsModel">Deepgram TTS voice</label>
+<input id="ttsModel" value="aura-2-thalia-en">
+
 <label for="ref">Reference voice (.wav)</label>
 <input id="ref" type="file" accept=".wav,audio/wav">
 <p id="refName" class="small">No reference loaded.</p>
@@ -47,12 +54,12 @@
 <div class="card">
 <b>Live pipeline</b>
 <div id="heard" style="margin-top:10px">Waiting for microphone…</div>
-<p class="small">The selected microphone is explicitly passed to the live capture stream. Multiple physical and virtual microphone inputs can be selected here once Chrome permission is active.</p>
+<p class="small">The microphone stays open continuously. Deepgram transcribes the live stream, Deepgram TTS synthesizes the finalized speech, and OpenVoice V2 converts that TTS audio into the selected reference voice. Audio is buffered and processed through a continuous queue.</p>
 </div>
 
 <div class="card warn">
 <b>FP32 model build</b>
-<p class="small">This version uses the full-precision OpenVoice V2 ONNX models instead of the quantized Q8 models, avoiding the unsupported ConvInteger WebGPU error.</p>
+<p class="small">OpenVoice V2 stays FP32 and runs through ONNX Runtime WASM. Deepgram handles the streaming speech recognition and natural TTS stage; OpenVoice supplies the voice cloning stage.</p>
 </div>
 
 <div class="card">
@@ -68,12 +75,14 @@
 const REF_MODEL='https://huggingface.co/TigreGotico/voiceclonnx-openvoice-v2/resolve/main/tone_ref_encoder.onnx';
 const CONV_MODEL='https://huggingface.co/TigreGotico/voiceclonnx-openvoice-v2/resolve/main/tone_converter.onnx';
 const MODEL_SR=22050,NFFT=1024,HOP=256,PAD=384,BINS=513,CHUNK_SEC=1.00;
+const DG_SAMPLE_RATE=48000;
 const CHUNK_IN=Math.round(MODEL_SR*CHUNK_SEC),CAPTURE_SR=48000,FADE_SEC=.015,OUTPUT_LEVEL=.82;
 const $=id=>document.getElementById(id);
 
 let refSession=null,convSession=null,targetEmbedding=null,refAudio=null,selectedReferenceFile=null;
 let running=false,processing=false,stream=null,permissionStream=null,captureCtx=null,outCtx=null,micSource=null,captureNode=null;
-let inputBuffer=new Float32Array(0),sourceEmbedding=null,playbackTime=0,lastGain=null,convertedCount=0;
+let inputBuffer=new Float32Array(0),ttsBuffer=new Float32Array(0),sourceEmbedding=null,playbackTime=0,lastGain=null,convertedCount=0;
+let dgStt=null,dgTts=null,sttKeepAlive=null,ttsOpenPromise=null,ttsAudioProcessing=false,lastFinalTranscript='';
 
 function status(t,k=''){ $('status').innerHTML='<span class="dot '+(k==='live'?'live':k==='busy'?'busy':'')+'"></span>'+t }
 function detail(t){$('detail').textContent=t}
@@ -184,7 +193,7 @@ function smoothEmbedding(next){
  if(!sourceEmbedding){sourceEmbedding=next;return}const y=new Float32Array(next.length);for(let i=0;i<next.length;i++)y[i]=sourceEmbedding[i]*.90+next[i]*.10;sourceEmbedding=y
 }
 async function convertChunk(audio){
- const modelAudio=resampleLinear(audio,CAPTURE_SR,MODEL_SR),spec=makeSpectrogram(modelAudio),src=await embeddingFromAudio(modelAudio);smoothEmbedding(src);
+ const modelAudio=resampleLinear(audio,DG_SAMPLE_RATE,MODEL_SR),spec=makeSpectrogram(modelAudio),src=await embeddingFromAudio(modelAudio);smoothEmbedding(src);
  const specT=new ort.Tensor('float32',spec.data,[1,BINS,spec.frames]),lenT=new ort.Tensor('int64',new BigInt64Array([BigInt(spec.frames)]),[1]);
  const srcT=new ort.Tensor('float32',sourceEmbedding,[1,256,1]),tgtT=new ort.Tensor('float32',targetEmbedding,[1,256,1]);
  const result=await convSession.run({spec:specT,spec_lengths:lenT,src_g:srcT,tgt_g:tgtT});return new Float32Array(result[convSession.outputNames[0]].data)
@@ -225,76 +234,204 @@ function scheduleAudio(samples){
  playbackTime=end;
  lastGain=gain
 }
-async function processLoop(){
- if(processing)return;processing=true;
- try{while(running){
-  const need=Math.round(CHUNK_IN*CAPTURE_SR/MODEL_SR);if(inputBuffer.length<need){await new Promise(r=>setTimeout(r,12));continue}
-  const chunk=inputBuffer.slice(0,need);inputBuffer=inputBuffer.slice(need);const level=rms(chunk);if(level<.008)continue;
-  status('Converting live audio…','busy');detail('OpenVoice V2 FP32 inference • chunk '+(++convertedCount)+' • non-overlapping audio');
-  const t0=performance.now(),audio=await convertChunk(chunk);if(!running)break;scheduleAudio(audio);const ms=Math.round(performance.now()-t0);
-  progress(Math.min(100,Math.round((CHUNK_SEC*1000/Math.max(1,ms))*100)));detail('OpenVoice V2 FP32 • '+ms+' ms inference • clean non-overlapping output queued');status('Live • OpenVoice V2 → output','live')
- }}catch(e){console.error(e);status('Conversion error');detail(e.stack||e.message||String(e));await stop()}finally{processing=false}
+function getDeepgramKey(){
+ const key=$('dgKey').value.trim();
+ if(key)localStorage.setItem('voicechanger-deepgram-key',key);
+ return key;
 }
-async function loadModels(){
- $('load').disabled=true;
+
+function loadDeepgramKey(){
  try{
-  status('Downloading OpenVoice V2 FP32 models…','busy');detail('Downloading the full-precision models and caching them locally.');progress(5);
-  const [refBytes,convBytes]=await Promise.all([cachedFetch(REF_MODEL),cachedFetch(CONV_MODEL)]);progress(45);
-  ort.env.wasm.wasmPaths='https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.22.0/';
-  // Use CPU/WASM in Electron. This avoids Windows GPU/WebGPU renderer crashes.
-  detail('Loading OpenVoice V2 on the stable CPU/WASM backend...');
-  refSession=await ort.InferenceSession.create(refBytes,{executionProviders:['wasm'],graphOptimizationLevel:'all'});
-  convSession=await ort.InferenceSession.create(convBytes,{executionProviders:['wasm'],graphOptimizationLevel:'all'});
-  progress(100);
-  status('OpenVoice V2 FP32 ready');
-  detail(selectedReferenceFile
-    ? 'Models loaded. Preparing the selected reference voice…'
-    : 'Models loaded successfully. Choose a reference voice and start.');
-  if(selectedReferenceFile) await loadReference(selectedReferenceFile);
-  $('start').disabled=false
- }catch(e){console.error(e);status('Model load failed');detail(e.stack||e.message||String(e));progress(0)}
- finally{$('load').disabled=false}
+  const key=localStorage.getItem('voicechanger-deepgram-key');
+  if(key)$('dgKey').value=key;
+ }catch{}
 }
-async function loadReference(file){
+
+function floatToPCM16(float32){
+ const out=new Int16Array(float32.length);
+ for(let i=0;i<float32.length;i++){
+  const v=Math.max(-1,Math.min(1,float32[i]));
+  out[i]=v<0?v*32768:v*32767;
+ }
+ return out.buffer;
+}
+
+function closeDeepgram(){
+ try{dgStt?.close()}catch{}
+ try{dgTts?.close()}catch{}
+ dgStt=null;dgTts=null;
+ if(sttKeepAlive){clearInterval(sttKeepAlive);sttKeepAlive=null}
+ ttsOpenPromise=null;
+}
+
+function openDeepgramTTS(key){
+ if(dgTts&&dgTts.readyState===WebSocket.OPEN)return Promise.resolve();
+ if(ttsOpenPromise)return ttsOpenPromise;
+ const model=encodeURIComponent(($('ttsModel').value.trim()||'aura-2-thalia-en'));
+ const url='wss://api.deepgram.com/v1/speak?model='+model+'&encoding=linear16&sample_rate='+DG_SAMPLE_RATE;
+ ttsOpenPromise=new Promise((resolve,reject)=>{
+  const ws=new WebSocket(url,['token',key]);
+  ws.binaryType='arraybuffer';
+  ws.onopen=()=>{dgTts=ws;detail('Deepgram STT + TTS connected. OpenVoice buffer is ready.');resolve()};
+  ws.onmessage=e=>{
+   if(typeof e.data==='string'){
+    try{
+     const m=JSON.parse(e.data);
+     if(m.type==='Warning')console.warn('Deepgram TTS warning',m);
+     if(m.type==='Flushed')detail('Deepgram TTS flushed • OpenVoice conversion queue continuing');
+    }catch{}
+    return;
+   }
+   if(e.data instanceof ArrayBuffer){
+    const pcm=new Int16Array(e.data);
+    const f32=new Float32Array(pcm.length);
+    for(let i=0;i<pcm.length;i++)f32[i]=pcm[i]/32768;
+    ttsBuffer=concat(ttsBuffer,f32);
+    const max=DG_SAMPLE_RATE*8;
+    if(ttsBuffer.length>max)ttsBuffer=ttsBuffer.slice(-max);
+    processTTSBuffer();
+   }
+  };
+  ws.onerror=e=>{console.error('Deepgram TTS error',e);if(dgTts===ws)dgTts=null;reject(new Error('Deepgram TTS WebSocket error'))};
+  ws.onclose=()=>{if(dgTts===ws)dgTts=null;ttsOpenPromise=null};
+ });
+ return ttsOpenPromise.finally(()=>{ttsOpenPromise=null});
+}
+
+async function sendTextToTTS(text){
+ const clean=text.replace(/\\s+/g,' ').trim();
+ if(!clean)return;
+ const key=getDeepgramKey();if(!key)throw new Error('Enter your Deepgram API key first.');
+ await openDeepgramTTS(key);
+ if(!dgTts||dgTts.readyState!==WebSocket.OPEN)throw new Error('Deepgram TTS is not connected.');
+ dgTts.send(JSON.stringify({type:'Speak',text:clean}));
+ dgTts.send(JSON.stringify({type:'Flush'}));
+}
+
+async function processTTSBuffer(){
+ if(ttsAudioProcessing)return;
+ ttsAudioProcessing=true;
  try{
-  selectedReferenceFile=file;
-  $('start').disabled=false;
-  status('Preparing reference voice…','busy');detail('Extracting target voice embedding.');
-  refAudio=await decodeReference(file);if(!refSession)throw new Error('Load OpenVoice V2 first.');targetEmbedding=await embeddingFromAudio(refAudio);
-  $('refName').textContent=file.name+' • '+(refAudio.length/MODEL_SR).toFixed(1)+' s reference';status('Reference voice ready');detail('Target voice embedding ready. Start Live Conversion.');$('start').disabled=false
- }catch(e){console.error(e);refAudio=null;targetEmbedding=null;$('refName').textContent='Reference failed: '+e.message;status('Reference load failed');detail(e.message)}
+  const need=Math.round(CHUNK_SEC*DG_SAMPLE_RATE);
+  while(running&&ttsBuffer.length>=need){
+   const chunk=ttsBuffer.slice(0,need);
+   ttsBuffer=ttsBuffer.slice(need);
+   if(rms(chunk)<.003)continue;
+   const t0=performance.now();
+   status('OpenVoice cloning buffered TTS…','busy');
+   const audio=await convertChunk(chunk);
+   if(!running)break;
+   scheduleAudio(audio);
+   convertedCount++;
+   const ms=Math.round(performance.now()-t0);
+   detail('Pipeline: Deepgram TTS → '+ms+' ms OpenVoice → output queue • buffer '+(ttsBuffer.length/DG_SAMPLE_RATE).toFixed(2)+' s');
+   status('Live • Deepgram → OpenVoice V2 → Voicemeeter','live');
+  }
+ }catch(e){
+  console.error(e);status('OpenVoice pipeline error');detail(e.stack||e.message||String(e));await stop();
+ }finally{ttsAudioProcessing=false}
 }
+
+function connectDeepgramSTT(key){
+ const params=new URLSearchParams({
+  model:'nova-3',
+  encoding:'linear16',
+  sample_rate:String(DG_SAMPLE_RATE),
+  channels:'1',
+  interim_results:'true',
+  punctuate:'true',
+  endpointing:'500',
+  smart_format:'true'
+ });
+ const ws=new WebSocket('wss://api.deepgram.com/v1/listen?'+params.toString(),['token',key]);
+ ws.binaryType='arraybuffer';
+ ws.onopen=()=>{
+  dgStt=ws;
+  status('Live • Deepgram STT listening','live');
+  detail('Continuous microphone stream connected to Deepgram STT.');
+  sttKeepAlive=setInterval(()=>{
+   if(ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({type:'KeepAlive'}));
+  },8000);
+ };
+ ws.onmessage=e=>{
+  if(typeof e.data!=='string')return;
+  try{
+   const m=JSON.parse(e.data);
+   const text=m.channel?.alternatives?.[0]?.transcript?.trim()||'';
+   if(text){
+    $('heard').textContent=(m.is_final?'Final: ':'Live: ')+text;
+   }
+   if(m.is_final&&m.speech_final&&text&&text!==lastFinalTranscript){
+    lastFinalTranscript=text;
+    sendTextToTTS(text).catch(err=>{console.error(err);status('Deepgram TTS error');detail(err.message||String(err))});
+   }
+  }catch(err){console.warn('STT message parse error',err)}
+ };
+ ws.onerror=()=>{status('Deepgram STT connection error');detail('Deepgram STT WebSocket failed. Check the API key and connection.')};
+ ws.onclose=()=>{if(dgStt===ws)dgStt=null};
+ return ws;
+}
+
+function captureMicForDeepgram(){
+ const code='class VCInput extends AudioWorkletProcessor{process(inputs){const i=inputs[0]&&inputs[0][0];if(i&&i.length){const c=new Float32Array(i);this.port.postMessage(c,[c.buffer])}return true}}registerProcessor("vc-input",VCInput);';
+ return (async()=>{
+  const url=URL.createObjectURL(new Blob([code],{type:'application/javascript'}));
+  await captureCtx.audioWorklet.addModule(url);URL.revokeObjectURL(url);
+  micSource=captureCtx.createMediaStreamSource(stream);
+  captureNode=new AudioWorkletNode(captureCtx,'vc-input');
+  captureNode.port.onmessage=e=>{
+   if(!running||!dgStt||dgStt.readyState!==WebSocket.OPEN)return;
+   const data=e.data;
+   if(rms(data)<.0015)return;
+   dgStt.send(floatToPCM16(data));
+  };
+  const silent=captureCtx.createGain();silent.gain.value=0;
+  micSource.connect(captureNode);captureNode.connect(silent);silent.connect(captureCtx.destination);
+ })();
+}
+
 async function start(){
- if(running)return;if(!refSession||!convSession){status('Load OpenVoice V2 first');return}if(!targetEmbedding){status('Load a reference voice first');return}
+ if(running)return;
+ if(!refSession||!convSession){status('Load OpenVoice V2 first');return}
+ if(!targetEmbedding){status('Load a reference voice first');return}
+ const key=getDeepgramKey();
+ if(!key){status('Deepgram API key required');detail('Enter your Deepgram API key before starting.');$('dgKey').focus();return}
  try{
-  $('start').disabled=true;const selectedMic=$('mic').value;if(!selectedMic)throw new Error('Select a microphone input first.');
-  // Keep the permission stream alive until the exact selected input is opened.
+  $('start').disabled=true;
+  const selectedMic=$('mic').value;if(!selectedMic)throw new Error('Select a microphone input first.');
   if(permissionStream){permissionStream.getTracks().forEach(t=>t.stop());permissionStream=null}
   stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:{exact:selectedMic},channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
-  captureCtx=new AudioContext({sampleRate:CAPTURE_SR});outCtx=new AudioContext({sampleRate:48000});await captureCtx.resume();await outCtx.resume();
+  captureCtx=new AudioContext({sampleRate:DG_SAMPLE_RATE});
+  outCtx=new AudioContext({sampleRate:48000});
+  await captureCtx.resume();await outCtx.resume();
   if($('out').value&&typeof outCtx.setSinkId==='function')await outCtx.setSinkId($('out').value);
-  const code='class VCInput extends AudioWorkletProcessor{process(inputs){const i=inputs[0]&&inputs[0][0];if(i&&i.length){const c=new Float32Array(i);this.port.postMessage(c,[c.buffer])}return true}}registerProcessor("vc-input",VCInput);';
-  const url=URL.createObjectURL(new Blob([code],{type:'application/javascript'}));await captureCtx.audioWorklet.addModule(url);URL.revokeObjectURL(url);
-  micSource=captureCtx.createMediaStreamSource(stream);captureNode=new AudioWorkletNode(captureCtx,'vc-input');
-  captureNode.port.onmessage=e=>{if(running){inputBuffer=concat(inputBuffer,e.data);const max=Math.round(CAPTURE_SR*3);if(inputBuffer.length>max)inputBuffer=inputBuffer.slice(-max)}};
-  const silent=captureCtx.createGain();silent.gain.value=0;micSource.connect(captureNode);captureNode.connect(silent);silent.connect(captureCtx.destination);
-  inputBuffer=new Float32Array(0);sourceEmbedding=null;playbackTime=0;lastGain=null;convertedCount=0;running=true;$('stop').disabled=false;
-  status('Live • OpenVoice V2 FP32','live');detail('Using: '+($('mic').selectedOptions[0]?.textContent||'selected microphone')+' → OpenVoice → '+($('out').selectedOptions[0]?.textContent||'default output'));processLoop()
+  await captureMicForDeepgram();
+  inputBuffer=new Float32Array(0);ttsBuffer=new Float32Array(0);sourceEmbedding=null;playbackTime=0;lastGain=null;convertedCount=0;lastFinalTranscript='';
+  running=true;$('stop').disabled=false;
+  connectDeepgramSTT(key);
+  await openDeepgramTTS(key);
+  status('Live • Deepgram STT → TTS → OpenVoice V2','live');
+  detail('Continuous pipeline active: microphone → STT → TTS buffer → OpenVoice clone → Voicemeeter.');
  }catch(e){console.error(e);await stop();status('Start failed');detail(e.message||String(e))}
  finally{$('start').disabled=false}
 }
+
 async function stop(){
- running=false;processing=false;try{captureNode?.disconnect()}catch{}try{micSource?.disconnect()}catch{}
+ running=false;
+ closeDeepgram();
+ try{captureNode?.disconnect()}catch{}
+ try{micSource?.disconnect()}catch{}
  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
- if(captureCtx){try{await captureCtx.close()}catch{}captureCtx=null}if(outCtx){try{await outCtx.close()}catch{}outCtx=null}
- captureNode=null;micSource=null;inputBuffer=new Float32Array(0);playbackTime=0;lastGain=null;sourceEmbedding=null;
- $('stop').disabled=true;$('start').disabled=false;status('Stopped');detail(
- refSession&&convSession&&targetEmbedding
- ? 'Ready — Start Live Conversion is available.'
- : 'Ready — complete model loading and reference voice setup first.'
-)
+ if(captureCtx){try{await captureCtx.close()}catch{}captureCtx=null}
+ if(outCtx){try{await outCtx.close()}catch{}outCtx=null}
+ captureNode=null;micSource=null;inputBuffer=new Float32Array(0);ttsBuffer=new Float32Array(0);playbackTime=0;lastGain=null;sourceEmbedding=null;ttsAudioProcessing=false;
+ $('stop').disabled=true;$('start').disabled=false;
+ status('Stopped');
+ detail(refSession&&convSession&&targetEmbedding?'Ready — Deepgram + OpenVoice pipeline is available.':'Ready — complete model loading and reference voice setup first.');
 }
 
+loadDeepgramKey();
+$('dgKey').addEventListener('change',()=>{try{localStorage.setItem('voicechanger-deepgram-key',$('dgKey').value.trim())}catch{}});
 $('permission').onclick=requestMicPermission;
 $('ref').addEventListener('change',e=>{
  const f=e.target.files[0];
