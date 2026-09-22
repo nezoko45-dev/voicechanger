@@ -10,8 +10,8 @@ const BASE="https://huggingface.co/TigreGotico/voiceclonnx-openvoice-v2/resolve/
 const FILES={ref:"tone_ref_encoder_q8.onnx",conv:"tone_converter_q8.onnx"};
 let refModel=null,convModel=null,target=null,loading=null,ort=null;
 let aud=null,rt=null,rtStarted=false,activeSocket=null,sourceSocket=null,inputId=null,outputId=null;
-let captureParts=[],captureSamples=0,converting=false,pending=null,outputQueue=Buffer.alloc(0);
-let outputTail=null,outputTailSamples=0,outputStarted=false,underruns=0;
+let captureParts=[],captureSamples=0,converting=false,pendingQueue=[],outputQueue=Buffer.alloc(0);
+let outputStarted=false,underruns=0;
 
 function reply(res,status,data){res.writeHead(status,{"Content-Type":"application/json; charset=utf-8","Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"content-type"});res.end(JSON.stringify(data));}
 async function getModel(kind){
@@ -81,18 +81,11 @@ function pcm16ToFloat(buf){const x=new Float32Array(Math.floor(buf.length/2));fo
 function floatToPcm16(x){const b=Buffer.alloc(x.length*2);for(let i=0;i<x.length;i++){const v=Math.max(-1,Math.min(1,x[i]));b.writeInt16LE(v<0?v*32768:v*32767,i*2)}return b}
 function appendOutput(x){
   const y=resample(x,RATE,WASAPI_RATE);
-  const fade=Math.min(Math.floor(WASAPI_RATE*0.025),Math.floor(y.length/4),outputTail?.length||0);
-  if(fade>0&&outputQueue.length>=fade*2){
-    const qStart=outputQueue.length-fade*2;
-    const existing=outputQueue.subarray(qStart);
-    const existingFloat=pcm16ToFloat(existing);
-    const blended=new Float32Array(fade);
-    for(let i=0;i<fade;i++){const a=i/(fade-1||1);blended[i]=existingFloat[i]*(1-a)+y[i]*a}
-    outputQueue=Buffer.concat([outputQueue.subarray(0,qStart),floatToPcm16(blended),floatToPcm16(y.subarray(fade))]);
-  }else outputQueue=Buffer.concat([outputQueue,floatToPcm16(y)]);
-  outputTail=y.slice(Math.max(0,y.length-Math.floor(WASAPI_RATE*0.025)));
-  outputTailSamples=outputTail.length;
-  const max=WASAPI_RATE*2*1.2;
+  // Do not crossfade against the end of the queued buffer: that rewrites
+  // already-scheduled audio and creates periodic thumps/clicks.
+  // Keep chunks contiguous and let the model provide the voice continuity.
+  outputQueue=Buffer.concat([outputQueue,floatToPcm16(y)]);
+  const max=WASAPI_RATE*2*1.5;
   if(outputQueue.length>max)outputQueue=outputQueue.subarray(outputQueue.length-max);
 }
 function takeOutput(bytes){
@@ -102,14 +95,21 @@ function takeOutput(bytes){
 }
 function emitStatus(text){if(activeSocket?.readyState===1)activeSocket.send(JSON.stringify({type:"status",text}))}
 async function convertPending(){
-  if(converting||!pending)return;
-  converting=true;const x=pending;pending=null;const started=performance.now();
+  if(converting||pendingQueue.length===0)return;
+  converting=true;
+  const x=pendingQueue.shift();
+  const started=performance.now();
   try{
     appendOutput(await convert(resample(x,WASAPI_RATE,RATE)));
     const ms=Math.round(performance.now()-started),sec=x.length/WASAPI_RATE;
     emitStatus("Converting • "+ms+" ms for "+Math.round(sec*1000)+" ms audio"+(ms>sec*1000?" • CPU is behind":""));
-  }catch(e){console.error("conversion:",e);if(activeSocket?.readyState===1)activeSocket.send(JSON.stringify({type:"error",error:e.message}))}
-  finally{converting=false;if(pending)void convertPending()}
+  }catch(e){
+    console.error("conversion:",e);
+    if(activeSocket?.readyState===1)activeSocket.send(JSON.stringify({type:"error",error:e.message}));
+  }finally{
+    converting=false;
+    if(pendingQueue.length)void convertPending();
+  }
 }
 function pushCapture(pcm){
   if(!activeSocket||!rtStarted)return;
@@ -117,7 +117,12 @@ function pushCapture(pcm){
   captureParts.push(x);captureSamples+=x.length;
   if(captureSamples>=need){
     const all=new Float32Array(captureSamples);let p=0;for(const part of captureParts){all.set(part,p);p+=part.length}
-    captureParts=[];captureSamples=0;pending=all;void convertPending();
+    captureParts=[];captureSamples=0;
+    pendingQueue.push(all);
+    // Keep only a small backlog. Dropping the oldest unprocessed block is
+    // preferable to allowing latency to grow forever.
+    if(pendingQueue.length>3)pendingQueue.splice(0,pendingQueue.length-3);
+    void convertPending();
   }
 }
 function findDevice(list,id,kind){
@@ -127,7 +132,7 @@ function findDevice(list,id,kind){
 async function devices(){await loadWasapi();const probe=new aud.RtAudio(aud.RtAudioApi.WINDOWS_WASAPI);const list=probe.getDevices();try{probe.closeStream?.()}catch{}return list}
 async function stopWasapi(){
   if(rt){try{if(rtStarted)rt.stop()}catch{}try{rt.closeStream()}catch{}}
-  rt=null;rtStarted=false;captureParts=[];captureSamples=0;pending=null;outputQueue=Buffer.alloc(0);outputTail=null;outputTailSamples=0;outputStarted=false;underruns=0;
+  rt=null;rtStarted=false;captureParts=[];captureSamples=0;pending=null;outputQueue=Buffer.alloc(0);outputStarted=false;underruns=0;pendingQueue=[];
 }
 async function startWasapi(outId){
   await loadWasapi();await stopWasapi();const list=await devices();
