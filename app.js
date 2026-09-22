@@ -1,19 +1,106 @@
-import { createRVC, runPipelineInWorker } from "https://cdn.jsdelivr.net/npm/rvc-web-runtime@1.0.5/+esm";
-const $=id=>document.getElementById(id),status=$("status");
-const DB_NAME="voicechanger",DB_VERSION=1,STORE="models";
-const SUPPORT={contentVec:"https://huggingface.co/MoeSS-SUBModel/resolve/main/vec-768-layer-12.onnx",rmvpe:"https://huggingface.co/MoeSS-SUBModel/resolve/main/RMVPE.onnx"};
-let rvc=null,files=null,audioCtx=null,mediaStream=null,worklet=null,running=false,queue=[],processing=false,playAt=0;
+const $=id=>document.getElementById(id);
+const status=$("status"), transcript=$("transcript");
+let running=false,ctx=null,stream=null,source=null,processor=null,stt=null,tts=null,ttsReady=false;
+let playAt=0,sttKeepAlive=null;
+
 function say(t,k=""){status.textContent=t;status.className="status "+k}
-function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB_NAME,DB_VERSION);r.onupgradeneeded=()=>r.result.createObjectStore(STORE);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
-async function dbGet(k){const db=await openDB();return new Promise((res,rej)=>{const r=db.transaction(STORE,"readonly").objectStore(STORE).get(k);r.onsuccess=()=>res(r.result||null);r.onerror=()=>rej(r.error)})}
-async function dbPut(k,v){const db=await openDB();return new Promise((res,rej)=>{const tx=db.transaction(STORE,"readwrite");tx.objectStore(STORE).put(v,k);tx.oncomplete=res;tx.onerror=()=>rej(tx.error)})}
-async function getModel(){const chosen=$("model").files[0];if(chosen){const data=await chosen.arrayBuffer();const saved={name:chosen.name,type:chosen.type||"application/octet-stream",data};await dbPut("target",saved);return new File([data],saved.name,{type:saved.type})}const saved=await dbGet("target");if(!saved)return null;return new File([saved.data],saved.name,{type:saved.type})}
-async function getSupport(name,url,label){const cached=await dbGet(name);if(cached){say("Using saved "+label+" model...");return new File([cached.data],cached.name,{type:"application/octet-stream"})}say("Downloading "+label+" model once...");const res=await fetch(url,{mode:"cors"});if(!res.ok)throw Error(label+" download failed ("+res.status+").");const data=await res.arrayBuffer();await dbPut(name,{name:label+".onnx",data});return new File([data],label+".onnx",{type:"application/octet-stream"})}
-async function loadVoice(){try{$("load").disabled=true;if(!("gpu" in navigator))throw Error("WebGPU is not available in this Chrome build.");const adapter=await navigator.gpu.requestAdapter();if(!adapter)throw Error("No WebGPU adapter found. Turn on Chrome hardware acceleration.");const model=await getModel();if(!model)throw Error("Choose your RVC v2 .onnx voice model first.");const [contentVec,rmvpe]=await Promise.all([getSupport("contentVec",SUPPORT.contentVec,"ContentVec"),getSupport("rmvpe",SUPPORT.rmvpe,"RMVPE")]);files={model,contentVec,rmvpe};rvc=createRVC();say("Voice model built and saved in this browser. Press Start.","ok");$("start").disabled=false}catch(e){files=null;$("start").disabled=true;say("Load error: "+e.message,"err")}finally{$("load").disabled=false}}
-function makeWorklet(){const code=`class MicChunker extends AudioWorkletProcessor{constructor(){super();this.buf=[];this.n=0;this.target=sampleRate*2.5}process(inputs){const ch=inputs[0]?.[0];if(!ch)return true;for(let i=0;i<ch.length;i++){this.buf.push(ch[i]);this.n++}while(this.n>=this.target){const out=new Float32Array(Math.floor(this.target));for(let i=0;i<out.length;i++)out[i]=this.buf[i];this.buf=this.buf.slice(out.length);this.n-=out.length;this.port.postMessage(out,[out.buffer])}return true}}registerProcessor("mic-chunker",MicChunker);`;return URL.createObjectURL(new Blob([code],{type:"application/javascript"}))}
-async function start(){if(!files)return say("Build the voice model first.","err");try{$("start").disabled=true;$("stop").disabled=false;running=true;queue=[];processing=false;playAt=0;audioCtx=new AudioContext({latencyHint:"interactive"});await audioCtx.resume();mediaStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});const src=audioCtx.createMediaStreamSource(mediaStream);const url=makeWorklet();await audioCtx.audioWorklet.addModule(url);URL.revokeObjectURL(url);worklet=new AudioWorkletNode(audioCtx,"mic-chunker");const mute=audioCtx.createGain();mute.gain.value=0;src.connect(worklet);worklet.connect(mute);mute.connect(audioCtx.destination);worklet.port.onmessage=e=>{if(!running)return;queue.push(e.data);if(queue.length>3)queue.shift();processQueue()};say("Mic is ON. Voice conversion is running continuously.","ok")}catch(e){stop();say("Start error: "+e.message,"err")}}
-async function processQueue(){if(processing||!running||!queue.length)return;processing=true;const audio=queue.shift();try{say("Converting voice locally...");const result=await runPipelineInWorker(rvc,files,audio,audioCtx.sampleRate,{onEvent:e=>{if(e.type==="stage")say("RVC: "+e.stage)}},{contentVecBackend:"webgpu",rmvpeBackend:"webgpu",rvcBackend:"wasm",pitchShift:0,medianFilter:true,chunkDuration:2.5,padDuration:.35,inputSampleRate:16000,outputSampleRate:48000,timeout:120000});if(result.state!=="success"||!result.outputWav)throw Error(result.errorMessage||"RVC conversion failed.");await playWav(result.outputWav);say("Voice converted. Mic remains continuous.","ok")}catch(e){say("Conversion error: "+e.message,"err")}finally{processing=false;if(running)processQueue()}}
-async function playWav(blob){const buf=await blob.arrayBuffer(),decoded=await audioCtx.decodeAudioData(buf.slice(0)),src=audioCtx.createBufferSource();src.buffer=decoded;src.connect(audioCtx.destination);const now=audioCtx.currentTime;if(playAt<now)playAt=now+.03;src.start(playAt);playAt+=decoded.duration}
-function stop(){running=false;queue=[];try{worklet?.disconnect()}catch{}try{mediaStream?.getTracks().forEach(t=>t.stop())}catch{}worklet=null;mediaStream=null;processing=false;$("stop").disabled=true;$("start").disabled=!files;say(files?"Stopped. Saved voice model stays loaded.":"Choose a voice model first.")}
-$("load").onclick=loadVoice;$("start").onclick=start;$("stop").onclick=stop;addEventListener("beforeunload",stop);
-(async()=>{try{const saved=await dbGet("target");if(saved){$("load").textContent="Use saved voice model";say("Saved voice model found. Press the button to load it.")}}catch{}})();
+function authProtocols(token){return ["token",token]}
+function int16ToFloat32(buf){
+ const a=new Int16Array(buf),out=new Float32Array(a.length);
+ for(let i=0;i<a.length;i++)out[i]=Math.max(-1,Math.min(1,a[i]/32768));
+ return out;
+}
+function playPCM16(data,sampleRate=48000){
+ if(!ctx||!running)return;
+ const f=int16ToFloat32(data),b=ctx.createBuffer(1,f.length,sampleRate);
+ b.copyToChannel(f,0);
+ const s=ctx.createBufferSource();s.buffer=b;s.connect(ctx.destination);
+ const now=ctx.currentTime;
+ if(playAt<now)playAt=now+0.015;
+ s.start(playAt);playAt+=b.duration;
+}
+function downsampleTo16k(input,inRate){
+ const ratio=inRate/16000;
+ const len=Math.floor(input.length/ratio),out=new Int16Array(len);
+ for(let i=0;i<len;i++){
+   const pos=i*ratio,idx=Math.floor(pos),frac=pos-idx;
+   const a=input[idx]||0,b=input[idx+1]||a,v=a+(b-a)*frac;
+   out[i]=Math.max(-32768,Math.min(32767,Math.round(v*32767)));
+ }
+ return out.buffer;
+}
+function makeProcessor(){
+ const p=ctx.createScriptProcessor(4096,1,1);
+ p.onaudioprocess=e=>{
+   if(!running||!stt||stt.readyState!==WebSocket.OPEN)return;
+   const mono=e.inputBuffer.getChannelData(0);
+   const pcm=downsampleTo16k(mono,ctx.sampleRate);
+   if(pcm.byteLength)stt.send(pcm);
+ };
+ const mute=ctx.createGain();mute.gain.value=0;
+ source.connect(p);p.connect(mute);mute.connect(ctx.destination);
+ return p;
+}
+function connectTTS(token){
+ return new Promise((resolve,reject)=>{
+   const model=$("voice").value.trim()||"aura-2-asteria-en";
+   tts=new WebSocket("wss://api.deepgram.com/v1/speak?model="+encodeURIComponent(model)+"&encoding=linear16&sample_rate=48000",authProtocols(token));
+   tts.binaryType="arraybuffer";
+   tts.onopen=()=>{ttsReady=true;say("STT + TTS connected. Listening continuously.","ok");resolve()};
+   tts.onmessage=e=>{
+     if(typeof e.data==="string"){
+       try{const m=JSON.parse(e.data);if(m.type==="Metadata")return;if(m.type==="Flushed")return;if(m.type==="Warning")say("TTS warning: "+m.description,"err")}catch{}
+       return;
+     }
+     if(e.data instanceof ArrayBuffer)playPCM16(e.data,48000);
+     else if(e.data?.arrayBuffer)e.data.arrayBuffer().then(b=>playPCM16(b,48000));
+   };
+   tts.onerror=()=>reject(Error("Deepgram TTS WebSocket error."));
+   tts.onclose=()=>{ttsReady=false;if(running)say("TTS WebSocket closed.","err")};
+ });
+}
+function connectSTT(token){
+ return new Promise((resolve,reject)=>{
+   const url="wss://api.deepgram.com/v1/listen?model=nova-3&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&endpointing=300&utterance_end_ms=1000&smart_format=true";
+   stt=new WebSocket(url,authProtocols(token));stt.binaryType="arraybuffer";
+   stt.onopen=()=>{say("STT connected. Microphone is streaming continuously.","ok");resolve()};
+   stt.onmessage=e=>{
+     let m;try{m=JSON.parse(e.data)}catch{return}
+     if(m.type!=="Results")return;
+     const alt=m.channel?.alternatives?.[0],text=alt?.transcript?.trim()||"";
+     if(text)transcript.textContent=text;
+     if(m.is_final&&m.speech_final&&text&&ttsReady){
+       tts.send(JSON.stringify({type:"Speak",text}));
+       tts.send(JSON.stringify({type:"Flush"}));
+     }
+   };
+   stt.onerror=()=>reject(Error("Deepgram STT WebSocket error."));
+   stt.onclose=()=>{if(running)say("STT WebSocket closed.","err")};
+ });
+}
+async function start(){
+ const token=$("key").value.trim();
+ if(!token)return say("Paste your Deepgram API key or temporary token first.","err");
+ try{
+   $("start").disabled=true;$("stop").disabled=false;running=true;playAt=0;
+   ctx=new AudioContext({latencyHint:"interactive"});await ctx.resume();
+   stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+   source=ctx.createMediaStreamSource(stream);
+   await connectSTT(token);await connectTTS(token);
+   processor=makeProcessor();
+   sttKeepAlive=setInterval(()=>{if(stt?.readyState===WebSocket.OPEN)stt.send(JSON.stringify({type:"KeepAlive"}))},8000);
+   say("Continuous STT is ON. Speak normally.","ok");
+ }catch(e){stop();say("Start error: "+e.message,"err")}
+}
+function stop(){
+ running=false;
+ if(sttKeepAlive)clearInterval(sttKeepAlive);sttKeepAlive=null;
+ try{if(stt?.readyState===WebSocket.OPEN)stt.send(JSON.stringify({type:"CloseStream"}))}catch{}
+ try{if(tts?.readyState===WebSocket.OPEN)tts.send(JSON.stringify({type:"Close"}))}catch{}
+ try{processor?.disconnect()}catch{}try{source?.disconnect()}catch{}
+ try{stream?.getTracks().forEach(t=>t.stop())}catch{}
+ try{ctx?.close()}catch{}
+ stt=null;tts=null;ttsReady=false;processor=null;source=null;stream=null;ctx=null;
+ $("stop").disabled=true;$("start").disabled=false;say("Stopped.");
+}
+$("start").onclick=start;$("stop").onclick=stop;addEventListener("beforeunload",stop);
