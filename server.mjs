@@ -257,7 +257,7 @@ server.listen(PORT,"127.0.0.1",async()=>{console.log("VoiceChanger ready: http:/
       }
       if(isBinary)pushCapture(Buffer.from(raw));
     });
-    ws.on("close",()=>{if(sourceSocket===ws){sourceSocket=null;if(rtStarted)emitStatus("Electron audio source disconnected")}}});
+    ws.on("close",()=>{if(sourceSocket===ws){sourceSocket=null;if(rtStarted)emitStatus("Electron audio source disconnected")}});
   });
   }catch(e){console.error("WebSocket backend unavailable:",e.message)}
 })();
