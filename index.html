@@ -10,32 +10,48 @@ button:disabled{opacity:.45;cursor:not-allowed}.box{margin-top:14px;padding:13px
 small{color:#aeb8c9;line-height:1.55}
 </style></head><body><main><div class="card">
 <h1>OpenVoice V2 Voice Clone</h1>
-<p>Upload one reference WAV and create the reusable OpenVoice voice embedding.</p>
+<p>Reference WAV → reusable OpenVoice voice embedding.</p>
 <input id="voice" type="file" accept=".wav,audio/wav">
 <button id="clone" disabled>Clone this voice</button>
 <div id="status" class="box">Choose a WAV file.</div>
-<div class="box"><small>The browser talks only to the local clone service. There is no external API and no URL field. The clone service listens on 127.0.0.1:8000 and returns a clear connection error instead of the generic “Failed to fetch” message.</small></div>
+<div class="box"><small>No external API. The page connects only to the local OpenVoice service. Start clone.bat before pressing Clone.</small></div>
 </div></main>
 <script>
 (function(){
 "use strict";
 var voice=document.getElementById("voice"),btn=document.getElementById("clone"),status=document.getElementById("status");
+var base="http://127.0.0.1:8000";
 function setStatus(s){status.textContent=s}
-voice.onchange=function(){btn.disabled=!voice.files.length;setStatus(voice.files.length?"Ready to clone: "+voice.files[0].name:"Choose a WAV file.")};
+function localFetch(path,options){
+ options=options||{};
+ options.mode="cors";
+ options.targetAddressSpace="loopback";
+ return fetch(base+path,options);
+}
+voice.onchange=function(){
+ btn.disabled=!voice.files.length;
+ setStatus(voice.files.length?"Ready: "+voice.files[0].name:"Choose a WAV file.");
+};
 btn.onclick=async function(){
  if(!voice.files.length)return;
- btn.disabled=true;setStatus("Creating OpenVoice clone…");
+ btn.disabled=true;
+ setStatus("Checking local OpenVoice service…");
  try{
-  var fd=new FormData();fd.append("reference",voice.files[0],voice.files[0].name);
-  var r=await fetch("http://127.0.0.1:8000/clone",{method:"POST",body:fd,mode:"cors"});
-  if(!r.ok){var t=await r.text().catch(function(){return""});throw Error("Local clone service returned HTTP "+r.status+(t?": "+t:""))}
-  var data=await r.json();
-  if(!data.ok)throw Error(data.error||"Clone failed");
-  setStatus("Clone complete!\nSaved: "+(data.file||"voice_embedding.pth"));
+  var h=await localFetch("/health",{method:"GET"});
+  if(!h.ok)throw Error("Service returned HTTP "+h.status);
+  setStatus("Creating voice clone…");
+  var fd=new FormData();
+  fd.append("reference",voice.files[0],voice.files[0].name);
+  var r=await localFetch("/clone",{method:"POST",body:fd});
+  var raw=await r.text();
+  var data;
+  try{data=JSON.parse(raw)}catch(_){throw Error("Service returned invalid data: "+raw.slice(0,180))}
+  if(!r.ok||!data.ok)throw Error(data.error||("Service returned HTTP "+r.status));
+  setStatus("Clone complete!\nSaved: cloned_voice\\voice_embedding.pth");
  }catch(e){
   var m=String(e&&e.message||e);
-  if(m==="Failed to fetch"||m.indexOf("NetworkError")>=0)
-   m="Could not connect to the local clone service. Start clone.bat first, then try again.";
+  if(m==="Failed to fetch"||/NetworkError|Load failed/i.test(m))
+    m="Cannot reach OpenVoice locally. Double-click clone.bat and leave its window open, then press Clone again.";
   setStatus("Clone error: "+m);
  }finally{btn.disabled=false}
 };
