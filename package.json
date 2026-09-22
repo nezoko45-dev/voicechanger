@@ -1,0 +1,9 @@
+{
+  "name":"voicechanger",
+  "version":"1.0.0",
+  "private":true,
+  "type":"module",
+  "engines":{"node":">=20"},
+  "scripts":{"start":"node server.mjs"},
+  "dependencies":{"onnxruntime-node":"^1.22.0","ws":"^8.18.3"}
+}
