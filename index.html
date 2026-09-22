@@ -430,6 +430,81 @@ async function stop(){
  detail(refSession&&convSession&&targetEmbedding?'Ready — Deepgram + OpenVoice pipeline is available.':'Ready — complete model loading and reference voice setup first.');
 }
 
+
+async function loadReference(file){
+  try{
+    if(!refSession) throw new Error('Load OpenVoice V2 first.');
+    if(!file) throw new Error('Choose a WAV reference voice first.');
+    selectedReferenceFile=file;
+    status('Loading reference voice…','busy');
+    detail('Decoding '+file.name+' and creating the OpenVoice target voice embedding…');
+    progress(72);
+    refAudio=await decodeReference(file);
+    if(refAudio.length<MODEL_SR*0.5) throw new Error('Reference WAV is too short. Use at least 0.5 seconds of clear speech.');
+    targetEmbedding=await embeddingFromAudio(refAudio);
+    progress(100);
+    $('refName').textContent='Loaded: '+file.name+' • '+(refAudio.length/MODEL_SR).toFixed(1)+' s';
+    status('Reference voice loaded','live');
+    detail('Target voice embedding is ready. Now choose your microphone/output and press Start Live Conversion.');
+    $('start').disabled=!refSession||!convSession||!targetEmbedding;
+  }catch(e){
+    targetEmbedding=null;
+    progress(0);
+    status('Reference load failed');
+    detail(e.message||String(e));
+    console.error(e);
+    $('start').disabled=true;
+  }
+}
+
+async function loadModels(){
+  if(refSession&&convSession){
+    if(selectedReferenceFile) await loadReference(selectedReferenceFile);
+    else {
+      status('OpenVoice V2 already loaded','live');
+      detail('Choose a reference WAV, then select your microphone and press Start Live Conversion.');
+    }
+    return;
+  }
+  try{
+    $('load').disabled=true;
+    $('start').disabled=true;
+    status('Downloading OpenVoice V2 models…','busy');
+    detail('Loading the FP32 OpenVoice V2 ONNX models. The first load can take a while; later loads use the browser cache.');
+    progress(8);
+    if(typeof ort==='undefined') throw new Error('ONNX Runtime Web did not load. Check your internet connection and restart the app.');
+    ort.env.wasm.numThreads=1;
+    ort.env.wasm.simd=true;
+    progress(18);
+    const [refBytes,convBytes]=await Promise.all([cachedFetch(REF_MODEL),cachedFetch(CONV_MODEL)]);
+    progress(55);
+    const opts={executionProviders:['wasm'],graphOptimizationLevel:'all'};
+    refSession=await ort.InferenceSession.create(refBytes,opts);
+    progress(72);
+    convSession=await ort.InferenceSession.create(convBytes,opts);
+    progress(88);
+    if(selectedReferenceFile) await loadReference(selectedReferenceFile);
+    else{
+      progress(100);
+      status('OpenVoice V2 loaded','live');
+      detail('Models are ready. Choose a reference WAV, then select your microphone/output and press Start Live Conversion.');
+    }
+    console.log('OpenVoice ref inputs:',refSession.inputNames,'outputs:',refSession.outputNames);
+    console.log('OpenVoice converter inputs:',convSession.inputNames,'outputs:',convSession.outputNames);
+  }catch(e){
+    refSession=null;
+    convSession=null;
+    targetEmbedding=null;
+    progress(0);
+    status('OpenVoice load failed');
+    detail(e.stack||e.message||String(e));
+    console.error(e);
+  }finally{
+    $('load').disabled=false;
+    $('start').disabled=!(refSession&&convSession&&targetEmbedding);
+  }
+}
+
 loadDeepgramKey();
 $('dgKey').addEventListener('change',()=>{try{localStorage.setItem('voicechanger-deepgram-key',$('dgKey').value.trim())}catch{}});
 $('permission').onclick=requestMicPermission;
