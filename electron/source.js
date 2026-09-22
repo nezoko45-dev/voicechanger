@@ -39,6 +39,8 @@ async function stopCapture(){
 }
 async function startCapture(deviceName){
  await stopCapture();
+ let permissionStream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
+ permissionStream.getTracks().forEach(t=>t.stop());
  const devices=await navigator.mediaDevices.enumerateDevices(),chosen=chooseDevice(devices,deviceName);
  if(!chosen)throw Error("No Electron microphone was found.");
  stream=await navigator.mediaDevices.getUserMedia({audio:{
