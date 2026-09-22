@@ -3,7 +3,8 @@
 <body><main><h1>VoiceChanger</h1><p id="status">Starting...</p>
 <label>Microphone</label><select id="mic"></select>
 <label>Output</label><select id="out"></select>
+<div class="row"><button id="cable">Detecting VB-CABLE...</button><button id="refresh">Refresh devices</button></div>
+<div class="info"><b>VB-CABLE routing:</b><br>VoiceChanger → <b>CABLE Input</b> → VRChat/Discord uses <b>CABLE Output</b> as its microphone.</div>
 <label>Voice WAV</label><input id="voice" type="file" accept=".wav,audio/wav"><button id="load">Load Voice</button>
-<label>Buffer <span id="bv">0.20s</span></label><input id="buf" type="range" min=".10" max=".60" step=".05" value=".20">
 <div><button id="start">Start</button><button id="stop" disabled>Stop</button></div>
-<p id="msg">Load a voice, then press Start.</p></main><script type="module" src="/app.js"></script></body></html>
+<p id="msg">Load a voice, then choose an output. VB-CABLE bypasses VoiceMeeter strips.</p></main><script type="module" src="/app.js"></script></body></html>
