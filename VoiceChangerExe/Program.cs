@@ -121,7 +121,7 @@ async Task Handle(HttpListenerContext ctx)
 
 async Task HandleAudioSocket(HttpListenerContext ctx)
 {
-    using var wsContext = await ctx.AcceptWebSocketAsync(null);
+    var wsContext = await ctx.AcceptWebSocketAsync(null);
     var socket = wsContext.WebSocket;
     var buffer = new byte[64 * 1024];
 
