@@ -1,1 +1,53 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Deepgram → OpenVoice V2</title><style>body{margin:0;background:#0b0f16;color:#eef2f7;font:15px system-ui,sans-serif}main{max-width:760px;margin:40px auto;padding:0 18px}.card{background:#141a24;border:1px solid #293449;border-radius:16px;padding:20px;margin:14px 0}h1{margin:0 0 6px}p{color:#9eabc0}label{display:block;font-size:12px;color:#b8c2d2;margin:12px 0 6px}input{width:100%;box-sizing:border-box;background:#0b111a;color:#fff;border:1px solid #344057;border-radius:9px;padding:11px}button{border:0;border-radius:9px;padding:11px 16px;background:#705cff;color:white;font-weight:700;cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}.stop{background:#a23d55}.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}.status{white-space:pre-wrap;background:#0b1018;border-radius:10px;padding:12px;font:12px ui-monospace,monospace}.transcript{min-height:55px;background:#0b1018;border-radius:10px;padding:14px;font-size:18px}.small{font-size:12px;line-height:1.5}</style></head><body><main><div class="card"><h1>Deepgram → OpenVoice V2</h1><p>Mic → Deepgram STT → Deepgram Aura TTS → local OpenVoice V2 → Chrome audio.</p><label>Deepgram API key or temporary token</label><input id="key" type="password" autocomplete="off" placeholder="Paste token here"><label>Deepgram TTS voice</label><input id="voice" value="aura-2-asteria-en"><label>Reference voice (.wav)</label><input id="ref" type="file" accept=".wav,audio/wav"><div class="row"><button id="load">Load voice</button><button id="start" disabled>Start listening</button><button id="stop" class="stop" disabled>Stop</button></div></div><div class="card"><div id="status" class="status">Select a clean WAV reference and press Load voice.</div></div><div class="card"><label>Latest transcript</label><div id="transcript" class="transcript">—</div></div><div class="card small">Chrome handles the microphone and Deepgram WebSockets. OpenVoice V2 stays local. Each TTS utterance is buffered before conversion to avoid chopped starts and ends.</div></main><script src="./app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WebGPU Voice Changer</title>
+<style>
+:root{color-scheme:dark}body{margin:0;background:#090d14;color:#eef2f7;font:15px system-ui,sans-serif}
+main{max-width:760px;margin:36px auto;padding:0 18px}.card{background:#121925;border:1px solid #293449;border-radius:16px;padding:20px;margin:14px 0}
+h1{margin:0 0 6px}p{color:#9eabc0;line-height:1.5}label{display:block;font-size:12px;color:#b8c2d2;margin:14px 0 6px}
+input,select{width:100%;box-sizing:border-box;background:#0a1019;color:#fff;border:1px solid #344057;border-radius:9px;padding:11px}
+button{border:0;border-radius:9px;padding:11px 16px;background:#705cff;color:white;font-weight:700;cursor:pointer}
+button:disabled{opacity:.45;cursor:not-allowed}.stop{background:#a23d55}.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+.status{white-space:pre-wrap;background:#090e16;border-radius:10px;padding:12px;font:12px ui-monospace,monospace;line-height:1.5}
+.badge{display:inline-block;padding:4px 8px;border-radius:99px;background:#1d2940;color:#bcd0ff;font-size:12px;margin-right:6px}
+.small{font-size:12px;line-height:1.5}.ok{border-color:#2d8a5b}.err{border-color:#9c3c54}
+</style>
+</head>
+<body>
+<main>
+<div class="card">
+<h1>WebGPU Voice Changer</h1>
+<p><span class="badge">No Python</span><span class="badge">No STT</span><span class="badge">No TTS</span><span class="badge">Continuous mic</span></p>
+<p>Your default headset microphone stays open. RVC conversion runs locally in Chrome with ONNX Runtime Web; converted audio is sent to your selected playback device/Voicemeeter.</p>
+
+<label>RVC target voice model (.onnx)</label>
+<input id="model" type="file" accept=".onnx,.pth">
+
+<label>ContentVec ONNX</label>
+<input id="content" type="file" accept=".onnx">
+
+<label>RMVPE ONNX</label>
+<input id="rmvpe" type="file" accept=".onnx">
+
+<label>Pitch shift</label>
+<select id="pitch"><option value="-12">-12</option><option value="-6">-6</option><option value="0" selected>0</option><option value="6">+6</option><option value="12">+12</option></select>
+
+<div class="row">
+<button id="load">Load voice model</button>
+<button id="start" disabled>Start continuous mic</button>
+<button id="stop" class="stop" disabled>Stop</button>
+</div>
+</div>
+
+<div class="card"><div id="status" class="status">Choose an RVC v2 .onnx voice model plus ContentVec and RMVPE files.</div></div>
+
+<div class="card small">
+<strong>Important:</strong> this version keeps the microphone continuous, but browser RVC inference is chunk-based. It is designed to keep the mic alive while conversion happens in a worker. The RVC main model currently runs through WASM; ContentVec and RMVPE can use WebGPU.
+</div>
+</main>
+<script type="module" src="./app.js"></script>
+</body>
+</html>
