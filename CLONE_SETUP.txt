@@ -1,0 +1,17 @@
+OPENVOICE V2 CLONE-ONLY APP
+
+1. Put the OpenVoice V2 repository files/dependencies on this machine.
+2. Put the V2 converter checkpoint here:
+   checkpoints_v2\converter\config.json
+   checkpoints_v2\converter\checkpoint.pth
+3. Double-click clone.bat.
+4. Open index.html.
+5. Select a WAV reference and click Clone this voice.
+
+The browser no longer asks you to type a converter URL.
+The local server enables CORS, including OPTIONS preflight, so the browser does not fail with the generic "Failed to fetch" message.
+
+The clone is saved as:
+cloned_voice\voice_embedding.pth
+
+This is the reusable OpenVoice speaker/tone-color embedding. It is not a full newly trained neural network.
