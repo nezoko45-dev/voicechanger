@@ -68,7 +68,7 @@
 const REF_MODEL='https://huggingface.co/TigreGotico/voiceclonnx-openvoice-v2/resolve/main/tone_ref_encoder.onnx';
 const CONV_MODEL='https://huggingface.co/TigreGotico/voiceclonnx-openvoice-v2/resolve/main/tone_converter.onnx';
 const MODEL_SR=22050,NFFT=1024,HOP=256,PAD=384,BINS=513,CHUNK_SEC=.90;
-const CHUNK_IN=Math.round(MODEL_SR*CHUNK_SEC),CAPTURE_SR=48000,FADE_SEC=.018;
+const CHUNK_IN=Math.round(MODEL_SR*CHUNK_SEC),CAPTURE_SR=48000,FADE_SEC=.090,OUTPUT_LEVEL=.82;
 const $=id=>document.getElementById(id);
 
 let refSession=null,convSession=null,targetEmbedding=null,refAudio=null,selectedReferenceFile=null;
@@ -190,23 +190,49 @@ async function convertChunk(audio){
  const result=await convSession.run({spec:specT,spec_lengths:lenT,src_g:srcT,tgt_g:tgtT});return new Float32Array(result[convSession.outputNames[0]].data)
 }
 function scheduleAudio(samples){
- if(!outCtx)return;const clean=new Float32Array(samples.length);
- for(let i=0;i<samples.length;i++)clean[i]=Math.max(-1,Math.min(1,samples[i]));
- const b=outCtx.createBuffer(1,clean.length,MODEL_SR);b.copyToChannel(clean,0);
- const src=outCtx.createBufferSource(),gain=outCtx.createGain();src.buffer=b;src.connect(gain);gain.connect(outCtx.destination);
- const now=outCtx.currentTime;if(playbackTime<now+.035)playbackTime=now+.035;const start=Math.max(now+.02,playbackTime-FADE_SEC),end=start+b.duration;
- if(lastGain){try{lastGain.gain.cancelScheduledValues(start);lastGain.gain.setValueAtTime(1,start);lastGain.gain.linearRampToValueAtTime(0,Math.min(end,start+FADE_SEC))}catch{}}
- gain.gain.setValueAtTime(0,start);gain.gain.linearRampToValueAtTime(1,start+FADE_SEC);gain.gain.setValueAtTime(1,Math.max(start+FADE_SEC,end-FADE_SEC));gain.gain.linearRampToValueAtTime(0,end);
- src.start(start);playbackTime=end;lastGain=gain
+ if(!outCtx||!samples?.length)return;
+ // OpenVoice V2 emits 22.05 kHz float32. Resample explicitly to the output
+ // device rate so Chrome does not have to perform a second implicit conversion.
+ let peak=0;
+ for(let i=0;i<samples.length;i++){
+  const a=Math.abs(samples[i]);
+  if(a>peak)peak=a;
+ }
+ const scale=peak>0.0001?Math.min(OUTPUT_LEVEL/peak,OUTPUT_LEVEL/0.05):1;
+ const normalized=new Float32Array(samples.length);
+ for(let i=0;i<samples.length;i++)normalized[i]=samples[i]*scale;
+ const clean=resampleLinear(normalized,MODEL_SR,outCtx.sampleRate);
+ const b=outCtx.createBuffer(1,clean.length,outCtx.sampleRate);b.copyToChannel(clean,0);
+ const src=outCtx.createBufferSource(),gain=outCtx.createGain();
+ src.buffer=b;src.connect(gain);gain.connect(outCtx.destination);
+ const now=outCtx.currentTime;
+ if(playbackTime<now+.035)playbackTime=now+.035;
+ const start=Math.max(now+.02,playbackTime-FADE_SEC),end=start+b.duration;
+ // Chunks overlap by 10%. Crossfade the full overlap instead of leaving
+ // duplicate audio on top of itself, which caused combing/muffling.
+ if(lastGain){
+  try{
+   lastGain.gain.cancelScheduledValues(start);
+   lastGain.gain.setValueAtTime(1,start);
+   lastGain.gain.linearRampToValueAtTime(0,Math.min(end,start+FADE_SEC));
+  }catch{}
+ }
+ gain.gain.setValueAtTime(0,start);
+ gain.gain.linearRampToValueAtTime(1,start+FADE_SEC);
+ gain.gain.setValueAtTime(1,Math.max(start+FADE_SEC,end-FADE_SEC));
+ gain.gain.linearRampToValueAtTime(0,end);
+ src.start(start);
+ playbackTime=end;
+ lastGain=gain
 }
 async function processLoop(){
  if(processing)return;processing=true;
  try{while(running){
   const need=Math.round(CHUNK_IN*CAPTURE_SR/MODEL_SR);if(inputBuffer.length<need){await new Promise(r=>setTimeout(r,12));continue}
   const chunk=inputBuffer.slice(0,need);inputBuffer=inputBuffer.slice(Math.floor(need*.90));const level=rms(chunk);if(level<.008)continue;
-  status('Converting live audio…','busy');detail('OpenVoice V2 FP32 inference • chunk '+(++convertedCount));
+  status('Converting live audio…','busy');detail('OpenVoice V2 FP32 inference • chunk '+(++convertedCount)+' • overlap crossfade');
   const t0=performance.now(),audio=await convertChunk(chunk);if(!running)break;scheduleAudio(audio);const ms=Math.round(performance.now()-t0);
-  progress(Math.min(100,Math.round((CHUNK_SEC*1000/Math.max(1,ms))*100)));detail('OpenVoice V2 FP32 • '+ms+' ms inference • output queued');status('Live • OpenVoice V2 → output','live')
+  progress(Math.min(100,Math.round((CHUNK_SEC*1000/Math.max(1,ms))*100)));detail('OpenVoice V2 FP32 • '+ms+' ms inference • normalized 0.82 peak • output queued');status('Live • OpenVoice V2 → output','live')
  }}catch(e){console.error(e);status('Conversion error');detail(e.stack||e.message||String(e));await stop()}finally{processing=false}
 }
 async function loadModels(){
