@@ -61,7 +61,7 @@
 </div>
 </main>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.22.0/ort.webgpu.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.22.0/ort.min.js"></script>
 <script>
 'use strict';
 
@@ -241,14 +241,10 @@ async function loadModels(){
   status('Downloading OpenVoice V2 FP32 models…','busy');detail('Downloading the full-precision models and caching them locally.');progress(5);
   const [refBytes,convBytes]=await Promise.all([cachedFetch(REF_MODEL),cachedFetch(CONV_MODEL)]);progress(45);
   ort.env.wasm.wasmPaths='https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.22.0/';
-  try{
-   refSession=await ort.InferenceSession.create(refBytes,{executionProviders:['webgpu'],graphOptimizationLevel:'all'});
-   convSession=await ort.InferenceSession.create(convBytes,{executionProviders:['webgpu'],graphOptimizationLevel:'all'});
-  }catch(e){
-   console.warn('WebGPU unavailable; using WASM',e);detail('WebGPU could not load the FP32 model; retrying with WASM CPU.');
-   refSession=await ort.InferenceSession.create(refBytes,{executionProviders:['wasm'],graphOptimizationLevel:'all'});
-   convSession=await ort.InferenceSession.create(convBytes,{executionProviders:['wasm'],graphOptimizationLevel:'all'});
-  }
+  // Use CPU/WASM in Electron. This avoids Windows GPU/WebGPU renderer crashes.
+  detail('Loading OpenVoice V2 on the stable CPU/WASM backend...');
+  refSession=await ort.InferenceSession.create(refBytes,{executionProviders:['wasm'],graphOptimizationLevel:'all'});
+  convSession=await ort.InferenceSession.create(convBytes,{executionProviders:['wasm'],graphOptimizationLevel:'all'});
   progress(100);
   status('OpenVoice V2 FP32 ready');
   detail(selectedReferenceFile
