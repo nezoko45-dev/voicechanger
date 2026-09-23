@@ -10,8 +10,8 @@
 <div class="row"><label>Runtime</label><span id="gpu" class="pill">Checking WebGPU...</span><span class="pill">ONNX Runtime Web</span></div>
 <div class="row"><label>1. Download the default voice model</label><button id="downloadVoice">Download GuraTalkV2 voice</button><button id="clearCache" class="secondary">Clear model cache</button><div class="small">A public RVC v2 ONNX voice model. Replace the URL later if you want another compatible voice.</div></div>
 <div class="row"><label>2. Download browser base models</label><button id="downloadBase">Download ContentVec + RMVPE</button><div class="bar"><i id="progress"></i></div><div id="downloadStatus" class="small">Not downloaded.</div></div>
-<div class="row"><label>3. Microphone</label><select id="mic"><option value="">Choose microphone...</option></select><button id="enableMic">Enable microphone</button><button id="refresh">Refresh devices</button></div>
-<div class="row"><label>4. Output</label><select id="output"><option value="">Default output</option></select><button id="refreshOut">Refresh outputs</button></div>
+<div class="row"><label>3. Microphone / Audio Input</label><select id="mic"><option value="">Choose microphone / input...</option></select><button id="enableMic">Enable microphone access</button><button id="refresh">Refresh microphones</button><div class="small">Your physical mic or virtual input (such as Voicemeeter) will appear here after microphone access is allowed.</div></div>
+<div class="row"><label>4. Speaker / Audio Output</label><select id="output"><option value="">Default speaker / output...</option></select><button id="refreshOut">Refresh outputs</button><div class="small">Choose your speakers, headphones, or Voicemeeter output here.</div></div>
 <div class="row"><label>5. Voice conversion</label><button id="start" disabled>Start Voice Changer</button><button id="stop" disabled class="secondary">Stop</button><div class="small">Short chunks keep latency bounded. ContentVec and RMVPE use WebGPU when available; the RVC synthesizer uses WASM.</div></div>
 </div>
 <div id="status" class="status">Download the voice and base models first.</div>
@@ -38,8 +38,8 @@ async function download(k,url,label){
 }
 async function devices(){
  const ds=await navigator.mediaDevices.enumerateDevices();
- $("mic").replaceChildren(new Option("Choose microphone...",""));ds.filter(d=>d.kind==="audioinput").forEach(d=>$("mic").add(new Option(d.label||"Microphone",d.deviceId)));
- $("output").replaceChildren(new Option("Default output",""));ds.filter(d=>d.kind==="audiooutput").forEach(d=>$("output").add(new Option(d.label||"Output",d.deviceId)));
+ $("mic").replaceChildren(new Option("Choose microphone / input...",""));ds.filter(d=>d.kind==="audioinput").forEach((d,i)=>$("mic").add(new Option(d.label||`Microphone / Input ${i+1}`,d.deviceId)));
+ $("output").replaceChildren(new Option("Default speaker / output...",""));ds.filter(d=>d.kind==="audiooutput").forEach((d,i)=>$("output").add(new Option(d.label||`Speaker / Output ${i+1}`,d.deviceId)));
 }
 async function ready(){const a=await get("voice").catch(()=>null),b=await get("content").catch(()=>null),c=await get("pitch").catch(()=>null);$("start").disabled=!(a&&b&&c)}
 async function models(){status("Downloading/checking models...");const v=await download("voice",VOICE_URL,"GuraTalkV2");const c=await download("content",CONTENT_URL,"ContentVec");const p=await download("pitch",PITCH_URL,"RMVPE");$("downloadStatus").textContent="All models ready.";await ready();return{voice:v,content:c,pitch:p}}
@@ -59,7 +59,7 @@ async function loop(m){
 $("downloadVoice").onclick=async()=>{try{await download("voice",VOICE_URL,"GuraTalkV2");status("Default voice model ready.");await ready()}catch(e){status("Voice download failed: "+e.message)}};
 $("downloadBase").onclick=async()=>{try{await models()}catch(e){status("Model download failed: "+e.message)}};
 $("clearCache").onclick=async()=>{await clearCache();$("progress").style.width="0%";$("downloadStatus").textContent="Cache cleared.";status("Model cache cleared.");await ready()};
-$("enableMic").onclick=async()=>{try{await navigator.mediaDevices.getUserMedia({audio:true});await devices();status("Microphone access granted. Choose your microphone, then Start Voice Changer.");await ready()}catch(e){status("Microphone permission failed: "+e.message)}};$("refresh").onclick=async()=>{await devices();await ready()};$("refreshOut").onclick=devices;$("mic").onchange=ready;
+$("enableMic").onclick=async()=>{try{await navigator.mediaDevices.getUserMedia({audio:true});await devices();status("Microphone access granted! Your available input devices are now listed above. Choose one, then start the voice changer.");await ready()}catch(e){status("Microphone permission failed: "+e.message)}};$("refresh").onclick=async()=>{await devices();await ready()};$("refreshOut").onclick=devices;$("mic").onchange=ready;
 $("start").onclick=async()=>{try{const m={voice:await get("voice"),content:await get("content"),pitch:await get("pitch")};if(!m.voice||!m.content||!m.pitch)throw new Error("Download all models first.");if(!$("mic").value){await devices();if(!$("mic").value)throw new Error("Choose a microphone from the list first.");}
  micStream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:{exact:$("mic").value},channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
  micCtx=new AudioContext({sampleRate:16000});await micCtx.resume();const src=micCtx.createMediaStreamSource(micStream);await makeWorklet();src.connect(worklet);
