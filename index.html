@@ -54,7 +54,7 @@ async function play(blob){
 }
 async function loop(m){
  while(running){if(!queue.length||processing){await new Promise(r=>setTimeout(r,8));continue}const audio=queue.shift();processing=true;
-  try{const rvc=createRVC();const c=await runPipelineInWorker(rvc,{model:m.voice,contentVec:m.content,rmvpe:m.pitch},audio,micCtx.sampleRate,{onEvent:e=>{if(e.type==="stage")status("Stage: "+e.stage)}},{timeout:120000,chunkDuration:1.5,padDuration:.25,outputSampleRate:48000,contentVecBackend:navigator.gpu?"webgpu":"wasm",rmvpeBackend:navigator.gpu?"webgpu":"wasm",rvcBackend:"wasm"});if(c.outputWav)await play(c.outputWav)}catch(e){status("Conversion error: "+(e.message||e));running=false}processing=false}
+  try{const rvc=createRVC();status("Converting speech...");const c=await runPipelineInWorker(rvc,{model:m.voice,contentVec:m.content,rmvpe:m.pitch},audio,micCtx.sampleRate,{onEvent:e=>{if(e.type==="stage")status("Stage: "+e.stage);if(e.type==="error")status("Runtime: "+(e.message||"model inference error"))}},{timeout:120000,chunkDuration:1.5,padDuration:.25,outputSampleRate:48000,contentVecBackend:"wasm",rmvpeBackend:"wasm",rvcBackend:"wasm"});if(c.outputWav)await play(c.outputWav)}catch(e){status("Conversion error: "+(e.message||e));running=false}processing=false}
 }
 $("downloadVoice").onclick=async()=>{try{await download("voice",VOICE_URL,"GuraTalkV2");status("Default voice model ready.");await ready()}catch(e){status("Voice download failed: "+e.message)}};
 $("downloadBase").onclick=async()=>{try{await models()}catch(e){status("Model download failed: "+e.message)}};
