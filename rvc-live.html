@@ -109,16 +109,51 @@ async function loadVoice(){
    refresh();
  }catch(e){vmsg("Voice model error: "+(e.message||e))}
 }
-async function downloadBase(){
+async function downloadFile(url,label,onProgress){
+ const controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),10*60*1000);
  try{
-  for(const [key,url,label] of [[CONTENT_KEY,CONTENT_URL,"ContentVec"],[PITCH_KEY,PITCH_URL,"RMVPE"]]){
-   if(await get(key))continue;
-   mmsg("Downloading "+label+"...");
-   const r=await fetch(url); if(!r.ok)throw new Error(label+" HTTP "+r.status);
-   const b=await r.blob(); await put(key,new File([b],label+".onnx",{type:"application/octet-stream"}));
+  const r=await fetch(url,{signal:controller.signal,cache:"no-store"});
+  if(!r.ok)throw new Error(label+" HTTP "+r.status);
+  if(!r.body) return new Blob([await r.arrayBuffer()],{type:"application/octet-stream"});
+  const total=Number(r.headers.get("content-length"))||0;
+  const reader=r.body.getReader();
+  const parts=[];let loaded=0;
+  for(;;){
+   const {done,value}=await reader.read();
+   if(done)break;
+   parts.push(value);loaded+=value.byteLength;
+   onProgress(loaded,total);
   }
-  mmsg("ContentVec + RMVPE ready."); $("progress").style.width="100%"; refresh();
- }catch(e){mmsg("Model download failed: "+(e.message||e))}
+  return new Blob(parts,{type:"application/octet-stream"});
+ }finally{clearTimeout(timer)}
+}
+async function downloadBase(){
+ if($("downloadBase").disabled)return;
+ $("downloadBase").disabled=true;
+ try{
+  const items=[[CONTENT_KEY,CONTENT_URL,"ContentVec"],[PITCH_KEY,PITCH_URL,"RMVPE"]];
+  for(let i=0;i<items.length;i++){
+   const [key,url,label]=items[i];
+   if(await get(key))continue;
+   mmsg("Downloading "+label+"… 0%");
+   const b=await downloadFile(url,label,(loaded,total)=>{
+    const pct=total?Math.min(100,Math.round(loaded/total*100)):0;
+    const overall=Math.round((i*100+pct)/items.length);
+    $("progress").style.width=overall+"%";
+    mmsg("Downloading "+label+"… "+(total?(pct+"%"):(Math.round(loaded/1048576)+" MB")));
+   });
+   await put(key,new File([b],label+".onnx",{type:"application/octet-stream"}));
+  }
+  $("progress").style.width="100%";
+  mmsg("ContentVec + RMVPE ready.");
+  refresh();
+ }catch(e){
+  const text=e.name==="AbortError"?"Download timed out after 10 minutes.":(e.message||e);
+  mmsg("Model download failed: "+text);
+ }finally{
+  $("downloadBase").disabled=false;
+ }
 }
 async function refresh(){
  const a=await get(VOICE_KEY),b=await get(CONTENT_KEY),c=await get(PITCH_KEY);
