@@ -18,25 +18,29 @@ small{color:#aeb8c9;line-height:1.55}
 <body>
 <main><div class="card">
 <h1>OpenVoice V2 Voice Clone</h1>
-<p>Choose a WAV reference and send it to the local clone launcher.</p>
+<p>Choose a WAV and copy it into the clone input folder.</p>
 
 <input id="voice" type="file" accept=".wav,audio/wav">
-<button id="clone" disabled>Clone this voice</button>
+<button id="save" disabled>Save WAV to Clone Folder</button>
 
 <div id="status" class="box">Choose a WAV file.</div>
+
 <div class="box"><small>
-Simple clone-only mode.
-Chrome handles the file selection. The local BAT handles OpenVoice.
-No Flask and no web server are required.
+1. Start clone.bat.
+2. It creates and watches the clone_input folder.
+3. Choose your WAV here.
+4. Click Save WAV to Clone Folder.
+5. OpenVoice automatically detects it and creates the voice embedding.
+
+If Chrome asks where to save the file, choose the clone_input folder.
 </small></div>
 </div></main>
 
 <script>
 (function(){
 "use strict";
-
 var voice=document.getElementById("voice");
-var btn=document.getElementById("clone");
+var save=document.getElementById("save");
 var status=document.getElementById("status");
 
 function setStatus(s){status.textContent=s}
@@ -44,23 +48,26 @@ function setStatus(s){status.textContent=s}
 voice.addEventListener("change",function(){
     var file=voice.files && voice.files[0];
     var ok=file && file.name.toLowerCase().endsWith(".wav");
-    btn.disabled=!ok;
-
-    if(ok){
-        setStatus("WAV ready: " + file.name + "\nClick Clone this voice.");
-    }else{
-        setStatus("Please choose a WAV file.");
-    }
+    save.disabled=!ok;
+    setStatus(ok ? "Ready: " + file.name : "Please choose a WAV file.");
 });
 
-btn.addEventListener("click",function(){
+save.addEventListener("click",function(){
     var file=voice.files && voice.files[0];
     if(!file)return;
 
+    var a=document.createElement("a");
+    a.href=URL.createObjectURL(file);
+    a.download=file.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function(){URL.revokeObjectURL(a.href)},1000);
+
     setStatus(
-        "WAV selected: " + file.name +
-        "\n\nChrome cannot launch clone.bat directly." +
-        "\n\nUse clone.bat and drop this WAV onto it."
+      "WAV exported: " + file.name +
+      "\n\nIf Chrome opened a Save As dialog, select the clone_input folder." +
+      "\nThe watcher will process it automatically."
     );
 });
 
