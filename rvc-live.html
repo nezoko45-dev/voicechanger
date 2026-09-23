@@ -80,7 +80,7 @@ const CONTENT_URL="https://huggingface.co/NaruseMioShirakana/MoeSS-SUBModel/reso
 const PITCH_URL="https://huggingface.co/NaruseMioShirakana/MoeSS-SUBModel/resolve/main/RMVPE.onnx";
 
 let db, voice=null, rvc=null, running=false, inputCtx=null, workletNode=null, micStream=null;
-let queue=[], processing=false, outputCtx=null, nextPlay=0;
+let queue=[], processing=false, outputCtx=null, nextPlay=0, keepAliveNode=null;
 
 function msg(t,cls=""){ $("status").textContent=t; $("status").className="status "+cls; }
 function vmsg(t){$("voiceStatus").textContent=t}
@@ -203,9 +203,17 @@ async function start(){
  workletNode=new AudioWorkletNode(inputCtx,"rvc-capture");
  const chunkSeconds=Number($("chunk").value);
  workletNode.port.postMessage({chunkSeconds});
- workletNode.port.onmessage=e=>{if(running){queue.push(e.data);processQueue(content,pitch)}};
+ workletNode.port.onmessage=e=>{
+  if(!running)return;
+  queue.push(e.data);
+  processQueue(content,pitch);
+ };
  src.connect(workletNode);
- // Do not connect the microphone to inputCtx.destination: this prevents local dry mic echo.
+ // Keep the AudioWorklet in Chrome's active audio graph without sending dry mic audio to the speakers.
+ keepAliveNode=inputCtx.createGain();
+ keepAliveNode.gain.value=0;
+ workletNode.connect(keepAliveNode);
+ keepAliveNode.connect(inputCtx.destination);
  rvc=createRVC();
  msg("Listening — speak normally. Your microphone is being converted to the cloned voice.","ok");
 }
@@ -244,9 +252,10 @@ async function play(wav){
 function stop(){
  running=false;queue=[];
  try{workletNode?.disconnect()}catch{}
+ try{keepAliveNode?.disconnect()}catch{}
  try{micStream?.getTracks().forEach(t=>t.stop())}catch{}
  try{inputCtx?.close()}catch{}
- workletNode=null;micStream=null;inputCtx=null;
+ workletNode=null;keepAliveNode=null;micStream=null;inputCtx=null;
  $("start").disabled=false;$("stop").disabled=true;msg("Stopped.");
 }
 $("voiceFile").onchange=loadVoice;
