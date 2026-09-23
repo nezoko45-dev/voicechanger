@@ -1,42 +1,33 @@
-# Seed-VC Real-Time Voice Changer
+# ONNX Web Voice Changer
 
-Simple speech-to-speech voice cloning for Windows.
+Browser-only speech-to-speech RVC voice conversion.
 
-**Microphone → Seed-VC real-time voice conversion → Voicemeeter / VRChat**
+**Microphone → ONNX Runtime Web / RVC → browser audio → Voicemeeter / VRChat**
 
-## Included
-
-- `index.html` — simple reference-voice helper.
-- `start.bat` — one-click setup and launch.
-- `requirements-seedvc.txt` — dependencies.
-- `clone_input/` — reference voice folder.
-- `models/` — model storage folder.
-- `output/` — output folder.
-
-The complete Seed-VC real-time source is downloaded automatically into `seed-vc/` on first run. The launcher checks the GUI, realtime engine, audio modules, and config so an incomplete installation is repaired.
+## No Python
+The active workflow uses Chrome/Edge only. No Python, .exe, Electron, server, STT, LLM, or TTS.
 
 ## First run
+1. Open the GitHub Pages site in current Chrome or Edge.
+2. Click **Download GuraTalkV2 voice**.
+3. Click **Download ContentVec + RMVPE**.
+4. Allow microphone access and choose the microphone.
+5. Choose the browser output device.
+6. Click **Start Voice Changer**.
 
-1. Install **Python 3.10**.
-2. Double-click `start.bat`.
-3. Wait for the numbered setup steps.
-4. Put your target/reference WAV in `clone_input\reference.wav`.
-5. Seed-VC opens its real-time GUI.
-6. Select that WAV as **reference audio**.
-7. Select your microphone as **Input Device**.
-8. Select **Voicemeeter Input** or your virtual cable as **Output Device**.
-9. Click **Start Voice Conversion**.
+Models are cached in IndexedDB after downloading.
 
-This is **speech-to-speech voice conversion**. There is no STT, LLM, or TTS.
+The base models are quantized ONNX versions to reduce the browser download size. The first download is still large because RVC needs a target voice, a 768-dimensional content encoder, and a pitch estimator.
 
-## If setup looks stuck
+## Default voice
+The default is **GuraTalkV2**, a public RVC v2 ONNX model hosted on Hugging Face. Its upstream talking-voice model repository is marked OpenRAIL. Use the model according to its published license/terms.
 
-The first run can take several minutes while Python packages and the Seed-VC model are downloaded. The launcher now reports Python setup, source download, dependency installation, and launch.
-
-If Seed-VC is incomplete, run `start.bat` again; it will repair the missing source files.
+## Runtime
+The app uses `rvc-web-runtime` 1.0.5. The runtime documents ContentVec + RMVPE WebGPU acceleration and an RVC synthesizer running through WASM because of a current WebGPU kernel limitation. It is an alpha-stage browser RVC runtime, so live conversational latency will depend heavily on your computer.
 
 ## VRChat
+Route the browser output to your Voicemeeter path if Chrome exposes that output device, then select the corresponding virtual microphone in VRChat.
 
-Route Seed-VC's output into your Voicemeeter virtual microphone path, then select that virtual microphone in VRChat.
-
-No Electron audio pipeline is required.
+## Sources
+- RVC-Web-Runtime: https://github.com/moyue23/rvc-web-runtime
+- Default voice: https://huggingface.co/DogManTC/test-rvc-onnx
