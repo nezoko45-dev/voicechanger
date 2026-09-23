@@ -131,25 +131,6 @@ async function devices(){
  }catch{}
 }
 
-function workletCode(){
- return `
- class Capture extends AudioWorkletProcessor{
-   constructor(){super();this.buf=[];this.n=0;this.target=sampleRate*2;this.port.onmessage=e=>{if(e.data?.chunkSeconds)this.target=sampleRate*Number(e.data.chunkSeconds)}}
-   process(inputs){
-     const x=inputs[0]?.[0]; if(!x)return true;
-     const c=new Float32Array(x); this.buf.push(c); this.n+=c.length;
-     while(this.n>=this.target){
-       const out=new Float32Array(this.n);let p=0;
-       for(const a of this.buf){out.set(a,p);p+=a.length}
-       this.port.postMessage(out.slice(0,this.target));
-       const rest=out.slice(this.target);this.buf=rest.length?[rest]:[];this.n=rest.length;
-     }
-     return true;
-   }
- }
- registerProcessor('rvc-capture',Capture);
- `;
-}
 async function start(){
  if(running)return;
  if(!isWorkerSupported())throw new Error("This browser lacks the required Web Worker/WASM features.");
