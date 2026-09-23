@@ -3,68 +3,39 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Seed-VC Voice Changer</title>
+<title>Browser ONNX Voice Changer</title>
 <style>
-body{margin:0;background:#080b11;color:#fff;font:16px Arial,sans-serif}
-main{max-width:680px;margin:45px auto;padding:20px}
-.card{background:#121824;border:1px solid #303a4d;border-radius:18px;padding:28px}
-h1{margin-top:0}
-input{width:100%;box-sizing:border-box;padding:13px;margin:10px 0 16px;background:#080d15;color:#fff;border:1px solid #40506a;border-radius:10px}
-button{padding:13px 20px;border:0;border-radius:10px;background:#765cff;color:#fff;font-weight:bold;cursor:pointer;margin:4px}
-button:disabled{opacity:.45;cursor:not-allowed}
-.box{margin-top:14px;padding:14px;background:#080d15;border-radius:10px;white-space:pre-wrap}
-small{color:#aeb8c9;line-height:1.6}
-.ok{color:#8ff0a4}
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#080b11;color:#f5f7fb;font:16px system-ui,Arial,sans-serif}main{max-width:760px;margin:32px auto;padding:16px}.card{background:#121824;border:1px solid #303a4d;border-radius:18px;padding:26px}h1{margin:0 0 8px}p{color:#b9c3d4;line-height:1.5}.row{display:grid;gap:8px;margin:18px 0}label{font-weight:700}input,select,button{font:inherit;border-radius:10px;padding:12px}input,select{width:100%;background:#080d15;color:#fff;border:1px solid #40506a}button{border:0;background:#765cff;color:#fff;font-weight:700;cursor:pointer;margin:4px 4px 4px 0}button:disabled{opacity:.4;cursor:not-allowed}.status{white-space:pre-wrap;background:#080d15;border:1px solid #27344a;border-radius:12px;padding:14px;margin-top:18px}.good{color:#8ff0a4}.warn{color:#ffd479}.small{font-size:13px;color:#9eabc0}
 </style>
 </head>
-<body>
-<main><div class="card">
-<h1>Seed-VC Speech-to-Speech</h1>
-<p>Real-time voice conversion — your microphone speech is converted into the selected reference voice.</p>
+<body><main><section class="card">
+<h1>ONNX Runtime WebGPU Voice Changer</h1>
+<p>Browser-only setup for local voice conversion. No Python, Electron, server, STT, LLM, or TTS.</p>
 
-<label for="voice">Reference voice WAV</label>
-<input id="voice" type="file" accept=".wav,audio/wav">
-<button id="save" disabled>Save Reference WAV</button>
-
-<div id="status" class="box">Choose a WAV reference voice.</div>
-
-<div class="box"><small>
-1. Run start.bat.
-2. Choose a 1–30 second WAV sample here.
-3. Click Save Reference WAV.
-4. Seed-VC's real-time window will open.
-5. Select clone_input\reference.wav as the reference voice.
-6. Select your microphone as Input.
-7. Select Voicemeeter Input / your virtual cable as Output.
-8. Start Voice Conversion.
-
-This is speech-to-speech conversion. There is no STT, LLM, or TTS in this app.
-</small></div>
-</div></main>
-<script>
-"use strict";
-const voice=document.getElementById("voice");
-const save=document.getElementById("save");
-const status=document.getElementById("status");
-function setStatus(s){status.textContent=s}
-voice.addEventListener("change",()=>{
-  const file=voice.files&&voice.files[0];
-  const ok=file&&file.name.toLowerCase().endsWith(".wav");
-  save.disabled=!ok;
-  setStatus(ok?"Ready: "+file.name:"Please choose a WAV file.");
-});
-save.addEventListener("click",()=>{
-  const file=voice.files&&voice.files[0];
-  if(!file)return;
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(file);
-  a.download="reference.wav";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
-  setStatus("Reference exported as reference.wav.\n\nSave it into the clone_input folder if Chrome asks. Seed-VC can then use it as the target voice.");
-});
-</script>
-</body>
-</html>
+<div class="row"><label>1. Runtime check</label><button id="check">Check WebGPU + ONNX Runtime</button></div>
+<div class="row"><label for="reference">2. Target voice model (.onnx)</label><input id="reference" type="file" accept=".onnx"></div>
+<div class="row"><label for="content">3. Content encoder (.onnx)</label><input id="content" type="file" accept=".onnx"></div>
+<div class="row"><label for="pitch">4. Pitch model (.onnx)</label><input id="pitch" type="file" accept=".onnx"></div>
+<div class="row"><label for="mic">5. Microphone</label><button id="mic">Enable microphone</button></div>
+<div class="row"><label for="output">6. Audio output</label><select id="output"><option value="">Default output</option></select><button id="outputs">Refresh outputs</button></div>
+<button id="start" disabled>Start conversion</button><button id="stop" disabled>Stop</button>
+<div id="status" class="status">Ready. Check WebGPU first.</div>
+<p class="small">Important: ONNX Runtime Web can execute ONNX models in Chrome/Edge, but a real voice-conversion pipeline still requires compatible conversion models and preprocessing. This page deliberately does not fake conversion or send microphone audio anywhere.</p>
+</section></main>
+<script type="module">
+import * as ort from 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.0/+esm';
+const $=id=>document.getElementById(id);let stream=null,ctx=null,source=null;
+const status=t=>$('status').textContent=t;
+async function check(){
+ try{const gpu=!!navigator.gpu;let adapter=null;if(gpu)adapter=await navigator.gpu.requestAdapter();
+  ort.env.wasm.wasmPaths='https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.0/dist/';
+  const session=await ort.InferenceSession.create(new Uint8Array([8,0,0,0]),{executionProviders:['wasm']}).catch(()=>null);
+  status((adapter?'WebGPU detected.':'WebGPU unavailable; WASM fallback available.')+'\nONNX Runtime Web loaded successfully.\n'+(session?'WASM session test passed.':'Runtime loaded; model test will occur after a valid ONNX file is selected.'));
+ }catch(e){status('Runtime check failed: '+e.message)}
+}
+async function enableMic(){try{stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});ctx=new AudioContext();source=ctx.createMediaStreamSource(stream);source.connect(ctx.destination);status('Microphone enabled. Raw monitor is active. Choose compatible ONNX models before starting conversion.');$('start').disabled=false;$('mic').disabled=true;}catch(e){status('Microphone permission failed: '+e.message)}}
+$('check').onclick=check;$('mic').onclick=enableMic;
+$('stop').onclick=()=>{stream?.getTracks().forEach(t=>t.stop());source?.disconnect();ctx?.close();stream=null;source=null;$('start').disabled=true;$('stop').disabled=true;$('mic').disabled=false;status('Stopped.')};
+$('start').onclick=()=>{const files=[$('reference').files[0],$('content').files[0],$('pitch').files[0]];if(files.some(f=>!f)){status('Select all three compatible ONNX models first.');return}status('Model files selected. Full RVC/voice-conversion graph integration is not enabled yet; no fake converted audio will be produced.');$('stop').disabled=false};
+$('outputs').onclick=async()=>{if(!navigator.mediaDevices?.enumerateDevices){status('Audio device enumeration is unavailable.');return}const devices=await navigator.mediaDevices.enumerateDevices();$('output').replaceChildren(new Option('Default output',''));devices.filter(d=>d.kind==='audiooutput').forEach(d=>$('output').add(new Option(d.label||d.deviceId,d.deviceId)));status('Audio outputs refreshed.')};
+</script></body></html>
