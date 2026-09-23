@@ -1,43 +1,42 @@
-# Flux Continuous Voice
+# Seed-VC Real-Time Voice Changer
 
-Simple browser voice pipeline:
+Simple speech-to-speech voice cloning for Windows.
 
-**Microphone → Deepgram Flux STT → Deepgram Aura-2 Amalthea TTS → Chrome audio → Voicemeeter/VRChat**
+**Microphone → Seed-VC real-time voice conversion → Voicemeeter / VRChat**
 
-## What this build does
+## Included
 
-- Keeps the microphone and Flux STT WebSocket connected continuously.
-- Sends raw 16 kHz PCM to Deepgram Flux over `/v2/listen`.
-- Uses Flux's turn detection instead of repeatedly stopping/restarting recognition.
-- Keeps one persistent TTS WebSocket for the conversation.
-- Sends each completed transcript as a TTS turn.
-- Plays raw 24 kHz PCM as a scheduled audio queue to reduce gaps and chopped endings.
-- Sends Flux KeepAlive messages during silence.
+- `index.html` — simple reference-voice helper.
+- `start.bat` — one-click setup and launch.
+- `requirements-seedvc.txt` — dependencies.
+- `clone_input/` — reference voice folder.
+- `models/` — model storage folder.
+- `output/` — output folder.
 
-## Important voice detail
+The complete Seed-VC real-time source is downloaded automatically into `seed-vc/` on first run. The launcher checks the GUI, realtime engine, audio modules, and config so an incomplete installation is repaired.
 
-Deepgram's **Amalthea** voice is **Aura-2**, model `aura-2-amalthea-en`, with a Filipino English accent. Amalthea is not currently part of the Flux TTS voice catalog.
+## First run
 
-Therefore this version intentionally uses:
+1. Install **Python 3.10**.
+2. Double-click `start.bat`.
+3. Wait for the numbered setup steps.
+4. Put your target/reference WAV in `clone_input\reference.wav`.
+5. Seed-VC opens its real-time GUI.
+6. Select that WAV as **reference audio**.
+7. Select your microphone as **Input Device**.
+8. Select **Voicemeeter Input** or your virtual cable as **Output Device**.
+9. Click **Start Voice Conversion**.
 
-- **Flux STT:** `flux-general-en`
-- **Amalthea TTS:** `aura-2-amalthea-en`
+This is **speech-to-speech voice conversion**. There is no STT, LLM, or TTS.
 
-That is the combination that matches the requested continuous Flux listening plus Filipino Amalthea output.
+## If setup looks stuck
 
-## Run it
+The first run can take several minutes while Python packages and the Seed-VC model are downloaded. The launcher now reports Python setup, source download, dependency installation, and launch.
 
-1. Open `index.html` from a local web server or GitHub Pages.
-2. Paste a Deepgram API key or short-lived token into the page.
-3. Click **Start listening**.
-4. Allow microphone access.
-5. Speak normally.
-6. Route Chrome audio to Voicemeeter if you want the generated voice sent into VRChat.
+If Seed-VC is incomplete, run `start.bat` again; it will repair the missing source files.
 
-The key is entered at runtime and is not stored in this repository.
+## VRChat
 
-## Browser authentication
+Route Seed-VC's output into your Voicemeeter virtual microphone path, then select that virtual microphone in VRChat.
 
-Browsers cannot set an arbitrary Authorization header on a WebSocket constructor, so the app uses Deepgram's documented `Sec-WebSocket-Protocol` authentication form: `token, YOUR_KEY`.
-
-For public production deployments, use short-lived Deepgram tokens from a backend instead of exposing a long-lived API key to the browser.
+No Electron audio pipeline is required.
