@@ -3,84 +3,52 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 title OpenVoice V2 Voice Clone
 
-echo ========================================
-echo       OpenVoice V2 Voice Clone
-echo ========================================
-echo.
+if "%~1"=="" (
+    echo Drop a WAV file onto this BAT.
+    pause
+    exit /b 0
+)
 
-REM Keep the window open even if something fails.
-if "%~1"=="" goto NO_FILE
+if /I not "%~x1"==".wav" (
+    echo ERROR: Please drop a WAV file.
+    pause
+    exit /b 1
+)
 
 set "SOURCE=%~1"
-if /I not "%~x1"==".wav" (
-    echo ERROR: Please drop a WAV file onto clone.bat.
-    echo.
-    pause
-    exit /b 1
-)
+set "APP=%~dp0index.html"
 
-echo Reference file:
+echo WAV received:
 echo "%SOURCE%"
 echo.
+echo Opening Chrome...
 
-where py >nul 2>nul
-if errorlevel 1 (
-    echo ERROR: Python is not installed or the Python launcher is unavailable.
-    echo.
-    pause
-    exit /b 1
+REM Open the clone UI in Chrome and pass the WAV path to it.
+where chrome >nul 2>nul
+if not errorlevel 1 (
+    start "" chrome "%APP%?wav=%SOURCE%"
+    goto OPENED
 )
 
-if not exist ".venv\Scripts\python.exe" (
-    echo Creating local Python environment...
-    py -3 -m venv .venv
-    if errorlevel 1 (
-        echo.
-        echo ERROR: Could not create the Python environment.
-        echo.
-        pause
-        exit /b 1
-    )
+if exist "%ProgramFiles%\Google\Chrome\Application\chrome.exe" (
+    start "" "%ProgramFiles%\Google\Chrome\Application\chrome.exe" "%APP%?wav=%SOURCE%"
+    goto OPENED
 )
 
-echo.
-echo Installing/checking clone dependencies...
-".venv\Scripts\python.exe" -m pip install --disable-pip-version-check -r requirements-clone.txt
-if errorlevel 1 (
-    echo.
-    echo ERROR: Dependencies failed to install.
-    echo The batch file is still here. Nothing was deleted.
-    echo.
-    pause
-    exit /b 1
+if exist "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" (
+    start "" "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" "%APP%?wav=%SOURCE%"
+    goto OPENED
 )
 
-echo.
-echo Starting OpenVoice V2...
-echo DO NOT CLOSE THIS WINDOW.
-echo.
-
-".venv\Scripts\python.exe" clone_voice.py "%SOURCE%"
-set "RESULT=%ERRORLEVEL%"
-
-echo.
-if "%RESULT%"=="0" (
-    echo ========================================
-    echo CLONE FINISHED
-    echo ========================================
-    echo Check the cloned_voice folder.
-) else (
-    echo ========================================
-    echo CLONE FAILED - NOTHING WAS DELETED
-    echo ========================================
-    echo The error is shown above.
-)
-echo.
+echo Chrome was not found.
+echo Please install Google Chrome first.
 pause
-exit /b %RESULT%
+exit /b 1
 
-:NO_FILE
-echo Drag a WAV file directly onto this clone.bat file.
+:OPENED
+echo Chrome opened.
+echo The WAV was received successfully.
 echo.
+echo This window will stay open.
 pause
 exit /b 0
