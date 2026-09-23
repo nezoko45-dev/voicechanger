@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Deepgram Echo → Web RVC</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#080b12;color:#f7f8fc;font:15px system-ui,Arial,sans-serif}
+.app{width:min(1000px,100%);margin:auto;padding:28px}.top{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:18px}
+.brand{font-size:28px;font-weight:850}.sub{color:#8f9bb0;margin-top:5px;line-height:1.45}.pill{padding:8px 12px;border:1px solid #303a4d;border-radius:999px;color:#aeb9ca;white-space:nowrap}
+.panel{background:#10151f;border:1px solid #293347;border-radius:20px;padding:22px;margin-bottom:16px}.panel h2{font-size:16px;margin:0 0 14px}
+input,select{width:100%;background:#080d15;color:#fff;border:1px solid #3a465d;border-radius:11px;padding:12px;font:inherit}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.field label{display:block;color:#aeb9ca;font-weight:700;margin-bottom:7px}
+.actions{display:flex;gap:10px;flex-wrap:wrap}.btn{border:0;border-radius:11px;padding:13px 17px;font-weight:800;font-size:15px;background:#735cff;color:#fff;cursor:pointer}.btn.alt{background:#273247}.btn.stop{background:#9b3d50}.btn:disabled{opacity:.4;cursor:not-allowed}
+.hero{text-align:center;padding:30px 20px}.hero h1{font-size:clamp(28px,5vw,42px);margin:0 0 8px}.hero p{margin:0;color:#8f9bb0}
+.big{min-width:240px;min-height:62px;font-size:18px}.bigactions{display:flex;justify-content:center;gap:12px;margin-top:20px}
+.status{margin-top:14px;color:#c4ccda;min-height:22px;white-space:pre-wrap}.hint{font-size:12px;color:#778399;margin-top:8px;line-height:1.5}.meter{height:7px;background:#202a3b;border-radius:99px;overflow:hidden;margin-top:14px}.meter i{display:block;height:100%;width:0;background:#735cff}
+.transcript{min-height:70px;background:#080d15;border:1px solid #293347;border-radius:12px;padding:14px;color:#dce2ed;line-height:1.5}
+.flow{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.8;color:#b8c3d5}
+.ok{color:#8fe0ad}.warn{color:#e8bd72}
+@media(max-width:700px){.app{padding:14px}.top{flex-direction:column}.grid{grid-template-columns:1fr}.bigactions{flex-direction:column}.big{width:100%}}
+</style>
+</head>
+<body>
+<div class="app">
+<header class="top">
+  <div><div class="brand">Deepgram Echo → Web RVC</div><div class="sub">Speak into the mic. Deepgram STT transcribes your utterance, Deepgram TTS speaks it back, then Web RVC converts that TTS audio before you hear the echo.</div></div>
+  <div class="pill">MIC · STT · TTS · RVC</div>
+</header>
+
+<section class="panel hero">
+  <h1>Voice Echo</h1>
+  <p>Your speech → text → Deepgram voice → RVC voice → speaker</p>
+  <div class="bigactions">
+    <button class="btn big" id="start">Start Listening</button>
+    <button class="btn stop big" id="stop" disabled>Stop</button>
+  </div>
+  <div class="status" id="status">Download the RVC models, then start listening.</div>
+</section>
+
+<section class="panel">
+  <h2>Deepgram</h2>
+  <div class="grid">
+    <div class="field"><label>API key / temporary token</label><input id="key" type="password" autocomplete="off" placeholder="Paste your Deepgram key or temporary token"></div>
+    <div class="field"><label>TTS voice</label><select id="voice">
+      <option value="aura-2-thalia-en">Aura-2 Thalia</option>
+      <option value="aura-2-asteria-en">Aura-2 Asteria</option>
+      <option value="aura-2-luna-en">Aura-2 Luna</option>
+      <option value="aura-2-stella-en">Aura-2 Stella</option>
+      <option value="aura-asteria-en">Aura Asteria</option>
+    </select></div>
+  </div>
+  <div class="hint">The browser uses Deepgram's WebSocket subprotocol for client-side authentication. A temporary token is safer than publishing a permanent API key. Deepgram's streaming STT uses /v1/listen and streaming TTS uses /v1/speak.</div>
+</section>
+
+<section class="panel">
+  <h2>Live transcript</h2>
+  <div class="transcript" id="transcript">Nothing heard yet.</div>
+  <div class="hint">The echo is triggered from a finalized utterance. While the converted echo is playing, mic packets are temporarily gated so the speaker output is not immediately fed back into STT.</div>
+</section>
+
+<section class="panel">
+  <h2>RVC voice model</h2>
+  <div class="actions">
+    <button class="btn alt" id="downloadVoice">Download Voice</button>
+    <button class="btn alt" id="downloadBase">Download Base Models</button>
+    <button class="btn alt" id="clearCache">Clear Cache</button>
+  </div>
+  <div class="meter"><i id="progress"></i></div>
+  <div class="status" id="modelStatus">Checking browser cache...</div>
+</section>
+
+<section class="panel">
+  <h2>Output</h2>
+  <div class="grid">
+    <div class="field"><label>Speaker / Output</label><select id="output"><option value="">Default speaker / output...</option></select></div>
+    <div class="field"><label>Pipeline</label><div class="flow">MIC PCM → Deepgram STT → finalized text → Deepgram TTS PCM → Web RVC/ONNX → 48 kHz speaker</div></div>
+  </div>
+</section>
+</div>
+
+<script type="module">
+import {createRVC,runPipelineInWorker,isWorkerSupported} from "https://cdn.jsdelivr.net/npm/rvc-web-runtime@1.0.5/dist/index.js";
+
+const $=id=>document.getElementById(id);
+const VOICE_URL="https://huggingface.co/DogManTC/test-rvc-onnx/resolve/main/GuraTalkV2.onnx";
+const CONTENT_URL="https://huggingface.co/DogManTC/test-rvc-onnx/resolve/main/vec-768-layer-12.onnx";
+const PITCH_URL="https://huggingface.co/DogManTC/test-rvc-onnx/resolve/main/rmvpe.onnx";
+
+let dbPromise;
+let running=false, echoing=false, sttSocket=null, ttsSocket=null, rvc=null;
+let micStream=null, micCtx=null, micSource=null, processor=null;
+let playCtx=null, nextPlay=0, echoToken=0;
+
+function status(t){$("status").textContent=t}
+function modelStatus(t){$("modelStatus").textContent=t}
+
+function openDB(){
+  if(dbPromise)return dbPromise;
+  dbPromise=new Promise((res,rej)=>{
+    const r=indexedDB.open("deepgram-echo-rvc",1);
+    r.onupgradeneeded=()=>r.result.createObjectStore("models");
+    r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
+  }); return dbPromise;
+}
+async function put(k,v){const db=await openDB();return new Promise((res,rej)=>{const x=db.transaction("models","readwrite");x.objectStore("models").put(v,k);x.oncomplete=res;x.onerror=()=>rej(x.error)})}
+async function get(k){const db=await openDB();return new Promise((res,rej)=>{const x=db.transaction("models"),q=x.objectStore("models").get(k);q.onsuccess=()=>res(q.result||null);q.onerror=()=>rej(q.error)})}
+async function clearCache(){const db=await openDB();return new Promise((res,rej)=>{const x=db.transaction("models","readwrite");x.objectStore("models").clear();x.oncomplete=res;x.onerror=()=>rej(x.error)})}
+async function modelsReady(){return !!(await get("voice")&&await get("content")&&await get("pitch"))}
+async function refreshModelState(){modelStatus(await modelsReady()?"All RVC models ready.":"Download all three RVC models to begin.")}
+async function download(k,url,label){
+  const old=await get(k); if(old){modelStatus(label+" already cached.");return old}
+  modelStatus("Downloading "+label+"...");
+  const res=await fetch(url); if(!res.ok)throw new Error(label+" HTTP "+res.status);
+  const rd=res.body?.getReader(); if(!rd)throw new Error("Streaming download unavailable");
+  const total=Number(res.headers.get("content-length"))||0; let loaded=0,ch=[];
+  while(true){const z=await rd.read();if(z.done)break;ch.push(z.value);loaded+=z.value.byteLength;const pct=total?Math.round(loaded/total*100):0;$("progress").style.width=pct+"%";modelStatus("Downloading "+label+" "+(total?pct+"%":Math.round(loaded/1048576)+" MB"))}
+  const f=new File([new Blob(ch)],label+".onnx");await put(k,f);return f;
+}
+
+async function devices(){
+  if(!navigator.mediaDevices?.enumerateDevices)return;
+  const ds=await navigator.mediaDevices.enumerateDevices();
+  $("output").replaceChildren(new Option("Default speaker / output...",""));
+  ds.filter(d=>d.kind==="audiooutput").forEach((d,i)=>$("output").add(new Option(d.label||"Speaker / Output "+(i+1),d.deviceId)));
+}
+
+function floatToPCM16(float32){
+  const out=new Int16Array(float32.length);
+  for(let i=0;i<float32.length;i++){
+    const x=Math.max(-1,Math.min(1,float32[i]));
+    out[i]=x<0?x*32768:x*32767;
+  }
+  return out;
+}
+
+function connectSTT(key){
+  const url="wss://api.deepgram.com/v1/listen?model=nova-3&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&smart_format=true&punctuate=true&endpointing=300&utterance_end_ms=1000";
+  const ws=new WebSocket(url,["token",key]); sttSocket=ws; ws.binaryType="arraybuffer";
+  ws.onopen=()=>status("Deepgram STT connected — listening...");
+  ws.onmessage=e=>{
+    if(typeof e.data!=="string")return;
+    try{
+      const m=JSON.parse(e.data);
+      if(m.type==="SpeechStarted"){if(!echoing)status("Listening...")}
+      if(m.type==="Results"){
+        const a=m.channel?.alternatives?.[0];
+        const text=(a?.transcript||"").trim();
+        if(text){$("transcript").textContent=text;if(m.is_final&&m.speech_final&&!echoing)queueEcho(text)}
+      }
+      if(m.type==="Error")status("Deepgram STT error: "+(m.message||m.description||"unknown error"));
+    }catch{}
+  };
+  ws.onerror=()=>status("Deepgram STT WebSocket error. Check the key/token and browser network access.");
+  ws.onclose=()=>{if(running&&!echoing)status("Deepgram STT disconnected.")};
+  return ws;
+}
+
+function startMic(){
+  micCtx=new AudioContext({sampleRate:16000});
+  micSource=micCtx.createMediaStreamSource(micStream);
+  processor=micCtx.createScriptProcessor(4096,1,1);
+  processor.onaudioprocess=e=>{
+    if(!running||echoing||!sttSocket||sttSocket.readyState!==WebSocket.OPEN)return;
+    const pcm=floatToPCM16(e.inputBuffer.getChannelData(0));
+    sttSocket.send(pcm.buffer);
+  };
+  micSource.connect(processor);
+  processor.connect(micCtx.destination);
+}
+
+function closeMic(){
+  try{processor?.disconnect()}catch{} try{micSource?.disconnect()}catch{}
+  try{micCtx?.close()}catch{}
+  processor=micSource=micCtx=null;
+  try{micStream?.getTracks().forEach(t=>t.stop())}catch{}
+  micStream=null;
+}
+
+async function ensurePlayback(){
+  if(!playCtx)playCtx=new AudioContext({sampleRate:48000});
+  if($("output").value&&typeof playCtx.setSinkId==="function")await playCtx.setSinkId($("output").value);
+  await playCtx.resume();
+}
+
+async function playWav(blob){
+  await ensurePlayback();
+  const audio=await playCtx.decodeAudioData(await blob.arrayBuffer());
+  const src=playCtx.createBufferSource(); src.buffer=audio; src.connect(playCtx.destination);
+  if(nextPlay<playCtx.currentTime+.03)nextPlay=playCtx.currentTime+.03;
+  src.start(nextPlay); nextPlay+=audio.duration;
+  return audio.duration;
+}
+
+function closeTTS(){
+  try{if(ttsSocket&&ttsSocket.readyState<2)ttsSocket.close()}catch{}
+  ttsSocket=null;
+}
+
+async function ttsToRVC(text){
+  const key=$("key").value.trim();
+  if(!key)throw new Error("Paste a Deepgram API key or temporary token first.");
+  const model=$("voice").value;
+  const url="wss://api.deepgram.com/v1/speak?model="+encodeURIComponent(model)+"&encoding=linear16&sample_rate=48000";
+  const ws=new WebSocket(url,["token",key]); ttsSocket=ws; ws.binaryType="arraybuffer";
+  let chunks=[], totalBytes=0, closed=false;
+  return new Promise((resolve,reject)=>{
+    ws.onopen=()=>{
+      status("Deepgram TTS speaking → RVC...");
+      ws.send(JSON.stringify({type:"Speak",text}));
+      ws.send(JSON.stringify({type:"Flush"}));
+    };
+    ws.onmessage=async e=>{
+      if(typeof e.data==="string"){
+        try{const m=JSON.parse(e.data);if(m.type==="Warning")status("Deepgram TTS warning: "+m.description)}catch{}
+        return;
+      }
+      chunks.push(new Uint8Array(e.data)); totalBytes+=e.data.byteLength;
+    };
+    ws.onerror=()=>reject(new Error("Deepgram TTS WebSocket error."));
+    ws.onclose=()=>{
+      if(closed)return; closed=true;
+      try{
+        const all=new Uint8Array(totalBytes); let p=0;
+        for(const c of chunks){all.set(c,p);p+=c.length}
+        resolve(all.buffer);
+      }catch(e){reject(e)}
+    };
+  });
+}
+
+function pcm48To16(int16){
+  const n=int16.length,out=new Float32Array(Math.floor(n/3));
+  for(let i=0;i<out.length;i++){
+    const p=i*3; out[i]=(int16[p]+int16[p+1]+int16[p+2])/32768/3;
+  }
+  return out;
+}
+
+async function rvcConvertTTS(buffer){
+  const i16=new Int16Array(buffer), audio=pcm48To16(i16);
+  status("RVC converting the Deepgram TTS voice...");
+  const c=await runPipelineInWorker(
+    rvc,
+    {model:await get("voice"),contentVec:await get("content"),rmvpe:await get("pitch")},
+    audio,16000,
+    {onEvent:e=>{if(e.type==="stage")status("RVC: "+e.stage)}},
+    {timeout:120000,chunkDuration:1.5,padDuration:.25,outputSampleRate:48000,contentVecBackend:"wasm",rmvpeBackend:"wasm",rvcBackend:"wasm"}
+  );
+  if(c.state==="failed")throw new Error(c.errorMessage||"RVC pipeline failed");
+  if(!c.outputWav)throw new Error("RVC returned no audio");
+  return c.outputWav;
+}
+
+async function queueEcho(text){
+  if(echoing||!running)return;
+  echoing=true; const myToken=++echoToken;
+  try{
+    status("Echoing: "+text);
+    closeTTS();
+    const tts=await ttsToRVC(text);
+    if(!running||myToken!==echoToken)return;
+    const wav=await rvcConvertTTS(tts);
+    if(!running||myToken!==echoToken)return;
+    status("Playing converted RVC echo...");
+    const duration=await playWav(wav);
+    await new Promise(r=>setTimeout(r,Math.max(50,duration*1000)));
+    if(running)status("Listening...");
+  }catch(e){
+    if(running)status("Echo error: "+(e.message||e));
+  }finally{
+    if(myToken===echoToken)echoing=false;
+  }
+}
+
+async function start(){
+  if(running)return;
+  if(!await modelsReady())throw new Error("Download all three RVC models first.");
+  if(!isWorkerSupported())throw new Error("This browser does not support the required Web Worker runtime.");
+  const key=$("key").value.trim(); if(!key)throw new Error("Paste a Deepgram API key or temporary token first.");
+  await ensurePlayback();
+  micStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+  running=true; rvc=createRVC();
+  $("start").disabled=true;$("stop").disabled=false;
+  connectSTT(key); startMic();
+  status("Starting Deepgram STT...");
+}
+
+function stopAll(){
+  running=false;echoToken++;
+  try{sttSocket?.send(JSON.stringify({type:"CloseStream"}))}catch{}
+  try{if(sttSocket&&sttSocket.readyState<2)sttSocket.close()}catch{}
+  sttSocket=null; closeTTS(); closeMic();
+  try{rvc?.dispose?.()}catch{} rvc=null;
+  $("start").disabled=false;$("stop").disabled=true;
+  status("Stopped.");
+}
+
+$("downloadVoice").onclick=async()=>{try{await download("voice",VOICE_URL,"GuraTalkV2");await refreshModelState();status("Voice model ready.")}catch(e){status("Voice download failed: "+e.message)}};
+$("downloadBase").onclick=async()=>{try{await download("content",CONTENT_URL,"ContentVec");await download("pitch",PITCH_URL,"RMVPE");await refreshModelState();status("All RVC models ready.")}catch(e){status("Model download failed: "+e.message)}};
+$("clearCache").onclick=async()=>{await clearCache();$("progress").style.width="0%";await refreshModelState();status("RVC model cache cleared.")};
+$("start").onclick=async()=>{try{await start()}catch(e){status("Could not start: "+e.message);$("start").disabled=false;$("stop").disabled=true;running=false}};
+$("stop").onclick=stopAll;
+
+(async()=>{await devices().catch(()=>{});await refreshModelState().catch(e=>modelStatus("Cache unavailable: "+e.message))})();
+</script>
+</body>
+</html>
