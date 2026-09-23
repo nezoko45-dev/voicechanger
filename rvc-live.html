@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Live RVC Voice Changer</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#090c12;color:#f5f7fb;font:15px system-ui,Segoe UI,Arial,sans-serif}
+.app{max-width:900px;margin:auto;padding:28px}.top{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:18px}
+h1{margin:0;font-size:32px}.sub{color:#9ba7ba;margin-top:6px}.pill{border:1px solid #303a4d;border-radius:999px;padding:8px 12px;color:#aeb8c9}
+.card{background:#111722;border:1px solid #293346;border-radius:18px;padding:20px;margin:14px 0}
+h2{font-size:16px;margin:0 0 14px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.field label{display:block;color:#aeb8c9;font-weight:700;margin-bottom:7px}
+input,select{width:100%;background:#080d15;color:#fff;border:1px solid #39465d;border-radius:10px;padding:12px;font:inherit}
+button{border:0;border-radius:11px;padding:13px 18px;font-weight:800;color:#fff;background:#735cff;cursor:pointer}button.alt{background:#273247}button.stop{background:#a63e52}button:disabled{opacity:.4;cursor:not-allowed}
+.actions{display:flex;gap:10px;flex-wrap:wrap}.hero{text-align:center;padding:26px}.hero button{min-width:240px;font-size:17px}
+.status{min-height:23px;margin-top:12px;color:#c9d1de}.ok{color:#8fe0ad}.warn{color:#e8bd72}.hint{color:#778399;font-size:12px;line-height:1.5;margin-top:8px}.meter{height:7px;background:#202a3b;border-radius:99px;overflow:hidden;margin-top:12px}.meter i{display:block;height:100%;width:0;background:#735cff}
+@media(max-width:680px){.app{padding:14px}.top{flex-direction:column}.grid{grid-template-columns:1fr}.hero button{width:100%}}
+</style>
+</head>
+<body>
+<div class="app">
+<header class="top">
+  <div><h1>Live RVC Voice Changer</h1><div class="sub">Microphone → RVC speech-to-speech → speaker. No TTS and no Deepgram.</div></div>
+  <div class="pill">BROWSER ONLY</div>
+</header>
+
+<section class="card">
+<h2>1. Your cloned RVC model</h2>
+<div class="grid">
+  <div class="field"><label>RVC voice model (.onnx or .pth)</label><input id="voiceFile" type="file" accept=".onnx,.pth,application/octet-stream"></div>
+  <div class="field"><label>Pitch shift</label><input id="pitch" type="number" value="0" min="-24" max="24" step="1"></div>
+</div>
+<div class="actions" style="margin-top:12px"><button class="alt" id="clearVoice">Clear saved voice</button></div>
+<div class="status" id="voiceStatus">Choose your trained RVC v2 model. The file stays in this browser.</div>
+<div class="hint">RVC-Web-Runtime supports RVC v2 ONNX models and can convert compatible .pth models in-browser. Your voice model does not need to be uploaded to a server.</div>
+</section>
+
+<section class="card">
+<h2>2. RVC engine models</h2>
+<div class="actions">
+<button class="alt" id="downloadBase">Download ContentVec + RMVPE</button>
+<button class="alt" id="clearModels">Clear model cache</button>
+</div>
+<div class="meter"><i id="progress"></i></div>
+<div class="status" id="modelStatus">Not loaded.</div>
+</section>
+
+<section class="card hero">
+<h2>3. Speech to speech</h2>
+<div class="actions" style="justify-content:center">
+<button id="start">Start microphone → RVC</button>
+<button class="stop" id="stop" disabled>Stop</button>
+</div>
+<div class="status" id="status">Load your voice and the base models first.</div>
+<div class="hint">The app captures raw microphone PCM, buffers short chunks, runs RVC, then schedules the converted audio continuously. RVC inference is local.</div>
+</section>
+
+<section class="card">
+<h2>Audio output</h2>
+<div class="grid">
+<div class="field"><label>Output device</label><select id="output"><option value="">Default output</option></select></div>
+<div class="field"><label>Processing chunk</label><select id="chunk"><option value="1.5">1.5 seconds — lower delay</option><option value="2" selected>2 seconds — balanced</option><option value="3">3 seconds — more stable</option></select></div>
+</div>
+</section>
+</div>
+
+<script type="module">
+import {createRVC,runPipelineInWorker,isWorkerSupported} from "https://cdn.jsdelivr.net/npm/rvc-web-runtime@1.0.5/dist/index.js";
+import {pthToOnnx} from "https://cdn.jsdelivr.net/npm/rvc-onnx-web@1.0.0/+esm";
+
+const $=id=>document.getElementById(id);
+const VOICE_KEY="live-rvc-voice";
+const CONTENT_KEY="live-rvc-content";
+const PITCH_KEY="live-rvc-pitch";
+const CONTENT_URL="https://huggingface.co/MoeSS-SUBModel/vec-768-layer-12/resolve/main/vec-768-layer-12.onnx";
+const PITCH_URL="https://huggingface.co/MoeSS-SUBModel/RMVPE/resolve/main/RMVPE.onnx";
+
+let db, voice=null, rvc=null, running=false, inputCtx=null, workletNode=null, micStream=null;
+let queue=[], processing=false, outputCtx=null, nextPlay=0;
+
+function msg(t,cls=""){ $("status").textContent=t; $("status").className="status "+cls; }
+function vmsg(t){$("voiceStatus").textContent=t}
+function mmsg(t){$("modelStatus").textContent=t}
+function openDB(){
+ if(db)return db;
+ db=new Promise((resolve,reject)=>{const r=indexedDB.open("live-rvc",1);r.onupgradeneeded=()=>r.result.createObjectStore("models");r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
+ return db;
+}
+async function get(k){const d=await openDB();return new Promise((res,rej)=>{const t=d.transaction("models"),q=t.objectStore("models").get(k);q.onsuccess=()=>res(q.result||null);q.onerror=()=>rej(q.error)})}
+async function put(k,v){const d=await openDB();return new Promise((res,rej)=>{const t=d.transaction("models","readwrite");t.objectStore("models").put(v,k);t.oncomplete=res;t.onerror=()=>rej(t.error)})}
+async function clearAll(){const d=await openDB();return new Promise((res,rej)=>{const t=d.transaction("models","readwrite");t.objectStore("models").clear();t.oncomplete=res;t.onerror=()=>rej(t.error)})}
+
+async function loadVoice(){
+ const f=$("voiceFile").files?.[0]; if(!f)return;
+ vmsg("Loading "+f.name+"...");
+ try{
+   let file=f;
+   if(f.name.toLowerCase().endsWith(".pth")){
+     vmsg("Converting .pth to ONNX in this browser...");
+     const r=await pthToOnnx(f,{opsetVersion:17,phoneLen:100});
+     file=new File([r.onnxBuffer],f.name.replace(/\.pth$/i,".onnx"),{type:"application/octet-stream"});
+   }
+   await put(VOICE_KEY,file); voice=file;
+   vmsg("Voice model ready: "+file.name);
+   refresh();
+ }catch(e){vmsg("Voice model error: "+(e.message||e))}
+}
+async function downloadBase(){
+ try{
+  for(const [key,url,label] of [[CONTENT_KEY,CONTENT_URL,"ContentVec"],[PITCH_KEY,PITCH_URL,"RMVPE"]]){
+   if(await get(key))continue;
+   mmsg("Downloading "+label+"...");
+   const r=await fetch(url); if(!r.ok)throw new Error(label+" HTTP "+r.status);
+   const b=await r.blob(); await put(key,new File([b],label+".onnx",{type:"application/octet-stream"}));
+  }
+  mmsg("ContentVec + RMVPE ready."); $("progress").style.width="100%"; refresh();
+ }catch(e){mmsg("Model download failed: "+(e.message||e))}
+}
+async function refresh(){
+ const a=await get(VOICE_KEY),b=await get(CONTENT_KEY),c=await get(PITCH_KEY);
+ voice=a;
+ if(a)vmsg("Saved voice: "+a.name);
+ mmsg(a&&b&&c?"All models ready.":"Load the voice model and download the base models.");
+ $("start").disabled=!(a&&b&&c);
+}
+async function devices(){
+ try{
+  const ds=await navigator.mediaDevices.enumerateDevices();
+  $("output").replaceChildren(new Option("Default output",""));
+  ds.filter(x=>x.kind==="audiooutput").forEach((x,i)=>$("output").add(new Option(x.label||("Speaker "+(i+1)),x.deviceId)));
+ }catch{}
+}
+
+function workletCode(){
+ return `
+ class Capture extends AudioWorkletProcessor{
+   constructor(){super();this.buf=[];this.n=0;this.target=sampleRate*1}
+   process(inputs){
+     const x=inputs[0]?.[0]; if(!x)return true;
+     const c=new Float32Array(x); this.buf.push(c); this.n+=c.length;
+     while(this.n>=this.target){
+       const out=new Float32Array(this.n);let p=0;
+       for(const a of this.buf){out.set(a,p);p+=a.length}
+       this.port.postMessage(out.slice(0,this.target));
+       const rest=out.slice(this.target);this.buf=rest.length?[rest]:[];this.n=rest.length;
+     }
+     return true;
+   }
+ }
+ registerProcessor('rvc-capture',Capture);
+ `;
+}
+async function start(){
+ if(running)return;
+ if(!isWorkerSupported())throw new Error("This browser lacks the required Web Worker/WASM features.");
+ voice=await get(VOICE_KEY); const content=await get(CONTENT_KEY), pitch=await get(PITCH_KEY);
+ if(!voice||!content||!pitch)throw new Error("Load the voice model and base models first.");
+ running=true; queue=[]; processing=false;
+ $("start").disabled=true;$("stop").disabled=false;
+ msg("Requesting microphone...");
+ micStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+ inputCtx=new AudioContext();
+ await inputCtx.resume();
+ const blob=new Blob([workletCode()],{type:"application/javascript"});
+ await inputCtx.audioWorklet.addModule(URL.createObjectURL(blob));
+ const src=inputCtx.createMediaStreamSource(micStream);
+ workletNode=new AudioWorkletNode(inputCtx,"rvc-capture");
+ const chunkSeconds=Number($("chunk").value);
+ workletNode.port.postMessage({chunkSeconds});
+ workletNode.port.onmessage=e=>{if(running){queue.push(e.data);processQueue(content,pitch)}};
+ src.connect(workletNode);
+ // Do not connect the microphone to inputCtx.destination: this prevents local dry mic echo.
+ rvc=createRVC();
+ msg("Listening — speak normally. Your microphone is being converted to the cloned voice.","ok");
+}
+async function processQueue(content,pitch){
+ if(processing)return;
+ processing=true;
+ try{
+  while(running&&queue.length){
+   const audio=queue.shift();
+   msg("Converting speech… "+queue.length+" chunk(s) queued");
+   const result=await runPipelineInWorker(rvc,{model:voice,contentVec:content,rmvpe:pitch},audio,inputCtx.sampleRate,
+    {onEvent:e=>{if(e.type==="stage")msg("RVC: "+e.stage)}},
+    {timeout:120000,chunkDuration:Number($("chunk").value),padDuration:.25,outputSampleRate:48000,
+     contentVecBackend:navigator.gpu?"webgpu":"wasm",rmvpeBackend:navigator.gpu?"webgpu":"wasm",rvcBackend:"wasm",
+     pitch:Number($("pitch").value)||0});
+   if(result.state==="failed")throw new Error(result.errorMessage||"RVC inference failed");
+   await play(result.outputWav);
+  }
+ }catch(e){msg("RVC error: "+(e.message||e));stop()}
+ finally{processing=false}
+}
+async function play(wav){
+ if(!outputCtx)outputCtx=new AudioContext({sampleRate:48000});
+ await outputCtx.resume();
+ if($("output").value&&outputCtx.setSinkId)await outputCtx.setSinkId($("output").value);
+ const buf=await outputCtx.decodeAudioData(await wav.arrayBuffer());
+ const src=outputCtx.createBufferSource();src.buffer=buf;src.connect(outputCtx.destination);
+ if(nextPlay<outputCtx.currentTime+.03)nextPlay=outputCtx.currentTime+.03;
+ src.start(nextPlay);nextPlay+=buf.duration;
+}
+function stop(){
+ running=false;queue=[];
+ try{workletNode?.disconnect()}catch{}
+ try{micStream?.getTracks().forEach(t=>t.stop())}catch{}
+ try{inputCtx?.close()}catch{}
+ workletNode=null;micStream=null;inputCtx=null;
+ $("start").disabled=false;$("stop").disabled=true;msg("Stopped.");
+}
+$("voiceFile").onchange=loadVoice;
+$("downloadBase").onclick=downloadBase;
+$("clearModels").onclick=async()=>{await clearAll();voice=null;$("progress").style.width="0%";refresh()};
+$("clearVoice").onclick=async()=>{const d=await openDB();await new Promise((res,rej)=>{const t=d.transaction("models","readwrite");t.objectStore("models").delete(VOICE_KEY);t.oncomplete=res;t.onerror=()=>rej(t.error)});refresh()};
+$("start").onclick=()=>start().catch(e=>{msg("Could not start: "+(e.message||e));$("start").disabled=false;$("stop").disabled=true});
+$("stop").onclick=stop;
+(async()=>{await devices();await refresh()})().catch(e=>msg("Startup error: "+e.message));
+</script>
+</body>
+</html>
