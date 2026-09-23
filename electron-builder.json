@@ -1,0 +1,28 @@
+{
+  "build": {
+    "appId": "com.nezoko45.voicechanger",
+    "productName": "ONNX Voice Changer",
+    "files": [
+      "index.html",
+      "main.js",
+      "package.json",
+      "node_modules/rvc-web-runtime/**/*"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "ONNX-Voice-Changer-${version}-Windows.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
