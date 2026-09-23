@@ -194,6 +194,7 @@ async function start(){
  msg("Requesting microphone...");
  const selectedInput=$("input").value;
  micStream=await navigator.mediaDevices.getUserMedia({audio:{...(selectedInput?{deviceId:{exact:selectedInput}}:{}),channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+ micStream.getTracks().forEach(t=>t.onended=()=>{if(running)msg("Microphone connection ended — press Stop, then Start again.","warn")});
  await devices();
  inputCtx=new AudioContext();
  await inputCtx.resume();
@@ -213,31 +214,22 @@ async function processQueue(content,pitch){
  processing=true;
  try{
   while(running){
-   if(!queue.length){
-    msg("Listening — waiting for speech…","ok");
-    await new Promise(resolve=>setTimeout(resolve,20));
-    continue;
-   }
+   if(!queue.length){await new Promise(r=>setTimeout(r,25));continue}
    const audio=queue.shift();
    msg("Converting speech…","ok");
-   const result=await runPipelineInWorker(
-    rvc,
-    {model:voice,contentVec:content,rmvpe:pitch},
-    audio,
-    inputCtx.sampleRate,
-    {onEvent:e=>{if(e.type==="stage")msg("RVC: "+e.stage,"ok")}},
-    {timeout:120000,chunkDuration:Number($("chunk").value),padDuration:.25,outputSampleRate:48000,
-     contentVecBackend:navigator.gpu?"webgpu":"wasm",
-     rmvpeBackend:navigator.gpu?"webgpu":"wasm",
-     rvcBackend:"wasm",
-     pitch:Number($("pitch").value)||0}
-   );
-   if(result.state==="failed")throw new Error(result.errorMessage||"RVC inference failed");
-   await play(result.outputWav);
+   try{
+    const result=await runPipelineInWorker(rvc,{model:voice,contentVec:content,rmvpe:pitch},audio,inputCtx.sampleRate,
+     {onEvent:e=>{if(e.type==="stage")msg("RVC: "+e.stage,"ok")}},
+     {timeout:180000,chunkDuration:Number($("chunk").value),padDuration:.25,outputSampleRate:48000,
+      contentVecBackend:navigator.gpu?"webgpu":"wasm",rmvpeBackend:navigator.gpu?"webgpu":"wasm",rvcBackend:"wasm",
+      pitch:Number($("pitch").value)||0});
+    if(result.state==="failed")throw new Error(result.errorMessage||"RVC inference failed");
+    await play(result.outputWav);
+   }catch(e){
+    console.error("RVC chunk error:",e);
+    if(running){msg("RVC chunk failed — still listening. Speak again…","warn");await new Promise(r=>setTimeout(r,250))}
+   }
   }
- }catch(e){
-  msg("RVC error: "+(e.message||e));
-  stop();
  }finally{processing=false}
 }
 async function play(wav){
