@@ -56,11 +56,15 @@ button{border:0;border-radius:11px;padding:13px 18px;font-weight:800;color:#fff;
 </section>
 
 <section class="card">
-<h2>Audio output</h2>
+<h2>Windows audio devices</h2>
 <div class="grid">
-<div class="field"><label>Output device</label><select id="output"><option value="">Default output</option></select></div>
+<div class="field"><label>Microphone / input</label><select id="input"><option value="">Default microphone</option></select></div>
+<div class="field"><label>Windows output device</label><select id="output"><option value="">Default output</option></select></div>
+</div>
+<div class="grid" style="margin-top:14px">
 <div class="field"><label>Processing chunk</label><select id="chunk"><option value="1.5">1.5 seconds — lower delay</option><option value="2" selected>2 seconds — balanced</option><option value="3">3 seconds — more stable</option></select></div>
 </div>
+<div class="hint">Chrome can show Windows playback/output devices here after microphone permission is granted. Use Voicemeeter as the selected output when you want the converted voice routed into VRChat.</div>
 </section>
 </div>
 
@@ -126,8 +130,10 @@ async function refresh(){
 async function devices(){
  try{
   const ds=await navigator.mediaDevices.enumerateDevices();
+  $("input").replaceChildren(new Option("Default microphone",""));
   $("output").replaceChildren(new Option("Default output",""));
-  ds.filter(x=>x.kind==="audiooutput").forEach((x,i)=>$("output").add(new Option(x.label||("Speaker "+(i+1)),x.deviceId)));
+  ds.filter(x=>x.kind==="audioinput").forEach((x,i)=>$("input").add(new Option(x.label||("Microphone "+(i+1)),x.deviceId)));
+  ds.filter(x=>x.kind==="audiooutput").forEach((x,i)=>$("output").add(new Option(x.label||("Speaker / output "+(i+1)),x.deviceId)));
  }catch{}
 }
 
@@ -139,11 +145,12 @@ async function start(){
  running=true; queue=[]; processing=false;
  $("start").disabled=true;$("stop").disabled=false;
  msg("Requesting microphone...");
- micStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+ const selectedInput=$("input").value;
+ micStream=await navigator.mediaDevices.getUserMedia({audio:{...(selectedInput?{deviceId:{exact:selectedInput}}:{}),channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+ await devices();
  inputCtx=new AudioContext();
  await inputCtx.resume();
- const blob=new Blob([workletCode()],{type:"application/javascript"});
- await inputCtx.audioWorklet.addModule(URL.createObjectURL(blob));
+ await inputCtx.audioWorklet.addModule("./rvc-capture-worklet.js");
  const src=inputCtx.createMediaStreamSource(micStream);
  workletNode=new AudioWorkletNode(inputCtx,"rvc-capture");
  const chunkSeconds=Number($("chunk").value);
@@ -194,6 +201,8 @@ $("downloadBase").onclick=downloadBase;
 $("clearModels").onclick=async()=>{await clearAll();voice=null;$("progress").style.width="0%";refresh()};
 $("clearVoice").onclick=async()=>{const d=await openDB();await new Promise((res,rej)=>{const t=d.transaction("models","readwrite");t.objectStore("models").delete(VOICE_KEY);t.oncomplete=res;t.onerror=()=>rej(t.error)});refresh()};
 $("start").onclick=()=>start().catch(e=>{msg("Could not start: "+(e.message||e));$("start").disabled=false;$("stop").disabled=true});
+$("input").onchange=devices;
+$("output").onchange=async()=>{if(outputCtx&&outputCtx.setSinkId)try{await outputCtx.setSinkId($("output").value)}catch(e){msg("Output device error: "+(e.message||e))}};
 $("stop").onclick=stop;
 (async()=>{await devices();await refresh()})().catch(e=>msg("Startup error: "+e.message));
 </script>
