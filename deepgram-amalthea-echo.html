@@ -14,7 +14,7 @@
 <script>
 const $=id=>document.getElementById(id);
 let running=false,stt=null,tts=null,stream=null,micCtx=null,source=null,processor=null,playCtx=null;
-let ttsReady=false,ttsQueue=[],ttsSending=false,nextPlay=0,lastFinalText="",lastFinalAt=0;
+let ttsReady=false,ttsQueue=[],ttsSending=false,nextPlay=0,lastFinalText="",lastFinalAt=0,sttReady=false,micBuffer=[];
 
 function status(t){$("status").textContent=t}
 function pcm16(f){const o=new Int16Array(f.length);for(let i=0;i<f.length;i++){const x=Math.max(-1,Math.min(1,f[i]));o[i]=x<0?x*32768:x*32767}return o}
@@ -23,10 +23,10 @@ async function outputs(){try{const ds=await navigator.mediaDevices.enumerateDevi
 function connectSTT(key){
  const u="wss://api.deepgram.com/v1/listen?model=nova-3&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&smart_format=false&punctuate=false&endpointing=150&vad_events=true";
  stt=new WebSocket(u,["token",key]);
- stt.onopen=()=>status("Deepgram STT connected — speak normally.");
+ stt.onopen=()=>{sttReady=true;status("Deepgram STT connected — speak normally.");flushMicBuffer()};
  stt.onmessage=e=>{if(typeof e.data!=="string")return;try{const m=JSON.parse(e.data);if(m.type!=="Results")return;const text=(m.channel?.alternatives?.[0]?.transcript||"").trim();if(!text)return;$("transcript").textContent=text;if(m.speech_final){const norm=text.toLowerCase().replace(/[^a-z0-9\s]/g,"").replace(/\s+/g," ").trim();const now=Date.now();if(norm&&!(norm===lastFinalText&&now-lastFinalAt<2500)){lastFinalText=norm;lastFinalAt=now;queueTTS(text)}}}catch{}};
  stt.onerror=()=>status("Deepgram STT connection error.");
- stt.onclose=()=>{if(running)status("Deepgram STT disconnected.")};
+ stt.onclose=()=>{sttReady=false;if(running)status("Deepgram STT disconnected.")};
 }
 
 function connectTTS(key){
@@ -54,21 +54,30 @@ async function playChunk(ab){
  const n=playCtx.createBufferSource();n.buffer=b;n.connect(playCtx.destination);if(nextPlay<playCtx.currentTime+.03)nextPlay=playCtx.currentTime+.03;n.start(nextPlay);nextPlay+=b.duration;
 }
 
+function flushMicBuffer(){
+ if(!sttReady||!stt||stt.readyState!==WebSocket.OPEN)return;
+ const pending=micBuffer.splice(0);for(const chunk of pending)try{stt.send(chunk)}catch{}
+}
 function startMic(){
  source=micCtx.createMediaStreamSource(stream);processor=micCtx.createScriptProcessor(4096,1,1);
- processor.onaudioprocess=e=>{if(!running||!stt||stt.readyState!==WebSocket.OPEN)return;stt.send(pcm16(e.inputBuffer.getChannelData(0)).buffer)};
+ processor.onaudioprocess=e=>{
+  if(!running)return;
+  const chunk=pcm16(e.inputBuffer.getChannelData(0)).buffer;
+  if(sttReady&&stt?.readyState===WebSocket.OPEN){try{stt.send(chunk)}catch{}}
+  else{micBuffer.push(chunk);if(micBuffer.length>32)micBuffer.shift()}
+ };
  source.connect(processor);processor.connect(micCtx.destination);
 }
 
 async function start(){
  if(running)return;const key=$("key").value.trim();if(!key)throw new Error("Paste your Deepgram API key or temporary token first.");
  stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
- micCtx=new AudioContext({sampleRate:16000});await micCtx.resume();running=true;ttsQueue=[];nextPlay=0;
+ micCtx=new AudioContext({sampleRate:16000});await micCtx.resume();running=true;ttsQueue=[];micBuffer=[];nextPlay=0;
  $("start").disabled=true;$("stop").disabled=false;await outputs();connectTTS(key);connectSTT(key);startMic();
 }
 
 function stop(){
- running=false;ttsQueue=[];ttsSending=false;lastFinalText="";lastFinalAt=0;
+ running=false;ttsQueue=[];ttsSending=false;micBuffer=[];sttReady=false;lastFinalText="";lastFinalAt=0;
  try{stt?.close()}catch{}try{tts?.close()}catch{}try{processor?.disconnect()}catch{}try{source?.disconnect()}catch{}try{micCtx?.close()}catch{}try{stream?.getTracks().forEach(t=>t.stop())}catch{}
  stt=tts=source=processor=micCtx=stream=null;ttsReady=false;$("start").disabled=false;$("stop").disabled=true;status("Stopped.");
 }
