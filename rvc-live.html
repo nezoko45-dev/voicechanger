@@ -212,19 +212,33 @@ async function processQueue(content,pitch){
  if(processing)return;
  processing=true;
  try{
-  while(running&&queue.length){
+  while(running){
+   if(!queue.length){
+    msg("Listening — waiting for speech…","ok");
+    await new Promise(resolve=>setTimeout(resolve,20));
+    continue;
+   }
    const audio=queue.shift();
-   msg("Converting speech… "+queue.length+" chunk(s) queued");
-   const result=await runPipelineInWorker(rvc,{model:voice,contentVec:content,rmvpe:pitch},audio,inputCtx.sampleRate,
-    {onEvent:e=>{if(e.type==="stage")msg("RVC: "+e.stage)}},
+   msg("Converting speech…","ok");
+   const result=await runPipelineInWorker(
+    rvc,
+    {model:voice,contentVec:content,rmvpe:pitch},
+    audio,
+    inputCtx.sampleRate,
+    {onEvent:e=>{if(e.type==="stage")msg("RVC: "+e.stage,"ok")}},
     {timeout:120000,chunkDuration:Number($("chunk").value),padDuration:.25,outputSampleRate:48000,
-     contentVecBackend:navigator.gpu?"webgpu":"wasm",rmvpeBackend:navigator.gpu?"webgpu":"wasm",rvcBackend:"wasm",
-     pitch:Number($("pitch").value)||0});
+     contentVecBackend:navigator.gpu?"webgpu":"wasm",
+     rmvpeBackend:navigator.gpu?"webgpu":"wasm",
+     rvcBackend:"wasm",
+     pitch:Number($("pitch").value)||0}
+   );
    if(result.state==="failed")throw new Error(result.errorMessage||"RVC inference failed");
    await play(result.outputWav);
   }
- }catch(e){msg("RVC error: "+(e.message||e));stop()}
- finally{processing=false}
+ }catch(e){
+  msg("RVC error: "+(e.message||e));
+  stop();
+ }finally{processing=false}
 }
 async function play(wav){
  if(!outputCtx)outputCtx=new AudioContext({sampleRate:48000});
