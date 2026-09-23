@@ -72,8 +72,8 @@ const $=id=>document.getElementById(id);
 const VOICE_KEY="live-rvc-voice";
 const CONTENT_KEY="live-rvc-content";
 const PITCH_KEY="live-rvc-pitch";
-const CONTENT_URL="https://huggingface.co/MoeSS-SUBModel/vec-768-layer-12/resolve/main/vec-768-layer-12.onnx";
-const PITCH_URL="https://huggingface.co/MoeSS-SUBModel/RMVPE/resolve/main/RMVPE.onnx";
+const CONTENT_URL="https://huggingface.co/NaruseMioShirakana/MoeSS-SUBModel/resolve/main/vec-768-layer-12.onnx";
+const PITCH_URL="https://huggingface.co/NaruseMioShirakana/MoeSS-SUBModel/resolve/main/RMVPE.onnx";
 
 let db, voice=null, rvc=null, running=false, inputCtx=null, workletNode=null, micStream=null;
 let queue=[], processing=false, outputCtx=null, nextPlay=0;
@@ -134,7 +134,7 @@ async function devices(){
 function workletCode(){
  return `
  class Capture extends AudioWorkletProcessor{
-   constructor(){super();this.buf=[];this.n=0;this.target=sampleRate*1}
+   constructor(){super();this.buf=[];this.n=0;this.target=sampleRate*2;this.port.onmessage=e=>{if(e.data?.chunkSeconds)this.target=sampleRate*Number(e.data.chunkSeconds)}}
    process(inputs){
      const x=inputs[0]?.[0]; if(!x)return true;
      const c=new Float32Array(x); this.buf.push(c); this.n+=c.length;
