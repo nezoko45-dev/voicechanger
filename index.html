@@ -12,7 +12,7 @@
 <div class="row"><label>2. Download browser base models</label><button id="downloadBase">Download ContentVec + RMVPE</button><div class="bar"><i id="progress"></i></div><div id="downloadStatus" class="small">Not downloaded.</div></div>
 <div class="row"><label>3. Microphone / Audio Input</label><select id="mic"><option value="">Choose microphone / input...</option></select><button id="enableMic">Enable microphone access</button><button id="refresh">Refresh microphones</button><div class="small">Your physical mic or virtual input (such as Voicemeeter) will appear here after microphone access is allowed.</div></div>
 <div class="row"><label>4. Speaker / Audio Output</label><select id="output"><option value="">Default speaker / output...</option></select><button id="refreshOut">Refresh outputs</button><div class="small">Choose your speakers, headphones, or Voicemeeter output here.</div></div>
-<div class="row"><label>5. Voice conversion</label><button id="start" disabled>Start Voice Changer</button><button id="stop" disabled class="secondary">Stop</button><div class="small">Short chunks keep latency bounded. ContentVec and RMVPE use WebGPU when available; the RVC synthesizer uses WASM.</div></div>
+<div class="row"><label>5. Voice conversion</label><button id="start" disabled>Start Voice Changer</button><button id="stop" disabled class="secondary">Stop</button><div class="small">Short chunks keep latency bounded. All three RVC stages use WASM for maximum browser compatibility.</div></div>
 </div>
 <div id="status" class="status">Download the voice and base models first.</div>
 </section></main>
@@ -20,8 +20,8 @@
 import {createRVC,runPipelineInWorker,isWorkerSupported} from "https://cdn.jsdelivr.net/npm/rvc-web-runtime@1.0.5/dist/index.js";
 const $=id=>document.getElementById(id);
 const VOICE_URL="https://huggingface.co/DogManTC/test-rvc-onnx/resolve/main/GuraTalkV2.onnx";
-const CONTENT_URL="https://huggingface.co/TigreGotico/voiceclonnx-rvc/resolve/main/contentvec_768l12_q8.onnx";
-const PITCH_URL="https://huggingface.co/TigreGotico/voiceclonnx-rvc/resolve/main/rmvpe_q8.onnx";
+const CONTENT_URL="https://huggingface.co/DogManTC/test-rvc-onnx/resolve/main/vec-768-layer-12.onnx";
+const PITCH_URL="https://huggingface.co/DogManTC/test-rvc-onnx/resolve/main/rmvpe.onnx";
 let micStream=null,micCtx=null,worklet=null,playCtx=null,nextPlay=0,running=false,processing=false,queue=[],dbPromise;
 const status=t=>$("status").textContent=t;
 function openDB(){if(dbPromise)return dbPromise;dbPromise=new Promise((res,rej)=>{const r=indexedDB.open("onnx-voicechanger",1);r.onupgradeneeded=()=>r.result.createObjectStore("models");r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});return dbPromise}
@@ -54,7 +54,7 @@ async function play(blob){
 }
 async function loop(m){
  while(running){if(!queue.length||processing){await new Promise(r=>setTimeout(r,8));continue}const audio=queue.shift();processing=true;
-  try{const rvc=createRVC();status("Converting speech...");const c=await runPipelineInWorker(rvc,{model:m.voice,contentVec:m.content,rmvpe:m.pitch},audio,micCtx.sampleRate,{onEvent:e=>{if(e.type==="stage")status("Stage: "+e.stage);if(e.type==="error")status("Runtime: "+(e.message||"model inference error"))}},{timeout:120000,chunkDuration:1.5,padDuration:.25,outputSampleRate:48000,contentVecBackend:"wasm",rmvpeBackend:"wasm",rvcBackend:"wasm"});if(c.outputWav)await play(c.outputWav)}catch(e){status("Conversion error: "+(e.message||e));running=false}processing=false}
+  try{const rvc=createRVC();status("Converting speech...");const c=await runPipelineInWorker(rvc,{model:m.voice,contentVec:m.content,rmvpe:m.pitch},audio,micCtx.sampleRate,{onEvent:e=>{if(e.type==="stage")status("Stage: "+e.stage);if(e.type==="error")status("Runtime: "+(e.message||"model inference error"))}},{timeout:120000,chunkDuration:1.5,padDuration:.25,outputSampleRate:48000,contentVecBackend:"wasm",rmvpeBackend:"wasm",rvcBackend:"wasm"});if(c.state==="failed")throw new Error(c.errorMessage||"RVC pipeline failed");if(c.outputWav)await play(c.outputWav);else throw new Error("RVC returned no audio")}catch(e){status("Conversion error: "+(e.message||e));running=false}processing=false}
 }
 $("downloadVoice").onclick=async()=>{try{await download("voice",VOICE_URL,"GuraTalkV2");status("Default voice model ready.");await ready()}catch(e){status("Voice download failed: "+e.message)}};
 $("downloadBase").onclick=async()=>{try{await models()}catch(e){status("Model download failed: "+e.message)}};
