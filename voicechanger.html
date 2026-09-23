@@ -1,2 +1,70 @@
 <!doctype html>
-<html><head><meta http-equiv="refresh" content="0; url=index.html"></head><body>Opening voice changer...</body></html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ONNX Web Voice Changer</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#070a10;color:#f5f7fb;font:16px system-ui,Arial,sans-serif;min-height:100vh}main{width:100%;max-width:none;margin:0;padding:28px clamp(18px,4vw,64px)}.card{width:100%;max-width:1500px;margin:0 auto;background:#111722;border:1px solid #2b3547;border-radius:22px;padding:clamp(24px,4vw,44px);box-shadow:0 18px 60px rgba(0,0,0,.28)}h1{font-size:clamp(30px,4vw,48px);margin:0 0 8px}p{color:#aeb9ca;line-height:1.6;font-size:clamp(15px,1.5vw,18px)}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin:26px 0}.row{background:#0a0f17;border:1px solid #263247;border-radius:16px;padding:20px;min-width:0}.row:first-child,.row:nth-child(2),.row:nth-child(3),.row:nth-child(6){grid-column:1/-1}label{display:block;font-weight:800;font-size:18px;margin-bottom:10px}button,select{font:inherit;border-radius:12px;padding:14px 16px;min-height:50px}button{border:0;background:#765cff;color:#fff;font-weight:800;cursor:pointer;margin:4px 6px 4px 0;transition:transform .12s,filter .12s}button:hover:not(:disabled){filter:brightness(1.12);transform:translateY(-1px)}button.secondary{background:#263247}button:disabled{opacity:.4;cursor:not-allowed;transform:none}select{width:100%;background:#080d15;color:#fff;border:1px solid #40506a;min-height:56px;font-size:17px}.status{white-space:pre-wrap;background:#080d15;border:1px solid #27344a;border-radius:14px;padding:18px;margin-top:18px;font-size:16px;min-height:58px}.bar{height:10px;background:#202a3b;border-radius:99px;overflow:hidden;margin-top:14px}.bar i{display:block;height:100%;width:0;background:#765cff}.small{font-size:13px;color:#8997ad;line-height:1.5;margin-top:9px}.pill{display:inline-block;padding:6px 10px;border-radius:99px;background:#202a3b;margin:2px 5px 2px 0;font-size:13px}@media(max-width:760px){main{padding:12px}.card{padding:18px;border-radius:16px}.grid{grid-template-columns:1fr;gap:12px}.row:first-child,.row:nth-child(2),.row:nth-child(3),.row:nth-child(6){grid-column:auto}button{width:100%;margin:4px 0}h1{font-size:32px}}
+</style></head>
+<body><main><section class="card">
+<h1>ONNX Voice Changer</h1>
+<p>Local HTML voice changer. Download this file and open it in Chrome or Edge. It does not use GitHub Pages, Electron, or a remote app server.</p>
+<div class="grid">
+<div class="row"><label>Runtime</label><span id="gpu" class="pill">Checking WebGPU...</span><span class="pill">ONNX Runtime Web</span></div>
+<div class="row"><label>1. Download the default voice model</label><button id="downloadVoice">Download GuraTalkV2 voice</button><button id="clearCache" class="secondary">Clear model cache</button><div class="small">A public RVC v2 ONNX voice model. Replace the URL later if you want another compatible voice.</div></div>
+<div class="row"><label>2. Download browser base models</label><button id="downloadBase">Download ContentVec + RMVPE</button><div class="bar"><i id="progress"></i></div><div id="downloadStatus" class="small">Not downloaded.</div></div>
+<div class="row"><label>3. Microphone / Audio Input</label><select id="mic"><option value="">Choose microphone / input...</option></select><button id="enableMic">Enable microphone access</button><button id="refresh">Refresh microphones</button><div class="small">Your physical mic or virtual input (such as Voicemeeter) will appear here after microphone access is allowed.</div></div>
+<div class="row"><label>4. Speaker / Audio Output</label><select id="output"><option value="">Default speaker / output...</option></select><button id="refreshOut">Refresh outputs</button><div class="small">Choose your speakers, headphones, or Voicemeeter output here.</div></div>
+<div class="row"><label>5. Voice conversion</label><button id="start" disabled>Start Voice Changer</button><button id="stop" disabled class="secondary">Stop</button><div class="small">Short chunks keep latency bounded. All three RVC stages use WASM for maximum browser compatibility.</div></div>
+</div>
+<div id="status" class="status">Download the models, choose your input/output devices, then start conversion.</div>
+</section></main>
+<script type="module">
+import {createRVC,runPipelineInWorker,isWorkerSupported} from "https://cdn.jsdelivr.net/npm/rvc-web-runtime@1.0.5/dist/index.js";
+const $=id=>document.getElementById(id);
+const VOICE_URL="https://huggingface.co/DogManTC/test-rvc-onnx/resolve/main/GuraTalkV2.onnx";
+const CONTENT_URL="https://huggingface.co/DogManTC/test-rvc-onnx/resolve/main/vec-768-layer-12.onnx";
+const PITCH_URL="https://huggingface.co/DogManTC/test-rvc-onnx/resolve/main/rmvpe.onnx";
+let micStream=null,micCtx=null,worklet=null,playCtx=null,nextPlay=0,running=false,processing=false,queue=[],dbPromise;
+const status=t=>$("status").textContent=t;
+function openDB(){if(dbPromise)return dbPromise;dbPromise=new Promise((res,rej)=>{const r=indexedDB.open("onnx-voicechanger",1);r.onupgradeneeded=()=>r.result.createObjectStore("models");r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});return dbPromise}
+async function put(k,v){const db=await openDB();return new Promise((res,rej)=>{const x=db.transaction("models","readwrite");x.objectStore("models").put(v,k);x.oncomplete=res;x.onerror=()=>rej(x.error)})}
+async function get(k){const db=await openDB();return new Promise((res,rej)=>{const x=db.transaction("models"),q=x.objectStore("models").get(k);q.onsuccess=()=>res(q.result||null);q.onerror=()=>rej(q.error)})}
+async function clearCache(){const db=await openDB();return new Promise((res,rej)=>{const x=db.transaction("models","readwrite");x.objectStore("models").clear();x.oncomplete=res;x.onerror=()=>rej(x.error)})}
+async function download(k,url,label){
+ const old=await get(k);if(old){$("downloadStatus").textContent=label+" already cached.";return old}
+ const res=await fetch(url);if(!res.ok)throw new Error(label+" HTTP "+res.status);
+ const total=Number(res.headers.get("content-length"))||0;let loaded=0,ch=[];
+ if(!res.body)throw new Error("Streaming download unavailable");
+ const rd=res.body.getReader();while(true){const z=await rd.read();if(z.done)break;ch.push(z.value);loaded+=z.value.byteLength;const pct=total?Math.round(loaded/total*100):0;$("progress").style.width=pct+"%";$("downloadStatus").textContent=label+" "+(total?pct+"%":Math.round(loaded/1048576)+" MB")}
+ const f=new File([new Blob(ch)],label+".onnx");await put(k,f);return f
+}
+async function devices(){
+ const ds=await navigator.mediaDevices.enumerateDevices();
+ $("mic").replaceChildren(new Option("Choose microphone / input...",""));ds.filter(d=>d.kind==="audioinput").forEach((d,i)=>$("mic").add(new Option(d.label||`Microphone / Input ${i+1}`,d.deviceId)));
+ $("output").replaceChildren(new Option("Default speaker / output...",""));ds.filter(d=>d.kind==="audiooutput").forEach((d,i)=>$("output").add(new Option(d.label||`Speaker / Output ${i+1}`,d.deviceId)));
+}
+async function ready(){const a=await get("voice").catch(()=>null),b=await get("content").catch(()=>null),c=await get("pitch").catch(()=>null);$("start").disabled=!(a&&b&&c)}
+async function models(){status("Downloading/checking models...");const v=await download("voice",VOICE_URL,"GuraTalkV2");const c=await download("content",CONTENT_URL,"ContentVec");const p=await download("pitch",PITCH_URL,"RMVPE");$("downloadStatus").textContent="All models ready.";await ready();return{voice:v,content:c,pitch:p}}
+async function makeWorklet(){
+ const code='class MicProcessor extends AudioWorkletProcessor{constructor(){super();this.buf=[];this.n=0;this.target=24000}process(inputs){const ch=inputs[0]&&inputs[0][0];if(!ch)return true;for(let i=0;i<ch.length;i++){this.buf.push(ch[i]);this.n++;if(this.n>=this.target){const a=new Float32Array(this.buf);this.port.postMessage(a,[a.buffer]);this.buf=[];this.n=0}}return true}}registerProcessor("mic-chunker",MicProcessor);';
+ const u=URL.createObjectURL(new Blob([code],{type:"application/javascript"}));await micCtx.audioWorklet.addModule(u);URL.revokeObjectURL(u);
+ worklet=new AudioWorkletNode(micCtx,"mic-chunker");worklet.port.onmessage=e=>queue.push(e.data);const silent=micCtx.createGain();silent.gain.value=0;worklet.connect(silent).connect(micCtx.destination)
+}
+async function play(blob){
+ const b=await playCtx.decodeAudioData(await blob.arrayBuffer());const s=playCtx.createBufferSource();s.buffer=b;s.connect(playCtx.destination);
+ if(nextPlay<playCtx.currentTime+.04)nextPlay=playCtx.currentTime+.04;s.start(nextPlay);nextPlay+=b.duration
+}
+async function loop(m){
+ while(running){if(!queue.length||processing){await new Promise(r=>setTimeout(r,8));continue}const audio=queue.shift();processing=true;
+  try{const rvc=createRVC();status("Converting speech...");const c=await runPipelineInWorker(rvc,{model:m.voice,contentVec:m.content,rmvpe:m.pitch},audio,micCtx.sampleRate,{onEvent:e=>{if(e.type==="stage")status("Stage: "+e.stage);if(e.type==="error")status("Runtime: "+(e.message||"model inference error"))}},{timeout:120000,chunkDuration:1.5,padDuration:.25,outputSampleRate:48000,contentVecBackend:"wasm",rmvpeBackend:"wasm",rvcBackend:"wasm"});if(c.state==="failed")throw new Error(c.errorMessage||"RVC pipeline failed");if(c.outputWav)await play(c.outputWav);else throw new Error("RVC returned no audio")}catch(e){status("Conversion error: "+(e.message||e));running=false}processing=false}
+}
+$("downloadVoice").onclick=async()=>{try{await download("voice",VOICE_URL,"GuraTalkV2");status("Default voice model ready.");await ready()}catch(e){status("Voice download failed: "+e.message)}};
+$("downloadBase").onclick=async()=>{try{await models()}catch(e){status("Model download failed: "+e.message)}};
+$("clearCache").onclick=async()=>{await clearCache();$("progress").style.width="0%";$("downloadStatus").textContent="Cache cleared.";status("Model cache cleared.");await ready()};
+$("enableMic").onclick=async()=>{try{await navigator.mediaDevices.getUserMedia({audio:true});await devices();status("Microphone access granted! Your available input devices are now listed above. Choose one, then start the voice changer.");await ready()}catch(e){status("Microphone permission failed: "+e.message)}};$("refresh").onclick=async()=>{await devices();await ready()};$("refreshOut").onclick=devices;$("mic").onchange=ready;
+$("start").onclick=async()=>{try{const m={voice:await get("voice"),content:await get("content"),pitch:await get("pitch")};if(!m.voice||!m.content||!m.pitch)throw new Error("Download all models first.");if(!$("mic").value){await devices();if(!$("mic").value)throw new Error("Choose a microphone from the list first.");}
+ micStream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:{exact:$("mic").value},channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+ micCtx=new AudioContext({sampleRate:16000});await micCtx.resume();const src=micCtx.createMediaStreamSource(micStream);await makeWorklet();src.connect(worklet);
+ playCtx=new AudioContext({sampleRate:48000});if($("output").value&&typeof playCtx.setSinkId==="function")await playCtx.setSinkId($("output").value);await playCtx.resume();nextPlay=playCtx.currentTime+.1;running=true;$("start").disabled=true;$("stop").disabled=false;status("Live browser conversion started. Speak normally.");loop(m)
+ }catch(e){status("Could not start: "+e.message)}};
+$("stop").onclick=()=>{running=false;queue=[];worklet?.disconnect();micStream?.getTracks().forEach(t=>t.stop());micCtx?.close();playCtx?.close();worklet=null;micStream=null;micCtx=null;playCtx=null;$("start").disabled=false;$("stop").disabled=true;status("Stopped.");ready()};
+(async()=>{$("gpu").textContent=navigator.gpu?"WebGPU available":"WASM fallback";if(!isWorkerSupported())status("Web Workers are required.");await devices().catch(()=>{});await ready()})();
+</script></body></html>
