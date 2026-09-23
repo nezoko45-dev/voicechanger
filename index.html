@@ -55,7 +55,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
     <button id="stop" class="stop" disabled>Stop</button>
     <div id="status" class="status">Ready. Select the three model files, then Start.</div>
     <div id="log" class="log">Waiting for Start.</div>
-    <div class="note">The buffer controls how much microphone audio is collected before each ONNX conversion pass. Smaller values reduce waiting time but can increase artifacts or CPU load.</div>
+    <div class="note">Important: this browser runtime supports RVC v2 (768-dim) models. The RVC synthesizer uses ONNX Runtime WASM; ContentVec and RMVPE can use WebGPU in Chrome. A v1/incompatible RVC model can produce an ONNX session-creation error.</div>
   </div>
 
   <div class="card">
@@ -76,7 +76,7 @@ import { createRVC, runPipelineInWorker, isWorkerSupported } from "https://cdn.j
 const $ = id => document.getElementById(id);
 let running=false, starting=false, stream=null, ctx=null, source=null, processor=null;
 let inputRate=48000, buffer=[], bufferedSamples=0, chunkSamples=0, workerBusy=false, queue=[];
-let outputCtx=null, outputTime=0;
+let outputCtx=null, outputTime=0, rvcRuntime=null;
 
 function status(s){$("status").textContent=s}
 function log(s){$("log").textContent=s}
@@ -114,7 +114,13 @@ async function drain(){
   const audio=queue.shift();
   try{
     status("Converting buffered audio with ONNX...");
-    const rvc=createRVC();
+    if(!rvcRuntime){
+      // Keep the worker/WASM assets on the same jsDelivr package origin.
+      rvcRuntime=createRVC({
+        assetBaseUrl:"https://cdn.jsdelivr.net/npm/rvc-web-runtime/dist/"
+      });
+    }
+    const rvc=rvcRuntime;
     const files={
       model:$("voiceModel").files[0],
       contentVec:$("contentVec").files[0],
@@ -136,6 +142,8 @@ async function drain(){
         padDuration:.5,
         inputSampleRate:16000,
         outputSampleRate:48000,
+        // rvc-web-runtime documents the RVC synthesizer as WASM-only.
+        // WebGPU is used only for ContentVec/RMVPE where supported.
         contentVecBackend:navigator.gpu?"webgpu":"wasm",
         rmvpeBackend:navigator.gpu?"webgpu":"wasm",
         rvcBackend:"wasm"
@@ -146,7 +154,11 @@ async function drain(){
     status("LIVE — microphone is still streaming.");
   }catch(e){
     log("ERROR: "+(e.message||String(e)));
-    status("Conversion error. Check the model files.");
+    status("Conversion error.");
+    const msg=String(e.message||e);
+    if(/Failed to create an ONNX Runtime session|MODEL_VERIFY|SYNTH_INFERENCE/i.test(msg)){
+      log("ERROR: "+msg+"\n\nUse an RVC v2 (768-dim) ONNX model. This runtime keeps the RVC synthesizer on WASM; WebGPU is used for ContentVec/RMVPE only.");
+    }
   }finally{
     workerBusy=false;
     if(running) drain();
@@ -205,7 +217,7 @@ async function start(){
     running=true;starting=false;
     $("start").disabled=true;$("stop").disabled=false;
     status("LIVE — speak normally.");
-    log("Microphone streaming continuously. Waiting for the first ONNX buffer...");
+    log("Microphone streaming continuously. ONNX worker initialized. Waiting for the first buffer...");
   }catch(e){
     starting=false;cleanup();
     status("Could not start.");
