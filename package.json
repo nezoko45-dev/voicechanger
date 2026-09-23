@@ -1,0 +1,17 @@
+{
+  "name": "onnx-voicechanger",
+  "version": "1.0.0",
+  "description": "Local Windows desktop RVC voice changer using ONNX Runtime Web",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "dependencies": {
+    "rvc-web-runtime": "1.0.5"
+  }
+}
