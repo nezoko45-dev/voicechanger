@@ -1,33 +1,33 @@
-# ONNX Web Voice Changer
+# ONNX Voice Changer
 
-Browser-only speech-to-speech RVC voice conversion.
+This version replaces the old Deepgram/ElevenLabs experiments with browser-local ONNX Runtime Web.
 
-**Microphone → ONNX Runtime Web / RVC → browser audio → Voicemeeter / VRChat**
+## Pipeline
 
-## No Python
-The active workflow uses Chrome/Edge only. No Python, .exe, Electron, server, STT, LLM, or TTS.
+Microphone -> 16 kHz resample -> ContentVec -> RMVPE -> RVC ONNX -> Chrome audio -> Voicemeeter -> VRChat
 
-## First run
-1. Open the GitHub Pages site in current Chrome or Edge.
-2. Click **Download GuraTalkV2 voice**.
-3. Click **Download ContentVec + RMVPE**.
-4. Allow microphone access and choose the microphone.
-5. Choose the browser output device.
-6. Click **Start Voice Changer**.
+The browser performs inference locally. No STT, TTS, Deepgram, ElevenLabs, GPT, or cloud voice-conversion API is used.
 
-Models are cached in IndexedDB after downloading.
+## Model files
 
-The base models are quantized ONNX versions to reduce the browser download size. The first download is still large because RVC needs a target voice, a 768-dimensional content encoder, and a pitch estimator.
+The app needs:
 
-## Default voice
-The default is **GuraTalkV2**, a public RVC v2 ONNX model hosted on Hugging Face. Its upstream talking-voice model repository is marked OpenRAIL. Use the model according to its published license/terms.
+1. Your RVC v2 voice model: .onnx (or .pth where supported by the runtime)
+2. ContentVec/HuBERT: vec-768-layer-12.onnx
+3. RMVPE: RMVPE.onnx
 
-## Runtime
-The app uses `rvc-web-runtime` 1.0.5. The runtime documents ContentVec + RMVPE WebGPU acceleration and an RVC synthesizer running through WASM because of a current WebGPU kernel limitation. It is an alpha-stage browser RVC runtime, so live conversational latency will depend heavily on your computer.
+RVC-Web-Runtime currently supports RVC v2 models and uses ONNX Runtime Web. ContentVec and RMVPE can use WebGPU when available; the RVC synthesizer remains on WASM.
 
-## VRChat
-Route the browser output to your Voicemeeter path if Chrome exposes that output device, then select the corresponding virtual microphone in VRChat.
+## Run locally
 
-## Sources
-- RVC-Web-Runtime: https://github.com/moyue23/rvc-web-runtime
-- Default voice: https://huggingface.co/DogManTC/test-rvc-onnx
+Chrome needs a secure/local web origin for microphone access. Run:
+
+start.bat
+
+Then open the address printed by the batch file.
+
+## Important
+
+This repository does not include large model weights. Select the model files in the browser.
+
+The Buffer seconds control determines how much audio is collected before each conversion pass. It is intentionally adjustable because browser ONNX inference speed depends on the PC.
