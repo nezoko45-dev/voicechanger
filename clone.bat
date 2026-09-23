@@ -10,28 +10,28 @@ echo.
 
 where py >nul 2>nul
 if errorlevel 1 (
-    echo ERROR: Python was not found.
-    echo Install Python 3.13 x64.
-    pause
-    exit /b 1
-)
-
-py -3.13 -c "import sys; print('Using Python '+sys.version)" >nul 2>nul
-if errorlevel 1 (
-    echo ERROR: Python 3.13 was not found.
-    echo Install Python 3.13 x64.
+    echo ERROR: Python is not installed.
+    echo Install a current Python 3.x version.
     pause
     exit /b 1
 )
 
 if not exist ".venv\Scripts\python.exe" (
-    echo Creating Python 3.13 environment...
-    py -3.13 -m venv .venv
+    echo Creating local Python environment...
+    py -3 -m venv .venv
     if errorlevel 1 (
         echo ERROR: Could not create the Python environment.
         pause
         exit /b 1
     )
+)
+
+".venv\Scripts\python.exe" -m pip install --disable-pip-version-check -r requirements-clone.txt
+if errorlevel 1 (
+    echo.
+    echo ERROR: Python dependencies could not be installed.
+    pause
+    exit /b 1
 )
 
 if "%~1"=="" (
