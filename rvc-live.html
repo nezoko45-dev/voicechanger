@@ -110,23 +110,35 @@ async function loadVoice(){
  }catch(e){vmsg("Voice model error: "+(e.message||e))}
 }
 async function downloadFile(url,label,onProgress){
- const controller=new AbortController();
- const timer=setTimeout(()=>controller.abort(),10*60*1000);
- try{
-  const r=await fetch(url,{signal:controller.signal,cache:"no-store"});
-  if(!r.ok)throw new Error(label+" HTTP "+r.status);
-  if(!r.body) return new Blob([await r.arrayBuffer()],{type:"application/octet-stream"});
-  const total=Number(r.headers.get("content-length"))||0;
-  const reader=r.body.getReader();
-  const parts=[];let loaded=0;
-  for(;;){
-   const {done,value}=await reader.read();
-   if(done)break;
-   parts.push(value);loaded+=value.byteLength;
-   onProgress(loaded,total);
-  }
-  return new Blob(parts,{type:"application/octet-stream"});
- }finally{clearTimeout(timer)}
+ let lastError=null;
+ for(let attempt=1;attempt<=4;attempt++){
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),15*60*1000);
+  try{
+   onProgress(0,0,"attempt "+attempt+" of 4");
+   const r=await fetch(url,{signal:controller.signal,cache:"no-store",redirect:"follow"});
+   if(!r.ok)throw new Error(label+" HTTP "+r.status);
+   if(!r.body)return new Blob([await r.arrayBuffer()],{type:"application/octet-stream"});
+   const total=Number(r.headers.get("content-length"))||0;
+   const reader=r.body.getReader();
+   const parts=[];let loaded=0;
+   for(;;){
+    const {done,value}=await reader.read();
+    if(done)break;
+    if(value){parts.push(value);loaded+=value.byteLength;onProgress(loaded,total,"");}
+   }
+   if(!loaded)throw new Error(label+" returned an empty file");
+   return new Blob(parts,{type:"application/octet-stream"});
+  }catch(e){
+   lastError=e;
+   if(attempt<4){
+    const wait=attempt*1500;
+    onProgress(0,0,"connection dropped — retrying");
+    await new Promise(r=>setTimeout(r,wait));
+   }
+  }finally{clearTimeout(timer)}
+ }
+ throw lastError||new Error(label+" download failed");
 }
 async function downloadBase(){
  if($("downloadBase").disabled)return;
