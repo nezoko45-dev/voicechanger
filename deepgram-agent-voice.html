@@ -1,179 +1,289 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Deepgram Agent Voice</title>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Deepgram Repeat Me</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#080b12;color:#f7f8fc;font:15px system-ui,Arial,sans-serif}.app{width:min(900px,100%);margin:auto;padding:28px}.brand{font-size:30px;font-weight:850}.sub{color:#8f9bb0;margin:6px 0 18px}.panel{background:#10151f;border:1px solid #293347;border-radius:20px;padding:22px;margin-bottom:16px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}label{display:block;color:#aeb9ca;font-weight:700;margin-bottom:7px}input,select{width:100%;background:#080d15;color:#fff;border:1px solid #3a465d;border-radius:11px;padding:13px;font:inherit}.actions{display:flex;justify-content:center;gap:12px}.btn{border:0;border-radius:12px;padding:15px 24px;font-weight:800;font-size:16px;background:#735cff;color:#fff;cursor:pointer}.btn:active{transform:scale(.98)}.stop{background:#9b3d50}.btn:disabled{opacity:.45;cursor:not-allowed}.status{margin-top:15px;text-align:center;min-height:22px;color:#c4ccda}.log{margin-top:10px;background:#080d15;border:1px solid #293347;border-radius:12px;padding:10px;font:12px ui-monospace,monospace;color:#aeb9ca;min-height:42px;white-space:pre-wrap}.transcript{min-height:80px;background:#080d15;border:1px solid #293347;border-radius:12px;padding:15px;line-height:1.5}.flow{font:12px ui-monospace,monospace;color:#b8c3d5;line-height:1.8}.note{font-size:12px;color:#778399;line-height:1.5;margin-top:10px}@media(max-width:700px){.app{padding:14px}.grid{grid-template-columns:1fr}.actions{flex-direction:column}.btn{width:100%}}
-</style></head><body><div class="app">
-<div class="brand">Deepgram Agent Voice</div>
-<div class="sub">Chrome UI + batch launcher • mic → Deepgram Voice Agent → streamed agent audio</div>
-<section class="panel"><div class="grid">
-<div><label>Deepgram API key / temporary token</label><input id="key" type="password" autocomplete="off" placeholder="Paste your Deepgram key or temporary token"></div>
-<div><label>Agent voice</label><select id="voice"><option value="aura-2-amalthea-en">Amalthea</option><option value="aura-2-thalia-en">Thalia</option><option value="aura-2-luna-en">Luna</option><option value="aura-2-asteria-en">Asteria</option></select></div>
-</div></section>
-<section class="panel"><label>Windows output</label><select id="output"><option value="">Default speaker / output</option></select></section>
-<section class="panel"><div class="actions"><button class="btn" id="start" type="button">Start Agent</button><button class="btn stop" id="stop" type="button" disabled>Stop</button></div><div class="status" id="status">Ready — enter your Deepgram key, then press Start Agent.</div><div class="log" id="log">Waiting for Start Agent click.</div></section>
-<section class="panel"><label>Conversation</label><div class="transcript" id="transcript">Nothing heard yet.</div></section>
-<section class="panel"><label>Pipeline</label><div class="flow">MIC → Deepgram Voice Agent → streamed PCM audio → Chrome → Windows output</div><div class="note">The Start button now begins microphone permission immediately, then connects to Deepgram. No sentence buffering.</div></section>
+*{box-sizing:border-box}body{margin:0;background:#080b12;color:#f5f7fb;font:15px system-ui,Arial,sans-serif}
+.app{width:min(720px,100%);margin:auto;padding:32px 18px}.card{background:#111722;border:1px solid #293449;border-radius:20px;padding:22px;margin-bottom:16px}
+h1{margin:0 0 6px;font-size:30px}.sub{color:#9ba7ba;margin-bottom:20px}
+label{display:block;color:#b8c2d2;font-weight:700;margin:0 0 7px}
+input,select{width:100%;background:#080d15;color:#fff;border:1px solid #3a465c;border-radius:11px;padding:13px;font:inherit}
+button{width:100%;border:0;border-radius:12px;padding:15px;margin-top:12px;font-weight:800;font-size:16px;background:#735cff;color:#fff;cursor:pointer}
+button.stop{background:#9b3d50}button:disabled{opacity:.45;cursor:not-allowed}
+.status{text-align:center;color:#c7cfdd;min-height:24px;margin-top:15px}.heard{min-height:80px;background:#080d15;border:1px solid #293449;border-radius:12px;padding:15px;line-height:1.5;font-size:18px}
+.log{margin-top:12px;background:#080d15;border:1px solid #293449;border-radius:12px;padding:10px;color:#9ba7ba;font:12px ui-monospace,monospace;white-space:pre-wrap}
+.note{color:#7f8ca1;font-size:12px;line-height:1.5;margin-top:12px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="card">
+    <h1>Deepgram Repeat Me</h1>
+    <div class="sub">Speak into the microphone and the Deepgram Voice Agent repeats your words.</div>
+    <label for="key">Deepgram API key or temporary token</label>
+    <input id="key" type="password" autocomplete="off" placeholder="Paste your Deepgram key/token">
+    <label for="voice" style="margin-top:14px">Voice</label>
+    <select id="voice">
+      <option value="aura-2-amalthea-en">Amalthea</option>
+      <option value="aura-2-asteria-en">Asteria</option>
+      <option value="aura-2-luna-en">Luna</option>
+      <option value="aura-2-thalia-en">Thalia</option>
+    </select>
+    <button id="start">Start listening</button>
+    <button id="stop" class="stop" disabled>Stop</button>
+    <div id="status" class="status">Ready.</div>
+    <div id="log" class="log">Waiting for Start listening.</div>
+  </div>
+
+  <div class="card">
+    <label>You said</label>
+    <div id="heard" class="heard">Nothing heard yet.</div>
+    <div class="note">The agent is instructed to output only the latest user speech. It does not greet, ask questions, or add replies.</div>
+  </div>
 </div>
+
 <script>
 (function(){
 "use strict";
-var $=function(id){return document.getElementById(id)};
-var running=false,starting=false,agent=null,stream=null,inCtx=null,outCtx=null,source=null,processor=null,nextPlay=0,agentReady=false,activeSources=[];
 
-function status(t){$("status").textContent=t}
-function log(t){$("log").textContent=t}
-function pcm16(f){var o=new Int16Array(f.length);for(var i=0;i<f.length;i++){var x=Math.max(-1,Math.min(1,f[i]));o[i]=x<0?x*32768:x*32767}return o}
+const $ = id => document.getElementById(id);
+let ws=null, stream=null, inCtx=null, source=null, processor=null;
+let outCtx=null, nextPlay=0, running=false, starting=false, ready=false;
+let playing=[];
 
-async function outputs(){
-try{
-var ds=await navigator.mediaDevices.enumerateDevices();
-$("output").replaceChildren(new Option("Default speaker / output",""));
-ds.filter(function(d){return d.kind==="audiooutput"}).forEach(function(d,i){
-$("output").add(new Option(d.label||("Speaker "+(i+1)),d.deviceId));
-});
-}catch(e){}
+function setStatus(s){ $("status").textContent=s; }
+function setLog(s){ $("log").textContent=s; }
+
+function floatToPCM16(input){
+  const out=new Int16Array(input.length);
+  for(let i=0;i<input.length;i++){
+    const x=Math.max(-1,Math.min(1,input[i]));
+    out[i]=x<0?x*32768:x*32767;
+  }
+  return out;
+}
+
+function stopAudio(){
+  for(const n of playing){try{n.stop()}catch(e){}}
+  playing=[];
+  if(outCtx) nextPlay=outCtx.currentTime;
+}
+
+async function playPCM(arrayBuffer){
+  if(!outCtx) outCtx=new AudioContext({sampleRate:24000});
+  await outCtx.resume();
+  const pcm=new Int16Array(arrayBuffer);
+  if(!pcm.length) return;
+
+  const buffer=outCtx.createBuffer(1,pcm.length,24000);
+  const data=buffer.getChannelData(0);
+  for(let i=0;i<pcm.length;i++) data[i]=pcm[i]/32768;
+
+  const node=outCtx.createBufferSource();
+  node.buffer=buffer;
+  node.connect(outCtx.destination);
+  playing.push(node);
+  node.onended=()=>{playing=playing.filter(x=>x!==node)};
+
+  if(nextPlay<outCtx.currentTime+0.015) nextPlay=outCtx.currentTime+0.015;
+  node.start(nextPlay);
+  nextPlay+=buffer.duration;
 }
 
 function settings(){
-return {
-type:"Settings",
-audio:{input:{encoding:"linear16",sample_rate:16000},output:{encoding:"linear16",sample_rate:24000,container:"none"}},
-agent:{
-language:"en",
-listen:{provider:{type:"deepgram",model:"nova-3"}},
-think:{provider:{type:"open_ai",model:"gpt-4o-mini",temperature:0},prompt:"ONLY repeat the user's words verbatim. Never greet. Never ask a question. Never say how you can help. Never explain, answer, summarize, acknowledge, or add anything. Output only the exact words from the latest user speech, unchanged."},
-speak:{provider:{type:"deepgram",version:"v1",model:$("voice").value}}
-}
-};
-}
-
-function stopPlayback(){
-activeSources.forEach(function(n){try{n.stop()}catch(e){}});
-activeSources=[];
-if(outCtx)nextPlay=outCtx.currentTime;
-}
-
-async function play(ab){
-if(!outCtx)outCtx=new AudioContext({sampleRate:24000});
-await outCtx.resume();
-if($("output").value&&outCtx.setSinkId)try{await outCtx.setSinkId($("output").value)}catch(e){}
-var s=new Int16Array(ab);if(!s.length)return;
-var b=outCtx.createBuffer(1,s.length,24000),c=b.getChannelData(0);
-for(var i=0;i<s.length;i++)c[i]=s[i]/32768;
-var n=outCtx.createBufferSource();n.buffer=b;n.connect(outCtx.destination);
-activeSources.push(n);n.onended=function(){activeSources=activeSources.filter(function(x){return x!==n})};
-if(nextPlay<outCtx.currentTime+.02)nextPlay=outCtx.currentTime+.02;
-n.start(nextPlay);nextPlay+=b.duration;
+  return {
+    type:"Settings",
+    audio:{
+      input:{encoding:"linear16",sample_rate:16000},
+      output:{encoding:"linear16",sample_rate:24000,container:"none"}
+    },
+    agent:{
+      language:"en",
+      greeting:"",
+      listen:{
+        provider:{
+          type:"deepgram",
+          version:"v2",
+          model:"flux-general-en",
+          eager_eot_threshold:0.35,
+          eot_threshold:0.55
+        }
+      },
+      think:{
+        provider:{type:"open_ai",model:"gpt-4o-mini",temperature:0},
+        prompt:"Repeat what I say. Your entire response must contain ONLY the exact words from the latest user speech. Do not greet. Do not ask questions. Do not answer anything. Do not acknowledge. Do not add, remove, summarize, translate, correct, or explain words. If the user says 'hello', output only 'hello'."
+      },
+      speak:{
+        provider:{type:"deepgram",model:$("voice").value}
+      }
+    }
+  };
 }
 
-function connect(key){
-return new Promise(function(resolve,reject){
-var settled=false;
-try{agent=new WebSocket("wss://agent.deepgram.com/v1/agent/converse",["token",key])}
-catch(e){reject(e);return}
-agent.binaryType="arraybuffer";
-var timer=setTimeout(function(){if(!settled){settled=true;try{agent.close()}catch(e){}reject(new Error("Deepgram connection timed out."))}},20000);
+function connect(token){
+  return new Promise((resolve,reject)=>{
+    let done=false;
+    let timer;
 
-agent.onopen=function(){status("Connected. Waiting for Deepgram Welcome...");log("WebSocket opened.");};
+    try{
+      // Browser WebSockets cannot set Authorization headers, so use
+      // Deepgram's documented "token, API_KEY" subprotocol authentication.
+      ws=new WebSocket("wss://agent.deepgram.com/v1/agent/converse",["token",token]);
+      ws.binaryType="arraybuffer";
+    }catch(err){ reject(err); return; }
 
-agent.onmessage=async function(e){
-if(e.data instanceof ArrayBuffer){try{await play(e.data)}catch(x){}return}
-if(typeof e.data!=="string")return;
-var m;try{m=JSON.parse(e.data)}catch(x){log("Received non-JSON message.");return}
+    timer=setTimeout(()=>{
+      if(done)return;
+      done=true;
+      try{ws.close()}catch(e){}
+      reject(new Error("Deepgram connection timed out."));
+    },20000);
 
-if(m.type==="Welcome"){
-status("Welcome received. Sending Agent settings...");
-log("Deepgram Welcome received.");
-try{agent.send(JSON.stringify(settings()))}catch(x){reject(x)}
-return;
-}
-if(m.type==="SettingsApplied"){
-if(settled)return;
-settled=true;clearTimeout(timer);agentReady=true;status("Agent ready — speak now.");log("SettingsApplied received. Microphone is streaming.");resolve();return;
-}
-if(m.type==="ConversationText"){
-$("transcript").textContent=(m.role?m.role+": ":"")+m.content;return;
-}
-if(m.type==="UserStartedSpeaking"){stopPlayback();return}
-if(m.type==="Error"){
-var msg=m.description||m.message||m.code||"Unknown Deepgram error";
-log("Deepgram Error: "+msg);
-if(!settled){settled=true;clearTimeout(timer);reject(new Error(msg))}else status("Deepgram error: "+msg);
-return;
-}
-if(m.type==="Warning"){log("Deepgram warning: "+(m.description||m.message||""));return}
-};
+    ws.onopen=()=>setLog("WebSocket connected. Waiting for Deepgram Welcome...");
+    
+    ws.onmessage=async event=>{
+      if(event.data instanceof ArrayBuffer){
+        try{await playPCM(event.data)}catch(e){}
+        return;
+      }
+      if(typeof event.data!=="string")return;
 
-agent.onerror=function(){
-if(!settled){settled=true;clearTimeout(timer);reject(new Error("WebSocket failed. Check the key/token and Deepgram access."))}
-else log("WebSocket error.");
-};
-agent.onclose=function(){
-if(!settled){settled=true;clearTimeout(timer);reject(new Error("Deepgram closed before SettingsApplied."))}
-else if(running){running=false;status("Deepgram disconnected.");}
-};
-});
+      let msg;
+      try{msg=JSON.parse(event.data)}catch(e){return;}
+
+      if(msg.type==="Welcome"){
+        setLog("Welcome received. Sending repeat-only settings...");
+        ws.send(JSON.stringify(settings()));
+        return;
+      }
+
+      if(msg.type==="SettingsApplied"){
+        if(done)return;
+        done=true;
+        clearTimeout(timer);
+        ready=true;
+        resolve();
+        return;
+      }
+
+      if(msg.type==="ConversationText"){
+        if(msg.role==="user"){
+          $("heard").textContent=msg.content||"";
+        }
+        return;
+      }
+
+      if(msg.type==="AgentStartedSpeaking"){
+        setStatus("Repeating...");
+        return;
+      }
+
+      if(msg.type==="AgentAudioDone"){
+        if(running)setStatus("Listening — speak again.");
+        return;
+      }
+
+      if(msg.type==="Error"){
+        const text=msg.description||msg.message||msg.code||"Unknown Deepgram error";
+        setLog("Deepgram error: "+text);
+        if(!done){
+          done=true; clearTimeout(timer);
+          reject(new Error(text));
+        }
+        return;
+      }
+
+      if(msg.type==="Warning"){
+        setLog("Deepgram warning: "+(msg.description||msg.message||""));
+      }
+    };
+
+    ws.onerror=()=>{
+      if(!done){
+        done=true; clearTimeout(timer);
+        reject(new Error("WebSocket failed. Check your Deepgram key/token."));
+      }
+    };
+
+    ws.onclose=()=>{
+      if(!done){
+        done=true; clearTimeout(timer);
+        reject(new Error("Deepgram closed before the agent became ready."));
+      }else if(running){
+        cleanup();
+        setStatus("Deepgram disconnected.");
+      }
+    };
+  });
 }
 
 async function start(){
-if(running||starting)return;
-starting=true;
-$("start").disabled=true;
-status("Requesting microphone...");
-log("Start clicked. Requesting microphone permission...");
+  if(running||starting)return;
+  starting=true;
+  $("start").disabled=true;
+  setStatus("Requesting microphone...");
+  setLog("Start clicked.");
 
-try{
-stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
-log("Microphone permission granted.");
+  try{
+    const token=$("key").value.trim();
+    if(!token) throw new Error("Enter your Deepgram API key or temporary token first.");
 
-var key=$("key").value.trim();
-if(!key)throw new Error("Enter your Deepgram API key or temporary token first.");
+    stream=await navigator.mediaDevices.getUserMedia({
+      audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}
+    });
 
-status("Connecting to Deepgram Agent...");
-await connect(key);
+    setStatus("Connecting to Deepgram...");
+    await connect(token);
 
-inCtx=new AudioContext({sampleRate:16000});
-await inCtx.resume();
-source=inCtx.createMediaStreamSource(stream);
-processor=inCtx.createScriptProcessor(4096,1,1);
-processor.onaudioprocess=function(e){
-if(!running||!agentReady||!agent||agent.readyState!==WebSocket.OPEN)return;
-try{agent.send(pcm16(e.inputBuffer.getChannelData(0)).buffer)}catch(x){}
-};
-source.connect(processor);
-processor.connect(inCtx.destination);
+    inCtx=new AudioContext({sampleRate:16000});
+    await inCtx.resume();
 
-running=true;
-starting=false;
-$("stop").disabled=false;
-status("Agent ready — speak now.");
-log("LIVE. Microphone audio is streaming to Deepgram.");
-}catch(e){
-starting=false;
-cleanup();
-status("Could not start: "+(e&&e.message?e.message:String(e)));
-log("ERROR: "+(e&&e.message?e.message:String(e)));
-$("start").disabled=false;
-$("stop").disabled=true;
-}
+    source=inCtx.createMediaStreamSource(stream);
+    processor=inCtx.createScriptProcessor(2048,1,1);
+
+    processor.onaudioprocess=e=>{
+      if(!running||!ready||!ws||ws.readyState!==WebSocket.OPEN)return;
+      try{
+        ws.send(floatToPCM16(e.inputBuffer.getChannelData(0)).buffer);
+      }catch(err){}
+    };
+
+    source.connect(processor);
+    processor.connect(inCtx.destination);
+
+    running=true;
+    starting=false;
+    $("stop").disabled=false;
+    setStatus("Listening — speak now.");
+    setLog("LIVE. Microphone audio is streaming continuously to Deepgram.");
+  }catch(err){
+    starting=false;
+    cleanup();
+    setStatus("Could not start: "+(err.message||String(err)));
+    setLog("ERROR: "+(err.message||String(err)));
+  }
 }
 
 function cleanup(){
-running=false;starting=false;agentReady=false;
-try{processor&&processor.disconnect()}catch(e){}
-try{source&&source.disconnect()}catch(e){}
-try{inCtx&&inCtx.close()}catch(e){}
-try{agent&&agent.close()}catch(e){}
-try{stream&&stream.getTracks().forEach(function(t){t.stop()})}catch(e){}
-stopPlayback();
-agent=null;stream=null;source=null;processor=null;inCtx=null;
-$("start").disabled=false;$("stop").disabled=true;
+  running=false;
+  starting=false;
+  ready=false;
+  try{processor&&processor.disconnect()}catch(e){}
+  try{source&&source.disconnect()}catch(e){}
+  try{inCtx&&inCtx.close()}catch(e){}
+  try{ws&&ws.close()}catch(e){}
+  try{stream&&stream.getTracks().forEach(t=>t.stop())}catch(e){}
+  stopAudio();
+  processor=null; source=null; inCtx=null; ws=null; stream=null;
+  $("start").disabled=false;
+  $("stop").disabled=true;
 }
 
-$("start").addEventListener("click",function(e){e.preventDefault();start()});
-$("stop").addEventListener("click",function(e){e.preventDefault();cleanup();status("Stopped.");log("Stopped. Press Start Agent to begin again.")});
-$("output").addEventListener("change",async function(){if(outCtx&&outCtx.setSinkId)try{await outCtx.setSinkId($("output").value)}catch(e){}});
-outputs();
+$("start").addEventListener("click",start);
+$("stop").addEventListener("click",()=>{cleanup();setStatus("Stopped.");setLog("Stopped. Press Start listening to begin again.");});
 })();
-</script></body></html>
+</script>
+</body>
+</html>
