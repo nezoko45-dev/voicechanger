@@ -7,7 +7,7 @@ CKPT = ROOT / "checkpoints_v2" / "converter"
 
 def main():
     if len(sys.argv) != 2:
-        print("Drag one WAV file onto clone.bat.")
+        print("ERROR: No WAV file was supplied.")
         return 1
 
     source = Path(sys.argv[1]).resolve()
@@ -19,8 +19,8 @@ def main():
     weights = CKPT / "checkpoint.pth"
     if not config.is_file() or not weights.is_file():
         print("ERROR: OpenVoice V2 converter files are missing.")
-        print(config)
-        print(weights)
+        print(f"Expected: {config}")
+        print(f"Expected: {weights}")
         return 1
 
     try:
@@ -34,6 +34,7 @@ def main():
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     print(f"Using {device}")
     print("Loading OpenVoice V2...")
+
     converter = ToneColorConverter(
         str(config),
         device=device,
@@ -44,8 +45,7 @@ def main():
     OUT.mkdir(exist_ok=True)
     output = OUT / "voice_embedding.pth"
 
-    print("Extracting voice embedding...")
-    # Direct extraction: no web server, no speech recognition, no VAD server.
+    print(f"Extracting voice from: {source.name}")
     converter.extract_se(str(source), se_save_path=str(output))
 
     print()
