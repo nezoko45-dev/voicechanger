@@ -46,7 +46,7 @@ async function models(){status("Downloading/checking models...");const v=await d
 async function makeWorklet(){
  const code='class MicProcessor extends AudioWorkletProcessor{constructor(){super();this.buf=[];this.n=0;this.target=24000}process(inputs){const ch=inputs[0]&&inputs[0][0];if(!ch)return true;for(let i=0;i<ch.length;i++){this.buf.push(ch[i]);this.n++;if(this.n>=this.target){const a=new Float32Array(this.buf);this.port.postMessage(a,[a.buffer]);this.buf=[];this.n=0}}return true}}registerProcessor("mic-chunker",MicProcessor);';
  const u=URL.createObjectURL(new Blob([code],{type:"application/javascript"}));await micCtx.audioWorklet.addModule(u);URL.revokeObjectURL(u);
- worklet=new AudioWorkletNode(micCtx,"mic-chunker");worklet.port.onmessage=e=>queue.push(e.data);worklet.connect(micCtx.destination)
+ worklet=new AudioWorkletNode(micCtx,"mic-chunker");worklet.port.onmessage=e=>queue.push(e.data);const silent=micCtx.createGain();silent.gain.value=0;worklet.connect(silent).connect(micCtx.destination)
 }
 async function play(blob){
  const b=await playCtx.decodeAudioData(await blob.arrayBuffer());const s=playCtx.createBufferSource();s.buffer=b;s.connect(playCtx.destination);
@@ -63,7 +63,7 @@ $("refresh").onclick=async()=>{await devices();await ready()};$("refreshOut").on
 $("start").onclick=async()=>{try{const m={voice:await get("voice"),content:await get("content"),pitch:await get("pitch")};if(!m.voice||!m.content||!m.pitch)throw new Error("Download all models first.");if(!$("mic").value)throw new Error("Choose a microphone.");
  micStream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:{exact:$("mic").value},channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
  micCtx=new AudioContext({sampleRate:16000});await micCtx.resume();const src=micCtx.createMediaStreamSource(micStream);await makeWorklet();src.connect(worklet);
- playCtx=new AudioContext({sampleRate:48000});await playCtx.resume();nextPlay=playCtx.currentTime+.1;running=true;$("start").disabled=true;$("stop").disabled=false;status("Live conversion started. Speak normally.");loop(m)
+ playCtx=new AudioContext({sampleRate:48000});if($("output").value&&typeof playCtx.setSinkId==="function")await playCtx.setSinkId($("output").value);await playCtx.resume();nextPlay=playCtx.currentTime+.1;running=true;$("start").disabled=true;$("stop").disabled=false;status("Live conversion started. Speak normally.");loop(m)
  }catch(e){status("Could not start: "+e.message)}};
 $("stop").onclick=()=>{running=false;queue=[];worklet?.disconnect();micStream?.getTracks().forEach(t=>t.stop());micCtx?.close();playCtx?.close();worklet=null;micStream=null;micCtx=null;playCtx=null;$("start").disabled=false;$("stop").disabled=true;status("Stopped.");ready()};
 (async()=>{$("gpu").textContent=navigator.gpu?"WebGPU available":"WASM fallback";if(!isWorkerSupported())status("Web Workers are required.");await devices().catch(()=>{});await ready()})();
