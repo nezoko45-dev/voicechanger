@@ -1,59 +1,82 @@
 @echo off
 setlocal EnableExtensions
 cd /d "%~dp0"
-title OpenVoice V2 Voice Clone
+title OpenVoice V2 Voice Clone - Folder Watcher
 
-if "%~1"=="" (
-    echo ========================================
-    echo       OpenVoice V2 Voice Clone
-    echo ========================================
-    echo.
-    echo Drop a WAV file onto this BAT.
-    echo.
-    pause
-    exit /b 0
-)
+set "INBOX=%~dp0clone_input"
+set "OUTBOX=%~dp0cloned_voice"
+set "PY=%~dp0.venv\Scripts\python.exe"
 
-if /I not "%~x1"==".wav" (
-    echo ERROR: Only WAV files are supported.
-    echo.
-    pause
-    exit /b 1
-)
-
-set "SOURCE=%~1"
+if not exist "%INBOX%" mkdir "%INBOX%"
+if not exist "%OUTBOX%" mkdir "%OUTBOX%"
 
 echo ========================================
 echo       OpenVoice V2 Voice Clone
 echo ========================================
 echo.
-echo WAV received:
-echo "%SOURCE%"
+echo Watching:
+echo %INBOX%
 echo.
-echo Opening Chrome...
+echo Put ONE WAV file in that folder.
+echo OpenVoice will automatically process it.
+echo.
+echo Press Ctrl+C to stop.
 echo.
 
-set "CHROME="
-if exist "%ProgramFiles%\Google\Chrome\Application\chrome.exe" set "CHROME=%ProgramFiles%\Google\Chrome\Application\chrome.exe"
-if not defined CHROME if exist "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" set "CHROME=%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"
-if not defined CHROME if exist "%LocalAppData%\Google\Chrome\Application\chrome.exe" set "CHROME=%LocalAppData%\Google\Chrome\Application\chrome.exe"
-
-if not defined CHROME (
-    echo ERROR: Google Chrome was not found.
-    echo.
+where py >nul 2>nul
+if errorlevel 1 (
+    echo ERROR: Python launcher "py" was not found.
     pause
     exit /b 1
 )
 
-start "" "%CHROME%" "%~dp0index.html"
+if not exist "%PY%" (
+    echo Creating local Python environment...
+    py -3 -m venv .venv
+    if errorlevel 1 (
+        echo ERROR: Could not create Python environment.
+        pause
+        exit /b 1
+    )
+)
 
-echo Chrome opened successfully.
-echo.
-echo IMPORTANT:
-echo Chrome cannot receive the WAV path from this BAT.
-echo The WAV remains safely selected by Windows.
-echo.
-echo The OpenVoice processing step is handled by this BAT.
-echo.
-pause
-exit /b 0
+echo Checking dependencies...
+"%PY%" -m pip install --disable-pip-version-check -r requirements-clone.txt
+if errorlevel 1 (
+    echo ERROR: Dependencies could not be installed.
+    pause
+    exit /b 1
+)
+
+:WATCH
+for %%F in ("%INBOX%\*.wav") do (
+    if exist "%%~fF" (
+        echo.
+        echo ========================================
+        echo WAV DETECTED: %%~nxF
+        echo ========================================
+        echo.
+
+        "%PY%" clone_voice.py "%%~fF"
+        if errorlevel 1 (
+            echo.
+            echo CLONE FAILED.
+            echo The WAV was NOT deleted.
+            echo Fix the error and restart this watcher.
+            pause
+            exit /b 1
+        )
+
+        echo.
+        echo CLONE COMPLETE.
+        echo Voice embedding saved in:
+        echo %OUTBOX%
+        echo.
+
+        move /Y "%%~fF" "%INBOX%\processed\" >nul 2>nul
+    )
+)
+
+if not exist "%INBOX%\processed" mkdir "%INBOX%\processed" >nul 2>nul
+timeout /t 2 /nobreak >nul
+goto WATCH
