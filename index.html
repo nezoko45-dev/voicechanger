@@ -1,41 +1,70 @@
 <!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Browser ONNX Voice Changer</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ONNX Web Voice Changer</title>
 <style>
-:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#080b11;color:#f5f7fb;font:16px system-ui,Arial,sans-serif}main{max-width:760px;margin:32px auto;padding:16px}.card{background:#121824;border:1px solid #303a4d;border-radius:18px;padding:26px}h1{margin:0 0 8px}p{color:#b9c3d4;line-height:1.5}.row{display:grid;gap:8px;margin:18px 0}label{font-weight:700}input,select,button{font:inherit;border-radius:10px;padding:12px}input,select{width:100%;background:#080d15;color:#fff;border:1px solid #40506a}button{border:0;background:#765cff;color:#fff;font-weight:700;cursor:pointer;margin:4px 4px 4px 0}button:disabled{opacity:.4;cursor:not-allowed}.status{white-space:pre-wrap;background:#080d15;border:1px solid #27344a;border-radius:12px;padding:14px;margin-top:18px}.good{color:#8ff0a4}.warn{color:#ffd479}.small{font-size:13px;color:#9eabc0}
-</style>
-</head>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#070a10;color:#f5f7fb;font:15px system-ui,Arial,sans-serif}main{max-width:760px;margin:30px auto;padding:16px}.card{background:#111722;border:1px solid #2b3547;border-radius:18px;padding:24px}h1{margin:0 0 6px}p{color:#aeb9ca;line-height:1.5}.grid{display:grid;gap:12px;margin:18px 0}.row{background:#0a0f17;border:1px solid #263247;border-radius:12px;padding:14px}label{display:block;font-weight:700;margin-bottom:7px}button,select{font:inherit;border-radius:10px;padding:11px}button{border:0;background:#765cff;color:#fff;font-weight:700;cursor:pointer;margin:3px 5px 3px 0}button.secondary{background:#263247}button:disabled{opacity:.4;cursor:not-allowed}select{width:100%;background:#080d15;color:#fff;border:1px solid #40506a}.status{white-space:pre-wrap;background:#080d15;border:1px solid #27344a;border-radius:12px;padding:14px;margin-top:16px}.bar{height:8px;background:#202a3b;border-radius:99px;overflow:hidden;margin-top:9px}.bar i{display:block;height:100%;width:0;background:#765cff}.small{font-size:12px;color:#8997ad}.pill{display:inline-block;padding:3px 8px;border-radius:99px;background:#202a3b;margin-right:5px;font-size:12px}
+</style></head>
 <body><main><section class="card">
-<h1>ONNX Runtime WebGPU Voice Changer</h1>
-<p>Browser-only setup for local voice conversion. No Python, Electron, server, STT, LLM, or TTS.</p>
-
-<div class="row"><label>1. Runtime check</label><button id="check">Check WebGPU + ONNX Runtime</button></div>
-<div class="row"><label for="reference">2. Target voice model (.onnx)</label><input id="reference" type="file" accept=".onnx"></div>
-<div class="row"><label for="content">3. Content encoder (.onnx)</label><input id="content" type="file" accept=".onnx"></div>
-<div class="row"><label for="pitch">4. Pitch model (.onnx)</label><input id="pitch" type="file" accept=".onnx"></div>
-<div class="row"><label for="mic">5. Microphone</label><button id="mic">Enable microphone</button></div>
-<div class="row"><label for="output">6. Audio output</label><select id="output"><option value="">Default output</option></select><button id="outputs">Refresh outputs</button></div>
-<button id="start" disabled>Start conversion</button><button id="stop" disabled>Stop</button>
-<div id="status" class="status">Ready. Check WebGPU first.</div>
-<p class="small">Important: ONNX Runtime Web can execute ONNX models in Chrome/Edge, but a real voice-conversion pipeline still requires compatible conversion models and preprocessing. This page deliberately does not fake conversion or send microphone audio anywhere.</p>
+<h1>ONNX Web Voice Changer</h1>
+<p>Browser-only speech-to-speech RVC conversion. No Python, server, Electron, STT, or TTS.</p>
+<div class="grid">
+<div class="row"><label>Runtime</label><span id="gpu" class="pill">Checking WebGPU...</span><span class="pill">ONNX Runtime Web</span></div>
+<div class="row"><label>1. Download the default voice model</label><button id="downloadVoice">Download GuraTalkV2 voice</button><button id="clearCache" class="secondary">Clear model cache</button><div class="small">A public RVC v2 ONNX voice model. Replace the URL later if you want another compatible voice.</div></div>
+<div class="row"><label>2. Download browser base models</label><button id="downloadBase">Download ContentVec + RMVPE</button><div class="bar"><i id="progress"></i></div><div id="downloadStatus" class="small">Not downloaded.</div></div>
+<div class="row"><label>3. Microphone</label><select id="mic"><option value="">Choose microphone...</option></select><button id="refresh">Refresh devices</button></div>
+<div class="row"><label>4. Output</label><select id="output"><option value="">Default output</option></select><button id="refreshOut">Refresh outputs</button></div>
+<div class="row"><label>5. Voice conversion</label><button id="start" disabled>Start Voice Changer</button><button id="stop" disabled class="secondary">Stop</button><div class="small">Short chunks keep latency bounded. ContentVec and RMVPE use WebGPU when available; the RVC synthesizer uses WASM.</div></div>
+</div>
+<div id="status" class="status">Download the voice and base models first.</div>
 </section></main>
 <script type="module">
-import * as ort from 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.0/+esm';
-const $=id=>document.getElementById(id);let stream=null,ctx=null,source=null;
-const status=t=>$('status').textContent=t;
-async function check(){
- try{const gpu=!!navigator.gpu;let adapter=null;if(gpu)adapter=await navigator.gpu.requestAdapter();
-  ort.env.wasm.wasmPaths='https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.0/dist/';
-  const session=await ort.InferenceSession.create(new Uint8Array([8,0,0,0]),{executionProviders:['wasm']}).catch(()=>null);
-  status((adapter?'WebGPU detected.':'WebGPU unavailable; WASM fallback available.')+'\nONNX Runtime Web loaded successfully.\n'+(session?'WASM session test passed.':'Runtime loaded; model test will occur after a valid ONNX file is selected.'));
- }catch(e){status('Runtime check failed: '+e.message)}
+import {createRVC,runPipelineInWorker,isWorkerSupported} from "https://cdn.jsdelivr.net/npm/rvc-web-runtime@1.0.5/dist/index.js";
+const $=id=>document.getElementById(id);
+const VOICE_URL="https://huggingface.co/DogManTC/test-rvc-onnx/resolve/main/GuraTalkV2.onnx";
+const CONTENT_URL="https://huggingface.co/TigreGotico/voiceclonnx-rvc/resolve/main/contentvec_768l12_q8.onnx";
+const PITCH_URL="https://huggingface.co/TigreGotico/voiceclonnx-rvc/resolve/main/rmvpe_q8.onnx";
+let micStream=null,micCtx=null,worklet=null,playCtx=null,nextPlay=0,running=false,processing=false,queue=[],dbPromise;
+const status=t=>$("status").textContent=t;
+function openDB(){if(dbPromise)return dbPromise;dbPromise=new Promise((res,rej)=>{const r=indexedDB.open("onnx-voicechanger",1);r.onupgradeneeded=()=>r.result.createObjectStore("models");r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});return dbPromise}
+async function put(k,v){const db=await openDB();return new Promise((res,rej)=>{const x=db.transaction("models","readwrite");x.objectStore("models").put(v,k);x.oncomplete=res;x.onerror=()=>rej(x.error)})}
+async function get(k){const db=await openDB();return new Promise((res,rej)=>{const x=db.transaction("models"),q=x.objectStore("models").get(k);q.onsuccess=()=>res(q.result||null);q.onerror=()=>rej(q.error)})}
+async function clearCache(){const db=await openDB();return new Promise((res,rej)=>{const x=db.transaction("models","readwrite");x.objectStore("models").clear();x.oncomplete=res;x.onerror=()=>rej(x.error)})}
+async function download(k,url,label){
+ const old=await get(k);if(old){$("downloadStatus").textContent=label+" already cached.";return old}
+ const res=await fetch(url);if(!res.ok)throw new Error(label+" HTTP "+res.status);
+ const total=Number(res.headers.get("content-length"))||0;let loaded=0,ch=[];
+ if(!res.body)throw new Error("Streaming download unavailable");
+ const rd=res.body.getReader();while(true){const z=await rd.read();if(z.done)break;ch.push(z.value);loaded+=z.value.byteLength;const pct=total?Math.round(loaded/total*100):0;$("progress").style.width=pct+"%";$("downloadStatus").textContent=label+" "+(total?pct+"%":Math.round(loaded/1048576)+" MB")}
+ const f=new File([new Blob(ch)],label+".onnx");await put(k,f);return f
 }
-async function enableMic(){try{stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});ctx=new AudioContext();source=ctx.createMediaStreamSource(stream);source.connect(ctx.destination);status('Microphone enabled. Raw monitor is active. Choose compatible ONNX models before starting conversion.');$('start').disabled=false;$('mic').disabled=true;}catch(e){status('Microphone permission failed: '+e.message)}}
-$('check').onclick=check;$('mic').onclick=enableMic;
-$('stop').onclick=()=>{stream?.getTracks().forEach(t=>t.stop());source?.disconnect();ctx?.close();stream=null;source=null;$('start').disabled=true;$('stop').disabled=true;$('mic').disabled=false;status('Stopped.')};
-$('start').onclick=()=>{const files=[$('reference').files[0],$('content').files[0],$('pitch').files[0]];if(files.some(f=>!f)){status('Select all three compatible ONNX models first.');return}status('Model files selected. Full RVC/voice-conversion graph integration is not enabled yet; no fake converted audio will be produced.');$('stop').disabled=false};
-$('outputs').onclick=async()=>{if(!navigator.mediaDevices?.enumerateDevices){status('Audio device enumeration is unavailable.');return}const devices=await navigator.mediaDevices.enumerateDevices();$('output').replaceChildren(new Option('Default output',''));devices.filter(d=>d.kind==='audiooutput').forEach(d=>$('output').add(new Option(d.label||d.deviceId,d.deviceId)));status('Audio outputs refreshed.')};
+async function devices(){
+ const ds=await navigator.mediaDevices.enumerateDevices();
+ $("mic").replaceChildren(new Option("Choose microphone...",""));ds.filter(d=>d.kind==="audioinput").forEach(d=>$("mic").add(new Option(d.label||"Microphone",d.deviceId)));
+ $("output").replaceChildren(new Option("Default output",""));ds.filter(d=>d.kind==="audiooutput").forEach(d=>$("output").add(new Option(d.label||"Output",d.deviceId)));
+}
+async function ready(){const a=await get("voice").catch(()=>null),b=await get("content").catch(()=>null),c=await get("pitch").catch(()=>null);$("start").disabled=!(a&&b&&c&&$("mic").value)}
+async function models(){status("Downloading/checking models...");const v=await download("voice",VOICE_URL,"GuraTalkV2");const c=await download("content",CONTENT_URL,"ContentVec");const p=await download("pitch",PITCH_URL,"RMVPE");$("downloadStatus").textContent="All models ready.";await ready();return{voice:v,content:c,pitch:p}}
+async function makeWorklet(){
+ const code='class MicProcessor extends AudioWorkletProcessor{constructor(){super();this.buf=[];this.n=0;this.target=24000}process(inputs){const ch=inputs[0]&&inputs[0][0];if(!ch)return true;for(let i=0;i<ch.length;i++){this.buf.push(ch[i]);this.n++;if(this.n>=this.target){const a=new Float32Array(this.buf);this.port.postMessage(a,[a.buffer]);this.buf=[];this.n=0}}return true}}registerProcessor("mic-chunker",MicProcessor);';
+ const u=URL.createObjectURL(new Blob([code],{type:"application/javascript"}));await micCtx.audioWorklet.addModule(u);URL.revokeObjectURL(u);
+ worklet=new AudioWorkletNode(micCtx,"mic-chunker");worklet.port.onmessage=e=>queue.push(e.data);worklet.connect(micCtx.destination)
+}
+async function play(blob){
+ const b=await playCtx.decodeAudioData(await blob.arrayBuffer());const s=playCtx.createBufferSource();s.buffer=b;s.connect(playCtx.destination);
+ if(nextPlay<playCtx.currentTime+.04)nextPlay=playCtx.currentTime+.04;s.start(nextPlay);nextPlay+=b.duration
+}
+async function loop(m){
+ while(running){if(!queue.length||processing){await new Promise(r=>setTimeout(r,8));continue}const audio=queue.shift();processing=true;
+  try{const rvc=createRVC();const c=await runPipelineInWorker(rvc,{model:m.voice,contentVec:m.content,rmvpe:m.pitch},audio,micCtx.sampleRate,{onEvent:e=>{if(e.type==="stage")status("Stage: "+e.stage)}},{timeout:120000,chunkDuration:1.5,padDuration:.25,outputSampleRate:48000,contentVecBackend:navigator.gpu?"webgpu":"wasm",rmvpeBackend:navigator.gpu?"webgpu":"wasm",rvcBackend:"wasm"});if(c.outputWav)await play(c.outputWav)}catch(e){status("Conversion error: "+(e.message||e));running=false}processing=false}
+}
+$("downloadVoice").onclick=async()=>{try{await download("voice",VOICE_URL,"GuraTalkV2");status("Default voice model ready.");await ready()}catch(e){status("Voice download failed: "+e.message)}};
+$("downloadBase").onclick=async()=>{try{await models()}catch(e){status("Model download failed: "+e.message)}};
+$("clearCache").onclick=async()=>{await clearCache();$("progress").style.width="0%";$("downloadStatus").textContent="Cache cleared.";status("Model cache cleared.");await ready()};
+$("refresh").onclick=async()=>{await devices();await ready()};$("refreshOut").onclick=devices;$("mic").onchange=ready;
+$("start").onclick=async()=>{try{const m={voice:await get("voice"),content:await get("content"),pitch:await get("pitch")};if(!m.voice||!m.content||!m.pitch)throw new Error("Download all models first.");if(!$("mic").value)throw new Error("Choose a microphone.");
+ micStream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:{exact:$("mic").value},channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+ micCtx=new AudioContext({sampleRate:16000});await micCtx.resume();const src=micCtx.createMediaStreamSource(micStream);await makeWorklet();src.connect(worklet);
+ playCtx=new AudioContext({sampleRate:48000});await playCtx.resume();nextPlay=playCtx.currentTime+.1;running=true;$("start").disabled=true;$("stop").disabled=false;status("Live conversion started. Speak normally.");loop(m)
+ }catch(e){status("Could not start: "+e.message)}};
+$("stop").onclick=()=>{running=false;queue=[];worklet?.disconnect();micStream?.getTracks().forEach(t=>t.stop());micCtx?.close();playCtx?.close();worklet=null;micStream=null;micCtx=null;playCtx=null;$("start").disabled=false;$("stop").disabled=true;status("Stopped.");ready()};
+(async()=>{$("gpu").textContent=navigator.gpu?"WebGPU available":"WASM fallback";if(!isWorkerSupported())status("Web Workers are required.");await devices().catch(()=>{});await ready()})();
 </script></body></html>
