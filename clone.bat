@@ -8,6 +8,7 @@ set "INBOX=%ROOT%clone_input"
 set "PROCESSED=%INBOX%\processed"
 set "OUTBOX=%ROOT%cloned_voice"
 set "PY=%ROOT%.venv\Scripts\python.exe"
+set "PROFILE=%ROOT%clone_chrome_profile"
 set "CHROME=%ProgramFiles%\Google\Chrome\Application\chrome.exe"
 if not exist "%CHROME%" set "CHROME=%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"
 if not exist "%CHROME%" set "CHROME=%LocalAppData%\Google\Chrome\Application\chrome.exe"
@@ -15,6 +16,7 @@ if not exist "%CHROME%" set "CHROME=%LocalAppData%\Google\Chrome\Application\chr
 if not exist "%INBOX%" mkdir "%INBOX%"
 if not exist "%PROCESSED%" mkdir "%PROCESSED%"
 if not exist "%OUTBOX%" mkdir "%OUTBOX%"
+if not exist "%PROFILE%\Default" mkdir "%PROFILE%\Default"
 
 echo ========================================
 echo       OpenVoice V2 Voice Clone
@@ -56,10 +58,15 @@ if not exist "%CHROME%" (
     echo.
 ) else (
     echo Starting Chrome with a dedicated download folder...
-    set "PROFILE=%ROOT%clone_chrome_profile"
-    if not exist "%PROFILE%\Default" mkdir "%PROFILE%\Default"
 
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "$p=$env:PROFILE; $d=$env:INBOX; $prefs=@{download=@{default_directory=$d; prompt_for_download=$false; directory_upgrade=$true}} | ConvertTo-Json -Depth 5 | Set-Content -Encoding UTF8 ($p + '\Default\Preferences')"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$p=$env:PROFILE; $d=$env:INBOX; New-Item -ItemType Directory -Force -Path ($p + '\Default') | Out-Null; $prefs=@{download=@{default_directory=$d; prompt_for_download=$false; directory_upgrade=$true}} | ConvertTo-Json -Depth 5 | Set-Content -Encoding UTF8 -LiteralPath ($p + '\Default\Preferences')"
+
+    if errorlevel 1 (
+        echo.
+        echo ERROR: Could not configure Chrome download folder.
+        pause
+        exit /b 1
+    )
 
     start "" "%CHROME%" --user-data-dir="%PROFILE%" --no-first-run --no-default-browser-check "%ROOT%index.html"
 )
