@@ -4,27 +4,27 @@
 <style>
 *{box-sizing:border-box}body{margin:0;background:#080b12;color:#f7f8fc;font:15px system-ui,Arial,sans-serif}.app{width:min(900px,100%);margin:auto;padding:28px}.top{margin-bottom:18px}.brand{font-size:30px;font-weight:850}.sub{color:#8f9bb0;margin-top:6px}.panel{background:#10151f;border:1px solid #293347;border-radius:20px;padding:22px;margin-bottom:16px}label{display:block;color:#aeb9ca;font-weight:700;margin-bottom:7px}input,select{width:100%;background:#080d15;color:#fff;border:1px solid #3a465d;border-radius:11px;padding:13px;font:inherit}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.hero{text-align:center;padding:30px 20px}.actions{display:flex;justify-content:center;gap:12px;margin-top:20px}.btn{border:0;border-radius:12px;padding:15px 24px;font-weight:800;font-size:16px;background:#735cff;color:#fff;cursor:pointer}.stop{background:#9b3d50}.btn:disabled{opacity:.4}.transcript{min-height:90px;background:#080d15;border:1px solid #293347;border-radius:12px;padding:15px;line-height:1.5}.status{margin-top:15px;min-height:22px;color:#c4ccda}.hint{font-size:12px;color:#778399;line-height:1.5;margin-top:9px}.flow{font:12px ui-monospace,monospace;color:#b8c3d5;line-height:1.8}@media(max-width:700px){.app{padding:14px}.grid{grid-template-columns:1fr}.actions{flex-direction:column}.btn{width:100%}}
 </style></head><body><div class="app">
-<header class="top"><div class="brand">Deepgram Instant Echo</div><div class="sub">Mic → live Deepgram STT → short phrase → streaming Deepgram TTS. It does not wait for a complete sentence.</div></header>
+<header class="top"><div class="brand">Deepgram Instant Echo</div><div class="sub">Mic → Deepgram live STT → complete sentence as soon as you finish speaking → streaming Deepgram TTS.</div></header>
 <section class="panel hero"><div class="actions"><button class="btn" id="start">Start Listening</button><button class="btn stop" id="stop" disabled>Stop</button></div><div class="status" id="status">Ready.</div></section>
 <section class="panel"><div class="grid"><div><label>Deepgram API key / temporary token</label><input id="key" type="password" autocomplete="off" placeholder="Paste your Deepgram key or temporary token"></div><div><label>TTS voice</label><select id="voice"><option value="aura-2-amalthea-en">Amalthea — Filipino English</option><option value="aura-2-thalia-en">Thalia</option><option value="aura-2-luna-en">Luna</option></select></div></div></section>
 <section class="panel"><label>Windows output</label><select id="output"><option value="">Default speaker / output</option></select></section>
-<section class="panel"><label>Live transcript</label><div class="transcript" id="transcript">Nothing heard yet.</div><div class="hint">The app commits about 3 new words at a time from Deepgram interim results, so TTS can begin while you are still talking.</div></section>
-<section class="panel"><label>Pipeline</label><div class="flow">MIC 16 kHz PCM → Deepgram /v1/listen (interim results) → 3-word phrase chunks → Deepgram /v1/speak WebSocket → 48 kHz PCM playback</div></section>
+<section class="panel"><label>Live transcript</label><div class="transcript" id="transcript">Nothing heard yet.</div><div class="hint">TTS waits for Deepgram's speech-final signal, then sends the entire sentence immediately. No artificial word-by-word delay.</div></section>
+<section class="panel"><label>Pipeline</label><div class="flow">MIC 16 kHz PCM → Deepgram /v1/listen → complete speech-final sentence → Deepgram /v1/speak WebSocket → 48 kHz PCM playback</div></section>
 </div>
 <script>
 const $=id=>document.getElementById(id);
 let running=false,stt=null,tts=null,stream=null,micCtx=null,source=null,processor=null,playCtx=null;
-let committedWords=0,ttsReady=false,ttsQueue=[],ttsSending=false,nextPlay=0;
+let ttsReady=false,ttsQueue=[],ttsSending=false,nextPlay=0;
 
 function status(t){$("status").textContent=t}
 function pcm16(f){const o=new Int16Array(f.length);for(let i=0;i<f.length;i++){const x=Math.max(-1,Math.min(1,f[i]));o[i]=x<0?x*32768:x*32767}return o}
 async function outputs(){try{const ds=await navigator.mediaDevices.enumerateDevices();$("output").replaceChildren(new Option("Default speaker / output",""));ds.filter(d=>d.kind==="audiooutput").forEach((d,i)=>$("output").add(new Option(d.label||("Speaker "+(i+1)),d.deviceId)))}catch{}}
 
 function connectSTT(key){
- const u="wss://api.deepgram.com/v1/listen?model=nova-3&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&smart_format=false&punctuate=false&endpointing=300&vad_events=true";
+ const u="wss://api.deepgram.com/v1/listen?model=nova-3&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&smart_format=false&punctuate=false&endpointing=150&vad_events=true";
  stt=new WebSocket(u,["token",key]);
  stt.onopen=()=>status("Deepgram STT connected — speak normally.");
- stt.onmessage=e=>{if(typeof e.data!=="string")return;try{const m=JSON.parse(e.data);if(m.type!=="Results")return;const text=(m.channel?.alternatives?.[0]?.transcript||"").trim();if(!text)return;$("transcript").textContent=text;const w=text.split(/\s+/).filter(Boolean),end=m.speech_final?w.length:Math.min(w.length,committedWords+3);if(end>committedWords){queueTTS(w.slice(committedWords,end).join(" "));committedWords=end}if(m.speech_final)committedWords=0}catch{}};
+ stt.onmessage=e=>{if(typeof e.data!=="string")return;try{const m=JSON.parse(e.data);if(m.type!=="Results")return;const text=(m.channel?.alternatives?.[0]?.transcript||"").trim();if(!text)return;$("transcript").textContent=text;if(m.speech_final)queueTTS(text)}catch{}};
  stt.onerror=()=>status("Deepgram STT connection error.");
  stt.onclose=()=>{if(running)status("Deepgram STT disconnected.")};
 }
@@ -63,12 +63,12 @@ function startMic(){
 async function start(){
  if(running)return;const key=$("key").value.trim();if(!key)throw new Error("Paste your Deepgram API key or temporary token first.");
  stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
- micCtx=new AudioContext({sampleRate:16000});await micCtx.resume();running=true;committedWords=0;ttsQueue=[];nextPlay=0;
+ micCtx=new AudioContext({sampleRate:16000});await micCtx.resume();running=true;ttsQueue=[];nextPlay=0;
  $("start").disabled=true;$("stop").disabled=false;await outputs();connectTTS(key);connectSTT(key);startMic();
 }
 
 function stop(){
- running=false;committedWords=0;ttsQueue=[];ttsSending=false;
+ running=false;ttsQueue=[];ttsSending=false;
  try{stt?.close()}catch{}try{tts?.close()}catch{}try{processor?.disconnect()}catch{}try{source?.disconnect()}catch{}try{micCtx?.close()}catch{}try{stream?.getTracks().forEach(t=>t.stop())}catch{}
  stt=tts=source=processor=micCtx=stream=null;ttsReady=false;$("start").disabled=false;$("stop").disabled=true;status("Stopped.");
 }
