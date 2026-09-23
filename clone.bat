@@ -1,31 +1,30 @@
 @echo off
 setlocal EnableExtensions
 cd /d "%~dp0"
-title OpenVoice V2 Voice Clone - Folder Watcher
+title OpenVoice V2 Voice Clone
 
-set "INBOX=%~dp0clone_input"
-set "OUTBOX=%~dp0cloned_voice"
-set "PY=%~dp0.venv\Scripts\python.exe"
+set "ROOT=%~dp0"
+set "INBOX=%ROOT%clone_input"
+set "PROCESSED=%INBOX%\processed"
+set "OUTBOX=%ROOT%cloned_voice"
+set "PY=%ROOT%.venv\Scripts\python.exe"
+set "CHROME=%ProgramFiles%\Google\Chrome\Application\chrome.exe"
+if not exist "%CHROME%" set "CHROME=%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"
+if not exist "%CHROME%" set "CHROME=%LocalAppData%\Google\Chrome\Application\chrome.exe"
 
 if not exist "%INBOX%" mkdir "%INBOX%"
+if not exist "%PROCESSED%" mkdir "%PROCESSED%"
 if not exist "%OUTBOX%" mkdir "%OUTBOX%"
 
 echo ========================================
 echo       OpenVoice V2 Voice Clone
 echo ========================================
 echo.
-echo Watching:
-echo %INBOX%
-echo.
-echo Put ONE WAV file in that folder.
-echo OpenVoice will automatically process it.
-echo.
-echo Press Ctrl+C to stop.
-echo.
 
 where py >nul 2>nul
 if errorlevel 1 (
     echo ERROR: Python launcher "py" was not found.
+    echo Install Python 3 and try again.
     pause
     exit /b 1
 )
@@ -40,13 +39,41 @@ if not exist "%PY%" (
     )
 )
 
-echo Checking dependencies...
+echo Checking clone dependencies...
 "%PY%" -m pip install --disable-pip-version-check -r requirements-clone.txt
 if errorlevel 1 (
-    echo ERROR: Dependencies could not be installed.
+    echo.
+    echo ERROR: Dependencies failed.
     pause
     exit /b 1
 )
+
+if not exist "%CHROME%" (
+    echo.
+    echo WARNING: Chrome was not found.
+    echo You can still copy WAV files manually into:
+    echo "%INBOX%"
+    echo.
+) else (
+    echo Starting Chrome with a dedicated download folder...
+    set "PROFILE=%ROOT%clone_chrome_profile"
+    if not exist "%PROFILE%\Default" mkdir "%PROFILE%\Default"
+
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$p=$env:PROFILE; $d=$env:INBOX; $prefs=@{download=@{default_directory=$d; prompt_for_download=$false; directory_upgrade=$true}} | ConvertTo-Json -Depth 5 | Set-Content -Encoding UTF8 ($p + '\Default\Preferences')"
+
+    start "" "%CHROME%" --user-data-dir="%PROFILE%" --no-first-run --no-default-browser-check "%ROOT%index.html"
+)
+
+echo.
+echo WATCHING:
+echo "%INBOX%"
+echo.
+echo Select a WAV in Chrome and click Save WAV to Clone Folder.
+echo Chrome will download it directly into clone_input.
+echo OpenVoice will detect it automatically.
+echo.
+echo Press Ctrl+C to stop.
+echo.
 
 :WATCH
 for %%F in ("%INBOX%\*.wav") do (
@@ -61,22 +88,27 @@ for %%F in ("%INBOX%\*.wav") do (
         if errorlevel 1 (
             echo.
             echo CLONE FAILED.
-            echo The WAV was NOT deleted.
-            echo Fix the error and restart this watcher.
+            echo The WAV was left in clone_input.
+            echo.
             pause
             exit /b 1
         )
 
         echo.
-        echo CLONE COMPLETE.
-        echo Voice embedding saved in:
-        echo %OUTBOX%
+        echo ========================================
+        echo CLONE COMPLETE
+        echo ========================================
+        echo Saved:
+        echo "%OUTBOX%\voice_embedding.pth"
         echo.
 
-        move /Y "%%~fF" "%INBOX%\processed\" >nul 2>nul
+        move /Y "%%~fF" "%PROCESSED%\" >nul
+        if errorlevel 1 (
+            echo WARNING: Could not move processed WAV.
+            echo It remains in clone_input.
+        )
     )
 )
 
-if not exist "%INBOX%\processed" mkdir "%INBOX%\processed" >nul 2>nul
 timeout /t 2 /nobreak >nul
 goto WATCH
