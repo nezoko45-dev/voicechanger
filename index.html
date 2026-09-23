@@ -3,242 +3,51 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ONNX Voice Changer</title>
+<title>Cartesia Voice Changer</title>
 <style>
-*{box-sizing:border-box}
-body{margin:0;background:#080b12;color:#f5f7fb;font:15px system-ui,Arial,sans-serif}
-.app{width:min(760px,100%);margin:auto;padding:28px 16px}
-.card{background:#111722;border:1px solid #293449;border-radius:18px;padding:20px;margin-bottom:14px}
-h1{margin:0 0 5px;font-size:29px}
-.sub{color:#9ba7ba;line-height:1.45;margin-bottom:18px}
+*{box-sizing:border-box}body{margin:0;background:#080b12;color:#f5f7fb;font:15px system-ui,Arial,sans-serif}
+.app{width:min(700px,100%);margin:auto;padding:28px 16px}.card{background:#111722;border:1px solid #293449;border-radius:18px;padding:20px;margin-bottom:14px}
+h1{margin:0 0 5px;font-size:29px}.sub{color:#9ba7ba;line-height:1.45;margin-bottom:18px}
 label{display:block;color:#c1c9d7;font-weight:700;margin:13px 0 7px}
-input[type=file],select,input[type=number]{width:100%;background:#080d15;color:#fff;border:1px solid #3a465c;border-radius:10px;padding:11px;font:inherit}
+input,select{width:100%;background:#080d15;color:#fff;border:1px solid #3a465c;border-radius:10px;padding:11px;font:inherit}
 button{width:100%;border:0;border-radius:11px;padding:14px;margin-top:10px;font-weight:800;font-size:16px;background:#735cff;color:#fff;cursor:pointer}
-button.stop{background:#9b3d50}
-button:disabled{opacity:.45;cursor:not-allowed}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.status{text-align:center;color:#d2d8e3;min-height:24px;margin-top:14px}
-.badge{display:inline-block;padding:5px 9px;border-radius:999px;background:#182234;color:#b9c7dc;font-size:12px;margin:3px 3px 0 0}
+button.stop{background:#9b3d50}button:disabled{opacity:.45;cursor:not-allowed}
+.status{text-align:center;color:#d2d8e3;min-height:24px;margin-top:14px}.badge{display:inline-block;padding:5px 9px;border-radius:999px;background:#182234;color:#b9c7dc;font-size:12px;margin:3px}
 .log{margin-top:12px;background:#080d15;border:1px solid #293449;border-radius:11px;padding:10px;color:#9ba7ba;font:12px ui-monospace,monospace;white-space:pre-wrap;min-height:70px}
-.note{color:#7f8ca1;font-size:12px;line-height:1.5;margin-top:10px}
-.ok{color:#70e0a0}.warn{color:#ffd27a}
-</style>
-</head>
-<body>
-<div class="app">
-  <div class="card">
-    <h1>ONNX Voice Changer</h1>
-    <div class="sub">Microphone audio stays in Chrome. ONNX Runtime Web runs the RVC conversion locally; there is no STT, TTS, Deepgram, ElevenLabs, or cloud voice conversion.</div>
-    <div id="caps"></div>
-
-    <label for="voiceModel">RVC voice model (.onnx or .pth)</label>
-    <input id="voiceModel" type="file" accept=".onnx,.pth">
-
-    <label for="contentVec">ContentVec / HuBERT (.onnx)</label>
-    <input id="contentVec" type="file" accept=".onnx">
-
-    <label for="rmvpe">RMVPE pitch model (.onnx)</label>
-    <input id="rmvpe" type="file" accept=".onnx">
-
-    <div class="grid">
-      <div>
-        <label for="pitch">Pitch shift</label>
-        <input id="pitch" type="number" min="-24" max="24" step="1" value="0">
-      </div>
-      <div>
-        <label for="buffer">Buffer seconds</label>
-        <input id="buffer" type="number" min="2" max="10" step=".5" value="4">
-      </div>
-    </div>
-
-    <button id="start">Start voice changer</button>
-    <button id="stop" class="stop" disabled>Stop</button>
-    <div id="status" class="status">Ready. Select the three model files, then Start.</div>
-    <div id="log" class="log">Waiting for Start.</div>
-    <div class="note">Important: this browser runtime supports RVC v2 (768-dim) models. The RVC synthesizer uses ONNX Runtime WASM; ContentVec and RMVPE can use WebGPU in Chrome. A v1/incompatible RVC model can produce an ONNX session-creation error.</div>
-  </div>
-
-  <div class="card">
-    <strong>Pipeline</strong><br>
-    <span class="badge">🎤 Microphone</span>
-    <span class="badge">16 kHz resample</span>
-    <span class="badge">ContentVec</span>
-    <span class="badge">RMVPE</span>
-    <span class="badge">RVC ONNX</span>
-    <span class="badge">🔊 Chrome output</span>
-    <div class="note">Choose Voicemeeter as Chrome's output device if you want the converted voice routed into VRChat.</div>
-  </div>
+.note{color:#7f8ca1;font-size:12px;line-height:1.5;margin-top:10px}.ok{color:#70e0a0}
+</style></head>
+<body><div class="app">
+<div class="card">
+<h1>Cartesia Voice Changer</h1>
+<div class="sub">Direct speech-to-speech conversion. Your microphone audio is sent to the local proxy, then Cartesia converts the voice while preserving the original delivery.</div>
+<label for="voice">Target voice ID</label><input id="voice" placeholder="Paste your Cartesia voice ID">
+<label for="key">Cartesia API key</label><input id="key" type="password" placeholder="Paste API key">
+<label for="buffer">Audio buffer (seconds)</label><input id="buffer" type="number" min="1" max="8" step=".5" value="2">
+<button id="start">Start voice changer</button><button id="stop" class="stop" disabled>Stop</button>
+<div id="status" class="status">Ready.</div><div id="log" class="log">Waiting for Start.</div>
+<div class="note">The API key is used only by the local proxy. Do not publish your key in GitHub Pages or static HTML.</div>
 </div>
-
-<script type="module">
-import { createRVC, runPipelineInWorker, isWorkerSupported } from "https://cdn.jsdelivr.net/npm/rvc-web-runtime/+esm";
-
-const $ = id => document.getElementById(id);
-let running=false, starting=false, stream=null, ctx=null, source=null, processor=null;
-let inputRate=48000, buffer=[], bufferedSamples=0, chunkSamples=0, workerBusy=false, queue=[];
-let outputCtx=null, outputTime=0, rvcRuntime=null;
-
-function status(s){$("status").textContent=s}
-function log(s){$("log").textContent=s}
-
-function capability(){
-  const webgpu = !!navigator.gpu;
-  $("caps").innerHTML =
-    '<span class="badge '+(isWorkerSupported()?'ok':'warn')+'">Worker '+(isWorkerSupported()?'OK':'Unavailable')+'</span>'+
-    '<span class="badge '+(webgpu?'ok':'warn')+'">WebGPU '+(webgpu?'Available':'Unavailable')+'</span>'+
-    '<span class="badge">ONNX Runtime Web</span>';
+<div class="card"><strong>Pipeline</strong><br>
+<span class="badge">🎤 Mic</span><span class="badge">Local proxy</span><span class="badge">Cartesia Voice Changer</span><span class="badge">🔊 Audio</span><span class="badge">Voicemeeter</span><div class="note">Set Chrome's output to Voicemeeter if you want VRChat to receive the converted voice.</div>
+</div></div>
+<script>
+const $=id=>document.getElementById(id);let stream=null,ctx=null,processor=null,source=null,running=false,parts=[],samples=0,need=0;
+function status(x){$("status").textContent=x}function log(x){$("log").textContent=x}
+function cleanup(){running=false;try{processor?.disconnect()}catch{}try{source?.disconnect()}catch{}try{ctx?.close()}catch{}try{stream?.getTracks().forEach(t=>t.stop())}catch{}stream=ctx=processor=source=null;parts=[];samples=0;$("start").disabled=false;$("stop").disabled=true}
+function play(blob){const u=URL.createObjectURL(blob),a=new Audio(u);a.play().catch(e=>log("Playback error: "+e.message));a.onended=()=>URL.revokeObjectURL(u)}
+async function convert(blob){
+ const r=await fetch("/api/convert",{method:"POST",headers:{"X-Cartesia-Key":$("key").value.trim(),"X-Cartesia-Voice":$("voice").value.trim(),"Content-Type":blob.type||"audio/webm"},body:blob});
+ if(!r.ok)throw new Error(await r.text());play(await r.blob());
 }
-
-function resample(input, fromRate, toRate){
-  if(fromRate===toRate) return input.slice();
-  const ratio=fromRate/toRate;
-  const outLength=Math.max(1,Math.round(input.length/ratio));
-  const out=new Float32Array(outLength);
-  for(let i=0;i<outLength;i++){
-    const pos=i*ratio, i0=Math.floor(pos), frac=pos-i0;
-    const a=input[Math.min(i0,input.length-1)];
-    const b=input[Math.min(i0+1,input.length-1)];
-    out[i]=a+(b-a)*frac;
-  }
-  return out;
-}
-
-function enqueue(samples){
-  queue.push(samples);
-  drain();
-}
-
-async function drain(){
-  if(workerBusy || !running || !queue.length) return;
-  workerBusy=true;
-  const audio=queue.shift();
-  try{
-    status("Converting buffered audio with ONNX...");
-    if(!rvcRuntime){
-      // Keep the worker/WASM assets on the same jsDelivr package origin.
-      rvcRuntime=createRVC({
-        assetBaseUrl:"https://cdn.jsdelivr.net/npm/rvc-web-runtime/dist/"
-      });
-    }
-    const rvc=rvcRuntime;
-    const files={
-      model:$("voiceModel").files[0],
-      contentVec:$("contentVec").files[0],
-      rmvpe:$("rmvpe").files[0]
-    };
-    const pitch=Number($("pitch").value)||0;
-    const result=await runPipelineInWorker(
-      rvc, files, audio, 16000,
-      {onEvent:e=>{
-        if(e.type==="stage") log("ONNX stage: "+e.stage);
-        if(e.type==="chunk") log("ONNX chunk "+e.current+"/"+e.total);
-      }},
-      {
-        timeout:300000,
-        pitchShift:pitch,
-        medianFilter:true,
-        medianFilterWindow:3,
-        chunkDuration:20,
-        padDuration:.5,
-        inputSampleRate:16000,
-        outputSampleRate:48000,
-        // rvc-web-runtime documents the RVC synthesizer as WASM-only.
-        // WebGPU is used only for ContentVec/RMVPE where supported.
-        contentVecBackend:navigator.gpu?"webgpu":"wasm",
-        rmvpeBackend:navigator.gpu?"webgpu":"wasm",
-        rvcBackend:"wasm"
-      }
-    );
-    if(result.state!=="success" || !result.outputAudio) throw new Error(result.errorMessage||"ONNX conversion failed.");
-    playPCM(result.outputAudio,48000);
-    status("LIVE — microphone is still streaming.");
-  }catch(e){
-    log("ERROR: "+(e.message||String(e)));
-    status("Conversion error.");
-    const msg=String(e.message||e);
-    if(/Failed to create an ONNX Runtime session|MODEL_VERIFY|SYNTH_INFERENCE/i.test(msg)){
-      log("ERROR: "+msg+"\n\nUse an RVC v2 (768-dim) ONNX model. This runtime keeps the RVC synthesizer on WASM; WebGPU is used for ContentVec/RMVPE only.");
-    }
-  }finally{
-    workerBusy=false;
-    if(running) drain();
-  }
-}
-
-function playPCM(pcm,sampleRate){
-  if(!outputCtx) outputCtx=new AudioContext({sampleRate});
-  outputCtx.resume();
-  const audio=outputCtx.createBuffer(1,pcm.length,sampleRate);
-  audio.copyToChannel(pcm,0);
-  const node=outputCtx.createBufferSource();
-  node.buffer=audio;
-  node.connect(outputCtx.destination);
-  const now=outputCtx.currentTime;
-  if(outputTime<now+.02) outputTime=now+.02;
-  node.start(outputTime);
-  outputTime+=audio.duration;
-}
-
-function flush(){
-  if(!bufferedSamples)return;
-  const all=new Float32Array(bufferedSamples);
-  let at=0;
-  for(const part of buffer){all.set(part,at);at+=part.length}
-  buffer=[];bufferedSamples=0;
-  enqueue(resample(all,inputRate,16000));
-}
-
+async function flush(){if(!samples||!running)return;const all=new Blob(parts,{type:"audio/webm;codecs=opus"});parts=[];samples=0;status("Converting with Cartesia...");try{await convert(all);if(running)status("LIVE — speak normally.")}catch(e){log("ERROR: "+e.message);status("Conversion error.")}}
 async function start(){
-  if(running||starting)return;
-  starting=true;
-  try{
-    if(!isWorkerSupported()) throw new Error("This browser does not support Web Workers.");
-    if(!$("voiceModel").files[0]||!$("contentVec").files[0]||!$("rmvpe").files[0])
-      throw new Error("Select the RVC, ContentVec/HuBERT, and RMVPE ONNX model files first.");
-
-    stream=await navigator.mediaDevices.getUserMedia({
-      audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}
-    });
-    ctx=new AudioContext();
-    await ctx.resume();
-    inputRate=ctx.sampleRate;
-    chunkSamples=Math.round(inputRate*Number($("buffer").value));
-    source=ctx.createMediaStreamSource(stream);
-    processor=ctx.createScriptProcessor(2048,1,1);
-    processor.onaudioprocess=e=>{
-      if(!running)return;
-      const data=new Float32Array(e.inputBuffer.getChannelData(0));
-      buffer.push(data);
-      bufferedSamples+=data.length;
-      if(bufferedSamples>=chunkSamples) flush();
-    };
-    source.connect(processor);
-    processor.connect(ctx.destination);
-    running=true;starting=false;
-    $("start").disabled=true;$("stop").disabled=false;
-    status("LIVE — speak normally.");
-    log("Microphone streaming continuously. ONNX worker initialized. Waiting for the first buffer...");
-  }catch(e){
-    starting=false;cleanup();
-    status("Could not start.");
-    log("ERROR: "+(e.message||String(e)));
-  }
+ if(running)return;if(!$("key").value.trim()||!$("voice").value.trim()){status("Enter your Cartesia API key and target voice ID.");return}
+ try{stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+ ctx=new AudioContext();await ctx.resume();need=Math.round(ctx.sampleRate*Number($("buffer").value));
+ source=ctx.createMediaStreamSource(stream);processor=ctx.createScriptProcessor(4096,1,1);
+ processor.onaudioprocess=e=>{if(!running)return;parts.push(new Blob([new Float32Array(e.inputBuffer.getChannelData(0))]));samples+=e.inputBuffer.length;if(samples>=need)flush()};
+ source.connect(processor);processor.connect(ctx.destination);running=true;$("start").disabled=true;$("stop").disabled=false;status("LIVE — buffering microphone audio.");log("Streaming to the local Cartesia proxy.");
+ }catch(e){cleanup();status("Could not start.");log("ERROR: "+e.message)}
 }
-
-function cleanup(){
-  running=false;starting=false;queue=[];buffer=[];bufferedSamples=0;
-  try{processor&&processor.disconnect()}catch(e){}
-  try{source&&source.disconnect()}catch(e){}
-  try{ctx&&ctx.close()}catch(e){}
-  try{stream&&stream.getTracks().forEach(t=>t.stop())}catch(e){}
-  try{outputCtx&&outputCtx.close()}catch(e){}
-  processor=null;source=null;ctx=null;stream=null;outputCtx=null;outputTime=0;
-  $("start").disabled=false;$("stop").disabled=true;
-}
-
-$("start").onclick=start;
-$("stop").onclick=()=>{cleanup();status("Stopped.");log("Stopped. Press Start to begin again.")};
-capability();
-</script>
-</body>
-</html>
+$("start").onclick=start;$("stop").onclick=()=>{cleanup();status("Stopped.");log("Stopped.")};
+</script></body></html>
