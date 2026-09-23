@@ -51,7 +51,7 @@ button.stop{background:#9b3d50}button:disabled{opacity:.45;cursor:not-allowed}
 const $ = id => document.getElementById(id);
 let ws=null, stream=null, inCtx=null, source=null, processor=null;
 let outCtx=null, nextPlay=0, running=false, starting=false, ready=false;
-let playing=[];
+let playing=[],keepAliveTimer=null;
 
 function setStatus(s){ $("status").textContent=s; }
 function setLog(s){ $("log").textContent=s; }
@@ -64,6 +64,17 @@ function floatToPCM16(input){
   }
   return out;
 }
+
+function startKeepAlive(){
+  clearInterval(keepAliveTimer);
+  keepAliveTimer=setInterval(()=>{
+    if(ws && ws.readyState===WebSocket.OPEN){
+      try{ ws.send(JSON.stringify({type:"KeepAlive"})); setLog("LIVE. KeepAlive sent."); }catch(e){}
+    }
+  },8000);
+}
+
+function stopKeepAlive(){ clearInterval(keepAliveTimer); keepAliveTimer=null; }
 
 function stopAudio(){
   for(const n of playing){try{n.stop()}catch(e){}}
@@ -164,6 +175,7 @@ function connect(token){
         done=true;
         clearTimeout(timer);
         ready=true;
+        startKeepAlive();
         resolve();
         return;
       }
@@ -270,6 +282,7 @@ function cleanup(){
   running=false;
   starting=false;
   ready=false;
+  stopKeepAlive();
   try{processor&&processor.disconnect()}catch(e){}
   try{source&&source.disconnect()}catch(e){}
   try{inCtx&&inCtx.close()}catch(e){}
