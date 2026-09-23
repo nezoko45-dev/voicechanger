@@ -4,8 +4,8 @@
 :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#070a10;color:#f5f7fb;font:15px system-ui,Arial,sans-serif}main{max-width:760px;margin:30px auto;padding:16px}.card{background:#111722;border:1px solid #2b3547;border-radius:18px;padding:24px}h1{margin:0 0 6px}p{color:#aeb9ca;line-height:1.5}.grid{display:grid;gap:12px;margin:18px 0}.row{background:#0a0f17;border:1px solid #263247;border-radius:12px;padding:14px}label{display:block;font-weight:700;margin-bottom:7px}button,select{font:inherit;border-radius:10px;padding:11px}button{border:0;background:#765cff;color:#fff;font-weight:700;cursor:pointer;margin:3px 5px 3px 0}button.secondary{background:#263247}button:disabled{opacity:.4;cursor:not-allowed}select{width:100%;background:#080d15;color:#fff;border:1px solid #40506a}.status{white-space:pre-wrap;background:#080d15;border:1px solid #27344a;border-radius:12px;padding:14px;margin-top:16px}.bar{height:8px;background:#202a3b;border-radius:99px;overflow:hidden;margin-top:9px}.bar i{display:block;height:100%;width:0;background:#765cff}.small{font-size:12px;color:#8997ad}.pill{display:inline-block;padding:3px 8px;border-radius:99px;background:#202a3b;margin-right:5px;font-size:12px}
 </style></head>
 <body><main><section class="card">
-<h1>ONNX Voice Changer — Desktop</h1>
-<p>Local Windows desktop speech-to-speech RVC conversion. The app talks directly to your microphone and audio devices.</p>
+<h1>ONNX Voice Changer</h1>
+<p>Standalone HTML voice changer. Open this HTML app directly in Chrome or Edge; audio stays in the browser.</p>
 <div class="grid">
 <div class="row"><label>Runtime</label><span id="gpu" class="pill">Checking WebGPU...</span><span class="pill">ONNX Runtime Web</span></div>
 <div class="row"><label>1. Download the default voice model</label><button id="downloadVoice">Download GuraTalkV2 voice</button><button id="clearCache" class="secondary">Clear model cache</button><div class="small">A public RVC v2 ONNX voice model. Replace the URL later if you want another compatible voice.</div></div>
@@ -17,7 +17,7 @@
 <div id="status" class="status">Download the voice and base models first.</div>
 </section></main>
 <script type="module">
-import {createRVC,runPipelineInWorker,isWorkerSupported} from "./node_modules/rvc-web-runtime/dist/index.js";
+import {createRVC,runPipelineInWorker,isWorkerSupported} from "https://cdn.jsdelivr.net/npm/rvc-web-runtime@1.0.5/dist/index.js";
 const $=id=>document.getElementById(id);
 const VOICE_URL="https://huggingface.co/DogManTC/test-rvc-onnx/resolve/main/GuraTalkV2.onnx";
 const CONTENT_URL="https://huggingface.co/TigreGotico/voiceclonnx-rvc/resolve/main/contentvec_768l12_q8.onnx";
@@ -63,7 +63,7 @@ $("enableMic").onclick=async()=>{try{await navigator.mediaDevices.getUserMedia({
 $("start").onclick=async()=>{try{const m={voice:await get("voice"),content:await get("content"),pitch:await get("pitch")};if(!m.voice||!m.content||!m.pitch)throw new Error("Download all models first.");if(!$("mic").value){await devices();if(!$("mic").value)throw new Error("Choose a microphone from the list first.");}
  micStream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:{exact:$("mic").value},channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
  micCtx=new AudioContext({sampleRate:16000});await micCtx.resume();const src=micCtx.createMediaStreamSource(micStream);await makeWorklet();src.connect(worklet);
- playCtx=new AudioContext({sampleRate:48000});if($("output").value&&typeof playCtx.setSinkId==="function")await playCtx.setSinkId($("output").value);await playCtx.resume();nextPlay=playCtx.currentTime+.1;running=true;$("start").disabled=true;$("stop").disabled=false;status("Live desktop conversion started. Speak normally.");loop(m)
+ playCtx=new AudioContext({sampleRate:48000});if($("output").value&&typeof playCtx.setSinkId==="function")await playCtx.setSinkId($("output").value);await playCtx.resume();nextPlay=playCtx.currentTime+.1;running=true;$("start").disabled=true;$("stop").disabled=false;status("Live browser conversion started. Speak normally.");loop(m)
  }catch(e){status("Could not start: "+e.message)}};
 $("stop").onclick=()=>{running=false;queue=[];worklet?.disconnect();micStream?.getTracks().forEach(t=>t.stop());micCtx?.close();playCtx?.close();worklet=null;micStream=null;micCtx=null;playCtx=null;$("start").disabled=false;$("stop").disabled=true;status("Stopped.");ready()};
 (async()=>{$("gpu").textContent=navigator.gpu?"WebGPU available":"WASM fallback";if(!isWorkerSupported())status("Web Workers are required.");await devices().catch(()=>{});await ready()})();
