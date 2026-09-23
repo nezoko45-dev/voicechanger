@@ -1,34 +1,70 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>OpenVoice V2 Clone</title>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenVoice V2 Voice Clone</title>
 <style>
-body{margin:0;background:#080b11;color:#fff;font:16px Arial}main{max-width:620px;margin:50px auto;padding:20px}
+body{margin:0;background:#080b11;color:#fff;font:16px Arial}
+main{max-width:620px;margin:50px auto;padding:20px}
 .card{background:#121824;border:1px solid #303a4d;border-radius:18px;padding:26px}
 input{width:100%;box-sizing:border-box;padding:13px;margin:10px 0 16px;background:#080d15;color:#fff;border:1px solid #40506a;border-radius:10px}
 button{padding:13px 20px;border:0;border-radius:10px;background:#765cff;color:#fff;font-weight:bold;cursor:pointer;margin:4px}
-button:disabled{opacity:.45;cursor:not-allowed}.box{margin-top:14px;padding:13px;background:#080d15;border-radius:10px;white-space:pre-wrap}
+button:disabled{opacity:.45;cursor:not-allowed}
+.box{margin-top:14px;padding:13px;background:#080d15;border-radius:10px;white-space:pre-wrap}
 small{color:#aeb8c9;line-height:1.55}
-</style></head><body><main><div class="card">
+</style>
+</head>
+<body>
+<main><div class="card">
 <h1>OpenVoice V2 Voice Clone</h1>
-<p>Reference WAV → reusable OpenVoice voice embedding.</p>
+<p>Choose a WAV reference and send it to the local clone launcher.</p>
+
 <input id="voice" type="file" accept=".wav,audio/wav">
 <button id="clone" disabled>Clone this voice</button>
+
 <div id="status" class="box">Choose a WAV file.</div>
-<div class="box"><small>Clone-only mode. The browser does not start programs on your PC. Drag the selected WAV onto clone.bat to create the voice embedding.</small></div>
+<div class="box"><small>
+Simple clone-only mode.
+Chrome handles the file selection. The local BAT handles OpenVoice.
+No Flask and no web server are required.
+</small></div>
 </div></main>
+
 <script>
 (function(){
 "use strict";
-var voice=document.getElementById("voice"),btn=document.getElementById("clone"),status=document.getElementById("status");
+
+var voice=document.getElementById("voice");
+var btn=document.getElementById("clone");
+var status=document.getElementById("status");
+
 function setStatus(s){status.textContent=s}
-voice.onchange=function(){
- var file=voice.files[0];
- btn.disabled=!file||!file.name.toLowerCase().endsWith(".wav");
- setStatus(file?(btn.disabled?"Please choose a WAV file.":"Ready: "+file.name):"Choose a WAV file.");
-};
-btn.onclick=function(){
- if(!voice.files.length)return;
- setStatus("Ready to clone: "+voice.files[0].name+"\nDrag this WAV onto clone.bat.");
-};
+
+voice.addEventListener("change",function(){
+    var file=voice.files && voice.files[0];
+    var ok=file && file.name.toLowerCase().endsWith(".wav");
+    btn.disabled=!ok;
+
+    if(ok){
+        setStatus("WAV ready: " + file.name + "\nClick Clone this voice.");
+    }else{
+        setStatus("Please choose a WAV file.");
+    }
+});
+
+btn.addEventListener("click",function(){
+    var file=voice.files && voice.files[0];
+    if(!file)return;
+
+    setStatus(
+        "WAV selected: " + file.name +
+        "\n\nChrome cannot launch clone.bat directly." +
+        "\n\nUse clone.bat and drop this WAV onto it."
+    );
+});
+
 })();
-</script></body></html>
+</script>
+</body>
+</html>
