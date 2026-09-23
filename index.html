@@ -1,77 +1,70 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>OpenVoice V2 Voice Clone</title>
+<title>Seed-VC Voice Changer</title>
 <style>
-body{margin:0;background:#080b11;color:#fff;font:16px Arial}
-main{max-width:620px;margin:50px auto;padding:20px}
-.card{background:#121824;border:1px solid #303a4d;border-radius:18px;padding:26px}
+body{margin:0;background:#080b11;color:#fff;font:16px Arial,sans-serif}
+main{max-width:680px;margin:45px auto;padding:20px}
+.card{background:#121824;border:1px solid #303a4d;border-radius:18px;padding:28px}
+h1{margin-top:0}
 input{width:100%;box-sizing:border-box;padding:13px;margin:10px 0 16px;background:#080d15;color:#fff;border:1px solid #40506a;border-radius:10px}
 button{padding:13px 20px;border:0;border-radius:10px;background:#765cff;color:#fff;font-weight:bold;cursor:pointer;margin:4px}
 button:disabled{opacity:.45;cursor:not-allowed}
-.box{margin-top:14px;padding:13px;background:#080d15;border-radius:10px;white-space:pre-wrap}
-small{color:#aeb8c9;line-height:1.55}
+.box{margin-top:14px;padding:14px;background:#080d15;border-radius:10px;white-space:pre-wrap}
+small{color:#aeb8c9;line-height:1.6}
+.ok{color:#8ff0a4}
 </style>
 </head>
 <body>
 <main><div class="card">
-<h1>OpenVoice V2 Voice Clone</h1>
-<p>Choose a WAV and copy it into the clone input folder.</p>
+<h1>Seed-VC Speech-to-Speech</h1>
+<p>Real-time voice conversion — your microphone speech is converted into the selected reference voice.</p>
 
+<label for="voice">Reference voice WAV</label>
 <input id="voice" type="file" accept=".wav,audio/wav">
-<button id="save" disabled>Save WAV to Clone Folder</button>
+<button id="save" disabled>Save Reference WAV</button>
 
-<div id="status" class="box">Choose a WAV file.</div>
+<div id="status" class="box">Choose a WAV reference voice.</div>
 
 <div class="box"><small>
-1. Start clone.bat.
-2. It creates and watches the clone_input folder.
-3. Choose your WAV here.
-4. Click Save WAV to Clone Folder.
-5. OpenVoice automatically detects it and creates the voice embedding.
+1. Run start.bat.
+2. Choose a 1–30 second WAV sample here.
+3. Click Save Reference WAV.
+4. Seed-VC's real-time window will open.
+5. Select clone_input\reference.wav as the reference voice.
+6. Select your microphone as Input.
+7. Select Voicemeeter Input / your virtual cable as Output.
+8. Start Voice Conversion.
 
-If Chrome asks where to save the file, choose the clone_input folder.
+This is speech-to-speech conversion. There is no STT, LLM, or TTS in this app.
 </small></div>
 </div></main>
-
 <script>
-(function(){
 "use strict";
-var voice=document.getElementById("voice");
-var save=document.getElementById("save");
-var status=document.getElementById("status");
-
+const voice=document.getElementById("voice");
+const save=document.getElementById("save");
+const status=document.getElementById("status");
 function setStatus(s){status.textContent=s}
-
-voice.addEventListener("change",function(){
-    var file=voice.files && voice.files[0];
-    var ok=file && file.name.toLowerCase().endsWith(".wav");
-    save.disabled=!ok;
-    setStatus(ok ? "Ready: " + file.name : "Please choose a WAV file.");
+voice.addEventListener("change",()=>{
+  const file=voice.files&&voice.files[0];
+  const ok=file&&file.name.toLowerCase().endsWith(".wav");
+  save.disabled=!ok;
+  setStatus(ok?"Ready: "+file.name:"Please choose a WAV file.");
 });
-
-save.addEventListener("click",function(){
-    var file=voice.files && voice.files[0];
-    if(!file)return;
-
-    var a=document.createElement("a");
-    a.href=URL.createObjectURL(file);
-    a.download=file.name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(function(){URL.revokeObjectURL(a.href)},1000);
-
-    setStatus(
-      "WAV exported: " + file.name +
-      "\n\nIf Chrome opened a Save As dialog, select the clone_input folder." +
-      "\nThe watcher will process it automatically."
-    );
+save.addEventListener("click",()=>{
+  const file=voice.files&&voice.files[0];
+  if(!file)return;
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(file);
+  a.download="reference.wav";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  setStatus("Reference exported as reference.wav.\n\nSave it into the clone_input folder if Chrome asks. Seed-VC can then use it as the target voice.");
 });
-
-})();
 </script>
 </body>
 </html>
