@@ -26,7 +26,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 <div class="app">
   <div class="card">
     <h1>ElevenLabs Agent — Repeat Me</h1>
-    <div class="sub">Uses your ElevenLabs Agent directly. The Agent's own Voice, First Message, and System Prompt stay in ElevenLabs.</div>
+    <div class="sub">Uses your ElevenLabs Agent directly. The Agent refreshes its conversation session before the maximum duration so the microphone can keep running.</div>
 
     <label for="agent">ElevenLabs Agent ID</label>
     <input id="agent" placeholder="agent_..." autocomplete="off">
@@ -51,6 +51,9 @@ const $=id=>document.getElementById(id);
 let conversation=null;
 let running=false;
 let manualStop=false;
+let refreshing=false;
+let sessionRefreshTimer=null;
+const SESSION_REFRESH_MS=110*60*1000;
 
 const params=new URLSearchParams(location.search);
 const agentFromUrl=params.get("agent");
@@ -63,6 +66,90 @@ if(agentFromUrl){
 }
 
 function status(text){$("status").textContent=text}
+
+function clearSessionRefresh(){
+  clearTimeout(sessionRefreshTimer);
+  sessionRefreshTimer=null;
+}
+
+function scheduleSessionRefresh(){
+  clearSessionRefresh();
+  sessionRefreshTimer=setTimeout(async()=>{
+    if(!running||!conversation||refreshing)return;
+
+    refreshing=true;
+    status("Refreshing ElevenLabs Agent session...");
+    try{
+      await conversation.endSession();
+      conversation=null;
+
+      // Start a fresh session before the platform max duration is reached.
+      // The Agent remains the same; only the conversation session is rotated.
+      await startSession(false);
+    }catch(error){
+      conversation=null;
+      running=false;
+      $("start").disabled=false;
+      $("stop").disabled=true;
+      status("Session refresh failed: "+(error?.message||String(error)));
+    }finally{
+      refreshing=false;
+    }
+  },SESSION_REFRESH_MS);
+}
+
+async function startSession(firstSession){
+  const agentId=$("agent").value.trim();
+
+  const options={
+    agentId,
+    connectionType:"webrtc",
+
+    onConnect:()=>{
+      status("LIVE — speak normally.");
+      scheduleSessionRefresh();
+    },
+
+    onDisconnect:()=>{
+      clearSessionRefresh();
+      conversation=null;
+
+      if(manualStop||refreshing){
+        if(manualStop) status("Stopped.");
+        return;
+      }
+
+      running=false;
+      $("start").disabled=false;
+      $("stop").disabled=true;
+      status("Agent disconnected.");
+    },
+
+    onMessage:(message)=>{
+      if(message?.source==="user"){
+        $("heard").textContent=message.message||"";
+      }
+    },
+
+    onModeChange:(mode)=>{
+      if(mode?.mode==="speaking") status("Repeating...");
+      else if(running&&!refreshing) status("LIVE — speak normally.");
+    },
+
+    onError:(error)=>{
+      console.error("ElevenLabs Agent error:",error);
+      status("Agent error: "+(error?.message||String(error)));
+    }
+  };
+
+  // The first session uses the Agent's configured first message.
+  // Renewal sessions use a blank first message so the introduction is not repeated.
+  if(!firstSession){
+    options.overrides={agent:{firstMessage:""}};
+  }
+
+  conversation=await Conversation.startSession(options);
+}
 
 async function start(){
   if(running) return;
@@ -91,43 +178,7 @@ async function start(){
     });
 
     status("Connecting to ElevenLabs Agent...");
-
-    conversation=await Conversation.startSession({
-      agentId,
-      connectionType:"webrtc",
-
-      onConnect:()=>{
-        status("LIVE — speak normally.");
-      },
-
-      onDisconnect:()=>{
-        conversation=null;
-        if(manualStop){
-          status("Stopped.");
-          return;
-        }
-        running=false;
-        $("start").disabled=false;
-        $("stop").disabled=true;
-        status("Agent disconnected.");
-      },
-
-      onMessage:(message)=>{
-        if(message?.source==="user"){
-          $("heard").textContent=message.message||"";
-        }
-      },
-
-      onModeChange:(mode)=>{
-        if(mode?.mode==="speaking") status("Repeating...");
-        else if(running) status("LIVE — speak normally.");
-      },
-
-      onError:(error)=>{
-        console.error("ElevenLabs Agent error:",error);
-        status("Agent error: "+(error?.message||String(error)));
-      }
-    });
+    await startSession(true);
   }catch(error){
     conversation=null;
     running=false;
@@ -139,6 +190,7 @@ async function start(){
 
 async function stop(){
   manualStop=true;
+  clearSessionRefresh();
   if(conversation){
     try{await conversation.endSession()}catch{}
   }
