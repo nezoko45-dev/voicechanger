@@ -56,6 +56,6 @@ const server=http.createServer(async(req,res)=>{
   let p=req.url.split("?")[0];if(p==="/")p="/index.html";p=path.join(ROOT,p);
   if(!p.startsWith(ROOT)||!fs.existsSync(p)||fs.statSync(p).isDirectory()){res.writeHead(404);return res.end("Not found");}
   const ext=path.extname(p),types={".html":"text/html",".js":"text/javascript",".css":"text/css",".json":"application/json"};
-  res.writeHead(200,{"Content-Type":types[ext]||"application/octet-stream"});fs.createReadStream(p).pipe(res);
+  res.writeHead(200,{"Content-Type":types[ext]||"application/octet-stream","Cache-Control":"no-store, no-cache, must-revalidate, proxy-revalidate","Pragma":"no-cache","Expires":"0"});fs.createReadStream(p).pipe(res);
 });
 server.listen(PORT,"127.0.0.1",()=>console.log("Resemble Voice Changer: http://127.0.0.1:"+PORT));
