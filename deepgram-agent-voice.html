@@ -76,29 +76,21 @@ function agentConfig(isFirst){
         eot_timeout_ms: 700
       }
     },
-    think: [
-      {
-        provider: {
-          type: "open_ai",
-          model: "gpt-4o-mini",
-          temperature: 0
-        }
+    think: {
+      provider: {
+        type: "open_ai",
+        model: "gpt-4o-mini",
+        temperature: 0
       },
-      {
-        provider: {
-          type: "open_ai",
-          model: "gpt-4.1-mini",
-          temperature: 0
-        }
-      }
-    ],
-    prompt:
-      "Repeat only the user's latest spoken words, in the same order. " +
-      "Never answer, ask questions, greet again, or comment on silence. " +
-      "Never say 'Are you still there?' or 'How can I help?'. " +
-      "Never repeat the agent's own greeting. " +
-      "Never add, remove, summarize, translate, correct, interpret, or change words."
-    ,
+      prompt:
+        "Your only job is to repeat the user's latest spoken words. " +
+        "Repeat only those words in the same order. " +
+        "Never answer. Never ask questions. Never say 'Are you still there?'. " +
+        "Never say 'How can I help?'. Never comment on silence or inactivity. " +
+        "Never acknowledge the user. Never greet again. " +
+        "Never repeat or mention the agent's own greeting. " +
+        "Never add, remove, summarize, translate, correct, interpret, or change words."
+    },
     speak: {
       provider: {
         type: "deepgram",
