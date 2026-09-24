@@ -1,6 +1,7 @@
 @echo off
 title Resemble Voice Changer
 cd /d "%~dp0"
+
 where node >nul 2>nul
 if errorlevel 1 (
   echo.
@@ -10,8 +11,13 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
+
 echo.
-echo Starting Resemble Voice Changer...
-start "" "http://127.0.0.1:8787/ResembleVoiceChanger.html?v=20260923"
+echo Closing any old voice changer servers...
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8787"') do taskkill /F /PID %%a >nul 2>&1
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8799"') do taskkill /F /PID %%a >nul 2>&1
+
+echo Starting NEW Resemble Voice Changer on port 8799...
+start "" "http://127.0.0.1:8799/ResembleVoiceChanger.html?v=20260923NEW"
 node server.js
 pause
