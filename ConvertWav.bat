@@ -111,17 +111,12 @@ if not defined SOURCE (
 
 if not defined SOURCE (
   echo.
-  echo ==================================================
-  echo             NO SOURCE WAV FOUND
-  echo ==================================================
+  echo No separate source WAV was found.
   echo.
-  echo Put the source WAV in the same folder as the reference WAV.
-  echo The batch will automatically pick it next time.
+  echo Using the REFERENCE WAV itself as the source.
+  echo This automatically creates a same-voice WAV from the reference.
   echo.
-  echo Preferred names: converted.wav, input.wav, source.wav, recording.wav
-  echo.
-  pause
-  exit /b 1
+  set "SOURCE=%REFERENCE%"
 )
 
 for %%F in ("%SOURCE%") do (
