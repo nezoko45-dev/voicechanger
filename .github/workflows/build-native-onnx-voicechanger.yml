@@ -33,9 +33,8 @@ jobs:
       - name: Download pinned RVC.cpp
         shell: pwsh
         run: |
-          $url = "https://github.com/VoiceLala/rvc-cpp/archive/a6b81862adaf34bf1ca62ec81cebb6a7dfe19005.zip"
-          Invoke-WebRequest -Uri $url -OutFile rvc.zip
-          Expand-Archive rvc.zip rvc-src
+          git clone https://github.com/VoiceLala/rvc-cpp.git rvc-src
+          git -C rvc-src checkout a6b81862adaf34bf1ca62ec81cebb6a7dfe19005
 
       - name: Download bundled voice models
         shell: pwsh
@@ -49,7 +48,7 @@ jobs:
         shell: pwsh
         run: |
           $ort = "$env:GITHUB_WORKSPACE/deps/onnxruntime-win-x64-1.20.1"
-          $rvc = "$env:GITHUB_WORKSPACE/rvc-src/rvc-cpp-a6b81862adaf34bf1ca62ec81cebb6a7dfe19005"
+          $rvc = "$env:GITHUB_WORKSPACE/rvc-src"
           cmake -S native -B native/build -G "Visual Studio 17 2022" -A x64 "-DONNXRUNTIME_ROOT=$ort" "-DRVC_CPP_ROOT=$rvc"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
