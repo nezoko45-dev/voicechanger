@@ -64,7 +64,7 @@ function makeWav(float32,sampleRate){
 }
 
 async function convert(wav){
-  const r=await fetch("http://127.0.0.1:8787/api/convert",{
+  const r=await fetch("http://127.0.0.1:8799/api/convert",{
     method:"POST",
     headers:{"X-Resemble-Key":$("key").value.trim(),"X-Resemble-Voice":$("voice").value.trim(),"Content-Type":"audio/wav"},
     body:wav
