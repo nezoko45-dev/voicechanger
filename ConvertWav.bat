@@ -11,26 +11,23 @@ echo.
 echo ONE WAV FILE -> BUILT-IN TARGET VOICE
 echo.
 echo Select ONE WAV file.
-echo The built-in target voice is: EN-DEFAULT
+echo Built-in target voice: EN-DEFAULT
 echo.
 echo No second WAV.
 echo No ONNX voice model.
 echo No model converter.
-echo No Python / FFmpeg / PyTorch.
 echo.
-echo The original spoken content stays in the audio;
-echo only the voice/tone is changed.
 echo ==================================================
 echo.
 
 set "APPDIR=%~dp0voice_clone"
-set "EXE=%APPDIR%oice_clone.exe"
-set "MODELROOT=%APPDIR%checkpoints_v2"
-set "MODELDIR=%MODELROOT%converter"
-set "MODELFILE=%MODELDIR%checkpoint.pth"
+set "EXE=%APPDIR%\voice_clone.exe"
+set "MODELROOT=%APPDIR%\checkpoints_v2"
+set "MODELDIR=%MODELROOT%\converter"
+set "MODELFILE=%MODELDIR%\checkpoint.pth"
 set "EXE_URL=https://github.com/jingangdidi/voice_clone/releases/download/v0.1.2/voice_clone_simple-vad_cpu_windows_x86-64.exe"
 set "MODELZIP_URL=https://myshell-public-repo-host.s3.amazonaws.com/openvoice/checkpoints_v2_0417.zip"
-set "MODELZIP=%TEMP%openvoice_checkpoints_v2.zip"
+set "MODELZIP=%TEMP%\openvoice_checkpoints_v2.zip"
 
 if not exist "%APPDIR%" mkdir "%APPDIR%"
 
@@ -62,22 +59,19 @@ if not exist "%MODELFILE%" (
   echo.
   echo [2/2] Downloading the built-in voice model...
   echo.
-  echo This is a one-time download.
+  echo One-time download. Please wait.
   echo.
   powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "$ProgressPreference='Continue'; Invoke-WebRequest -Uri '%MODELZIP_URL%' -OutFile '%MODELZIP%'"
   if errorlevel 1 goto MODEL_FAIL
-
   if not exist "%MODELZIP%" goto MODEL_FAIL
 
   echo.
-  echo Extracting the voice model...
+  echo Extracting the model...
   echo.
-
   powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "Expand-Archive -LiteralPath '%MODELZIP%' -DestinationPath '%APPDIR%' -Force"
   if errorlevel 1 goto MODEL_FAIL
-
   del /q "%MODELZIP%" >nul 2>&1
 )
 
@@ -88,12 +82,11 @@ echo ==================================================
 echo SELECT ONE WAV FILE
 echo ==================================================
 echo.
-echo The WAV will be converted to the built-in
-echo EN-DEFAULT target voice.
+echo The WAV will be changed to the built-in EN-DEFAULT voice.
 echo.
 
 set "INPUT="
-for /f "usebackq delims=" %%A in (`powershell -NoProfile -STA -Command "Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.OpenFileDialog; $d.Title='Select one WAV file'; $d.Filter='WAV audio (*.wav)|*.wav|All files (*.*)|*.*'; $d.Multiselect=$false; if($d.ShowDialog() -eq 'OK'){[Console]::WriteLine($d.FileName)}"`) do set "INPUT=%%A"
+for /f "usebackq delims=" %%A in ('powershell -NoProfile -STA -Command "Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.OpenFileDialog; $d.Title=''Select one WAV file''; $d.Filter=''WAV audio (*.wav)|*.wav|All files (*.*)|*.*''; $d.Multiselect=$false; if($d.ShowDialog() -eq ''OK''){[Console]::WriteLine($d.FileName)}"') do set "INPUT=%%A"
 
 if not defined INPUT (
   echo.
@@ -116,10 +109,10 @@ echo                 VOICE CONVERSION
 echo ==================================================
 echo.
 echo Input : "%INPUT%"
-echo Target: EN-DEFAULT (built-in)
+echo Target: EN-DEFAULT
 echo Output: "%OUTPUT%"
 echo.
-echo Converting...
+echo Starting conversion...
 echo Please keep this window open.
 echo.
 
@@ -170,7 +163,7 @@ echo ==================================================
 echo             VOICE MODEL DOWNLOAD FAILED
 echo ==================================================
 echo.
-echo The built-in voice model could not be installed.
+echo The built-in model could not be downloaded or extracted.
 echo Run this batch again to retry.
 echo.
 pause
