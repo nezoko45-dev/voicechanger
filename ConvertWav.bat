@@ -1,47 +1,49 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-title Simple WAV Voice Converter
+title Simple WAV Voice Changer
 cd /d "%~dp0"
 
 echo.
 echo ==================================================
-echo              SIMPLE WAV VOICE CONVERTER
+echo             SIMPLE WAV VOICE CHANGER
 echo ==================================================
 echo.
-echo ONE WAV FILE ONLY
+echo ONE WAV FILE -> BUILT-IN TARGET VOICE
 echo.
-echo Select one WAV and the app will process that WAV
-echo directly through the native voice-conversion engine.
+echo Select ONE WAV file.
+echo The built-in target voice is: EN-DEFAULT
 echo.
-echo No second WAV is required.
-echo No ONNX voice-model picker.
+echo No second WAV.
+echo No ONNX voice model.
 echo No model converter.
+echo No Python / FFmpeg / PyTorch.
 echo.
-echo NOTE: With only one WAV, there is no separate target
-echo voice. The same WAV is used as the source and reference.
+echo The original spoken content stays in the audio;
+echo only the voice/tone is changed.
 echo ==================================================
 echo.
 
 set "APPDIR=%~dp0voice_clone"
-set "EXE=%APPDIR%\voice_clone.exe"
-set "MODEL=%APPDIR%\checkpoints_v2\converter"
-set "MODEL_CONFIG=%MODEL%\config.json"
-set "MODEL_FILE=%MODEL%\checkpoint.pth"
+set "EXE=%APPDIR%oice_clone.exe"
+set "MODELROOT=%APPDIR%checkpoints_v2"
+set "MODELDIR=%MODELROOT%converter"
+set "MODELFILE=%MODELDIR%checkpoint.pth"
 set "EXE_URL=https://github.com/jingangdidi/voice_clone/releases/download/v0.1.2/voice_clone_simple-vad_cpu_windows_x86-64.exe"
-set "MODEL_URL=https://huggingface.co/myshell-ai/OpenVoiceV2/resolve/main/converter/checkpoint.pth?download=true"
-set "CONFIG_URL=https://huggingface.co/myshell-ai/OpenVoiceV2/resolve/main/converter/config.json?download=true"
+set "MODELZIP_URL=https://myshell-public-repo-host.s3.amazonaws.com/openvoice/checkpoints_v2_0417.zip"
+set "MODELZIP=%TEMP%openvoice_checkpoints_v2.zip"
 
 if not exist "%APPDIR%" mkdir "%APPDIR%"
 
 if not exist "%EXE%" (
-  echo [1/3] Downloading native WAV engine...
+  echo [1/2] Downloading the native WAV voice engine...
   echo.
   powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "$ProgressPreference='Continue'; Invoke-WebRequest -Uri '%EXE_URL%' -OutFile '%EXE%'"
   if errorlevel 1 (
     echo.
-    echo EXE DOWNLOAD FAILED.
-    echo The window is staying open so you can see the error.
+    echo ==================================================
+    echo             ENGINE DOWNLOAD FAILED
+    echo ==================================================
     echo.
     pause
     exit /b 1
@@ -51,47 +53,52 @@ if not exist "%EXE%" (
 if not exist "%EXE%" (
   echo.
   echo ERROR: voice_clone.exe was not created.
+  echo.
   pause
   exit /b 1
 )
 
-if not exist "%MODEL_CONFIG%" (
+if not exist "%MODELFILE%" (
   echo.
-  echo [2/3] Downloading model config...
+  echo [2/2] Downloading the built-in voice model...
   echo.
-  if not exist "%MODEL%" mkdir "%MODEL%"
-  powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$ProgressPreference='Continue'; Invoke-WebRequest -Uri '%CONFIG_URL%' -OutFile '%MODEL_CONFIG%'"
-  if errorlevel 1 goto MODEL_FAIL
-)
-
-if not exist "%MODEL_FILE%" (
-  echo.
-  echo [3/3] Downloading voice-conversion model...
   echo This is a one-time download.
   echo.
   powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$ProgressPreference='Continue'; Invoke-WebRequest -Uri '%MODEL_URL%' -OutFile '%MODEL_FILE%'"
+    "$ProgressPreference='Continue'; Invoke-WebRequest -Uri '%MODELZIP_URL%' -OutFile '%MODELZIP%'"
   if errorlevel 1 goto MODEL_FAIL
+
+  if not exist "%MODELZIP%" goto MODEL_FAIL
+
+  echo.
+  echo Extracting the voice model...
+  echo.
+
+  powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "Expand-Archive -LiteralPath '%MODELZIP%' -DestinationPath '%APPDIR%' -Force"
+  if errorlevel 1 goto MODEL_FAIL
+
+  del /q "%MODELZIP%" >nul 2>&1
 )
 
-if not exist "%MODEL_CONFIG%" goto MODEL_FAIL
-if not exist "%MODEL_FILE%" goto MODEL_FAIL
+if not exist "%MODELFILE%" goto MODEL_FAIL
 
 echo.
 echo ==================================================
-echo STEP 1: SELECT ONE WAV FILE
+echo SELECT ONE WAV FILE
 echo ==================================================
 echo.
-echo Pick any WAV file.
+echo The WAV will be converted to the built-in
+echo EN-DEFAULT target voice.
 echo.
 
 set "INPUT="
-for /f "usebackq delims=" %%A in (`powershell -NoProfile -STA -Command "Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.OpenFileDialog; $d.Title='Select one WAV file'; $d.Filter='WAV audio (*.wav)|*.wav|All files (*.*)|*.*'; if($d.ShowDialog() -eq 'OK'){[Console]::WriteLine($d.FileName)}"`) do set "INPUT=%%A"
+for /f "usebackq delims=" %%A in (`powershell -NoProfile -STA -Command "Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.OpenFileDialog; $d.Title='Select one WAV file'; $d.Filter='WAV audio (*.wav)|*.wav|All files (*.*)|*.*'; $d.Multiselect=$false; if($d.ShowDialog() -eq 'OK'){[Console]::WriteLine($d.FileName)}"`) do set "INPUT=%%A"
 
 if not defined INPUT (
   echo.
   echo No WAV selected.
+  echo.
   pause
   exit /b 0
 )
@@ -101,33 +108,35 @@ for %%F in ("%INPUT%") do (
   set "BASENAME=%%~nF"
 )
 
-set "OUTPUT=%OUTDIR%%BASENAME%_converted.wav"
+set "OUTPUT=%OUTDIR%%BASENAME%_voicechanged.wav"
 
 echo.
 echo ==================================================
-echo READY
+echo                 VOICE CONVERSION
 echo ==================================================
 echo.
 echo Input : "%INPUT%"
+echo Target: EN-DEFAULT (built-in)
 echo Output: "%OUTPUT%"
 echo.
-echo Processing the single WAV now...
-echo.
+echo Converting...
 echo Please keep this window open.
 echo.
 
 pushd "%APPDIR%"
-"%EXE%" -s "%INPUT%" -t "%INPUT%" -m "%MODEL%" -T 0 -o "%OUTDIR%" -n "%BASENAME%_converted.wav"
+"%EXE%" -s "%INPUT%" -t en-default -T 0 -o "%OUTDIR%" -n "%BASENAME%_voicechanged.wav"
 set "RESULT=%ERRORLEVEL%"
 popd
 
 echo.
 if not "%RESULT%"=="0" (
   echo ==================================================
-  echo               CONVERSION FAILED
+  echo             VOICE CONVERSION FAILED
   echo ==================================================
   echo.
   echo Exit code: %RESULT%
+  echo.
+  echo The engine error is shown above.
   echo.
   pause
   exit /b %RESULT%
@@ -135,7 +144,7 @@ if not "%RESULT%"=="0" (
 
 if not exist "%OUTPUT%" (
   echo ==================================================
-  echo          OUTPUT WAV WAS NOT CREATED
+  echo             OUTPUT WAS NOT CREATED
   echo ==================================================
   echo.
   echo Expected:
@@ -146,10 +155,10 @@ if not exist "%OUTPUT%" (
 )
 
 echo ==================================================
-echo             CONVERSION COMPLETE
+echo            VOICE CONVERSION COMPLETE
 echo ==================================================
 echo.
-echo Output WAV:
+echo Converted WAV:
 echo "%OUTPUT%"
 echo.
 pause
@@ -158,9 +167,10 @@ exit /b 0
 :MODEL_FAIL
 echo.
 echo ==================================================
-echo             MODEL DOWNLOAD FAILED
+echo             VOICE MODEL DOWNLOAD FAILED
 echo ==================================================
 echo.
+echo The built-in voice model could not be installed.
 echo Run this batch again to retry.
 echo.
 pause
