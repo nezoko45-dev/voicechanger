@@ -125,7 +125,7 @@ function settings(){
       },
       think:{
         provider:{type:"open_ai",model:"gpt-4o-mini",temperature:0},
-        prompt:"Your job is ONLY to repeat the latest user speech. After the initial greeting, never ask how you can help and never start a conversation. Your entire response must contain ONLY the exact words from the latest user speech, in the same order. Do not greet again. Do not answer, acknowledge, summarize, translate, correct, explain, add, remove, or change anything. If the user says 'hello human', respond only with 'hello human'."
+        prompt:"After the one-time introduction, your only job is to repeat what the user says. For every user turn, output only the user's latest speech as transcribed by the listener, in the same order. Do not answer. Do not have a conversation. Do not ask questions. Do not greet again. Do not acknowledge. Do not summarize, translate, correct, explain, add, remove, or change words. The introduction greeting is separate from your job and happens only once when the session starts."
       },
       speak:{
         provider:{type:"deepgram",model:$("voice").value}
