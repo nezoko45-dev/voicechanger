@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ElevenLabs Agent Repeat Me</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#080b12;color:#f5f7fb;font:15px system-ui,Arial,sans-serif}
+.app{width:min(720px,100%);margin:auto;padding:32px 18px}
+.card{background:#111722;border:1px solid #293449;border-radius:20px;padding:22px;margin-bottom:16px}
+h1{margin:0 0 6px;font-size:30px}
+.sub{color:#9ba7ba;line-height:1.45}
+label{display:block;color:#b8c2d2;font-weight:700;margin:16px 0 7px}
+input{width:100%;background:#080d15;color:#fff;border:1px solid #3a465c;border-radius:11px;padding:13px;font:inherit}
+button{width:100%;border:0;border-radius:12px;padding:15px;margin-top:12px;font-weight:800;font-size:16px;background:#735cff;color:#fff;cursor:pointer}
+button.stop{background:#9b3d50}
+button:disabled{opacity:.45;cursor:not-allowed}
+.status{text-align:center;color:#c7cfdd;min-height:24px;margin-top:15px}
+.heard{min-height:85px;background:#080d15;border:1px solid #293449;border-radius:12px;padding:15px;line-height:1.5;font-size:18px;margin-top:8px}
+.note{color:#7f8ca1;font-size:12px;line-height:1.55;margin-top:12px}
+.ok{color:#78e3a4}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="card">
+    <h1>ElevenLabs Agent — Repeat Me</h1>
+    <div class="sub">Uses your ElevenLabs Agent directly. The Agent's own Voice, First Message, and System Prompt stay in ElevenLabs.</div>
+
+    <label for="agent">ElevenLabs Agent ID</label>
+    <input id="agent" placeholder="agent_..." autocomplete="off">
+
+    <button id="start">Start listening</button>
+    <button id="stop" class="stop" disabled>Stop</button>
+
+    <div id="status" class="status">Ready.</div>
+  </div>
+
+  <div class="card">
+    <strong>You said</strong>
+    <div id="heard" class="heard">Nothing heard yet.</div>
+    <div class="note">Configure the Agent in ElevenLabs with your repeat-only prompt and desired primary voice. This page does not add a second prompt, TTS voice, or audio buffer.</div>
+  </div>
+</div>
+
+<script type="module">
+import { Conversation } from "https://esm.sh/@elevenlabs/client";
+
+const $=id=>document.getElementById(id);
+let conversation=null;
+let running=false;
+let manualStop=false;
+
+const saved=localStorage.getItem("eleven_agent_id");
+if(saved) $("agent").value=saved;
+
+function status(text){$("status").textContent=text}
+
+async function start(){
+  if(running) return;
+
+  const agentId=$("agent").value.trim();
+  if(!agentId){
+    status("Enter your ElevenLabs Agent ID first.");
+    return;
+  }
+
+  manualStop=false;
+  running=true;
+  $("start").disabled=true;
+  $("stop").disabled=false;
+  localStorage.setItem("eleven_agent_id",agentId);
+  status("Requesting microphone...");
+
+  try{
+    await navigator.mediaDevices.getUserMedia({
+      audio:{
+        channelCount:1,
+        echoCancellation:true,
+        noiseSuppression:false,
+        autoGainControl:false
+      }
+    });
+
+    status("Connecting to ElevenLabs Agent...");
+
+    conversation=await Conversation.startSession({
+      agentId,
+      connectionType:"webrtc",
+
+      onConnect:()=>{
+        status("LIVE — speak normally.");
+      },
+
+      onDisconnect:()=>{
+        conversation=null;
+        if(manualStop){
+          status("Stopped.");
+          return;
+        }
+        running=false;
+        $("start").disabled=false;
+        $("stop").disabled=true;
+        status("Agent disconnected.");
+      },
+
+      onMessage:(message)=>{
+        if(message?.source==="user"){
+          $("heard").textContent=message.message||"";
+        }
+      },
+
+      onModeChange:(mode)=>{
+        if(mode?.mode==="speaking") status("Repeating...");
+        else if(running) status("LIVE — speak normally.");
+      },
+
+      onError:(error)=>{
+        console.error("ElevenLabs Agent error:",error);
+        status("Agent error: "+(error?.message||String(error)));
+      }
+    });
+  }catch(error){
+    conversation=null;
+    running=false;
+    $("start").disabled=false;
+    $("stop").disabled=true;
+    status("Could not start: "+(error?.message||String(error)));
+  }
+}
+
+async function stop(){
+  manualStop=true;
+  if(conversation){
+    try{await conversation.endSession()}catch{}
+  }
+  conversation=null;
+  running=false;
+  $("start").disabled=false;
+  $("stop").disabled=true;
+  status("Stopped.");
+}
+
+$("start").addEventListener("click",start);
+$("stop").addEventListener("click",stop);
+</script>
+</body>
+</html>
