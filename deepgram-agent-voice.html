@@ -21,7 +21,7 @@ button.stop{background:#9b3d50}button:disabled{opacity:.45;cursor:not-allowed}
 <div class="app">
   <div class="card">
     <h1>Deepgram Repeat Me</h1>
-    <div class="sub">Always-on Deepgram Voice Agent: it greets once, then repeats exactly what you say.</div>
+    <div class="sub">Always-on Deepgram Voice Agent: it greets once, then repeats exactly what you say. Sessions refresh automatically before the server limit.</div>
     <label for="key">Deepgram API key or temporary token</label>
     <input id="key" type="password" autocomplete="off" placeholder="Paste your Deepgram key/token">
     <label for="voice" style="margin-top:14px">Voice</label>
@@ -51,8 +51,9 @@ button.stop{background:#9b3d50}button:disabled{opacity:.45;cursor:not-allowed}
 const $ = id => document.getElementById(id);
 let ws=null, stream=null, inCtx=null, source=null, processor=null;
 let outCtx=null, nextPlay=0, running=false, starting=false, ready=false, reconnecting=false;
-let playing=[],keepAliveTimer=null,reconnectTimer=null,lastAudioSentAt=0;
+let playing=[],keepAliveTimer=null,reconnectTimer=null,sessionRefreshTimer=null,lastAudioSentAt=0;
 let firstAgentSession=true, reconnectAttempt=0;
+const SESSION_REFRESH_MS=140*60*1000;
 
 function setStatus(s){ $("status").textContent=s; }
 function setLog(s){ $("log").textContent=s; }
@@ -80,6 +81,16 @@ function stopReconnect(){
   reconnectTimer=null;
 }
 
+function scheduleSessionRefresh(){
+  clearTimeout(sessionRefreshTimer);
+  sessionRefreshTimer=setTimeout(()=>{
+    if(running && ws && ws.readyState===WebSocket.OPEN && !reconnecting){
+      scheduleReconnect($("key").value.trim(),
+        "Refreshing the Deepgram Agent session before the server limit...");
+    }
+  },SESSION_REFRESH_MS);
+}
+
 function scheduleReconnect(token, reason="connection closed"){
   if(!running || starting || reconnecting)return;
 
@@ -87,6 +98,8 @@ function scheduleReconnect(token, reason="connection closed"){
   ready=false;
   firstAgentSession=false;
   reconnectAttempt++;
+  clearTimeout(sessionRefreshTimer);
+  sessionRefreshTimer=null;
 
   const delay=Math.min(5000,1000*Math.max(1,reconnectAttempt));
 
@@ -118,6 +131,8 @@ function scheduleReconnect(token, reason="connection closed"){
 function stopKeepAlive(){
   clearInterval(keepAliveTimer);
   keepAliveTimer=null;
+  clearTimeout(sessionRefreshTimer);
+  sessionRefreshTimer=null;
   stopReconnect();
 }
 
