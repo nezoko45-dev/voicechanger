@@ -24,13 +24,7 @@ button.stop{background:#9b3d50}button:disabled{opacity:.45;cursor:not-allowed}
     <div class="sub">Always-on Deepgram Voice Agent. Priya is the default voice, and the session refreshes automatically before the maximum duration.</div>
     <label for="key">Deepgram API key or temporary token</label>
     <input id="key" type="password" autocomplete="off" placeholder="Paste your Deepgram key/token">
-    <label for="voice" style="margin-top:14px">Voice</label>
-    <select id="voice">
-      <option value="flux-priya-en" selected>Priya</option>
-      <option value="aura-2-asteria-en">Asteria</option>
-      <option value="aura-2-luna-en">Luna</option>
-      <option value="aura-2-thalia-en">Thalia</option>
-    </select>
+    <div class="note">Voice: <strong>Priya</strong> (<code>flux-priya-en</code>)</div>
     <button id="start">Start listening</button>
     <button id="stop" class="stop" disabled>Stop</button>
     <div id="status" class="status">Ready.</div>
@@ -44,144 +38,55 @@ button.stop{background:#9b3d50}button:disabled{opacity:.45;cursor:not-allowed}
   </div>
 </div>
 
-<script>
-(function(){
-"use strict";
+<script type="module">
+import { AgentSession, AgentMicrophone, AgentPlayer } from "https://esm.sh/@deepgram/agents?bundle";
 
 const $ = id => document.getElementById(id);
-const params = new URLSearchParams(location.search);
-const forcedVoice = params.get("voice");
-let ws=null, stream=null, inCtx=null, source=null, processor=null;
-let outCtx=null, nextPlay=0, running=false, starting=false, ready=false, reconnecting=false;
-let playing=[],keepAliveTimer=null,reconnectTimer=null,sessionRefreshTimer=null,lastAudioSentAt=0;
-let firstAgentSession=true, reconnectAttempt=0;
-const SESSION_REFRESH_MS=140*60*1000;
+let session=null;
+let mic=null;
+let player=null;
+let running=false;
+let stopping=false;
+let refreshing=false;
+let refreshTimer=null;
+let firstSession=true;
 
-function setStatus(s){ $("status").textContent=s; }
-function setLog(s){ $("log").textContent=s; }
+const SESSION_REFRESH_MS = 110 * 60 * 1000;
 
-if(forcedVoice){
-  const option = [...$("voice").options].find(o => o.value === forcedVoice);
-  if(option){
-    $("voice").value = forcedVoice;
-  }
+function setStatus(text){ $("status").textContent=text; }
+
+function scheduleRefresh(){
+  clearTimeout(refreshTimer);
+  refreshTimer=setTimeout(refreshSession,SESSION_REFRESH_MS);
 }
 
-function floatToPCM16(input){
-  const out=new Int16Array(input.length);
-  for(let i=0;i<input.length;i++){
-    const x=Math.max(-1,Math.min(1,input[i]));
-    out[i]=x<0?x*32768:x*32767;
-  }
-  return out;
-}
+async function buildSession(first){
+  const key=$("key").value.trim();
+  if(!key) throw new Error("Enter your Deepgram API key or temporary token first.");
 
-function startKeepAlive(){
-  clearInterval(keepAliveTimer);
-  keepAliveTimer=setInterval(()=>{
-    if(ws && ws.readyState===WebSocket.OPEN){
-      try{ ws.send(JSON.stringify({type:"KeepAlive"})); }catch(e){}
-    }
-  },8000);
-}
+  session=new AgentSession({
+    auth:{apiKey:key},
 
-function stopReconnect(){
-  clearTimeout(reconnectTimer);
-  reconnectTimer=null;
-}
-
-function scheduleSessionRefresh(){
-  clearTimeout(sessionRefreshTimer);
-  sessionRefreshTimer=setTimeout(()=>{
-    if(running && ws && ws.readyState===WebSocket.OPEN && !reconnecting){
-      scheduleReconnect($("key").value.trim(),
-        "Refreshing the Deepgram Agent session before the server limit...");
-    }
-  },SESSION_REFRESH_MS);
-}
-
-function scheduleReconnect(token, reason="connection closed"){
-  if(!running || starting || reconnecting)return;
-
-  reconnecting=true;
-  ready=false;
-  firstAgentSession=false;
-  reconnectAttempt++;
-  clearTimeout(sessionRefreshTimer);
-  sessionRefreshTimer=null;
-
-  const delay=Math.min(5000,1000*Math.max(1,reconnectAttempt));
-
-  stopReconnect();
-  setStatus("Deepgram session ended — reconnecting...");
-  setLog(reason+" Reconnecting the Agent on the same microphone stream...");
-
-  reconnectTimer=setTimeout(async()=>{
-    reconnectTimer=null;
-    if(!running){reconnecting=false;return;}
-
-    try{
-      await connect(token);
-      reconnectAttempt=0;
-      reconnecting=false;
-
-      if(running)setStatus("Listening — speak again.");
-      setLog("LIVE. New Deepgram Agent session connected. Repeat-only mode restored.");
-    }catch(e){
-      reconnecting=false;
-      if(running){
-        setLog("Reconnect failed: "+(e.message||String(e))+" — retrying...");
-        scheduleReconnect(token,"Reconnect attempt failed.");
-      }
-    }
-  },delay);
-}
-
-function stopKeepAlive(){
-  clearInterval(keepAliveTimer);
-  keepAliveTimer=null;
-  clearTimeout(sessionRefreshTimer);
-  sessionRefreshTimer=null;
-  stopReconnect();
-}
-
-function stopAudio(){
-  for(const n of playing){try{n.stop()}catch(e){}}
-  playing=[];
-  if(outCtx) nextPlay=outCtx.currentTime;
-}
-
-async function playPCM(arrayBuffer){
-  if(!outCtx) outCtx=new AudioContext({sampleRate:24000});
-  await outCtx.resume();
-  const pcm=new Int16Array(arrayBuffer);
-  if(!pcm.length) return;
-
-  const buffer=outCtx.createBuffer(1,pcm.length,24000);
-  const data=buffer.getChannelData(0);
-  for(let i=0;i<pcm.length;i++) data[i]=pcm[i]/32768;
-
-  const node=outCtx.createBufferSource();
-  node.buffer=buffer;
-  node.connect(outCtx.destination);
-  playing.push(node);
-  node.onended=()=>{playing=playing.filter(x=>x!==node)};
-
-  if(nextPlay<outCtx.currentTime+0.015) nextPlay=outCtx.currentTime+0.015;
-  node.start(nextPlay);
-  nextPlay+=buffer.duration;
-}
-
-function settings(){
-  return {
-    type:"Settings",
     audio:{
-      input:{encoding:"linear16",sample_rate:16000},
-      output:{encoding:"linear16",sample_rate:24000,container:"none"}
+      input:{encoding:"linear16",sampleRate:16000},
+      output:{encoding:"linear16",sampleRate:24000}
     },
+
+    reconnect:{
+      enabled:true,
+      maxAttempts:20,
+      baseDelay:500,
+      maxDelay:5000,
+      jitter:true
+    },
+
+    keepAliveInterval:8000,
+
     agent:{
       language:"en",
-      greeting:firstAgentSession ? "HUMAN!! IM BACK!!" : "",
+
+      greeting:first ? "HUMAN!! IM BACK!!" : "",
+
       listen:{
         provider:{
           type:"deepgram",
@@ -192,211 +97,182 @@ function settings(){
           eot_timeout_ms:500
         }
       },
+
       think:{
-        provider:{type:"open_ai",model:"gpt-4o-mini",temperature:0},
-        prompt:"After the one-time introduction, ONLY repeat the user's latest speech. Never repeat or mention the agent's own greeting, the words 'HUMAN!! IM BACK!!', or any other text generated by the agent. For every user turn, output only the user's latest speech as transcribed by the listener, in the same order. Do not answer. Do not converse. Do not ask questions. Do not greet again. Do not acknowledge. Do not summarize, translate, correct, explain, add, remove, or change words."
+        provider:{
+          type:"open_ai",
+          model:"gpt-4o-mini",
+          temperature:0
+        },
+        prompt:"Your only job is to repeat exactly what the user says. Repeat only the latest user speech in the same order. Never answer. Never ask questions. Never say Are you still there. Never say How can I help. Never comment on silence or inactivity. Never acknowledge the user. Never greet again. Never repeat the words HUMAN IM BACK. Never repeat your own introduction. Never add, remove, summarize, translate, correct, interpret, or change the user's words."
       },
+
       speak:{
         provider:{
           type:"deepgram",
-          version:$("voice").value.startsWith("flux-") ? "v2" : "v1",
-          model:$("voice").value
+          version:"v2",
+          model:"flux-priya-en"
         }
       }
     }
-  };
-}
-
-function connect(token){
-  return new Promise((resolve,reject)=>{
-    let done=false;
-    let timer;
-
-    try{
-      // Browser WebSockets cannot set Authorization headers, so use
-      // Deepgram's documented "token, API_KEY" subprotocol authentication.
-      ws=new WebSocket("wss://agent.deepgram.com/v1/agent/converse",["token",token]);
-      ws.binaryType="arraybuffer";
-    }catch(err){ reject(err); return; }
-
-    timer=setTimeout(()=>{
-      if(done)return;
-      done=true;
-      try{ws.close()}catch(e){}
-      reject(new Error("Deepgram connection timed out."));
-    },20000);
-
-    ws.onopen=()=>setLog("WebSocket connected. Waiting for Deepgram Welcome...");
-    
-    ws.onmessage=async event=>{
-      if(event.data instanceof ArrayBuffer){
-        try{await playPCM(event.data)}catch(e){}
-        return;
-      }
-      if(typeof event.data!=="string")return;
-
-      let msg;
-      try{msg=JSON.parse(event.data)}catch(e){return;}
-
-      if(msg.type==="Welcome"){
-        setLog("Agent connected. Sending always-on repeat settings...");
-        ws.send(JSON.stringify(settings()));
-        return;
-      }
-
-      if(msg.type==="SettingsApplied"){
-        if(done)return;
-        done=true;
-        clearTimeout(timer);
-        ready=true;
-        scheduleSessionRefresh();
-        startKeepAlive();
-        resolve();
-        return;
-      }
-
-      if(msg.type==="ConversationText"){
-        if(msg.role==="user"){
-          $("heard").textContent=msg.content||"";
-        }
-        return;
-      }
-
-      if(msg.type==="AgentStartedSpeaking"){
-        setStatus("Repeating...");
-        return;
-      }
-
-      if(msg.type==="AgentAudioDone"){
-        if(running)setStatus("Listening — speak again.");
-        return;
-      }
-
-      if(msg.type==="Error"){
-        const code=msg.code||"";
-        const text=msg.description||msg.message||code||"Unknown Deepgram error";
-
-        if(code==="MAXIMUM_SESSION_LENGTH_APPROACHING"){
-          setLog("Deepgram session is approaching its maximum length. The app will reconnect before it ends.");
-          return;
-        }
-
-        if(code==="MAXIMUM_SESSION_LENGTH_REACHED"){
-          setLog("Deepgram maximum session reached. Starting a fresh Agent session automatically...");
-          if(!done){
-            done=true; clearTimeout(timer);
-            reject(new Error(text));
-          }else if(running){
-            scheduleReconnect($("key").value.trim(),"Deepgram maximum session length reached.");
-          }
-          return;
-        }
-
-        setLog("Deepgram error: "+text);
-        if(!done){
-          done=true; clearTimeout(timer);
-          reject(new Error(text));
-        }else if(running){
-          scheduleReconnect($("key").value.trim(),"Deepgram error: "+text);
-        }
-        return;
-      }
-
-      if(msg.type==="Warning"){
-        setLog("Deepgram warning: "+(msg.description||msg.message||""));
-      }
-    };
-
-    ws.onerror=()=>{
-      if(!done){
-        done=true; clearTimeout(timer);
-        reject(new Error("WebSocket failed. Check your Deepgram key/token."));
-      }
-    };
-
-    ws.onclose=()=>{
-      if(!done){
-        done=true; clearTimeout(timer);
-        reject(new Error("Deepgram closed before the agent became ready."));
-      }else if(running){
-        scheduleReconnect($("key").value.trim(),"Deepgram WebSocket closed.");
-      }
-    };
   });
+
+  player=new AgentPlayer({sampleRate:24000});
+
+  session.on("connected",()=>{
+    setStatus("LIVE — speak normally.");
+    scheduleRefresh();
+  });
+
+  session.on("reconnecting",(attempt)=>{
+    setStatus("Reconnecting Deepgram... ("+attempt+")");
+  });
+
+  session.on("disconnected",(reason)=>{
+    clearTimeout(refreshTimer);
+    if(stopping)return;
+    if(running && !refreshing){
+      setStatus("Deepgram disconnected: "+(reason||"retrying..."));
+    }
+  });
+
+  session.on("conversation-text",(msg)=>{
+    if(msg?.role==="user") $("heard").textContent=msg.content||"";
+  });
+
+  session.on("agent-started-speaking",()=>{
+    setStatus("Repeating...");
+  });
+
+  session.on("agent-audio-done",()=>{
+    if(running&&!refreshing) setStatus("LIVE — speak normally.");
+  });
+
+  session.on("user-started-speaking",()=>{
+    player.interrupt();
+  });
+
+  session.on("audio",(chunk)=>{
+    player.queue(chunk);
+  });
+
+  session.on("error",(msg)=>{
+    const text=msg?.description||msg?.message||String(msg);
+    console.error("Deepgram Agent error:",msg);
+    setStatus("Deepgram error: "+text);
+  });
+
+  session.on("sdk-error",(err)=>{
+    console.error("Deepgram SDK error:",err);
+    setStatus("Connection error: "+(err?.message||String(err)));
+  });
+
+  mic=new AgentMicrophone(
+    data=>session.sendAudio(data),
+    {
+      sampleRate:16000,
+      echoCancellation:true,
+      noiseSuppression:false,
+      autoGainControl:false
+    }
+  );
+
+  await session.connect();
+  await mic.start();
 }
 
-async function start(){
-  if(running||starting)return;
-  firstAgentSession=true;
-  reconnectAttempt=0;
-  starting=true;
-  $("start").disabled=true;
-  setStatus("Requesting microphone...");
-  setLog("Start clicked.");
+async function refreshSession(){
+  if(!running||refreshing)return;
+
+  refreshing=true;
+  clearTimeout(refreshTimer);
+  setStatus("Refreshing Deepgram session...");
 
   try{
-    const token=$("key").value.trim();
-    if(!token) throw new Error("Enter your Deepgram API key or temporary token first.");
+    if(mic) mic.stop();
+    if(session) session.disconnect();
+    if(player) player.dispose();
 
-    stream=await navigator.mediaDevices.getUserMedia({
-      audio:{channelCount:1,echoCancellation:true,noiseSuppression:false,autoGainControl:false}
-    });
+    mic=null;
+    session=null;
+    player=null;
 
-    setStatus("Connecting to Deepgram...");
-    await connect(token);
-
-    inCtx=new AudioContext({sampleRate:16000});
-    await inCtx.resume();
-
-    source=inCtx.createMediaStreamSource(stream);
-    processor=inCtx.createScriptProcessor(2048,1,1);
-
-    processor.onaudioprocess=e=>{
-      if(!running||!ready||!ws||ws.readyState!==WebSocket.OPEN)return;
-      try{
-        lastAudioSentAt=performance.now();
-        ws.send(floatToPCM16(e.inputBuffer.getChannelData(0)).buffer);
-      }catch(err){}
-    };
-
-    source.connect(processor);
-    processor.connect(inCtx.destination);
-
-    running=true;
-    starting=false;
-    $("stop").disabled=false;
-    setStatus("Listening — speak now.");
-    setLog("LIVE. Microphone audio is streaming continuously to Deepgram.");
-  }catch(err){
-    starting=false;
-    cleanup();
-    setStatus("Could not start: "+(err.message||String(err)));
-    setLog("ERROR: "+(err.message||String(err)));
+    // Create a new session before the platform maximum instead of waiting for
+    // the server to close the existing one.
+    await buildSession(false);
+    firstSession=false;
+  }catch(error){
+    console.error("Session refresh failed:",error);
+    if(running) setStatus("Session refresh failed: "+(error?.message||String(error)));
+  }finally{
+    refreshing=false;
   }
 }
 
-function cleanup(){
+async function start(){
+  if(running)return;
+
+  const key=$("key").value.trim();
+  if(!key){
+    setStatus("Enter your Deepgram API key or temporary token first.");
+    return;
+  }
+
+  running=true;
+  stopping=false;
+  firstSession=true;
+
+  $("start").disabled=true;
+  $("stop").disabled=false;
+  setStatus("Connecting to Deepgram...");
+
+  try{
+    await buildSession(true);
+  }catch(error){
+    console.error("Start failed:",error);
+    stopping=true;
+    try{mic?.stop()}catch{}
+    try{session?.disconnect()}catch{}
+    try{player?.dispose()}catch{}
+
+    mic=null;
+    session=null;
+    player=null;
+    running=false;
+    stopping=false;
+
+    $("start").disabled=false;
+    $("stop").disabled=true;
+    setStatus("Could not connect: "+(error?.message||String(error)));
+  }
+}
+
+function stop(){
+  stopping=true;
+  clearTimeout(refreshTimer);
+
+  try{mic?.stop()}catch{}
+  try{session?.disconnect()}catch{}
+  try{player?.dispose()}catch{}
+
+  mic=null;
+  session=null;
+  player=null;
   running=false;
-  starting=false;
-  reconnecting=false;
-  ready=false;
-  firstAgentSession=true;
-  reconnectAttempt=0;
-  stopKeepAlive();
-  try{processor&&processor.disconnect()}catch(e){}
-  try{source&&source.disconnect()}catch(e){}
-  try{inCtx&&inCtx.close()}catch(e){}
-  try{ws&&ws.close()}catch(e){}
-  try{stream&&stream.getTracks().forEach(t=>t.stop())}catch(e){}
-  stopAudio();
-  processor=null; source=null; inCtx=null; ws=null; stream=null;
+  refreshing=false;
+  stopping=false;
+
   $("start").disabled=false;
   $("stop").disabled=true;
+  setStatus("Stopped.");
 }
 
 $("start").addEventListener("click",start);
-$("stop").addEventListener("click",()=>{cleanup();setStatus("Stopped.");setLog("Stopped. Press Start listening to begin again.");});
-})();
+$("stop").addEventListener("click",stop);
+
+const saved=localStorage.getItem("deepgram_agent_key");
+$("key").value=saved||"";
+$("key").addEventListener("change",()=>localStorage.setItem("deepgram_agent_key",$("key").value.trim()));
 </script>
 </body>
 </html>
