@@ -3,6 +3,7 @@
 #include <commdlg.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -259,7 +260,7 @@ static std::vector<float> make_mel(const std::vector<float>& wav16k, size_t& fra
 
     std::vector<double> window(n_fft);
     for (int n = 0; n < n_fft; ++n)
-        window[n] = 0.5 - 0.5 * std::cos(2.0 * M_PI * n / n_fft);
+        window[n] = 0.5 - 0.5 * std::cos(2.0 * 3.14159265358979323846 * n / n_fft);
 
     auto hz_to_mel = [](double hz) { return 1127.0 * std::log1p(hz / 700.0); };
     auto mel_to_hz = [](double m) { return 700.0 * (std::exp(m / 1127.0) - 1.0); };
