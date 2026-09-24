@@ -48,6 +48,10 @@ async function proxy(req,res){
 }
 
 const server=http.createServer(async(req,res)=>{
+  res.setHeader("Access-Control-Allow-Origin","*");
+  res.setHeader("Access-Control-Allow-Headers","Content-Type,X-Resemble-Key,X-Resemble-Voice");
+  res.setHeader("Access-Control-Allow-Methods","GET,POST,OPTIONS");
+  if(req.method==="OPTIONS"){res.writeHead(204);return res.end();}
   if(req.method==="POST"&&req.url==="/api/convert")return proxy(req,res);
   let p=req.url.split("?")[0];if(p==="/")p="/index.html";p=path.join(ROOT,p);
   if(!p.startsWith(ROOT)||!fs.existsSync(p)||fs.statSync(p).isDirectory()){res.writeHead(404);return res.end("Not found");}
