@@ -8,15 +8,19 @@ echo ==================================================
 echo             SIMPLE WAV VOICE CHANGER
 echo ==================================================
 echo.
-echo ONE WAV FILE -> BUILT-IN TARGET VOICE
+echo SELECT ONE REFERENCE WAV
 echo.
-echo Select ONE WAV file.
-echo Built-in target voice: EN-DEFAULT
+echo The batch automatically finds the SOURCE WAV.
 echo.
-echo No second WAV.
-echo No ONNX voice model.
-echo No model converter.
+echo SOURCE priority:
+echo   converted.wav
+echo   input.wav
+echo   source.wav
+echo   recording.wav
+echo   otherwise: first other WAV in this folder
 echo.
+echo The selected reference WAV supplies the target voice.
+echo The automatically found WAV supplies the words/audio.
 echo ==================================================
 echo.
 
@@ -32,15 +36,13 @@ set "MODELZIP=%TEMP%\openvoice_checkpoints_v2.zip"
 if not exist "%APPDIR%" mkdir "%APPDIR%"
 
 if not exist "%EXE%" (
-  echo [1/2] Downloading the native WAV voice engine...
+  echo Downloading the native WAV voice engine...
   echo.
   powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "$ProgressPreference='Continue'; Invoke-WebRequest -Uri '%EXE_URL%' -OutFile '%EXE%'"
   if errorlevel 1 (
     echo.
-    echo ==================================================
-    echo             ENGINE DOWNLOAD FAILED
-    echo ==================================================
+    echo ENGINE DOWNLOAD FAILED.
     echo.
     pause
     exit /b 1
@@ -57,9 +59,8 @@ if not exist "%EXE%" (
 
 if not exist "%MODELFILE%" (
   echo.
-  echo [2/2] Downloading the built-in voice model...
-  echo.
-  echo One-time download. Please wait.
+  echo Downloading the OpenVoice model...
+  echo This is a one-time download.
   echo.
   powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "$ProgressPreference='Continue'; Invoke-WebRequest -Uri '%MODELZIP_URL%' -OutFile '%MODELZIP%'"
@@ -79,24 +80,51 @@ if not exist "%MODELFILE%" goto MODEL_FAIL
 
 echo.
 echo ==================================================
-echo SELECT ONE WAV FILE
+echo SELECT ONE REFERENCE WAV
 echo ==================================================
 echo.
-echo The WAV will be changed to the built-in EN-DEFAULT voice.
+echo This WAV becomes the target voice.
 echo.
 
-set "INPUT="
-for /f "usebackq delims=" %%A in ('powershell -NoProfile -STA -Command "Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.OpenFileDialog; $d.Title=''Select one WAV file''; $d.Filter=''WAV audio (*.wav)|*.wav|All files (*.*)|*.*''; $d.Multiselect=$false; if($d.ShowDialog() -eq ''OK''){[Console]::WriteLine($d.FileName)}"') do set "INPUT=%%A"
+set "REFERENCE="
+for /f "usebackq delims=" %%A in ('powershell -NoProfile -STA -Command "Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.OpenFileDialog; $d.Title=''Select REFERENCE WAV - target voice''; $d.Filter=''WAV audio (*.wav)|*.wav|All files (*.*)|*.*''; if($d.ShowDialog() -eq ''OK''){[Console]::WriteLine($d.FileName)}"') do set "REFERENCE=%%A"
 
-if not defined INPUT (
+if not defined REFERENCE (
   echo.
-  echo No WAV selected.
+  echo No reference WAV selected.
   echo.
   pause
   exit /b 0
 )
 
-for %%F in ("%INPUT%") do (
+for %%F in ("%REFERENCE%") do set "REFDIR=%%~dpF"
+
+set "SOURCE="
+
+for %%N in (converted.wav input.wav source.wav recording.wav) do (
+  if not defined SOURCE if exist "%REFDIR%%%N" if /i not "%REFDIR%%%N"=="%REFERENCE%" set "SOURCE=%REFDIR%%%N"
+)
+
+if not defined SOURCE (
+  for /f "delims=" %%A in ('powershell -NoProfile -Command "Get-ChildItem -LiteralPath ''%REFDIR%'' -Filter *.wav -File | Where-Object { $_.FullName -ne ''%REFERENCE%'' -and $_.Name -notlike ''*_voicechanged.wav'' -and $_.Name -notlike ''*_converted.wav'' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName"') do set "SOURCE=%%A"
+)
+
+if not defined SOURCE (
+  echo.
+  echo ==================================================
+  echo             NO SOURCE WAV FOUND
+  echo ==================================================
+  echo.
+  echo Put the source WAV in the same folder as the reference WAV.
+  echo The batch will automatically pick it next time.
+  echo.
+  echo Preferred names: converted.wav, input.wav, source.wav, recording.wav
+  echo.
+  pause
+  exit /b 1
+)
+
+for %%F in ("%SOURCE%") do (
   set "OUTDIR=%%~dpF"
   set "BASENAME=%%~nF"
 )
@@ -108,16 +136,17 @@ echo ==================================================
 echo                 VOICE CONVERSION
 echo ==================================================
 echo.
-echo Input : "%INPUT%"
-echo Target: EN-DEFAULT
-echo Output: "%OUTPUT%"
+echo Reference: "%REFERENCE%"
+echo Source   : "%SOURCE%"
+echo Output   : "%OUTPUT%"
 echo.
-echo Starting conversion...
+echo Converting source audio into the reference voice...
+echo.
 echo Please keep this window open.
 echo.
 
 pushd "%APPDIR%"
-"%EXE%" -s "%INPUT%" -t en-default -T 0 -o "%OUTDIR%" -n "%BASENAME%_voicechanged.wav"
+"%EXE%" -s "%SOURCE%" -t "%REFERENCE%" -T 0 -o "%OUTDIR%" -n "%BASENAME%_voicechanged.wav"
 set "RESULT=%ERRORLEVEL%"
 popd
 
@@ -136,6 +165,7 @@ if not "%RESULT%"=="0" (
 )
 
 if not exist "%OUTPUT%" (
+  echo.
   echo ==================================================
   echo             OUTPUT WAS NOT CREATED
   echo ==================================================
@@ -163,7 +193,6 @@ echo ==================================================
 echo             VOICE MODEL DOWNLOAD FAILED
 echo ==================================================
 echo.
-echo The built-in model could not be downloaded or extracted.
 echo Run this batch again to retry.
 echo.
 pause
