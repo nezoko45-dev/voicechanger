@@ -30,26 +30,18 @@ jobs:
           if ($actual -ne $expected) { throw "ONNX Runtime checksum mismatch" }
           Expand-Archive ort.zip deps
 
-      - name: Download pinned RVC.cpp
-        shell: pwsh
-        run: |
-          git clone https://github.com/VoiceLala/rvc-cpp.git rvc-src
-          git -C rvc-src checkout a6b81862adaf34bf1ca62ec81cebb6a7dfe19005
-
       - name: Download bundled voice models
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force models | Out-Null
           Invoke-WebRequest -Uri "https://huggingface.co/DogManTC/test-rvc-onnx/resolve/main/GuraTalkV2.onnx?download=true" -OutFile models/GuraTalkV2.onnx
           Invoke-WebRequest -Uri "https://huggingface.co/DogManTC/test-rvc-onnx/resolve/main/vec-768-layer-12.onnx?download=true" -OutFile models/vec-768-layer-12.onnx
-          Invoke-WebRequest -Uri "https://huggingface.co/DogManTC/test-rvc-onnx/resolve/main/rmvpe.onnx?download=true" -OutFile models/rmvpe.onnx
 
       - name: Configure native app
         shell: pwsh
         run: |
           $ort = "$env:GITHUB_WORKSPACE/deps/onnxruntime-win-x64-1.20.1"
-          $rvc = "$env:GITHUB_WORKSPACE/rvc-src"
-          cmake -S native -B native/build -G "Visual Studio 17 2022" -A x64 "-DONNXRUNTIME_ROOT=$ort" "-DRVC_CPP_ROOT=$rvc"
+          cmake -S native -B native/build -G "Visual Studio 17 2022" -A x64 "-DONNXRUNTIME_ROOT=$ort"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build
@@ -67,7 +59,6 @@ jobs:
           Copy-Item native/build/Release/onnxruntime.dll package/onnxruntime.dll
           Copy-Item models/GuraTalkV2.onnx package/models/GuraTalkV2.onnx
           Copy-Item models/vec-768-layer-12.onnx package/models/vec-768-layer-12.onnx
-          Copy-Item models/rmvpe.onnx package/models/rmvpe.onnx
           @'
           @echo off
           cd /d "%~dp0"
