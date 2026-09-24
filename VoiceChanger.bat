@@ -14,6 +14,8 @@ set "VOICE=%MODEL_DIR%\GuraTalkV2.onnx"
 set "CONTENT=%MODEL_DIR%\vec-768-layer-12.onnx"
 set "VOICE_URL=https://huggingface.co/DogManTC/test-rvc-onnx/resolve/main/GuraTalkV2.onnx?download=true"
 set "CONTENT_URL=https://huggingface.co/DogManTC/test-rvc-onnx/resolve/main/vec-768-layer-12.onnx?download=true"
+set "VOICE_SHA=c13d815167ba9a39f6d045f89d64eb5e6f85120890e6684642ec46d7549d3a1d"
+set "CONTENT_SHA=b3886e7dff1495cda514f94f4680a7b1261e05d6929f5c764cdb17934b413c2a"
 
 echo.
 echo ==================================================
@@ -74,6 +76,30 @@ if errorlevel 1 (
   echo.
   echo ContentVec model is missing or incomplete.
   goto FAIL
+)
+
+call :CheckHash "%VOICE%" "%VOICE_SHA%"
+if errorlevel 1 (
+  echo.
+  echo Target voice model is not the expected GuraTalkV2 ONNX file.
+  echo Re-downloading the verified file...
+  del /q "%VOICE%" >nul 2>&1
+  call :DownloadFile "%VOICE_URL%" "%VOICE%"
+  if errorlevel 1 goto FAIL
+  call :CheckHash "%VOICE%" "%VOICE_SHA%"
+  if errorlevel 1 goto FAIL
+)
+
+call :CheckHash "%CONTENT%" "%CONTENT_SHA%"
+if errorlevel 1 (
+  echo.
+  echo ContentVec model is not the expected file.
+  echo Re-downloading the verified file...
+  del /q "%CONTENT%" >nul 2>&1
+  call :DownloadFile "%CONTENT_URL%" "%CONTENT%"
+  if errorlevel 1 goto FAIL
+  call :CheckHash "%CONTENT%" "%CONTENT_SHA%"
+  if errorlevel 1 goto FAIL
 )
 
 echo.
@@ -151,6 +177,18 @@ for %%F in ("%CHECK_FILE%") do set "CHECK_SIZE=%%~zF"
 
 if not defined CHECK_SIZE exit /b 1
 if %CHECK_SIZE% LSS %CHECK_MIN% exit /b 1
+
+exit /b 0
+
+:CheckHash
+set "HASH_FILE=%~1"
+set "HASH_EXPECTED=%~2"
+
+if not exist "%HASH_FILE%" exit /b 1
+set "HASH_ACTUAL="
+for /f "usebackq delims=" %%H in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "(Get-FileHash -Algorithm SHA256 -LiteralPath '%HASH_FILE%').Hash.ToLowerInvariant()"`) do set "HASH_ACTUAL=%%H"
+
+if /i not "%HASH_ACTUAL%"=="%HASH_EXPECTED%" exit /b 1
 
 exit /b 0
 
