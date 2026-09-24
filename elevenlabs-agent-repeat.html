@@ -52,8 +52,15 @@ let conversation=null;
 let running=false;
 let manualStop=false;
 
+const params=new URLSearchParams(location.search);
+const agentFromUrl=params.get("agent");
 const saved=localStorage.getItem("eleven_agent_id");
-if(saved) $("agent").value=saved;
+if(agentFromUrl){
+  $("agent").value=agentFromUrl;
+  localStorage.setItem("eleven_agent_id",agentFromUrl);
+}else if(saved){
+  $("agent").value=saved;
+}
 
 function status(text){$("status").textContent=text}
 
