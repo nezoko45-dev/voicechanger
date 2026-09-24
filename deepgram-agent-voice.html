@@ -52,6 +52,7 @@ const $ = id => document.getElementById(id);
 let ws=null, stream=null, inCtx=null, source=null, processor=null;
 let outCtx=null, nextPlay=0, running=false, starting=false, ready=false, reconnecting=false;
 let playing=[],keepAliveTimer=null,reconnectTimer=null,lastAudioSentAt=0;
+let firstAgentSession=true, reconnectAttempt=0;
 
 function setStatus(s){ $("status").textContent=s; }
 function setLog(s){ $("log").textContent=s; }
@@ -80,29 +81,39 @@ function stopReconnect(){
   reconnectTimer=null;
 }
 
-function scheduleReconnect(token){
+function scheduleReconnect(token, reason="connection closed"){
   if(!running || starting || reconnecting)return;
+
   reconnecting=true;
   ready=false;
+  firstAgentSession=false;
+  reconnectAttempt++;
+
+  const delay=Math.min(5000,1000*Math.max(1,reconnectAttempt));
+
   stopReconnect();
-  setStatus("Deepgram disconnected — reconnecting...");
-  setLog("Agent session dropped. Reconnecting without stopping the microphone...");
+  setStatus("Deepgram session ended — reconnecting...");
+  setLog(reason+" Reconnecting the Agent on the same microphone stream...");
+
   reconnectTimer=setTimeout(async()=>{
     reconnectTimer=null;
     if(!running){reconnecting=false;return;}
+
     try{
       await connect(token);
+      reconnectAttempt=0;
       reconnecting=false;
-      if(running)setStatus("Listening — speak now.");
-      setLog("LIVE. Deepgram agent reconnected; microphone stream never stopped.");
+
+      if(running)setStatus("Listening — speak again.");
+      setLog("LIVE. New Deepgram Agent session connected. Repeat-only mode restored.");
     }catch(e){
       reconnecting=false;
       if(running){
         setLog("Reconnect failed: "+(e.message||String(e))+" — retrying...");
-        scheduleReconnect(token);
+        scheduleReconnect(token,"Reconnect attempt failed.");
       }
     }
-  },1500);
+  },delay);
 }
 
 function stopKeepAlive(){
@@ -147,7 +158,7 @@ function settings(){
     },
     agent:{
       language:"en",
-      greeting:"HUMAN!! IM BACK!!",
+      greeting:firstAgentSession ? "HUMAN!! IM BACK!!" : "",
       listen:{
         provider:{
           type:"deepgram",
@@ -234,11 +245,31 @@ function connect(token){
       }
 
       if(msg.type==="Error"){
-        const text=msg.description||msg.message||msg.code||"Unknown Deepgram error";
+        const code=msg.code||"";
+        const text=msg.description||msg.message||code||"Unknown Deepgram error";
+
+        if(code==="MAXIMUM_SESSION_LENGTH_APPROACHING"){
+          setLog("Deepgram session is approaching its maximum length. The app will reconnect before it ends.");
+          return;
+        }
+
+        if(code==="MAXIMUM_SESSION_LENGTH_REACHED"){
+          setLog("Deepgram maximum session reached. Starting a fresh Agent session automatically...");
+          if(!done){
+            done=true; clearTimeout(timer);
+            reject(new Error(text));
+          }else if(running){
+            scheduleReconnect($("key").value.trim(),"Deepgram maximum session length reached.");
+          }
+          return;
+        }
+
         setLog("Deepgram error: "+text);
         if(!done){
           done=true; clearTimeout(timer);
           reject(new Error(text));
+        }else if(running){
+          scheduleReconnect($("key").value.trim(),"Deepgram error: "+text);
         }
         return;
       }
@@ -260,7 +291,7 @@ function connect(token){
         done=true; clearTimeout(timer);
         reject(new Error("Deepgram closed before the agent became ready."));
       }else if(running){
-        scheduleReconnect($("key").value.trim());
+        scheduleReconnect($("key").value.trim(),"Deepgram WebSocket closed.");
       }
     };
   });
@@ -268,6 +299,8 @@ function connect(token){
 
 async function start(){
   if(running||starting)return;
+  firstAgentSession=true;
+  reconnectAttempt=0;
   starting=true;
   $("start").disabled=true;
   setStatus("Requesting microphone...");
@@ -319,6 +352,8 @@ function cleanup(){
   starting=false;
   reconnecting=false;
   ready=false;
+  firstAgentSession=true;
+  reconnectAttempt=0;
   stopKeepAlive();
   try{processor&&processor.disconnect()}catch(e){}
   try{source&&source.disconnect()}catch(e){}
