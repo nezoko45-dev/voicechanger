@@ -69,11 +69,10 @@ function floatToPCM16(input){
 function startKeepAlive(){
   clearInterval(keepAliveTimer);
   keepAliveTimer=setInterval(()=>{
-    if(ws && ws.readyState===WebSocket.OPEN &&
-       performance.now()-lastAudioSentAt > 7000){
+    if(ws && ws.readyState===WebSocket.OPEN){
       try{ ws.send(JSON.stringify({type:"KeepAlive"})); }catch(e){}
     }
-  },3000);
+  },8000);
 }
 
 function stopReconnect(){
