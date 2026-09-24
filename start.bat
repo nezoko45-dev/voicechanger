@@ -1,15 +1,17 @@
 @echo off
-title Cartesia Voice Changer
+title Resemble Voice Changer
 cd /d "%~dp0"
 where node >nul 2>nul
 if errorlevel 1 (
   echo.
-  echo Node.js is required for the local Cartesia proxy.
+  echo Node.js is required.
   echo Install Node.js LTS, then run this file again.
   echo.
   pause
   exit /b 1
 )
-echo Starting Cartesia Voice Changer...
+echo.
+echo Starting Resemble Voice Changer...
+start "" "http://127.0.0.1:8787/"
 node server.js
 pause
