@@ -29,4 +29,5 @@ endif()
 add_custom_command(TARGET VoiceChanger POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${ONNXRUNTIME_ROOT}/lib/onnxruntime.dll"
-    "$<TARGET_FILE_DIR:VoiceChanger>/onnxruntime.dll")
+    "$<TARGET_FILE_DIR:VoiceChanger>/onnxruntime.dll"
+)
