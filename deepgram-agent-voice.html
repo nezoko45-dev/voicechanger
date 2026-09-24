@@ -76,20 +76,29 @@ function agentConfig(isFirst){
         eot_timeout_ms: 700
       }
     },
-    think: {
-      provider: {
-        type: "open_ai",
-        model: "gpt-4o-mini",
-        temperature: 0
+    think: [
+      {
+        provider: {
+          type: "open_ai",
+          model: "gpt-4o-mini",
+          temperature: 0
+        }
       },
-      prompt:
-        "ONLY repeat the latest words spoken by the user. " +
-        "Do not answer. Do not ask questions. Do not say 'Are you still there?'. " +
-        "Do not say 'How can I help?'. Do not comment on silence. " +
-        "Do not acknowledge. Do not greet again. " +
-        "Do not repeat your own greeting 'HUMAN!! IM BACK!!'. " +
-        "Do not add, remove, summarize, translate, correct, interpret, or change words."
-    },
+      {
+        provider: {
+          type: "open_ai",
+          model: "gpt-4.1-mini",
+          temperature: 0
+        }
+      }
+    ],
+    prompt:
+      "Repeat only the user's latest spoken words, in the same order. " +
+      "Never answer, ask questions, greet again, or comment on silence. " +
+      "Never say 'Are you still there?' or 'How can I help?'. " +
+      "Never repeat the agent's own greeting. " +
+      "Never add, remove, summarize, translate, correct, interpret, or change words."
+    ,
     speak: {
       provider: {
         type: "deepgram",
@@ -145,8 +154,9 @@ function wireSession(next, isFirst){
 
   next.on("error", msg => {
     if(next !== session) return;
+    const code = msg?.code || "UNKNOWN";
     const text = msg?.description || msg?.message || String(msg);
-    setLog("Deepgram error: " + text);
+    setLog("Deepgram error [" + code + "]: " + text);
     if(msg?.code === "MAXIMUM_SESSION_LENGTH_REACHED" && running){
       refreshSession();
     }
