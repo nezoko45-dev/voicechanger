@@ -6,7 +6,6 @@ cd /d "%~dp0"
 set "ROOT=%~dp0"
 set "DEPS=%ROOT%native\deps"
 set "ORT=%DEPS%\onnxruntime-win-x64-1.20.1"
-set "RVC=%DEPS%\rvc-cpp-a6b81862adaf34bf1ca62ec81cebb6a7dfe19005"
 set "BUILD=%ROOT%native\build"
 set "APP=%ROOT%native\app"
 set "ORT_ZIP=%TEMP%\onnxruntime-win-x64-1.20.1.zip"
@@ -38,26 +37,7 @@ if not exist "%ORT%\lib\onnxruntime.lib" (
   del /q "%ORT_ZIP%" >nul 2>&1
 )
 
-if not exist "%RVC%\CMakeLists.txt" (
-  echo [2/4] Downloading native RVC.cpp source...
-  echo.
-  powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$ProgressPreference='Continue'; Invoke-WebRequest -Uri 'https://github.com/VoiceLala/rvc-cpp/archive/a6b81862adaf34bf1ca62ec81cebb6a7dfe19005.zip' -OutFile '%RVC_ZIP%'"
-  if errorlevel 1 goto FAIL
-  if not exist "%RVC_ZIP%" goto FAIL
-  if exist "%DEPS%\rvc-extract" rmdir /s /q "%DEPS%\rvc-extract"
-  mkdir "%DEPS%\rvc-extract"
-  powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "Expand-Archive -LiteralPath '%RVC_ZIP%' -DestinationPath '%DEPS%\rvc-extract' -Force"
-  if errorlevel 1 goto FAIL
-  move /y "%DEPS%\rvc-extract\rvc-cpp-a6b81862adaf34bf1ca62ec81cebb6a7dfe19005" "%RVC%" >nul
-  if errorlevel 1 goto FAIL
-  if not exist "%RVC%\CMakeLists.txt" goto FAIL
-  rmdir /s /q "%DEPS%\rvc-extract" >nul 2>&1
-  del /q "%RVC_ZIP%" >nul 2>&1
-)
-
-echo [3/4] Downloading bundled ONNX voice models...
+echo [2/3] Downloading bundled ONNX voice models...
 echo.
 if not exist "%ROOT%models" mkdir "%ROOT%models"
 
@@ -75,21 +55,14 @@ if not exist "%ROOT%models\vec-768-layer-12.onnx" (
   if errorlevel 1 goto FAIL
 )
 
-if not exist "%ROOT%models\rmvpe.onnx" (
-  echo Downloading RMVPE...
-  powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$ProgressPreference='Continue'; Invoke-WebRequest -Uri 'https://huggingface.co/DogManTC/test-rvc-onnx/resolve/main/rmvpe.onnx?download=true' -OutFile '%ROOT%models\rmvpe.onnx'"
-  if errorlevel 1 goto FAIL
-)
-
-echo [4/4] Building native EXE...
+echo [3/3] Building native EXE...
 echo.
 if exist "%BUILD%" rmdir /s /q "%BUILD%"
 mkdir "%BUILD%"
 
 cmake -S "%ROOT%native" -B "%BUILD%" -G "Visual Studio 17 2022" -A x64 ^
   -DONNXRUNTIME_ROOT="%ORT%" ^
-  -DRVC_CPP_ROOT="%RVC%"
+
 if errorlevel 1 goto FAIL
 
 cmake --build "%BUILD%" --config Release
@@ -99,14 +72,11 @@ if not exist "%APP%" mkdir "%APP%"
 if not exist "%APP%\models" mkdir "%APP%\models"
 
 copy /y "%BUILD%\Release\VoiceChanger.exe" "%APP%\VoiceChanger.exe" >nul
-copy /y "%BUILD%\Release\dvc.dll" "%APP%\dvc.dll" >nul
 copy /y "%BUILD%\Release\onnxruntime.dll" "%APP%\onnxruntime.dll" >nul
 copy /y "%ROOT%models\GuraTalkV2.onnx" "%APP%\models\GuraTalkV2.onnx" >nul
 copy /y "%ROOT%models\vec-768-layer-12.onnx" "%APP%\models\vec-768-layer-12.onnx" >nul
-copy /y "%ROOT%models\rmvpe.onnx" "%APP%\models\rmvpe.onnx" >nul
 
 if not exist "%APP%\VoiceChanger.exe" goto FAIL
-if not exist "%APP%\dvc.dll" goto FAIL
 if not exist "%APP%\onnxruntime.dll" goto FAIL
 
 echo.
