@@ -1,34 +1,50 @@
 @echo off
-setlocal
-title RVC Voice Model Converter
+setlocal EnableExtensions
+title RVC Model Converter
 cd /d "%~dp0"
 
 echo.
-echo ==========================================
-echo   RVC VOICE MODEL CONVERTER
-echo ==========================================
+echo ================================================
+echo             RVC MODEL CONVERTER
+echo ================================================
 echo.
-echo Supported input:
-echo   .onnx       - already converted
-echo   .pth        - supported RVC v2/F0
-echo   .safetensors - inspect/convert with compatible RVC tools
+echo   [1] Convert supported .PTH model to .ONNX
+echo   [2] Open voice changer
+echo   [3] Exit
 echo.
-echo NOTE: Non-RVC files cannot be converted into RVC voice models
-echo without knowing their model architecture and configuration.
-echo.
+choice /c 123 /n /m "Choose an option: "
 
-set "APPDIR=%~dp0vc-rs"
-if not exist "%APPDIR%\vc-gui.exe" (
-  echo vc-rs is not installed yet.
-  echo Run VoiceChanger.bat first.
-  echo.
-  pause
-  exit /b 1
+if errorlevel 3 exit /b 0
+if errorlevel 2 goto VOICE
+if errorlevel 1 goto CONVERT
+
+:CONVERT
+echo.
+echo ================================================
+echo        CONVERT RVC MODEL TO ONNX
+echo ================================================
+echo.
+echo The native vc-rs GUI will open now.
+echo Choose your RVC .pth file in its model Browse/drop area.
+echo.
+echo The built-in converter supports RVC v2 / F0 PTH models.
+echo.
+if not exist "%~dp0vc-rs\vc-gui.exe" (
+    echo vc-gui.exe is not installed yet.
+    echo Run VoiceChanger.bat first.
+    pause
+    exit /b 1
 )
+start "" "%~dp0vc-rs\vc-gui.exe"
+pause
+exit /b 0
 
-echo Opening the native model converter...
-echo Select your model in the RVC model browser.
-echo Supported .pth RVC v2/F0 models can be converted to .onnx there.
-echo.
-start "" "%APPDIR%\vc-gui.exe"
+:VOICE
+if not exist "%~dp0vc-rs\vc-gui.exe" (
+    echo vc-gui.exe is not installed yet.
+    echo Run VoiceChanger.bat first.
+    pause
+    exit /b 1
+)
+start "" "%~dp0vc-rs\vc-gui.exe"
 exit /b 0
