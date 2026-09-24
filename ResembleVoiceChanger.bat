@@ -12,6 +12,6 @@ if errorlevel 1 (
 )
 echo.
 echo Starting Resemble Voice Changer...
-start "" "http://127.0.0.1:8787/"
+start "" "http://127.0.0.1:8787/ResembleVoiceChanger.html?v=20260923"
 node server.js
 pause
