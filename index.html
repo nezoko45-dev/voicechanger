@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Cartesia Voice Changer</title>
+<title>Resemble Voice Changer</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#080b12;color:#f5f7fb;font:15px system-ui,Arial,sans-serif}
 .app{width:min(700px,100%);margin:auto;padding:28px 16px}.card{background:#111722;border:1px solid #293449;border-radius:18px;padding:20px;margin-bottom:14px}
 h1{margin:0 0 5px;font-size:29px}.sub{color:#9ba7ba;line-height:1.45;margin-bottom:18px}
 label{display:block;color:#c1c9d7;font-weight:700;margin:13px 0 7px}
-input,select{width:100%;background:#080d15;color:#fff;border:1px solid #3a465c;border-radius:10px;padding:11px;font:inherit}
+input{width:100%;background:#080d15;color:#fff;border:1px solid #3a465c;border-radius:10px;padding:11px;font:inherit}
 button{width:100%;border:0;border-radius:11px;padding:14px;margin-top:10px;font-weight:800;font-size:16px;background:#735cff;color:#fff;cursor:pointer}
 button.stop{background:#9b3d50}button:disabled{opacity:.45;cursor:not-allowed}
 .status{text-align:center;color:#d2d8e3;min-height:24px;margin-top:14px}.badge{display:inline-block;padding:5px 9px;border-radius:999px;background:#182234;color:#b9c7dc;font-size:12px;margin:3px}
@@ -18,36 +18,106 @@ button.stop{background:#9b3d50}button:disabled{opacity:.45;cursor:not-allowed}
 </style></head>
 <body><div class="app">
 <div class="card">
-<h1>Cartesia Voice Changer</h1>
-<div class="sub">Direct speech-to-speech conversion. Your microphone audio is sent to the local proxy, then Cartesia converts the voice while preserving the original delivery.</div>
-<label for="voice">Target voice ID</label><input id="voice" placeholder="Paste your Cartesia voice ID">
-<label for="key">Cartesia API key</label><input id="key" type="password" placeholder="Paste API key">
-<label for="buffer">Audio buffer (seconds)</label><input id="buffer" type="number" min="1" max="8" step=".5" value="2">
+<h1>Resemble Voice Changer</h1>
+<div class="sub">Real speech-to-speech conversion: your microphone performance is converted into the target voice instead of being transcribed and re-synthesized.</div>
+<label for="voice">Resemble target voice UUID</label><input id="voice" placeholder="Paste your Resemble voice UUID">
+<label for="key">Resemble API key</label><input id="key" type="password" placeholder="Paste API key">
+<label for="buffer">Conversion buffer (seconds)</label><input id="buffer" type="number" min="1.5" max="8" step=".5" value="3">
 <button id="start">Start voice changer</button><button id="stop" class="stop" disabled>Stop</button>
 <div id="status" class="status">Ready.</div><div id="log" class="log">Waiting for Start.</div>
-<div class="note">The API key is used only by the local proxy. Do not publish your key in GitHub Pages or static HTML.</div>
+<div class="note">The local Node server keeps your Resemble key out of the browser request. Each short WAV buffer is temporarily uploaded so Resemble can fetch the donor recording, then converted with its speech-to-speech model.</div>
 </div>
 <div class="card"><strong>Pipeline</strong><br>
-<span class="badge">🎤 Mic</span><span class="badge">Local proxy</span><span class="badge">Cartesia Voice Changer</span><span class="badge">🔊 Audio</span><span class="badge">Voicemeeter</span><div class="note">Set Chrome's output to Voicemeeter if you want VRChat to receive the converted voice.</div>
+<span class="badge">🎤 Mic</span><span class="badge">WAV buffer</span><span class="badge">Temporary upload</span><span class="badge">Resemble STS</span><span class="badge">🔊 Audio</span><span class="badge">Voicemeeter</span>
+<div class="note">Resemble's documented STS endpoint accepts a WAV URL and preserves the donor's timing, rhythm, emotion and emphasis. Target voices must support STS.</div>
 </div></div>
 <script>
-const $=id=>document.getElementById(id);let stream=null,ctx=null,processor=null,source=null,running=false,parts=[],samples=0,need=0;
-function status(x){$("status").textContent=x}function log(x){$("log").textContent=x}
-function cleanup(){running=false;try{processor?.disconnect()}catch{}try{source?.disconnect()}catch{}try{ctx?.close()}catch{}try{stream?.getTracks().forEach(t=>t.stop())}catch{}stream=ctx=processor=source=null;parts=[];samples=0;$("start").disabled=false;$("stop").disabled=true}
-function play(blob){const u=URL.createObjectURL(blob),a=new Audio(u);a.play().catch(e=>log("Playback error: "+e.message));a.onended=()=>URL.revokeObjectURL(u)}
-async function convert(blob){
- const r=await fetch("/api/convert",{method:"POST",headers:{"X-Cartesia-Key":$("key").value.trim(),"X-Cartesia-Voice":$("voice").value.trim(),"Content-Type":blob.type||"audio/webm"},body:blob});
- if(!r.ok)throw new Error(await r.text());play(await r.blob());
+const $=id=>document.getElementById(id);
+let stream=null,ctx=null,source=null,processor=null,running=false;
+let pcm=[],queued=Promise.resolve(),bufferSamples=0,needSamples=0;
+
+function status(x){$("status").textContent=x}
+function log(x){$("log").textContent=x}
+
+function cleanup(){
+  running=false;
+  try{processor?.disconnect()}catch{}
+  try{source?.disconnect()}catch{}
+  try{ctx?.close()}catch{}
+  try{stream?.getTracks().forEach(t=>t.stop())}catch{}
+  stream=ctx=source=processor=null; pcm=[]; bufferSamples=0;
+  $("start").disabled=false;$("stop").disabled=true;
 }
-async function flush(){if(!samples||!running)return;const all=new Blob(parts,{type:"audio/webm;codecs=opus"});parts=[];samples=0;status("Converting with Cartesia...");try{await convert(all);if(running)status("LIVE — speak normally.")}catch(e){log("ERROR: "+e.message);status("Conversion error.")}}
+
+function makeWav(float32,sampleRate){
+  const bytesPerSample=2, channels=1;
+  const dataSize=float32.length*bytesPerSample;
+  const out=new ArrayBuffer(44+dataSize), v=new DataView(out);
+  const str=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))};
+  str(0,"RIFF");v.setUint32(4,36+dataSize,true);str(8,"WAVE");
+  str(12,"fmt ");v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,channels,true);
+  v.setUint32(24,sampleRate,true);v.setUint32(28,sampleRate*channels*bytesPerSample,true);
+  v.setUint16(32,channels*bytesPerSample,true);v.setUint16(34,16,true);str(36,"data");v.setUint32(40,dataSize,true);
+  let p=44;
+  for(let i=0;i<float32.length;i++){let n=Math.max(-1,Math.min(1,float32[i]));v.setInt16(p,n<0?n*32768:n*32767,true);p+=2}
+  return new Blob([out],{type:"audio/wav"});
+}
+
+async function convert(wav){
+  const r=await fetch("/api/convert",{
+    method:"POST",
+    headers:{"X-Resemble-Key":$("key").value.trim(),"X-Resemble-Voice":$("voice").value.trim(),"Content-Type":"audio/wav"},
+    body:wav
+  });
+  if(!r.ok) throw new Error(await r.text());
+  return r.blob();
+}
+
+async function play(blob){
+  const ab=await blob.arrayBuffer();
+  const decoded=await ctx.decodeAudioData(ab.slice(0));
+  await new Promise(resolve=>{
+    const node=ctx.createBufferSource();node.buffer=decoded;node.connect(ctx.destination);
+    node.onended=resolve;node.start();
+  });
+}
+
+function flush(){
+  if(!bufferSamples||!running)return;
+  const total=bufferSamples, merged=new Float32Array(total);
+  let p=0;for(const a of pcm){merged.set(a,p);p+=a.length}
+  pcm=[];bufferSamples=0;
+  const wav=makeWav(merged,ctx.sampleRate);
+  status("Converting your voice...");
+  queued=queued.then(async()=>{
+    const out=await convert(wav);
+    if(running){await play(out);status("LIVE — speak normally.")}
+  }).catch(e=>{
+    log("ERROR: "+e.message);status("Conversion error.");
+  });
+}
+
 async function start(){
- if(running)return;if(!$("key").value.trim()||!$("voice").value.trim()){status("Enter your Cartesia API key and target voice ID.");return}
- try{stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
- ctx=new AudioContext();await ctx.resume();need=Math.round(ctx.sampleRate*Number($("buffer").value));
- source=ctx.createMediaStreamSource(stream);processor=ctx.createScriptProcessor(4096,1,1);
- processor.onaudioprocess=e=>{if(!running)return;parts.push(new Blob([new Float32Array(e.inputBuffer.getChannelData(0))]));samples+=e.inputBuffer.length;if(samples>=need)flush()};
- source.connect(processor);processor.connect(ctx.destination);running=true;$("start").disabled=true;$("stop").disabled=false;status("LIVE — buffering microphone audio.");log("Streaming to the local Cartesia proxy.");
- }catch(e){cleanup();status("Could not start.");log("ERROR: "+e.message)}
+  if(running)return;
+  const key=$("key").value.trim(),voice=$("voice").value.trim();
+  if(!key||!voice){status("Enter your Resemble API key and target voice UUID.");return}
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    ctx=new AudioContext();await ctx.resume();
+    needSamples=Math.round(ctx.sampleRate*Number($("buffer").value));
+    source=ctx.createMediaStreamSource(stream);
+    processor=ctx.createScriptProcessor(4096,1,1);
+    processor.onaudioprocess=e=>{
+      if(!running)return;
+      const a=new Float32Array(e.inputBuffer.getChannelData(0));
+      pcm.push(a);bufferSamples+=a.length;
+      if(bufferSamples>=needSamples)flush();
+    };
+    source.connect(processor);processor.connect(ctx.destination);
+    running=true;$("start").disabled=true;$("stop").disabled=false;
+    status("LIVE — collecting first conversion buffer.");log("Mic is running. Resemble STS conversion will start every buffer.");
+  }catch(e){cleanup();status("Could not start.");log("ERROR: "+e.message)}
 }
-$("start").onclick=start;$("stop").onclick=()=>{cleanup();status("Stopped.");log("Stopped.")};
+$("start").onclick=start;
+$("stop").onclick=()=>{cleanup();status("Stopped.");log("Stopped.")};
 </script></body></html>
