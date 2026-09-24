@@ -236,6 +236,7 @@ function connect(token){
         done=true;
         clearTimeout(timer);
         ready=true;
+        scheduleSessionRefresh();
         startKeepAlive();
         resolve();
         return;
