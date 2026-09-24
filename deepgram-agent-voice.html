@@ -50,8 +50,8 @@ button.stop{background:#9b3d50}button:disabled{opacity:.45;cursor:not-allowed}
 
 const $ = id => document.getElementById(id);
 let ws=null, stream=null, inCtx=null, source=null, processor=null;
-let outCtx=null, nextPlay=0, running=false, starting=false, ready=false;
-let playing=[],keepAliveTimer=null;
+let outCtx=null, nextPlay=0, running=false, starting=false, ready=false, reconnecting=false;
+let playing=[],keepAliveTimer=null,reconnectTimer=null,lastAudioSentAt=0;
 
 function setStatus(s){ $("status").textContent=s; }
 function setLog(s){ $("log").textContent=s; }
@@ -68,13 +68,48 @@ function floatToPCM16(input){
 function startKeepAlive(){
   clearInterval(keepAliveTimer);
   keepAliveTimer=setInterval(()=>{
-    if(ws && ws.readyState===WebSocket.OPEN){
+    if(ws && ws.readyState===WebSocket.OPEN &&
+       performance.now()-lastAudioSentAt > 7000){
       try{ ws.send(JSON.stringify({type:"KeepAlive"})); }catch(e){}
     }
-  },8000);
+  },3000);
 }
 
-function stopKeepAlive(){ clearInterval(keepAliveTimer); keepAliveTimer=null; }
+function stopReconnect(){
+  clearTimeout(reconnectTimer);
+  reconnectTimer=null;
+}
+
+function scheduleReconnect(token){
+  if(!running || starting || reconnecting)return;
+  reconnecting=true;
+  ready=false;
+  stopReconnect();
+  setStatus("Deepgram disconnected — reconnecting...");
+  setLog("Agent session dropped. Reconnecting without stopping the microphone...");
+  reconnectTimer=setTimeout(async()=>{
+    reconnectTimer=null;
+    if(!running){reconnecting=false;return;}
+    try{
+      await connect(token);
+      reconnecting=false;
+      if(running)setStatus("Listening — speak now.");
+      setLog("LIVE. Deepgram agent reconnected; microphone stream never stopped.");
+    }catch(e){
+      reconnecting=false;
+      if(running){
+        setLog("Reconnect failed: "+(e.message||String(e))+" — retrying...");
+        scheduleReconnect(token);
+      }
+    }
+  },1500);
+}
+
+function stopKeepAlive(){
+  clearInterval(keepAliveTimer);
+  keepAliveTimer=null;
+  stopReconnect();
+}
 
 function stopAudio(){
   for(const n of playing){try{n.stop()}catch(e){}}
@@ -225,8 +260,7 @@ function connect(token){
         done=true; clearTimeout(timer);
         reject(new Error("Deepgram closed before the agent became ready."));
       }else if(running){
-        cleanup();
-        setStatus("Deepgram disconnected.");
+        scheduleReconnect($("key").value.trim());
       }
     };
   });
@@ -259,6 +293,7 @@ async function start(){
     processor.onaudioprocess=e=>{
       if(!running||!ready||!ws||ws.readyState!==WebSocket.OPEN)return;
       try{
+        lastAudioSentAt=performance.now();
         ws.send(floatToPCM16(e.inputBuffer.getChannelData(0)).buffer);
       }catch(err){}
     };
@@ -282,6 +317,7 @@ async function start(){
 function cleanup(){
   running=false;
   starting=false;
+  reconnecting=false;
   ready=false;
   stopKeepAlive();
   try{processor&&processor.disconnect()}catch(e){}
