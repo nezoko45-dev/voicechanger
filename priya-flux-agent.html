@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PRIYA — Flux v2 Agent</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#080b12;color:#f5f7fb;font:15px system-ui,Arial,sans-serif}
+.app{width:min(720px,100%);margin:auto;padding:32px 18px}
+.card{background:#111722;border:1px solid #293449;border-radius:20px;padding:22px;margin-bottom:16px}
+h1{margin:0 0 6px;font-size:30px}
+.sub{color:#9ba7ba;margin-bottom:20px;line-height:1.5}
+label{display:block;color:#b8c2d2;font-weight:700;margin:0 0 7px}
+input{width:100%;background:#080d15;color:#fff;border:1px solid #3a465c;border-radius:11px;padding:13px;font:inherit;margin-bottom:12px}
+button{width:100%;border:0;border-radius:12px;padding:15px;margin-top:4px;font-weight:800;font-size:16px;background:#735cff;color:#fff;cursor:pointer}
+button.stop{background:#9b3d50}
+button:disabled{opacity:.45;cursor:not-allowed}
+.status{text-align:center;color:#c7cfdd;min-height:24px;margin-top:15px}
+.heard{min-height:80px;background:#080d15;border:1px solid #293449;border-radius:12px;padding:15px;line-height:1.5;font-size:18px}
+.log{margin-top:12px;background:#080d15;border:1px solid #293449;border-radius:12px;padding:10px;color:#9ba7ba;font:12px ui-monospace,monospace;white-space:pre-wrap}
+.note{color:#7f8ca1;font-size:12px;line-height:1.5;margin-top:12px}
+.badge{display:inline-block;padding:4px 8px;border-radius:999px;background:#1b2638;color:#cdd8ea;font-size:12px;font-weight:800}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="card">
+    <h1>PRIYA — Flux v2 Agent</h1>
+    <div class="sub">
+      <span class="badge">Deepgram Voice Agent API</span>
+      One Agent WebSocket session. This page does <strong>not</strong> build separate STT or TTS connections.
+      Your Flux v2 Agent configuration is selected by Agent ID.
+    </div>
+
+    <label for="key">Deepgram API key or temporary token</label>
+    <input id="key" type="password" autocomplete="off" placeholder="Paste your Deepgram key/token">
+
+    <label for="agent">Flux v2 Agent ID</label>
+    <input id="agent" type="text" autocomplete="off" placeholder="Paste your Deepgram Agent ID">
+
+    <div class="note">
+      The Agent ID points to the reusable configuration stored in your Deepgram project.
+      The browser sends only the Agent ID to the Voice Agent session; listen/think/speak settings are owned by that Agent configuration.
+    </div>
+
+    <button id="start">Start listening</button>
+    <button id="stop" class="stop" disabled>Stop</button>
+
+    <div id="status" class="status">Ready.</div>
+    <div id="log" class="log">Waiting for Start listening.</div>
+  </div>
+
+  <div class="card">
+    <label>You said</label>
+    <div id="heard" class="heard">Nothing heard yet.</div>
+    <div class="note">
+      Repeat-only behavior is controlled by the Flux v2 Agent configuration.
+      The microphone stays streaming; a replacement session is opened before the long-session limit.
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import {
+  AgentSession,
+  AgentMicrophone,
+  AgentPlayer
+} from "https://esm.sh/@deepgram/agents@latest?bundle";
+
+const $ = (id) => document.getElementById(id);
+
+let session = null;
+let mic = null;
+let player = null;
+let running = false;
+let stopping = false;
+let refreshing = false;
+let refreshTimer = null;
+
+const SESSION_REFRESH_MS = 110 * 60 * 1000;
+
+function setStatus(text){ $("status").textContent = text; }
+function setLog(text){ $("log").textContent = text; }
+
+function clearRefresh(){
+  if(refreshTimer) clearTimeout(refreshTimer);
+  refreshTimer = null;
+}
+
+function armRefresh(){
+  clearRefresh();
+  refreshTimer = setTimeout(refreshSession, SESSION_REFRESH_MS);
+}
+
+function wireSession(next, firstSession){
+  next.on("connecting", () => {
+    if(next === session) setStatus("Connecting to Flux v2 Agent...");
+  });
+
+  next.on("connected", () => {
+    if(next === session) setLog(firstSession ? "Voice Agent WebSocket connected." : "Replacement Agent WebSocket connected.");
+  });
+
+  next.on("conversation-text", (msg) => {
+    if(next !== session) return;
+    if(msg?.role === "user") $("heard").textContent = msg.content || "";
+  });
+
+  next.on("user-started-speaking", () => {
+    if(next === session) player?.interrupt();
+  });
+
+  next.on("agent-started-speaking", () => {
+    if(next === session) setStatus("Repeating...");
+  });
+
+  next.on("agent-audio-done", () => {
+    if(next === session && running && !refreshing) setStatus("LIVE — speak normally.");
+  });
+
+  next.on("audio", (chunk) => {
+    if(next === session) player?.queue(chunk);
+  });
+
+  next.on("reconnecting", (attempt) => {
+    if(next !== session) return;
+    setStatus("Reconnecting to Flux v2 Agent...");
+    setLog("Automatic Agent reconnect attempt " + attempt + ".");
+  });
+
+  next.on("warning", (msg) => {
+    if(next !== session) return;
+    const code = msg?.code || "";
+    if(code === "MAXIMUM_SESSION_LENGTH_APPROACHING"){
+      setLog("Opening a fresh Agent session before the maximum duration...");
+    }
+  });
+
+  next.on("error", (msg) => {
+    if(next !== session) return;
+    const code = msg?.code || "UNKNOWN";
+    const detail = msg?.description || msg?.message || String(msg);
+    setLog("Agent error [" + code + "]: " + detail);
+    if(code === "MAXIMUM_SESSION_LENGTH_REACHED" && running) refreshSession();
+  });
+
+  next.on("disconnected", (reason) => {
+    if(next !== session || stopping || refreshing) return;
+    setLog("Agent disconnected: " + (reason || "unknown reason"));
+    if(running) recover();
+  });
+}
+
+async function createSession(){
+  const key = $("key").value.trim();
+  const agentId = $("agent").value.trim();
+
+  if(!key) throw new Error("Enter your Deepgram API key or temporary token.");
+  if(!agentId) throw new Error("Enter your Flux v2 Agent ID.");
+
+  const next = new AgentSession({
+    auth: { apiKey: key },
+    agent: agentId,
+    audio: {
+      input: { encoding: "linear16", sampleRate: 16000 },
+      output: { encoding: "linear16", sampleRate: 24000 }
+    },
+    reconnect: {
+      enabled: true,
+      maxAttempts: 8,
+      baseDelay: 500,
+      maxDelay: 30000,
+      jitter: true
+    },
+    keepAliveInterval: 8000
+  });
+
+  wireSession(next, !session);
+  await next.connect();
+  return next;
+}
+
+async function start(){
+  if(running) return;
+
+  const key = $("key").value.trim();
+  const agentId = $("agent").value.trim();
+
+  if(!key){
+    setStatus("Enter your Deepgram API key or temporary token.");
+    $("key").focus();
+    return;
+  }
+  if(!agentId){
+    setStatus("Enter your Flux v2 Agent ID.");
+    $("agent").focus();
+    return;
+  }
+
+  running = true;
+  stopping = false;
+  refreshing = false;
+  $("start").disabled = true;
+  $("stop").disabled = false;
+  setStatus("Connecting to Flux v2 Agent...");
+  setLog("Opening a single Voice Agent session...");
+
+  try{
+    player = new AgentPlayer({ sampleRate: 24000 });
+
+    mic = new AgentMicrophone(
+      (data) => {
+        if(running && !stopping && session) session.sendAudio(data);
+      },
+      {
+        sampleRate: 16000,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    );
+
+    session = await createSession();
+    await mic.start();
+
+    if(running){
+      setStatus("LIVE — speak normally.");
+      setLog("Flux v2 Agent is LIVE. Mic is streaming continuously.");
+      armRefresh();
+    }
+  }catch(error){
+    setLog("START ERROR: " + (error?.message || String(error)));
+    stop();
+    setStatus("Could not start: " + (error?.message || String(error)));
+  }
+}
+
+async function refreshSession(){
+  if(!running || refreshing) return;
+
+  refreshing = true;
+  clearRefresh();
+  setStatus("Refreshing Flux v2 Agent...");
+  setLog("Opening replacement Agent before the old session expires...");
+  const oldSession = session;
+
+  try{
+    const replacement = await createSession();
+    session = replacement;
+
+    if(oldSession){
+      try{ oldSession.disconnect(); }catch{}
+    }
+
+    refreshing = false;
+    setStatus("LIVE — speak normally.");
+    setLog("Flux v2 Agent session refreshed. Microphone never stopped.");
+    armRefresh();
+  }catch(error){
+    refreshing = false;
+    setLog("Agent refresh failed: " + (error?.message || String(error)) + " — retrying.");
+    if(running) refreshTimer = setTimeout(refreshSession, 3000);
+  }
+}
+
+function recover(){
+  if(!running || refreshing) return;
+  refreshSession();
+}
+
+function stop(){
+  stopping = true;
+  running = false;
+  refreshing = false;
+  clearRefresh();
+
+  try{ mic?.stop(); }catch{}
+  try{ session?.disconnect(); }catch{}
+  try{ player?.interrupt(); }catch{}
+
+  mic = null;
+  session = null;
+  player = null;
+
+  $("start").disabled = false;
+  $("stop").disabled = true;
+  setStatus("Stopped.");
+  setLog("Press Start listening to begin.");
+  stopping = false;
+}
+
+$("start").addEventListener("click", start);
+$("stop").addEventListener("click", stop);
+
+$("key").value = localStorage.getItem("deepgram_flux_agent_key") || "";
+$("agent").value = localStorage.getItem("deepgram_flux_agent_id") || "";
+
+$("key").addEventListener("change", () => {
+  localStorage.setItem("deepgram_flux_agent_key", $("key").value.trim());
+});
+$("agent").addEventListener("change", () => {
+  localStorage.setItem("deepgram_flux_agent_id", $("agent").value.trim());
+});
+</script>
+</body>
+</html>
