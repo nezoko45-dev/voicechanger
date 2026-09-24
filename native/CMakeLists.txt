@@ -3,8 +3,6 @@ project(VoiceChangerNative LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded\$\<$<CONFIG:Debug>:Debug>")
-
 set(ONNXRUNTIME_ROOT "" CACHE PATH "ONNX Runtime SDK root")
 if(NOT ONNXRUNTIME_ROOT)
   message(FATAL_ERROR "ONNXRUNTIME_ROOT must point to the extracted ONNX Runtime SDK")
