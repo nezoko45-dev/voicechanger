@@ -22,7 +22,7 @@ if errorlevel 1 goto NO_CMAKE
 rem Load a Visual Studio C++ environment automatically when possible.
 if not defined VSCMD_VER (
   if exist "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" (
-    for /f "usebackq delims=" %%V in (\`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath\`) do set "VSROOT=%%V"
+    for /f "usebackq delims=" %%V in ('"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath') do set "VSROOT=%%V"
     if defined VSROOT if exist "!VSROOT!\Common7\Tools\VsDevCmd.bat" call "!VSROOT!\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul
   )
 )
