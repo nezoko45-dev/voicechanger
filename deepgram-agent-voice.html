@@ -21,7 +21,7 @@ button.stop{background:#9b3d50}button:disabled{opacity:.45;cursor:not-allowed}
 <div class="app">
   <div class="card">
     <h1>Deepgram Repeat Me</h1>
-    <div class="sub">Speak into the microphone and the Deepgram Voice Agent repeats your words.</div>
+    <div class="sub">Always-on Deepgram Voice Agent: it greets once, then repeats exactly what you say.</div>
     <label for="key">Deepgram API key or temporary token</label>
     <input id="key" type="password" autocomplete="off" placeholder="Paste your Deepgram key/token">
     <label for="voice" style="margin-top:14px">Voice</label>
@@ -40,7 +40,7 @@ button.stop{background:#9b3d50}button:disabled{opacity:.45;cursor:not-allowed}
   <div class="card">
     <label>You said</label>
     <div id="heard" class="heard">Nothing heard yet.</div>
-    <div class="note">The agent is instructed to output only the latest user speech. It does not greet, ask questions, or add replies.</div>
+    <div class="note">The agent stays on one WebSocket session. Your microphone audio streams continuously; there is no app-side word buffer or transcript queue.</div>
   </div>
 </div>
 
@@ -69,7 +69,7 @@ function startKeepAlive(){
   clearInterval(keepAliveTimer);
   keepAliveTimer=setInterval(()=>{
     if(ws && ws.readyState===WebSocket.OPEN){
-      try{ ws.send(JSON.stringify({type:"KeepAlive"})); setLog("LIVE. KeepAlive sent."); }catch(e){}
+      try{ ws.send(JSON.stringify({type:"KeepAlive"})); }catch(e){}
     }
   },8000);
 }
@@ -112,19 +112,20 @@ function settings(){
     },
     agent:{
       language:"en",
-      greeting:"",
+      greeting:"HUMAN!! IM BACK!!",
       listen:{
         provider:{
           type:"deepgram",
           version:"v2",
           model:"flux-general-en",
-          eot_threshold:0.85,
-          eot_timeout_ms:8000
+          eager_eot_threshold:0.55,
+          eot_threshold:0.75,
+          eot_timeout_ms:1200
         }
       },
       think:{
         provider:{type:"open_ai",model:"gpt-4o-mini",temperature:0},
-        prompt:"Repeat what I say. Your entire response must contain ONLY the exact words from the latest user speech. Do not greet. Do not ask questions. Do not answer anything. Do not acknowledge. Do not add, remove, summarize, translate, correct, or explain words. If the user says 'hello', output only 'hello'."
+        prompt:"Your job is ONLY to repeat the latest user speech. After the initial greeting, never ask how you can help and never start a conversation. Your entire response must contain ONLY the exact words from the latest user speech, in the same order. Do not greet again. Do not answer, acknowledge, summarize, translate, correct, explain, add, remove, or change anything. If the user says 'hello human', respond only with 'hello human'."
       },
       speak:{
         provider:{type:"deepgram",model:$("voice").value}
@@ -165,7 +166,7 @@ function connect(token){
       try{msg=JSON.parse(event.data)}catch(e){return;}
 
       if(msg.type==="Welcome"){
-        setLog("Welcome received. Sending repeat-only settings...");
+        setLog("Agent connected. Sending always-on repeat settings...");
         ws.send(JSON.stringify(settings()));
         return;
       }
