@@ -87,7 +87,13 @@ internal static class Program
             if (featureFrames < 2)
                 throw new InvalidOperationException("ContentVec returned too few frames.");
 
-            int frameCount = featureFrames * 2;
+            // Match the upstream RVC alignment rule: ContentVec produces about
+            // one feature frame per 320 samples, then RVC repeats those frames
+            // 2x to reach the 160-sample RVC hop. Never invent extra frames.
+            int frameCount = Math.Min(
+                featureFrames * 2,
+                padded.Length / 160
+            );
 
             progress.SetStatus("Estimating pitch...");
             progress.Refresh();
@@ -191,172 +197,133 @@ internal static class Program
             throw new InvalidOperationException("Content feature buffer is empty.");
 
         int sourceFrames = features.Length / FeatureDim;
-        int frames = Math.Min(coarse.Length, fine.Length);
+
+        // Standard RVC ONNX export:
+        // phone = [1, T, 768]
+        // lengths = [1]
+        // pitch = [1, T]
+        // pitchf = [1, T]
+        // sid = [1]
+        // rnd = [1, 192, T]
+        //
+        // The old code tried alternate tensor layouts. That was unnecessary
+        // and could feed a sequence length that did not agree with the
+        // transformer's internal attention shape. Keep one canonical layout
+        // and align T to the actual ContentVec feature length.
+        int frames = Math.Min(
+            sourceFrames * 2,
+            Math.Min(coarse.Length, fine.Length));
 
         if (frames < 2)
-            throw new InvalidOperationException("Not enough RVC frames.");
+            throw new InvalidOperationException("Not enough aligned RVC frames.");
 
-        // RVC ONNX exporters commonly use [1,T,768] for phone.
-        // Some older/custom exports use [1,768,T], so support both.
-        float[] phoneTcf = new float[frames * FeatureDim];
+        float[] phone = new float[frames * FeatureDim];
+
         for (int t = 0; t < frames; t++)
         {
             int src = Math.Min(t / 2, sourceFrames - 1);
-            Array.Copy(features, src * FeatureDim,
-                       phoneTcf, t * FeatureDim, FeatureDim);
+
+            Array.Copy(
+                features,
+                src * FeatureDim,
+                phone,
+                t * FeatureDim,
+                FeatureDim);
         }
 
-        float[] phoneCtf = new float[frames * FeatureDim];
-        for (int t = 0; t < frames; t++)
-            for (int d = 0; d < FeatureDim; d++)
-                phoneCtf[d * frames + t] = phoneTcf[t * FeatureDim + d];
-
-        float[] noiseT = new float[NoiseChannels * frames];
-        float[] noiseC = new float[NoiseChannels * frames];
-
+        float[] noise = new float[NoiseChannels * frames];
         uint state = 0x12345678;
-        for (int i = 0; i < noiseT.Length; i++)
-            noiseT[i] = NextGaussian(ref state);
 
-        for (int t = 0; t < frames; t++)
-            for (int c = 0; c < NoiseChannels; c++)
-                noiseC[t * NoiseChannels + c] = noiseT[c * frames + t];
+        for (int i = 0; i < noise.Length; i++)
+            noise[i] = NextGaussian(ref state);
 
-        string? phoneName = null;
-        string? noiseName = null;
+        var inputs = new List<NamedOnnxValue>();
 
         foreach (string name in session.InputMetadata.Keys)
         {
             string n = name.ToLowerInvariant();
+
             if (n is "phone" or "features" or "feats")
-                phoneName = name;
-            else if (n is "rnd" or "noise")
-                noiseName = name;
-        }
-
-        bool phoneChannelFirst = false;
-        if (phoneName != null)
-        {
-            var d = session.InputMetadata[phoneName].Dimensions.ToArray();
-            if (d.Length == 3)
             {
-                if (d[1] == FeatureDim && d[2] != FeatureDim)
-                    phoneChannelFirst = true;
-                else if (d[2] == FeatureDim && d[1] != FeatureDim)
-                    phoneChannelFirst = false;
-            }
-        }
+                var dims = session.InputMetadata[name].Dimensions.ToArray();
 
-        bool noiseChannelFirst = true;
-        if (noiseName != null)
-        {
-            var d = session.InputMetadata[noiseName].Dimensions.ToArray();
-            if (d.Length == 3)
-            {
-                if (d[1] == NoiseChannels && d[2] != NoiseChannels)
-                    noiseChannelFirst = true;
-                else if (d[2] == NoiseChannels && d[1] != NoiseChannels)
-                    noiseChannelFirst = false;
-            }
-        }
-
-        Exception? firstError = null;
-        var attempts = new[]
-        {
-            (PhoneChannelFirst: phoneChannelFirst, NoiseChannelFirst: noiseChannelFirst),
-            (PhoneChannelFirst: !phoneChannelFirst, NoiseChannelFirst: noiseChannelFirst),
-            (PhoneChannelFirst: phoneChannelFirst, NoiseChannelFirst: !noiseChannelFirst),
-            (PhoneChannelFirst: !phoneChannelFirst, NoiseChannelFirst: !noiseChannelFirst)
-        };
-
-        var seen = new HashSet<string>();
-
-        foreach (var attempt in attempts)
-        {
-            string attemptKey = attempt.PhoneChannelFirst + "/" + attempt.NoiseChannelFirst;
-            if (!seen.Add(attemptKey))
-                continue;
-
-            try
-            {
-                var inputs = new List<NamedOnnxValue>();
-
-                foreach (string name in session.InputMetadata.Keys)
+                if (dims.Length != 3 ||
+                    (dims[1] > 0 && dims[1] != frames) ||
+                    (dims[2] > 0 && dims[2] != FeatureDim))
                 {
-                    string n = name.ToLowerInvariant();
-
-                    if (n is "phone" or "features" or "feats")
-                    {
-                        int[] shape = attempt.PhoneChannelFirst
-                            ? new[] { 1, FeatureDim, frames }
-                            : new[] { 1, frames, FeatureDim };
-
-                        inputs.Add(NamedOnnxValue.CreateFromTensor(
-                            name,
-                            new DenseTensor<float>(
-                                attempt.PhoneChannelFirst ? phoneCtf : phoneTcf,
-                                shape)));
-                    }
-                    else if (n is "phone_lengths" or "lengths")
-                    {
-                        inputs.Add(NamedOnnxValue.CreateFromTensor(
-                            name,
-                            new DenseTensor<long>(
-                                new[] { (long)frames }, new[] { 1 })));
-                    }
-                    else if (n is "pitch" or "coarse")
-                    {
-                        inputs.Add(NamedOnnxValue.CreateFromTensor(
-                            name,
-                            new DenseTensor<long>(
-                                coarse.Take(frames).ToArray(),
-                                new[] { 1, frames })));
-                    }
-                    else if (n is "pitchf" or "nsff0" or "f0")
-                    {
-                        inputs.Add(NamedOnnxValue.CreateFromTensor(
-                            name,
-                            new DenseTensor<float>(
-                                fine.Take(frames).ToArray(),
-                                new[] { 1, frames })));
-                    }
-                    else if (n is "sid" or "ds" or "speaker")
-                    {
-                        inputs.Add(NamedOnnxValue.CreateFromTensor(
-                            name,
-                            new DenseTensor<long>(new[] { 0L }, new[] { 1 })));
-                    }
-                    else if (n is "rnd" or "noise")
-                    {
-                        inputs.Add(NamedOnnxValue.CreateFromTensor(
-                            name,
-                            new DenseTensor<float>(
-                                attempt.NoiseChannelFirst ? noiseT : noiseC,
-                                attempt.NoiseChannelFirst
-                                    ? new[] { 1, NoiseChannels, frames }
-                                    : new[] { 1, frames, NoiseChannels })));
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException(
-                            "Unsupported RVC ONNX input: " + name);
-                    }
+                    throw new InvalidOperationException(
+                        "RVC phone input shape is incompatible with the standard " +
+                        "[1,T,768] layout: " +
+                        string.Join("x", dims.Select(x => x.ToString())));
                 }
 
-                using var results = session.Run(inputs);
-                return results.First().AsTensor<float>().ToArray();
+                inputs.Add(NamedOnnxValue.CreateFromTensor(
+                    name,
+                    new DenseTensor<float>(
+                        phone,
+                        new[] { 1, frames, FeatureDim })));
             }
-            catch (Exception ex)
+            else if (n is "phone_lengths" or "lengths")
             {
-                firstError ??= ex;
+                inputs.Add(NamedOnnxValue.CreateFromTensor(
+                    name,
+                    new DenseTensor<long>(
+                        new[] { (long)frames },
+                        new[] { 1 })));
+            }
+            else if (n is "pitch" or "coarse")
+            {
+                inputs.Add(NamedOnnxValue.CreateFromTensor(
+                    name,
+                    new DenseTensor<long>(
+                        coarse.Take(frames).ToArray(),
+                        new[] { 1, frames })));
+            }
+            else if (n is "pitchf" or "nsff0" or "f0")
+            {
+                inputs.Add(NamedOnnxValue.CreateFromTensor(
+                    name,
+                    new DenseTensor<float>(
+                        fine.Take(frames).ToArray(),
+                        new[] { 1, frames })));
+            }
+            else if (n is "sid" or "ds" or "speaker")
+            {
+                inputs.Add(NamedOnnxValue.CreateFromTensor(
+                    name,
+                    new DenseTensor<long>(
+                        new[] { 0L },
+                        new[] { 1 })));
+            }
+            else if (n is "rnd" or "noise")
+            {
+                var dims = session.InputMetadata[name].Dimensions.ToArray();
+
+                if (dims.Length != 3 ||
+                    (dims[1] > 0 && dims[1] != NoiseChannels) ||
+                    (dims[2] > 0 && dims[2] != frames))
+                {
+                    throw new InvalidOperationException(
+                        "RVC noise input shape is incompatible with the standard " +
+                        "[1,192,T] layout: " +
+                        string.Join("x", dims.Select(x => x.ToString())));
+                }
+
+                inputs.Add(NamedOnnxValue.CreateFromTensor(
+                    name,
+                    new DenseTensor<float>(
+                        noise,
+                        new[] { 1, NoiseChannels, frames })));
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    "Unsupported RVC ONNX input: " + name);
             }
         }
 
-        throw new InvalidOperationException(
-            "GuraTalkV2.onnx rejected every supported RVC tensor layout." +
-            "\n\nThe local model may be stale/corrupt or may not be a standard " +
-            "RVC synthesizer export." +
-            "\n\nFirst ONNX error:\n" + firstError?.Message);
+        using var results = session.Run(inputs);
+        return results.First().AsTensor<float>().ToArray();
     }
 
     private static void BuildPitch(
