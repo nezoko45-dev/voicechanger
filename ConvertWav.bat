@@ -10,12 +10,8 @@ echo ==================================================
 echo.
 echo WAV source -> WAV target voice -> WAV output
 echo.
-echo This uses WAV files directly.
-echo No ONNX voice-model picker.
-echo No PTH converter.
-echo No Python / FFmpeg / PyTorch install.
-echo.
-echo THIS WINDOW WILL STAY OPEN IF ANYTHING FAILS.
+echo Direct WAV input. No ONNX voice model is used.
+echo No model converter is used.
 echo.
 
 set "APPDIR=%~dp0voice_clone"
@@ -23,95 +19,87 @@ set "EXE=%APPDIR%\voice_clone.exe"
 set "MODEL=%APPDIR%\checkpoints_v2\converter"
 set "MODEL_CONFIG=%MODEL%\config.json"
 set "MODEL_FILE=%MODEL%\checkpoint.pth"
+set "EXE_URL=https://github.com/jingangdidi/voice_clone/releases/download/v0.1.2/voice_clone_simple-vad_cpu_windows_x86-64.exe"
+set "MODEL_URL=https://huggingface.co/myshell-ai/OpenVoiceV2/resolve/main/converter/checkpoint.pth?download=true"
+set "CONFIG_URL=https://huggingface.co/myshell-ai/OpenVoiceV2/resolve/main/converter/config.json?download=true"
 
 if not exist "%APPDIR%" mkdir "%APPDIR%"
 
-if not exist "%EXE%" goto INSTALL_EXE
-if not exist "%MODEL_CONFIG%" goto INSTALL_MODEL
-if not exist "%MODEL_FILE%" goto INSTALL_MODEL
-goto SELECT_SOURCE
-
-:INSTALL_EXE
-echo [1/2] Downloading the latest native WAV voice-clone EXE...
-echo.
-
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$ProgressPreference='Continue';" ^
-  "$r=Invoke-RestMethod 'https://api.github.com/repos/jingangdidi/voice_clone/releases/latest';" ^
-  "$a=$r.assets | Where-Object { $_.name -match '\\.exe$' } | Select-Object -First 1;" ^
-  "if(-not $a){throw 'No EXE was found in the latest release.'};" ^
-  "Write-Host ('Asset: ' + $a.name); Write-Host ('Size: ' + [math]::Round($a.size/1MB,1) + ' MB');" ^
-  "Invoke-WebRequest -Uri $a.browser_download_url -OutFile '%EXE%'"
-
-if errorlevel 1 (
-  echo.
+if not exist "%EXE%" (
   echo ==================================================
-  echo             EXE DOWNLOAD FAILED
+  echo STEP 1: DOWNLOADING WAV CLONER
   echo ==================================================
   echo.
-  pause
-  exit /b 1
+  echo Downloading the native Windows WAV cloner...
+  echo.
+
+  powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$ProgressPreference='Continue'; Invoke-WebRequest -Uri '%EXE_URL%' -OutFile '%EXE%'"
+
+  if errorlevel 1 (
+    echo.
+    echo ==================================================
+    echo EXE DOWNLOAD FAILED
+    echo ==================================================
+    echo.
+    echo The download command failed. The exact error is above.
+    echo.
+    pause
+    exit /b 1
+  )
 )
 
 if not exist "%EXE%" (
   echo.
-  echo ==================================================
-  echo             EXE WAS NOT CREATED
-  echo ==================================================
+  echo ERROR: voice_clone.exe was not created.
   echo.
   pause
   exit /b 1
 )
 
-:INSTALL_MODEL
-echo.
-echo [2/2] Checking the OpenVoice model...
-echo.
-
-if not exist "%MODEL%" mkdir "%MODEL%"
-
 if not exist "%MODEL_CONFIG%" (
-  echo Downloading model config...
+  echo.
+  echo ==================================================
+  echo STEP 2: DOWNLOADING MODEL CONFIG
+  echo ==================================================
+  echo.
+
+  if not exist "%MODEL%" mkdir "%MODEL%"
+
   powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$ProgressPreference='Continue'; Invoke-WebRequest -Uri 'https://huggingface.co/myshell-ai/OpenVoiceV2/resolve/main/converter/config.json?download=true' -OutFile '%MODEL_CONFIG%'"
+    "$ProgressPreference='Continue'; Invoke-WebRequest -Uri '%CONFIG_URL%' -OutFile '%MODEL_CONFIG%'"
+
   if errorlevel 1 goto MODEL_FAIL
 )
 
 if not exist "%MODEL_FILE%" (
-  echo Downloading voice-conversion model...
-  echo This is the one-time model download.
   echo.
+  echo ==================================================
+  echo STEP 3: DOWNLOADING VOICE MODEL
+  echo ==================================================
+  echo.
+  echo This is the larger one-time download.
+  echo.
+
   powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$ProgressPreference='Continue'; Invoke-WebRequest -Uri 'https://huggingface.co/myshell-ai/OpenVoiceV2/resolve/main/converter/checkpoint.pth?download=true' -OutFile '%MODEL_FILE%'"
+    "$ProgressPreference='Continue'; Invoke-WebRequest -Uri '%MODEL_URL%' -OutFile '%MODEL_FILE%'"
+
   if errorlevel 1 goto MODEL_FAIL
 )
 
 if not exist "%MODEL_CONFIG%" goto MODEL_FAIL
 if not exist "%MODEL_FILE%" goto MODEL_FAIL
-goto SELECT_SOURCE
 
-:MODEL_FAIL
 echo.
 echo ==================================================
-echo             MODEL DOWNLOAD FAILED
+echo STEP 4: SELECT SOURCE WAV
 echo ==================================================
 echo.
-echo Run this batch again to retry.
-echo.
-pause
-exit /b 1
-
-:SELECT_SOURCE
-echo.
-echo ==================================================
-echo STEP 1: SELECT SOURCE WAV
-echo ==================================================
-echo.
-echo Source WAV = the recording whose words/content are kept.
+echo Select the WAV whose spoken words/content you want to keep.
 echo.
 
 set "SOURCE="
-for /f "usebackq delims=" %%A in (`powershell -NoProfile -STA -Command "Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.OpenFileDialog; $d.Title='Select SOURCE WAV'; $d.Filter='WAV audio (*.wav)|*.wav'; if($d.ShowDialog() -eq 'OK'){[Console]::WriteLine($d.FileName)}"`) do set "SOURCE=%%A"
+for /f "usebackq delims=" %%A in (`powershell -NoProfile -STA -Command "Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.OpenFileDialog; $d.Title='Select SOURCE WAV'; $d.Filter='WAV audio (*.wav)|*.wav|All files (*.*)|*.*'; if($d.ShowDialog() -eq 'OK'){[Console]::WriteLine($d.FileName)}"`) do set "SOURCE=%%A"
 
 if not defined SOURCE (
   echo.
@@ -122,14 +110,14 @@ if not defined SOURCE (
 
 echo.
 echo ==================================================
-echo STEP 2: SELECT TARGET WAV
+echo STEP 5: SELECT TARGET WAV
 echo ==================================================
 echo.
-echo Target WAV = the voice/tone color to copy.
+echo Select the WAV whose voice you want to copy.
 echo.
 
 set "TARGET="
-for /f "usebackq delims=" %%A in (`powershell -NoProfile -STA -Command "Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.OpenFileDialog; $d.Title='Select TARGET WAV - voice to copy'; $d.Filter='WAV audio (*.wav)|*.wav'; if($d.ShowDialog() -eq 'OK'){[Console]::WriteLine($d.FileName)}"`) do set "TARGET=%%A"
+for /f "usebackq delims=" %%A in (`powershell -NoProfile -STA -Command "Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.OpenFileDialog; $d.Title='Select TARGET WAV - voice to copy'; $d.Filter='WAV audio (*.wav)|*.wav|All files (*.*)|*.*'; if($d.ShowDialog() -eq 'OK'){[Console]::WriteLine($d.FileName)}"`) do set "TARGET=%%A"
 
 if not defined TARGET (
   echo.
@@ -147,16 +135,15 @@ set "OUTPUT=%OUTDIR%%BASENAME%_voiceclone.wav"
 
 echo.
 echo ==================================================
-echo                 READY TO CONVERT
+echo                CONVERSION RUNNING
 echo ==================================================
 echo.
 echo Source: "%SOURCE%"
 echo Target: "%TARGET%"
 echo Output: "%OUTPUT%"
 echo.
-echo Starting native WAV voice cloning...
-echo.
-echo The window stays open until the conversion is done.
+echo Please keep this window open.
+echo The native converter can take a while on CPU.
 echo.
 
 pushd "%APPDIR%"
@@ -171,6 +158,8 @@ if not "%RESULT%"=="0" (
   echo ==================================================
   echo.
   echo Exit code: %RESULT%
+  echo.
+  echo The converter error is shown above.
   echo.
   pause
   exit /b %RESULT%
@@ -197,3 +186,15 @@ echo "%OUTPUT%"
 echo.
 pause
 exit /b 0
+
+:MODEL_FAIL
+echo.
+echo ==================================================
+echo             MODEL DOWNLOAD FAILED
+echo ==================================================
+echo.
+echo The OpenVoice model files were not downloaded.
+echo Run this batch again to retry.
+echo.
+pause
+exit /b 1
