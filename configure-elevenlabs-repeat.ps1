@@ -58,11 +58,12 @@ $body = @{
       }
     }
     turn = @{
-      turn_timeout = 5
+      turn_timeout = 30
       silence_end_call_timeout = -1
       soft_timeout_config = @{
         timeout_seconds = -1
         message = ""
+        use_llm_generated_message = $false
       }
     }
     tts = @{
@@ -71,6 +72,7 @@ $body = @{
     }
     conversation = @{
       max_duration_seconds = 7200
+      max_conversation_duration_message = ""
     }
   }
 } | ConvertTo-Json -Depth 20
@@ -84,5 +86,6 @@ Write-Host ("Agent: {0}" -f $result.name)
 Write-Host ("Voice: {0}" -f $ava.name)
 Write-Host "Repeat-only prompt installed."
 Write-Host "Soft timeout disabled."
+Write-Host "Default personality disabled so the Agent will not invent inactivity prompts."
 Write-Host "Additional voices cleared."
 Write-Host "Maximum conversation duration set to 2 hours."
