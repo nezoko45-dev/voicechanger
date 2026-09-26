@@ -72,6 +72,7 @@ let running = false;
 let stopping = false;
 let refreshing = false;
 let refreshTimer = null;
+let reconnectWatchdog = null;
 let firstSession = true;
 
 const SESSION_REFRESH_MS = 110 * 60 * 1000;
@@ -90,6 +91,20 @@ function setLog(text){ $("log").textContent = text; }
 function clearRefresh(){
   if(refreshTimer) clearTimeout(refreshTimer);
   refreshTimer = null;
+}
+
+function clearWatchdog(){
+  if(reconnectWatchdog) clearTimeout(reconnectWatchdog);
+  reconnectWatchdog = null;
+}
+
+function scheduleRecovery(delay = 1500){
+  if(!running || stopping || refreshing) return;
+  clearWatchdog();
+  reconnectWatchdog = setTimeout(() => {
+    reconnectWatchdog = null;
+    if(running && !stopping && !refreshing) refreshSession();
+  }, delay);
 }
 
 function armRefresh(){
@@ -111,22 +126,42 @@ function buildAgent(first){
         eot_timeout_ms: 500
       }
     },
-    think: {
-      provider: {
-        type: "open_ai",
-        model: "gpt-4o-mini"
+    think: [
+      {
+        provider: {
+          type: "open_ai",
+          model: "gpt-4o-mini"
+        },
+        prompt: REPEAT_PROMPT
       },
-      prompt: REPEAT_PROMPT
-    },
-    speak: {
-      provider: {
-        type: "deepgram",
-        version: "v2",
-        model: "flux-priya-en",
-        speed: 1.0,
-        expressivity: 0
+      {
+        provider: {
+          type: "open_ai",
+          model: "gpt-4.1-mini"
+        },
+        prompt: REPEAT_PROMPT
       }
-    }
+    ],
+    speak: [
+      {
+        provider: {
+          type: "deepgram",
+          version: "v2",
+          model: "flux-priya-en",
+          speed: 1.0,
+          expressivity: 0
+        }
+      },
+      {
+        provider: {
+          type: "deepgram",
+          version: "v2",
+          model: "flux-kit-en",
+          speed: 1.0,
+          expressivity: 0
+        }
+      }
+    ]
   };
 }
 
@@ -295,7 +330,7 @@ async function refreshSession(){
 
 function recover(){
   if(!running || refreshing) return;
-  refreshSession();
+  scheduleRecovery(500);
 }
 
 function stop(){
@@ -303,6 +338,7 @@ function stop(){
   running = false;
   refreshing = false;
   clearRefresh();
+  clearWatchdog();
 
   try{ mic?.stop(); }catch{}
   try{ session?.disconnect(); }catch{}
