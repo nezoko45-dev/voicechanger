@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Local Voice Repeat</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#080b12;color:#f5f7fb;font:15px system-ui,Arial,sans-serif}
+.app{width:min(760px,100%);margin:auto;padding:28px 18px}.card{background:#111722;border:1px solid #293449;border-radius:20px;padding:22px;margin-bottom:16px}
+h1{margin:0 0 6px;font-size:30px}.sub{color:#9ba7ba;line-height:1.5;margin-bottom:18px}
+label{display:block;color:#b8c2d2;font-weight:700;margin:0 0 7px}select{width:100%;background:#080d15;color:#fff;border:1px solid #3a465c;border-radius:11px;padding:13px;font:inherit;margin-bottom:12px}
+button{width:100%;border:0;border-radius:12px;padding:15px;margin-top:8px;font-weight:800;font-size:16px;background:#735cff;color:#fff;cursor:pointer}
+button.stop{background:#9b3d50}button:disabled{opacity:.45;cursor:not-allowed}.status{text-align:center;color:#c7cfdd;min-height:24px;margin-top:14px}
+.heard{min-height:90px;background:#080d15;border:1px solid #293449;border-radius:12px;padding:15px;line-height:1.5;font-size:18px}
+.log{margin-top:12px;background:#080d15;border:1px solid #293449;border-radius:12px;padding:10px;color:#9ba7ba;font:12px ui-monospace,monospace;white-space:pre-wrap}
+.note{color:#7f8ca1;font-size:12px;line-height:1.5;margin-top:11px}.badge{display:inline-block;padding:4px 8px;border-radius:999px;background:#1b2638;color:#cdd8ea;font-size:12px;font-weight:800}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:600px){.row{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="card">
+    <h1>Local Voice Repeat</h1>
+    <div class="sub"><span class="badge">100% local</span> Whisper.cpp handles speech recognition and Piper handles speech synthesis on this PC. No Deepgram credits or API key.</div>
+    <div class="row">
+      <div><label for="mic">Microphone</label><select id="mic"></select></div>
+      <div><label for="speaker">Speaker / output</label><select id="speaker"></select></div>
+    </div>
+    <div class="note">STT: Whisper.cpp tiny.en Q5_1 · TTS: Piper en_US-amy-medium</div>
+    <button id="start">Start local repeat</button>
+    <button id="stop" class="stop" disabled>Stop</button>
+    <div id="status" class="status">Ready.</div>
+    <div id="log" class="log">Waiting for Start.</div>
+  </div>
+  <div class="card">
+    <label>You said</label>
+    <div id="heard" class="heard">Nothing heard yet.</div>
+    <div class="note">The local browser uses a short speech/silence detector to form utterances before sending them to the local Whisper process. No audio leaves this computer.</div>
+  </div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+let stream=null,audioContext=null,source=null,processor=null,zeroGain=null,running=false,busy=false,speaking=false,currentAudio=null;
+let phrase=[],preRoll=[],silenceMs=0;
+const SR=16000,SPEECH_RMS=0.012,SILENCE_MS=650,PRE_ROLL=Math.round(SR*0.25),MIN_PHRASE=Math.round(SR*0.3);
+
+function setStatus(v){$("status").textContent=v}
+function setLog(v){$("log").textContent=v}
+
+async function refreshDevices(){
+  const devices=await navigator.mediaDevices.enumerateDevices(),mic=$("mic"),sp=$("speaker"),oldM=mic.value,oldS=sp.value;
+  mic.innerHTML="";sp.innerHTML="";
+  for(const d of devices.filter(x=>x.kind==="audioinput")){
+    const o=document.createElement("option");o.value=d.deviceId;o.textContent=d.label||"Microphone "+(mic.options.length+1);mic.appendChild(o);
+  }
+  const def=document.createElement("option");def.value="default";def.textContent="Default output";sp.appendChild(def);
+  for(const d of devices.filter(x=>x.kind==="audiooutput")){
+    if(!d.deviceId||d.deviceId==="default")continue;
+    const o=document.createElement("option");o.value=d.deviceId;o.textContent=d.label||"Speaker";sp.appendChild(o);
+  }
+  if([...mic.options].some(o=>o.value===oldM))mic.value=oldM;
+  if([...sp.options].some(o=>o.value===oldS))sp.value=oldS;
+}
+
+function makeWav(a){
+  const b=new ArrayBuffer(44+a.length*2),v=new DataView(b);
+  const w=(n,s)=>{for(let i=0;i<s.length;i++)v.setUint8(n+i,s.charCodeAt(i))};
+  w(0,"RIFF");v.setUint32(4,36+a.length*2,true);w(8,"WAVE");w(12,"fmt ");
+  v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,SR,true);
+  v.setUint32(28,SR*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,"data");v.setUint32(40,a.length*2,true);
+  let p=44;for(let i=0;i<a.length;i++){const s=Math.max(-1,Math.min(1,a[i]));v.setInt16(p,s<0?s*32768:s*32767,true);p+=2}return new Blob([b],{type:"audio/wav"})
+}
+function rms(a){let s=0;for(let i=0;i<a.length;i++)s+=a[i]*a[i];return Math.sqrt(s/a.length)}
+function keepPre(a){preRoll.push(...a);if(preRoll.length>PRE_ROLL)preRoll=preRoll.slice(-PRE_ROLL)}
+
+async function speakLocal(text){
+  const r=await fetch("/speak",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text})});
+  if(!r.ok)throw new Error(await r.text());
+  const blob=await r.blob(),url=URL.createObjectURL(blob),a=new Audio(url);
+  const sink=$("speaker").value;if(sink&&typeof a.setSinkId==="function"){try{await a.setSinkId(sink)}catch{}}
+  await a.play();await new Promise(res=>{a.onended=res;a.onerror=res});URL.revokeObjectURL(url)
+}
+
+async function sendPhrase(samples){
+  if(!running||busy||samples.length<MIN_PHRASE)return;
+  busy=true;setStatus("Transcribing locally...");
+  try{
+    const r=await fetch("/transcribe",{method:"POST",body:makeWav(Float32Array.from(samples))});
+    if(!r.ok)throw new Error(await r.text());
+    const data=await r.json(),text=(data.text||"").trim();
+    if(!text){busy=false;setStatus("LIVE — speak normally.");return}
+    $("heard").textContent=text;setStatus("Speaking locally...");await speakLocal(text);
+    setStatus("LIVE — speak normally.");setLog("Local repeat complete. No cloud service was used.")
+  }catch(e){setLog("LOCAL ERROR: "+(e?.message||String(e)));setStatus("Local processing error.")}
+  finally{busy=false}
+}
+
+async function start(){
+  if(running)return;
+  running=true;$("start").disabled=true;$("stop").disabled=false;setStatus("Requesting microphone...");
+  try{
+    await refreshDevices();
+    const did=$("mic").value||"default";
+    stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:did==="default"?undefined:{exact:did},channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});
+    await refreshDevices();
+    audioContext=new AudioContext({sampleRate:SR});if(audioContext.state==="suspended")await audioContext.resume();
+    const workletCode='class LocalMicProcessor extends AudioWorkletProcessor { process(inputs){ const input=inputs[0]; if(input&&input[0]) this.port.postMessage(input[0].slice()); return true; } } registerProcessor("local-mic-processor", LocalMicProcessor);';
+    const workletUrl=URL.createObjectURL(new Blob([workletCode],{type:"application/javascript"}));
+    await audioContext.audioWorklet.addModule(workletUrl);URL.revokeObjectURL(workletUrl);
+    source=audioContext.createMediaStreamSource(stream);processor=new AudioWorkletNode(audioContext,"local-mic-processor");
+    zeroGain=audioContext.createGain();zeroGain.gain.value=0;
+    processor.port.onmessage=e=>{
+      if(!running)return;const d=e.data;
+      if(busy){keepPre(d);return}
+      const level=rms(d);
+      if(level>=SPEECH_RMS){
+        if(!speaking){speaking=true;phrase=preRoll.slice();preRoll=[];setStatus("Listening...")}
+        phrase.push(...d);silenceMs=0
+      }else if(speaking){
+        phrase.push(...d);silenceMs+=d.length*1000/SR;
+        if(silenceMs>=SILENCE_MS){const done=phrase.slice();phrase=[];silenceMs=0;speaking=false;sendPhrase(done)}
+      }else keepPre(d)
+    };
+    source.connect(processor);processor.connect(zeroGain);zeroGain.connect(audioContext.destination);
+    setStatus("Starting local voice...");await speakLocal("HUMAN!! IM BACK!!");
+    setStatus("LIVE — speak normally.");setLog("Local stack is LIVE: Whisper.cpp + Piper.")
+  }catch(e){setLog("START ERROR: "+(e?.message||String(e)));stop();setStatus("Could not start: "+(e?.message||String(e)))}
+}
+
+function stop(){
+  running=false;busy=false;speaking=false;phrase=[];preRoll=[];silenceMs=0;
+  try{currentAudio?.pause()}catch{}try{stream?.getTracks().forEach(t=>t.stop())}catch{}
+  try{source?.disconnect()}catch{}try{processor?.disconnect()}catch{}try{zeroGain?.disconnect()}catch{}try{audioContext?.close()}catch{}
+  currentAudio=null;stream=null;source=null;processor=null;zeroGain=null;audioContext=null;
+  $("start").disabled=false;$("stop").disabled=true;setStatus("Stopped.");setLog("Press Start local repeat to begin.")
+}
+$("start").addEventListener("click",start);$("stop").addEventListener("click",stop);
+$("speaker").addEventListener("change",async()=>{});
+refreshDevices().catch(()=>{});
+</script>
+</body>
+</html>
