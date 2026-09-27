@@ -50,7 +50,7 @@ echo ==========================================================
 echo READY
 echo ==========================================================
 echo.
-echo Whisper hears you, then Piper repeats the words.
+echo Whisper and Piper run continuously while you talk.\necho Amy repeats new speech with a short rolling delay.
 echo.
 "%PYTHON%" "%~dp0local-agent.py"
 goto :eof
