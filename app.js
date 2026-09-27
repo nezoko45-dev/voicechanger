@@ -1,113 +1,127 @@
-const el = id => document.getElementById(id);
+const $=id=>document.getElementById(id);
+let ws=null,ctx=null,inputStream=null,inputNode=null,processor=null,outputNode=null;
+let running=false,devicesLoaded=false;
 
-async function callApi(url, options) {
-  const response = await fetch(url, options);
-  const data = await response.json();
-  if (!response.ok || data.error) throw new Error(data.error || "Request failed");
-  return data;
+function status(t,good=false,bad=false){
+ const e=$("status"); e.textContent=t; e.className="status"+(good?" good":"")+(bad?" bad":"");
+}
+function b64(buf){let s="",a=new Uint8Array(buf);for(let i=0;i<a.length;i+=0x8000)s+=String.fromCharCode(...a.subarray(i,i+0x8000));return btoa(s)}
+function fromB64(s){const b=atob(s),a=new Uint8Array(b.length);for(let i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a.buffer}
+
+function pcm16ToFloat(ab){
+ const v=new DataView(ab),out=new Float32Array(ab.byteLength/2);
+ for(let i=0;i<out.length;i++){const x=v.getInt16(i*2,true);out[i]=x<0?x/32768:x/32767}
+ return out;
 }
 
-function show(text, good, bad) {
-  const box = el("status");
-  box.textContent = text;
-  box.className = "status" + (good ? " ok" : "") + (bad ? " bad" : "");
+function makeOutputWorklet(){
+ const code=`
+ class HFOutput extends AudioWorkletProcessor{
+   constructor(){super();this.q=[];this.pos=0;this.port.onmessage=e=>{if(e.data.kind==="audio")this.q.push(e.data.samples);if(e.data.kind==="clear"){this.q=[];this.pos=0}}}
+   process(ins,outs){
+     const o=outs[0][0]; o.fill(0); let p=0;
+     while(p<o.length && this.q.length){
+       const a=this.q[0], remain=a.length-this.pos, n=Math.min(remain,o.length-p);
+       o.set(a.subarray(this.pos,this.pos+n),p);p+=n;this.pos+=n;
+       if(this.pos>=a.length){this.q.shift();this.pos=0}
+     }
+     return true;
+   }
+ }
+ registerProcessor("hf-output",HFOutput);`;
+ const blob=new Blob([code],{type:"application/javascript"});
+ return ctx.audioWorklet.addModule(URL.createObjectURL(blob));
 }
 
-async function loadDevices() {
-  const data = await callApi("/api/devices");
-  const input = el("input");
-  const output = el("output");
-  input.innerHTML = "";
-  output.innerHTML = "";
+function resampleTo16k(input,rate){
+ const ratio=rate/16000,n=Math.max(1,Math.floor(input.length/ratio)),out=new Int16Array(n);
+ for(let i=0;i<n;i++){
+   const p=i*ratio,j=Math.floor(p),f=p-j;
+   const x=input[Math.min(j,input.length-1)]*(1-f)+(input[Math.min(j+1,input.length-1)]||0)*f;
+   out[i]=Math.max(-1,Math.min(1,x))*32767;
+ }
+ return out.buffer;
+}
 
-  data.devices.forEach(device => {
-    const label = device.name + " — " + device.hostapi;
-    if (device.inputs > 0) {
-      const option = document.createElement("option");
-      option.value = device.index;
-      option.textContent = label;
-      input.appendChild(option);
+async function loadDevices(){
+ const dummy=await navigator.mediaDevices.getUserMedia({audio:true});
+ dummy.getTracks().forEach(t=>t.stop());
+ const ds=await navigator.mediaDevices.enumerateDevices();
+ $("input").innerHTML="";$("output").innerHTML="";
+ ds.filter(d=>d.kind==="audioinput").forEach(d=>{
+   const o=document.createElement("option");o.value=d.deviceId;o.textContent=d.label||"Microphone";$("input").appendChild(o)
+ });
+ ds.filter(d=>d.kind==="audiooutput").forEach(d=>{
+   const o=document.createElement("option");o.value=d.deviceId;o.textContent=d.label||"Speaker / Voicemeeter";$("output").appendChild(o)
+ });
+ devicesLoaded=true;
+}
+
+async function start(){
+ if(running)return;
+ try{
+  if(!devicesLoaded)await loadDevices();
+  const inId=$("input").value,outId=$("output").value;
+  inputStream=await navigator.mediaDevices.getUserMedia({audio:{
+    deviceId:inId?{exact:inId}:undefined,channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false
+  }});
+  ctx=new AudioContext();
+  await ctx.resume();
+  await makeOutputWorklet();
+  outputNode=new AudioWorkletNode(ctx,"hf-output");
+  if("setSinkId" in ctx && outId){try{await ctx.setSinkId(outId)}catch(e){}}
+  outputNode.connect(ctx.destination);
+
+  const src=ctx.createMediaStreamSource(inputStream);
+  processor=ctx.createScriptProcessor(4096,1,1);
+  processor.onaudioprocess=e=>{
+    if(!ws||ws.readyState!==WebSocket.OPEN)return;
+    const pcm=resampleTo16k(e.inputBuffer.getChannelData(0),ctx.sampleRate);
+    ws.send(JSON.stringify({type:"input_audio_buffer.append",audio:b64(pcm)}));
+  };
+  src.connect(processor);processor.connect(ctx.destination);
+
+  ws=new WebSocket("ws://127.0.0.1:8766/v1/realtime");
+  ws.onopen=()=>{
+    ws.send(JSON.stringify({type:"session.update",session:{
+      type:"realtime",
+      instructions:"REPEAT-ONLY MODE. When the user speaks, repeat exactly the words you heard. Do not answer the user. Do not greet them. Do not ask questions. Do not add, remove, explain, summarize, or paraphrase. Your response must contain only the user's spoken words, reproduced as faithfully as possible.",
+      audio:{input:{turn_detection:{type:"server_vad",interrupt_response:true}},output:{voice:$("voice").value}},
+      output_modalities:["audio"]
+    }}));
+    running=true;status("Connected • listening",true);
+  };
+  ws.onmessage=ev=>{
+    let e;try{e=JSON.parse(ev.data)}catch{return}
+    if(e.type==="error"){status(e.error?.message||"Backend error",false,true);return}
+    if(e.type==="conversation.item.input_audio_transcription.completed"){
+      $("heard").textContent="Heard: "+(e.transcript||"");
     }
-    if (device.outputs > 0) {
-      const option = document.createElement("option");
-      option.value = device.index;
-      option.textContent = label;
-      output.appendChild(option);
+    if(e.type==="response.output_audio.delta"||e.type==="response.audio.delta"){
+      if(outputNode&&e.delta){
+        outputNode.port.postMessage({kind:"audio",samples:pcm16ToFloat(fromB64(e.delta))});
+      }
     }
-  });
+    if(e.type==="input_audio_buffer.speech_started") status("Listening…",true);
+    if(e.type==="input_audio_buffer.speech_stopped") status("Repeating…",true);
+  };
+  ws.onerror=()=>status("WebSocket error — is the local HF backend ready?",false,true);
+  ws.onclose=()=>{if(running){running=false;status("Disconnected",false,true)}};
+ }catch(e){status(e.message||String(e),false,true);stop()}
 }
 
-el("ref").addEventListener("change", async () => {
-  const file = el("ref").files[0];
-  if (!file) return;
-
-  show("Uploading female reference…");
-  try {
-    await callApi("/api/reference", {
-      method: "POST",
-      headers: { "Content-Type": "application/octet-stream" },
-      body: await file.arrayBuffer()
-    });
-    show("Female reference loaded.", true, false);
-  } catch (error) {
-    show(error.message, false, true);
-  }
-});
-
-el("start").addEventListener("click", async () => {
-  if (!el("ref").files[0]) {
-    show("Choose a female reference first.", false, true);
-    return;
-  }
-
-  try {
-    await callApi("/api/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        input_device: Number(el("input").value),
-        output_device: Number(el("output").value),
-        steps: Number(el("steps").value),
-        cfg: 0.7,
-        prompt: 3,
-        block_time: 0.25,
-        crossfade: 0.04
-      })
-    });
-    show("Voice changer running.", true, false);
-  } catch (error) {
-    show(error.message, false, true);
-  }
-});
-
-el("stop").addEventListener("click", async () => {
-  try {
-    await callApi("/api/stop", { method: "POST" });
-    show("Stopped.", true, false);
-  } catch (error) {
-    show(error.message, false, true);
-  }
-});
-
-async function poll() {
-  try {
-    const state = await callApi("/api/status");
-    if (state.model === "loading") {
-      show("Loading local Hugging Face model…", false, false);
-    } else if (state.error) {
-      show(state.error, false, true);
-    } else if (state.running) {
-      show("Running • " + state.inference_ms + " ms inference", true, false);
-    } else {
-      show("Ready — choose a female reference and press Start.", true, false);
-    }
-  } catch (error) {
-    show("Server is not responding.", false, true);
-  }
+function stop(){
+ running=false;
+ try{processor?.disconnect()}catch{} try{inputNode?.disconnect()}catch{}
+ try{outputNode?.port.postMessage({kind:"clear"});outputNode?.disconnect()}catch{}
+ try{inputStream?.getTracks().forEach(t=>t.stop())}catch{}
+ try{ws?.close()}catch{}
+ try{ctx?.close()}catch{}
+ ws=null;processor=null;outputNode=null;inputStream=null;ctx=null;
+ status("Stopped.",true);
 }
 
-(async function () {
-  try { await loadDevices(); } catch (error) {}
-  await poll();
-  setInterval(poll, 1000);
-})();
+$("start").onclick=start;$("stop").onclick=stop;
+$("voice").onchange=()=>{if(ws?.readyState===WebSocket.OPEN)ws.send(JSON.stringify({type:"session.update",session:{audio:{output:{voice:$("voice").value}}}))};
+navigator.mediaDevices.addEventListener?.("devicechange",()=>loadDevices().catch(()=>{}));
+loadDevices().then(()=>status("Ready — press Start.",true)).catch(e=>status("Microphone permission is required.",false,true));
