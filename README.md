@@ -1,44 +1,39 @@
-# WAV Reference Voice Changer
+# Local WAV Voice Agent
 
-This version is built for having only a WAV recording of the target voice.
-
-It does not require classic RVC voice.onnx + ContentVec + RMVPE model files.
+The repo now includes a simple local HTML/JavaScript voice agent using the existing **Recording (10).wav** as its target/reference voice.
 
 ## Architecture
 
-Microphone
--> Seed-VC zero-shot realtime conversion
--> Windows output / Voicemeeter
--> VRChat
+Microphone → Chrome AudioWorklet → local sherpa-onnx streaming STT → local repeat agent → PocketTTS voice cloning → Chrome output / Voicemeeter → VRChat
 
-The Rust program is the native launcher and simple UI. Seed-VC supplies the neural zero-shot conversion runtime.
-
-Seed-VC supports zero-shot realtime voice conversion from a 1-30 second reference recording without training a separate voice model. Its realtime engine uses worker-thread buffering and device selection for live use.
+No Deepgram or other cloud speech API is used by this path.
 
 ## Setup
 
-1. Install Rust.
-2. Install Python 3.10 or newer.
-3. Make sure Git is installed.
-4. Run setup_seedvc.bat.
-5. Choose your WAV reference recording.
-6. Press START.
-7. In the Seed-VC window, select your microphone and Voicemeeter output.
-8. In VRChat, select the Voicemeeter virtual microphone receiving the converted signal.
+1. Install Node.js 20+.
+2. Run **setup_local.bat**.
+3. The setup downloads the local ASR and PocketTTS model packages into `models/`.
+4. Run **start_local.bat**.
+5. Chrome opens at `http://127.0.0.1:8787/`.
+6. Choose your microphone and output.
+7. Press **START** and speak.
 
-The Seed-VC model checkpoints are downloaded automatically by its runtime. You do not manually find voice.onnx, content_vec_500.onnx, or rmvpe.onnx.
+Reference WAV: `Recording (10).wav`
 
-## Reference WAV
+Keep that file in the repo root. The local Node server reads it directly and gives it to PocketTTS as the reference voice.
 
-Use a clean 1-30 second sample of the target speaker. Speech is preferable to music/noise.
+## VRChat
 
-## Realtime
+Select your desired Voicemeeter output in the browser output selector when Chrome exposes it. In VRChat, select the corresponding Voicemeeter virtual microphone/input.
 
-Zero-shot neural voice conversion is much heavier than a pitch/effects processor. A GPU is strongly recommended for realtime use. Seed-VC publishes realtime measurements in the hundreds of milliseconds depending on hardware and settings.
+## What this first version does
 
-## Important
+It intentionally uses a simple repeat-me agent:
 
-The Rust launcher itself does not perform the neural inference. A pure-Rust implementation of this zero-shot model would require porting a large PyTorch model stack. Using Seed-VC Realtime keeps the UI native/simple while using the actual WAV-reference zero-shot converter.
+speech → local STT → same text → local cloned TTS
 
-Seed-VC Realtime:
-https://github.com/jiaheguo521/seed-vc-realtime
+This is **voice cloning TTS**, not waveform-preserving live voice conversion. PocketTTS is specifically designed for zero-shot cloning from a short reference audio clip and does not require a reference transcript.
+
+The model files are downloaded locally by `setup_local.bat` and are not committed to GitHub.
+
+The older Rust/Seed-VC files remain in the repo, but **start_local.bat does not use them**.
