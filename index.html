@@ -77,15 +77,29 @@ function getNewWords(text){
   const words=normalizeWords(text);
   if(!words.length)return "";
   if(!spokenWords.length){spokenWords=words.slice();return words.slice(0,7).join(" ")}
+
+  // Rolling Whisper windows can change punctuation or a single word between passes.
+  // Accept a 1-word overlap and also handle the common prefix case so valid speech
+  // is not silently discarded.
   let overlap=0,max=Math.min(spokenWords.length,words.length,8);
-  for(let n=max;n>=2;n--){
+  for(let n=max;n>=1;n--){
     let ok=true;
-    for(let i=0;i<n;i++)if(spokenWords[spokenWords.length-n+i]!==words[i]){ok=false;break}
+    for(let i=0;i<n;i++){
+      if(spokenWords[spokenWords.length-n+i]!==words[i]){ok=false;break}
+    }
     if(ok){overlap=n;break}
+  }
+  if(!overlap){
+    let prefix=0,maxPrefix=Math.min(spokenWords.length,words.length);
+    while(prefix<maxPrefix&&spokenWords[prefix]===words[prefix])prefix++;
+    if(prefix===spokenWords.length)overlap=prefix;
   }
   if(!overlap)return "";
   const fresh=words.slice(overlap);
-  if(fresh.length){spokenWords=spokenWords.concat(fresh).slice(-40);return fresh.slice(0,7).join(" ")}
+  if(fresh.length){
+    spokenWords=spokenWords.concat(fresh).slice(-40);
+    return fresh.slice(0,7).join(" ");
+  }
   return "";
 }
 
@@ -101,15 +115,22 @@ async function pumpTTS(){
   try{
     const r=await fetch("/speak",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text})});
     if(!r.ok)throw new Error(await r.text());
-    const blob=await r.blob(),url=URL.createObjectURL(blob),a=currentAudio||new Audio();
-    const sink=$("speaker").value;
-    if(sink&&typeof a.setSinkId==="function"){try{await a.setSinkId(sink)}catch{}}
-    a.src=url;
-    a.currentTime=0;
+    const bytes=await r.arrayBuffer();
+    if(!audioContext)throw new Error("Audio context is not running.");
+    if(audioContext.state==="suspended")await audioContext.resume();
+    if(typeof audioContext.setSinkId==="function"){
+      const sink=$("speaker").value;
+      if(sink){try{await audioContext.setSinkId(sink)}catch{}}
+    }
+    const buffer=await audioContext.decodeAudioData(bytes.slice(0));
     setStatus("SPEAKING + LISTENING");
-    await a.play();
-    await new Promise(res=>{a.onended=res;a.onerror=()=>res()});
-    URL.revokeObjectURL(url);
+    await new Promise((resolve,reject)=>{
+      const node=audioContext.createBufferSource();
+      node.buffer=buffer;
+      node.connect(audioContext.destination);
+      node.onended=()=>{try{node.disconnect()}catch{};resolve()};
+      try{node.start(0)}catch(e){reject(e)}
+    });
   }catch(e){setLog("TTS ERROR: "+(e?.message||String(e)))}
   ttsPlaying=false;
   if(running)pumpTTS();
