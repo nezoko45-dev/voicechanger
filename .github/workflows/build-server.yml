@@ -1,0 +1,29 @@
+name: Build server.exe
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "ServerLauncher/**"
+      - "server.py"
+      - "index.html"
+      - "app.js"
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.x"
+      - run: dotnet publish ServerLauncher/ServerLauncher.csproj -c Release -o publish
+      - shell: pwsh
+        run: |
+          Copy-Item server.py publish/server.py
+          Copy-Item index.html publish/index.html
+          Copy-Item app.js publish/app.js
+          Copy-Item setup_server.bat publish/setup_server.bat
+          Compress-Archive -Path publish/* -DestinationPath VoiceChangerServer.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VoiceChangerServer
+          path: VoiceChangerServer.zip
