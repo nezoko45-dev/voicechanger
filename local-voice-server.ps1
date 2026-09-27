@@ -11,6 +11,7 @@ $Whisper=Get-ChildItem -Path $Tools -Recurse -Filter "whisper-cli.exe" -ErrorAct
 $Piper=Get-ChildItem -Path $Tools -Recurse -Filter "piper.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
 $WhisperModel=Join-Path $Models "ggml-tiny.en-q5_1.bin"
 $PiperModel=Join-Path $Voices "en_US-amy-medium.onnx"
+$PiperConfig=Join-Path $Voices "en_US-amy-medium.onnx.json"
 
 if(-not $Whisper){throw "whisper-cli.exe missing. Run install-local-voice.bat first."}
 if(-not $Piper){throw "piper.exe missing. Run install-local-voice.bat first."}
@@ -70,6 +71,7 @@ $listener.Start()
 Write-Host "Local voice server: http://127.0.0.1:$Port/"
 Write-Host "Whisper: $($Whisper.FullName)"
 Write-Host "Piper: $($Piper.FullName)"
+Write-Host "TTS mode: low-latency local synthesis"
 Write-Host "Press Ctrl+C to stop."
 
 try{
