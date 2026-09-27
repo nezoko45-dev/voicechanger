@@ -54,7 +54,7 @@ echo.
 echo If the first startup takes a while, that is model loading.
 echo.
 
-"%PYTHON%" -m speech_to_speech local ^
+"%PYTHON%" -m speech_to_speech.cli local ^
   --stt parakeet-tdt ^
   --stt_device cpu ^
   --llm_backend transformers ^
