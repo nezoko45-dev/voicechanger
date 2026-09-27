@@ -48,23 +48,43 @@ function Run-Whisper([string]$wav,[string]$outBase){
   if(-not(Test-Path $txt)){return ""}
   return (Get-Content -Raw -LiteralPath $txt).Trim()
 }
-function Run-Piper([string]$text,[string]$wav){
-  if(Test-Path $wav){Remove-Item $wav -Force}
+$PiperProcess=$null
+$PiperWriter=$null
+$PiperBusy=New-Object System.Threading.SemaphoreSlim(1,1)
+
+function Start-PiperEngine(){
   $psi=New-Object System.Diagnostics.ProcessStartInfo
   $psi.FileName=$Piper.FullName
-  $psi.Arguments="--model $Q$PiperModel$Q --output_file $Q$wav$Q"
+  $psi.Arguments="--model $Q$PiperModel$Q --json-input --output_file $Q$Tmp$Q"
   $psi.UseShellExecute=$false
   $psi.RedirectStandardInput=$true
+  $psi.RedirectStandardError=$true
   $psi.CreateNoWindow=$true
-  $p=New-Object System.Diagnostics.Process
-  $p.StartInfo=$psi
-  [void]$p.Start()
-  $p.StandardInput.WriteLine($text)
-  $p.StandardInput.Close()
-  $p.WaitForExit()
-  if(-not(Test-Path $wav)){throw "Piper did not create audio."}
+  $script:PiperProcess=New-Object System.Diagnostics.Process
+  $script:PiperProcess.StartInfo=$psi
+  [void]$script:PiperProcess.Start()
+  $script:PiperWriter=$script:PiperProcess.StandardInput
 }
 
+function Run-Piper([string]$text,[string]$wav){
+  [void]$PiperBusy.Wait()
+  try{
+    if(-not $PiperProcess -or $PiperProcess.HasExited){Start-PiperEngine}
+    if(Test-Path $wav){Remove-Item $wav -Force}
+    $payload=@{text=$text;output_file=$wav}|ConvertTo-Json -Compress
+    $PiperWriter.WriteLine($payload)
+    $PiperWriter.Flush()
+
+    $deadline=(Get-Date).AddSeconds(20)
+    while(-not(Test-Path $wav)){
+      if($PiperProcess.HasExited){throw "Persistent Piper process stopped."}
+      if((Get-Date) -gt $deadline){throw "Piper TTS timed out."}
+      Start-Sleep -Milliseconds 10
+    }
+  }finally{
+    $PiperBusy.Release()|Out-Null
+  }
+}
 $listener=New-Object System.Net.HttpListener
 $listener.Prefixes.Add("http://127.0.0.1:$Port/")
 $listener.Start()
