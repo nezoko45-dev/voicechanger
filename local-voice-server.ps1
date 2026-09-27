@@ -17,6 +17,7 @@ if(-not $Whisper){throw "whisper-cli.exe missing. Run install-local-voice.bat fi
 if(-not $Piper){throw "piper.exe missing. Run install-local-voice.bat first."}
 if(-not(Test-Path $WhisperModel)){throw "Whisper model missing. Run install-local-voice.bat first."}
 if(-not(Test-Path $PiperModel)){throw "Piper voice model missing. Run install-local-voice.bat first."}
+if(-not(Test-Path $PiperConfig)){throw "Piper voice config missing. Run install-local-voice.bat first."}
 
 $Page=Join-Path $Root "index.html"
 $Q=[char]34
@@ -85,6 +86,9 @@ function Run-Piper([string]$text,[string]$wav){
     $PiperBusy.Release()|Out-Null
   }
 }
+Start-PiperEngine
+Write-Host "Piper engine loaded and ready for low-latency TTS."
+
 $listener=New-Object System.Net.HttpListener
 $listener.Prefixes.Add("http://127.0.0.1:$Port/")
 $listener.Start()
