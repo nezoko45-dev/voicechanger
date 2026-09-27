@@ -1,38 +1,33 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VoxShot Voice Clone</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Local Live Voice Changer</title>
 <style>
 body{margin:0;min-height:100vh;display:grid;place-items:center;background:#101116;color:#fff;font-family:system-ui,sans-serif}
-main{width:min(680px,92vw);padding:28px;border-radius:20px;background:#191b22;box-shadow:0 18px 60px #0008}
-button{padding:12px 16px;border:0;border-radius:10px;cursor:pointer;margin:5px}button:disabled{opacity:.4;cursor:not-allowed}
-textarea{width:100%;box-sizing:border-box;min-height:110px;padding:12px;border-radius:10px;background:#0d0e12;color:white;border:1px solid #333}
-input[type=file]{width:100%;margin:10px 0}.row{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
-#status{padding:12px;border-radius:10px;background:#0d0e12;margin:14px 0}
-#progressBox{display:none;margin:14px 0}
-#progressTop{display:flex;justify-content:space-between;margin-bottom:7px;font-size:14px}
-#progressPercent{font-variant-numeric:tabular-nums;font-weight:700}
-#progressTrack{height:12px;background:#0b0c10;border:1px solid #343640;border-radius:999px;overflow:hidden}
-#progressBar{height:100%;width:0%;background:#6ea8fe;border-radius:999px;transition:width .12s ease}
-#log{color:#999;white-space:pre-wrap;font-size:13px;margin-top:10px}
+main{width:min(700px,92vw);padding:28px;border-radius:20px;background:#191b22;box-shadow:0 18px 60px #0008}
+button{padding:12px 16px;border:0;border-radius:10px;cursor:pointer;margin:5px;background:#6ea8fe;color:#111;font-weight:700}
+.card{padding:14px;border-radius:12px;background:#0d0e12;margin:12px 0}
+a{color:#8ab4ff}.ok{color:#7ee787}
 </style>
 </head>
 <body><main>
-<h1>🎙 VoxShot Voice Clone</h1>
-<p>Local browser voice cloning using VoxShot + Chatterbox.</p>
-<div id="status">Ready — click Load VoxShot.</div>
-<div id="progressBox">
-<div id="progressTop"><span id="progressLabel">Loading</span><span id="progressPercent">0%</span></div>
-<div id="progressTrack"><div id="progressBar"></div></div>
+<h1>🎙 Local Live Voice Changer</h1>
+<p>VoxShot has been removed. This app now uses a local real-time voice-conversion engine.</p>
+<div class="card">
+<strong>Audio path</strong><br>
+Microphone → RVC/VCClient → virtual microphone → VRChat
 </div>
-<div class="row"><button id="startBtn">⚡ Load VoxShot</button><button id="recordBtn">🎙 Record 5–15 sec</button></div>
-<input id="fileInput" type="file" accept="audio/*">
-<div id="referenceInfo">Choose an audio reference or record one.</div>
-<div class="row"><button id="cloneBtn" disabled>👩 Clone Voice</button><button id="stopBtn">⏹ Stop</button></div>
-<label>Text to speak</label>
-<textarea id="text">Hello! This is my cloned voice running directly in Chrome.</textarea>
-<div class="row"><button id="speakBtn" disabled>▶ Speak</button></div>
-<div id="log"></div>
-<script type="module" src="./voxshot-app.js"></script>
-</main></body></html>
+<div class="card">
+<strong>Launcher</strong><br>
+Run <b>start_voicechanger.bat</b> from this folder. It starts the local voice-conversion client.
+</div>
+<div class="card">
+<strong>VRChat</strong><br>
+Set VRChat's microphone to the virtual output created by the voice changer.
+</div>
+<p class="ok">✓ No Deepgram credits<br>✓ No VoxShot/WebGPU<br>✓ No Electron<br>✓ Continuous real-time conversion</p>
+<p>Voice models are loaded by the local RVC client.</p>
+</main></body>
+</html>
