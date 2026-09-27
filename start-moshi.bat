@@ -17,7 +17,7 @@ if %errorlevel%==0 (
 ) else (
   where python >nul 2>&1
   if errorlevel 1 (
-    echo ERROR: Python 3.12 was not found.
+    echo ERROR: Python was not found.
     echo Install Python 3.12, then run this file again.
     pause
     exit /b 1
@@ -36,6 +36,8 @@ if not exist "%~dp0.moshi-env\Scripts\python.exe" (
 )
 
 set "MOSHIPY=%~dp0.moshi-env\Scripts\python.exe"
+set "PORT=8998"
+set "LOG=%~dp0moshi-server.log"
 
 echo.
 echo Installing/updating Moshi...
@@ -45,24 +47,59 @@ if errorlevel 1 goto :pipfail
 if errorlevel 1 goto :pipfail
 
 echo.
-echo Starting Moshika local voice agent...
+echo Starting Moshi server...
+echo Server log: %LOG%
 echo.
-echo Browser UI: http://127.0.0.1:8998
-echo Keep this window open while using Moshi.
-echo Press Ctrl+C here to stop Moshi.
+if exist "%LOG%" del /q "%LOG%" >nul 2>&1
+
+start "Moshi Server" /min cmd /c ""%MOSHIPY%" -m moshi.server --hf-repo kyutai/moshika-pytorch-bf16 > "%LOG%" 2>&1"
+
+echo Waiting for Moshi to start...
+echo The first run may take several minutes while the model downloads.
 echo.
 
-start "" "http://127.0.0.1:8998"
-"%MOSHIPY%" -m moshi.server --hf-repo kyutai/moshika-pytorch-bf16
+set /a WAIT=0
+:waitloop
+timeout /t 2 /nobreak >nul
+set /a WAIT+=2
+powershell -NoProfile -Command "$r=Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:%PORT%/' -TimeoutSec 2 -ErrorAction SilentlyContinue; if($r -and $r.StatusCode -ge 200 -and $r.StatusCode -lt 500){exit 0}else{exit 1}"
+if not errorlevel 1 goto :ready
+if %WAIT% GEQ 600 goto :failed
+goto :waitloop
+
+:ready
+echo.
+echo ==========================================
+echo MOSHI IS READY!
+echo ==========================================
+echo.
+echo Opening http://127.0.0.1:%PORT%
+echo Keep this launcher open while using Moshi.
+echo.
+start "" "http://127.0.0.1:%PORT%/"
 goto :eof
+
+:failed
+echo.
+echo ==========================================
+echo MOSHI DID NOT START
+echo ==========================================
+echo.
+echo Check this file for the actual error:
+echo %LOG%
+echo.
+echo The browser was NOT opened because Moshi is not running.
+echo.
+pause
+exit /b 1
 
 :pipfail
 echo.
-echo ERROR: Moshi could not be installed.
+echo ==========================================
+echo MOSHI INSTALL FAILED
+echo ==========================================
 echo.
-echo This model uses the PyTorch backend. Moshi's documentation says Windows
-echo is not officially supported and the PyTorch model needs a GPU with
-echo significant memory (about 24 GB).
+echo Check the messages above for the Python package error.
 echo.
 pause
 exit /b 1
