@@ -16,7 +16,13 @@ if errorlevel 1 (
   )
 )
 where node
+if errorlevel 1 goto fail
 node --version
+node -e "require('sherpa-onnx-node'); console.log('sherpa-onnx-node OK')" 
+if errorlevel 1 (
+  echo sherpa-onnx-node failed to load.
+  goto fail
+)
 echo.
 echo Installing local JavaScript dependencies...
 call npm install
@@ -49,6 +55,8 @@ if not exist "Recording (10).wav" (
 )
 
 echo.
+if not exist "models\sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20\encoder-epoch-99-avg-1.int8.onnx" goto fail
+if not exist "models\sherpa-onnx-pocket-tts-int8-2026-01-26\lm_flow.int8.onnx" goto fail
 echo Setup complete.
 echo Your reference voice is: Recording (10).wav
 echo.
