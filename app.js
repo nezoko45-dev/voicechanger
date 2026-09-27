@@ -1,375 +1,200 @@
-const $ = id => document.getElementById(id);
+let mic;
+let inputStream;
+let inputDevice;
+let outputAudio;
+let outputDestination;
+let pitchShift;
+let highpass;
+let lowpass;
+let compressor;
+let eq;
+let gain;
+let running=false;
 
-let ws = null;
-let ctx = null;
-let inputStream = null;
-let processor = null;
-let outputNode = null;
-let mediaDestination = null;
-let playback = null;
-let running = false;
-let devicesLoaded = false;
+const $=id=>document.getElementById(id);
 
-const TARGET_RATE = 24000;
-
-function status(text, good = false, bad = false) {
-  const el = $("status");
-  el.textContent = text;
-  el.className = "status" + (good ? " good" : "") + (bad ? " bad" : "");
+function setStatus(text,on=false){
+  $("status").textContent=text;
+  $("status").className="status"+(on?" on":"");
 }
 
-function b64(buffer) {
-  let s = "";
-  const a = new Uint8Array(buffer);
-  for (let i = 0; i < a.length; i += 0x8000) {
-    s += String.fromCharCode(...a.subarray(i, i + 0x8000));
-  }
-  return btoa(s);
+async function loadDevices(){
+  const permission=await navigator.mediaDevices.getUserMedia({audio:true});
+  permission.getTracks().forEach(t=>t.stop());
+
+  const devices=await navigator.mediaDevices.enumerateDevices();
+  const oldIn=$("input").value;
+  const oldOut=$("output").value;
+
+  $("input").innerHTML="";
+  $("output").innerHTML="";
+
+  devices.filter(d=>d.kind==="audioinput").forEach((d,i)=>{
+    const o=document.createElement("option");
+    o.value=d.deviceId;
+    o.textContent=d.label||`Microphone ${i+1}`;
+    $("input").appendChild(o);
+  });
+
+  devices.filter(d=>d.kind==="audiooutput").forEach((d,i)=>{
+    const o=document.createElement("option");
+    o.value=d.deviceId;
+    o.textContent=d.label||`Output ${i+1}`;
+    $("output").appendChild(o);
+  });
+
+  if([...$("input").options].some(o=>o.value===oldIn)) $("input").value=oldIn;
+  if([...$("output").options].some(o=>o.value===oldOut)) $("output").value=oldOut;
 }
 
-function fromB64(value) {
-  const b = atob(value);
-  const a = new Uint8Array(b.length);
-  for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i);
-  return a.buffer;
+function updateEffect(){
+  if(!pitchShift) return;
+
+  const amount=Number($("uwu").value)/100;
+  const pitch=Number($("pitch").value);
+
+  pitchShift.pitch=pitch;
+  pitchShift.wet=0.72+amount*0.28;
+
+  highpass.frequency=120+amount*100;
+  lowpass.frequency=11000+amount*3000;
+
+  // Gentle presence boost without the harsh "chipmunk" sound.
+  eq.low=1.5+amount*1.5;
+  eq.mid=2+amount*3;
+  eq.high=1+amount*2;
+
+  compressor.threshold=-26+amount*5;
+  gain.gain.value=0.82;
 }
 
-function pcm16ToFloat(buffer) {
-  const input = new Int16Array(buffer);
-  const output = new Float32Array(input.length);
+async function start(){
+  if(running) return;
 
-  for (let i = 0; i < input.length; i++) {
-    output[i] = input[i] / 32768;
-  }
+  try{
+    await Tone.start();
 
-  return output;
-}
+    const deviceId=$("input").value;
+    const outputId=$("output").value;
 
-function resampleTo24k(input, sourceRate) {
-  if (sourceRate === TARGET_RATE) {
-    const out = new Int16Array(input.length);
-    for (let i = 0; i < input.length; i++) {
-      out[i] = Math.max(-1, Math.min(1, input[i])) * 32767;
-    }
-    return out.buffer;
-  }
-
-  const ratio = sourceRate / TARGET_RATE;
-  const length = Math.max(1, Math.floor(input.length / ratio));
-  const out = new Int16Array(length);
-
-  for (let i = 0; i < length; i++) {
-    const p = i * ratio;
-    const j = Math.floor(p);
-    const f = p - j;
-    const a = input[Math.min(j, input.length - 1)] || 0;
-    const b = input[Math.min(j + 1, input.length - 1)] || a;
-    const sample = a * (1 - f) + b * f;
-    out[i] = Math.max(-1, Math.min(1, sample)) * 32767;
-  }
-
-  return out.buffer;
-}
-
-async function makeOutputWorklet() {
-  const code = `
-    class HFOutput extends AudioWorkletProcessor {
-      constructor() {
-        super();
-        this.q = [];
-        this.pos = 0;
-        this.port.onmessage = e => {
-          if (e.data.kind === "audio") this.q.push(e.data.samples);
-          if (e.data.kind === "clear") {
-            this.q = [];
-            this.pos = 0;
-          }
-        };
-      }
-
-      process(inputs, outputs) {
-        const output = outputs[0][0];
-        output.fill(0);
-
-        let p = 0;
-
-        while (p < output.length && this.q.length) {
-          const chunk = this.q[0];
-          const remaining = chunk.length - this.pos;
-          const count = Math.min(remaining, output.length - p);
-
-          output.set(chunk.subarray(this.pos, this.pos + count), p);
-
-          p += count;
-          this.pos += count;
-
-          if (this.pos >= chunk.length) {
-            this.q.shift();
-            this.pos = 0;
-          }
-        }
-
-        return true;
-      }
-    }
-
-    registerProcessor("hf-output", HFOutput);
-  `;
-
-  const blob = new Blob([code], { type: "application/javascript" });
-  const url = URL.createObjectURL(blob);
-
-  try {
-    await ctx.audioWorklet.addModule(url);
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
-async function loadDevices() {
-  const permission = await navigator.mediaDevices.getUserMedia({ audio: true });
-  permission.getTracks().forEach(track => track.stop());
-
-  const devices = await navigator.mediaDevices.enumerateDevices();
-
-  const oldInput = $("input").value;
-  const oldOutput = $("output").value;
-
-  $("input").innerHTML = "";
-  $("output").innerHTML = "";
-
-  devices
-    .filter(d => d.kind === "audioinput")
-    .forEach(d => {
-      const option = document.createElement("option");
-      option.value = d.deviceId;
-      option.textContent = d.label || "Microphone";
-      $("input").appendChild(option);
-    });
-
-  devices
-    .filter(d => d.kind === "audiooutput")
-    .forEach(d => {
-      const option = document.createElement("option");
-      option.value = d.deviceId;
-      option.textContent = d.label || "Speaker / Voicemeeter";
-      $("output").appendChild(option);
-    });
-
-  if ([...$("input").options].some(o => o.value === oldInput)) {
-    $("input").value = oldInput;
-  }
-
-  if ([...$("output").options].some(o => o.value === oldOutput)) {
-    $("output").value = oldOutput;
-  }
-
-  devicesLoaded = true;
-}
-
-function sendSessionUpdate() {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-
-  ws.send(JSON.stringify({
-    type: "session.update",
-    session: {
-      type: "realtime",
-      instructions:
-        "REPEAT-ONLY MODE. Repeat the user's spoken words exactly. " +
-        "Do not answer. Do not greet. Do not ask questions. " +
-        "Do not add, remove, summarize, explain, or paraphrase. " +
-        "Output only what the user said.",
-      audio: {
-        input: {
-          format: {
-            type: "audio/pcm",
-            rate: TARGET_RATE
-          },
-          turn_detection: {
-            type: "server_vad"
-          }
-        },
-        output: {
-          format: {
-            type: "audio/pcm",
-            rate: TARGET_RATE
-          },
-          voice: $("voice").value
-        }
-      },
-      output_modalities: ["audio"]
-    }
-  }));
-}
-
-async function start() {
-  if (running) return;
-
-  try {
-    if (!devicesLoaded) await loadDevices();
-
-    const inputId = $("input").value;
-    const outputId = $("output").value;
-
-    inputStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        deviceId: inputId ? { exact: inputId } : undefined,
-        channelCount: 1,
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false
+    inputStream=await navigator.mediaDevices.getUserMedia({
+      audio:{
+        deviceId:deviceId?{exact:deviceId}:undefined,
+        channelCount:1,
+        echoCancellation:false,
+        noiseSuppression:false,
+        autoGainControl:false
       }
     });
 
-    ctx = new AudioContext({ sampleRate: TARGET_RATE });
-    await ctx.resume();
+    const ctx=Tone.getContext();
 
-    await makeOutputWorklet();
+    // Route Tone.js output into a MediaStream, then into an HTML audio
+    // element so Chrome can select the exact Windows output device.
+    outputDestination=ctx.createMediaStreamDestination();
 
-    outputNode = new AudioWorkletNode(ctx, "hf-output");
+    outputAudio=document.createElement("audio");
+    outputAudio.autoplay=true;
+    outputAudio.srcObject=outputDestination.stream;
+    outputAudio.volume=1;
+    document.body.appendChild(outputAudio);
 
-    mediaDestination = ctx.createMediaStreamDestination();
-    outputNode.connect(mediaDestination);
-
-    playback = document.createElement("audio");
-    playback.autoplay = true;
-    playback.playsInline = true;
-    playback.srcObject = mediaDestination.stream;
-    playback.volume = 1;
-
-    document.body.appendChild(playback);
-
-    if (outputId && typeof playback.setSinkId === "function") {
-      try {
-        await playback.setSinkId(outputId);
-      } catch (err) {
-        console.warn("Could not select output device:", err);
-      }
+    if(outputId && typeof outputAudio.setSinkId==="function"){
+      try{ await outputAudio.setSinkId(outputId); }catch(e){ console.warn(e); }
     }
 
-    const source = ctx.createMediaStreamSource(inputStream);
+    mic=new Tone.UserMedia();
+    await mic.open(deviceId||undefined);
 
-    processor = ctx.createScriptProcessor(2048, 1, 1);
+    highpass=new Tone.Filter({
+      type:"highpass",
+      frequency:180,
+      rolloff:-12
+    });
 
-    processor.onaudioprocess = event => {
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    lowpass=new Tone.Filter({
+      type:"lowpass",
+      frequency:12000,
+      rolloff:-12
+    });
 
-      const samples = event.inputBuffer.getChannelData(0);
-      const pcm = resampleTo24k(samples, ctx.sampleRate);
+    pitchShift=new Tone.PitchShift({
+      pitch:3.2,
+      windowSize:0.08,
+      delayTime:0,
+      feedback:0,
+      wet:1
+    });
 
-      ws.send(JSON.stringify({
-        type: "input_audio_buffer.append",
-        audio: b64(pcm)
-      }));
-    };
+    eq=new Tone.EQ3({
+      low:2,
+      mid:3,
+      high:2
+    });
 
-    const silent = ctx.createGain();
-    silent.gain.value = 0;
+    compressor=new Tone.Compressor({
+      threshold:-22,
+      ratio:3,
+      attack:0.01,
+      release:0.12
+    });
 
-    source.connect(processor);
-    processor.connect(silent);
-    silent.connect(ctx.destination);
+    gain=new Tone.Gain(0.82);
 
-    ws = new WebSocket("ws://127.0.0.1:8766/v1/realtime");
+    // Tone.js native destination is replaced by our selected Windows sink.
+    const chain=mic.chain(highpass,lowpass,pitchShift,eq,compressor,gain);
+    chain.connect(outputDestination);
 
-    ws.onopen = () => {
-      sendSessionUpdate();
-      running = true;
-      status("Connected • listening", true);
-    };
+    updateEffect();
 
-    ws.onmessage = event => {
-      let message;
-
-      try {
-        message = JSON.parse(event.data);
-      } catch {
-        return;
-      }
-
-      if (message.type === "error") {
-        status(message.error?.message || "Hugging Face backend error", false, true);
-        return;
-      }
-
-      if (message.type === "conversation.item.input_audio_transcription.completed") {
-        $("heard").textContent = "Heard: " + (message.transcript || "");
-      }
-
-      if (
-        message.type === "response.output_audio.delta" ||
-        message.type === "response.audio.delta"
-      ) {
-        if (outputNode && message.delta) {
-          outputNode.port.postMessage({
-            kind: "audio",
-            samples: pcm16ToFloat(fromB64(message.delta))
-          });
-        }
-      }
-
-      if (message.type === "input_audio_buffer.speech_started") {
-        status("Listening…", true);
-      }
-
-      if (message.type === "input_audio_buffer.speech_stopped") {
-        status("Repeating…", true);
-      }
-    };
-
-    ws.onerror = () => {
-      status("Local backend connection failed. Keep server.exe running.", false, true);
-    };
-
-    ws.onclose = () => {
-      if (running) {
-        running = false;
-        status("Disconnected", false, true);
-      }
-    };
-  } catch (error) {
-    status(error.message || String(error), false, true);
+    running=true;
+    setStatus("🎀 Uwu girl voice is LIVE",true);
+  }catch(err){
+    console.error(err);
+    setStatus("Could not start: "+(err.message||err),false);
     stop();
   }
 }
 
-function stop() {
-  running = false;
+function stop(){
+  running=false;
 
-  try { processor?.disconnect(); } catch {}
-  try { outputNode?.port.postMessage({ kind: "clear" }); } catch {}
-  try { outputNode?.disconnect(); } catch {}
-  try { inputStream?.getTracks().forEach(track => track.stop()); } catch {}
-  try { ws?.close(); } catch {}
-  try { ctx?.close(); } catch {}
+  try{mic?.disconnect();}catch{}
+  try{mic?.close();}catch{}
+  try{inputStream?.getTracks().forEach(t=>t.stop());}catch{}
 
-  if (playback) {
-    playback.pause();
-    playback.srcObject = null;
-    playback.remove();
-  }
+  [highpass,lowpass,pitchShift,eq,compressor,gain].forEach(n=>{
+    try{n?.dispose();}catch{}
+  });
 
-  ws = null;
-  ctx = null;
-  processor = null;
-  outputNode = null;
-  mediaDestination = null;
-  inputStream = null;
-  playback = null;
+  try{outputAudio?.pause();}catch{}
+  try{outputAudio?.remove();}catch{}
 
-  status("Stopped.", true);
+  mic=null;
+  inputStream=null;
+  outputAudio=null;
+  outputDestination=null;
+  highpass=null;
+  lowpass=null;
+  pitchShift=null;
+  eq=null;
+  compressor=null;
+  gain=null;
+
+  setStatus("Stopped.");
 }
 
-$("start").onclick = start;
-$("stop").onclick = stop;
+$("start").onclick=start;
+$("stop").onclick=stop;
+$("uwu").oninput=updateEffect;
+$("pitch").oninput=updateEffect;
 
-$("voice").onchange = () => sendSessionUpdate();
+navigator.mediaDevices.addEventListener?.("devicechange",()=>{
+  loadDevices().catch(()=>{});
+});
 
-navigator.mediaDevices.addEventListener?.(
-  "devicechange",
-  () => loadDevices().catch(() => {})
-);
-
-loadDevices()
-  .then(() => status("Ready — press Start.", true))
-  .catch(() => status("Allow microphone access, then press Start.", false, true));
+loadDevices().then(()=>{
+  setStatus("Ready — press Start.");
+}).catch(()=>{
+  setStatus("Allow microphone access, then reload the page.");
+});
