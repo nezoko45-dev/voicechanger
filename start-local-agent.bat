@@ -60,11 +60,22 @@ if errorlevel 1 (
   exit /b 1
 )
 
+echo Starting local Ollama service...
+powershell -NoProfile -Command "$ok=$false; try { $r=Invoke-WebRequest -UseBasicParsing http://127.0.0.1:11434/api/tags -TimeoutSec 2 -ErrorAction Stop; $ok=$true } catch {}; if(-not $ok){ Start-Process ollama -ArgumentList 'serve' -WindowStyle Minimized }"
+timeout /t 3 /nobreak >nul
+
 echo Checking local Ollama model...
 ollama show llama3.2:3b >nul 2>&1
 if errorlevel 1 (
   echo Downloading llama3.2:3b...
   ollama pull llama3.2:3b
+  if errorlevel 1 goto :fail
+)
+
+echo.
+echo Downloading local Piper voice...
+if not exist "%~dp0local_agent_data\voices\en_US-lessac-medium.onnx" (
+  "%PYTHON%" -m piper.download_voices --data-dir "%~dp0local_agent_data\voices" en_US-lessac-medium
   if errorlevel 1 goto :fail
 )
 
