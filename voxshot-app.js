@@ -1,4 +1,4 @@
-import { VoxShot, ChatterboxEngine } from "https://esm.sh/voxshot@latest";
+import { VoxShot, ChatterboxEngine } from "https://esm.sh/voxshot@latest?deps=@huggingface/transformers";
 
 const $ = id => document.getElementById(id);
 let tts = null;
@@ -27,6 +27,7 @@ async function loadVoxShot(){
 
   try{
     const engine = new ChatterboxEngine({
+      stallTimeoutMs: 300000,
       onProgress: p => {
         if(!p) return;
 
