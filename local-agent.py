@@ -102,22 +102,18 @@ def ollama_chat(text, history):
     return reply
 
 def find_voice():
-    # piper-tts can download named voices into its normal cache when invoked
-    # through PiperVoice.load; first try the package's voice lookup.
-    try:
-        from piper.download_voices import get_voices
-        voices = get_voices([VOICE_NAME])
-        if voices:
-            return voices[0]
-    except Exception:
-        pass
-
-    # Accept a manually supplied local .onnx voice as a fallback.
     manual = os.environ.get("LOCAL_AGENT_VOICE_PATH")
     if manual and Path(manual).exists():
         return Path(manual)
 
-    return VOICE_NAME
+    local_model = VOICE_DIR / f"{VOICE_NAME}.onnx"
+    if local_model.exists():
+        return local_model
+
+    raise RuntimeError(
+        f"Piper voice is missing: {local_model}. "
+        "The launcher should download it before starting."
+    )
 
 def load_voice():
     voice = find_voice()
