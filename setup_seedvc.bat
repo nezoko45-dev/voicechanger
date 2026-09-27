@@ -16,11 +16,22 @@ if errorlevel 1 (
 
 where python >nul 2>nul
 if errorlevel 1 (
-  echo Python 3.10+ was not found.
-  echo Seed-VC's neural runtime currently requires Python/PyTorch.
-  echo Rust is the native launcher/UI; Seed-VC supplies the zero-shot model runtime.
+  echo Python was not found. Trying to install Python with winget...
+  where winget >nul 2>nul
+  if errorlevel 1 (
+    echo winget is not available. Install Python 3.10+ and run setup again.
+    pause
+    exit /b 1
+  )
+  winget install --id Python.Python.3.11 -e --accept-source-agreements --accept-package-agreements
+  if errorlevel 1 (
+    echo Python installation failed.
+    pause
+    exit /b 1
+  )
+  echo Python was installed. Please close this window, open a new Command Prompt, and run setup_seedvc.bat again.
   pause
-  exit /b 1
+  exit /b 0
 )
 
 if not exist "seed-vc-realtime\real-time-gui.py" (
