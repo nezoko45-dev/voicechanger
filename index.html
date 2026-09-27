@@ -1,2 +1,58 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Local Female Voice Changer</title><style>
-body{margin:0;background:#111;color:#eee;font:15px system-ui;display:grid;place-items:center;min-height:100vh}.card{width:min(680px,92vw);background:#1b1b1f;border:1px solid #333;border-radius:18px;padding:24px;box-shadow:0 20px 60px #0008}h1{margin:0 0 6px;font-size:25px}.sub{color:#aaa;margin-bottom:22px}label{display:block;margin:14px 0 6px;color:#bbb}select,input[type=range],button{width:100%;box-sizing:border-box}select{background:#101014;color:#fff;border:1px solid #444;border-radius:10px;padding:11px}input[type=file]{width:100%}.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}.actions{display:flex;gap:10px;margin-top:20px}button{border:0;border-radius:10px;padding:13px;font-weight:700;cursor:pointer}.start{background:#f0a6ff;color:#171019}.stop{background:#333;color:#fff}.status{margin-top:18px;padding:12px;border-radius:10px;background:#101014;color:#bbb}.ok{color:#9cffbd}.bad{color:#ff8f8f}small{color:#888}</style></head><body><div class="card"><h1>🎀 Local Female Voice Changer</h1><div class="sub">HTML/JS control panel → native Windows audio → local Hugging Face Seed-VC</div><label>Female reference voice</label><input id="ref" type="file" accept=".wav,.mp3,.flac,.ogg,.m4a,audio/*"><small>Use a clean 3–10 second female speech clip. It stays local.</small><div class="row"><div><label>Microphone</label><select id="input"></select></div><div><label>Output</label><select id="output"></select></div></div><label>Conversion steps</label><input id="steps" type="range" min="4" max="12" value="8"><div class="row"><small>4 = lower latency</small><small style="text-align:right">12 = more processing</small></div><div class="actions"><button class="start" id="start">Start Voice Changer</button><button class="stop" id="stop">Stop</button></div><div class="status" id="status">Loading local model…</div></div><script src="/app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Local HF Repeat Voice</title>
+<style>
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:#101014;color:#eee;font:15px system-ui,sans-serif}
+.card{width:min(620px,92vw);padding:25px;background:#1b1b21;border:1px solid #383842;border-radius:18px;box-shadow:0 18px 60px #0008}
+h1{margin:0 0 5px;font-size:25px}.sub{color:#aaa;margin-bottom:20px}
+label{display:block;color:#bbb;margin:13px 0 6px}
+select,button{width:100%;box-sizing:border-box;border-radius:10px;padding:12px;border:1px solid #444}
+select{background:#101014;color:#fff}.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.actions{display:flex;gap:10px;margin-top:20px}.actions button{cursor:pointer;font-weight:700}
+#start{background:#f2a6ff;color:#171019;border:0}.stop{background:#333;color:#fff}
+.status{margin-top:18px;background:#101014;padding:12px;border-radius:10px;color:#aaa}
+.good{color:#9cffbd}.bad{color:#ff9696}
+#heard{margin-top:12px;color:#ddd;min-height:24px}.pill{display:inline-block;padding:4px 8px;border-radius:99px;background:#292933;color:#bbb;font-size:12px}
+small{color:#888}
+</style>
+</head>
+<body>
+<div class="card">
+<h1>🎀 Local Hugging Face Repeat Voice</h1>
+<div class="sub">Mic → local STT → repeat-only agent → female Kokoro voice → Windows output</div>
+
+<div class="row">
+<div>
+<label>Microphone</label>
+<select id="input"></select>
+</div>
+<div>
+<label>Output</label>
+<select id="output"></select>
+</div>
+</div>
+
+<label>Female voice</label>
+<select id="voice">
+<option value="af_heart">af_heart — warm female</option>
+<option value="af_bella">af_bella — expressive female</option>
+<option value="af_sarah">af_sarah — conversational female</option>
+<option value="af_nicole">af_nicole — friendly female</option>
+<option value="af_nova">af_nova — clear female</option>
+</select>
+
+<div class="actions">
+<button id="start">Start</button>
+<button id="stop" class="stop">Stop</button>
+</div>
+
+<div class="status" id="status"><span class="pill">LOCAL</span> Starting server…</div>
+<div id="heard"></div>
+<small>First launch downloads the Hugging Face models. After they are cached, the voice pipeline runs locally.</small>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>
