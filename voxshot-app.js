@@ -45,7 +45,7 @@ async function load(){
   if(tts) return tts;
 
   $("startBtn").disabled = true;
-  resetProgress("Loading VoxShot");
+  resetProgress("Downloading VoxShot");
 
   try{
     const engine = new ChatterboxEngine({
@@ -53,10 +53,16 @@ async function load(){
         if(!p) return;
 
         if(p.status === "progress"){
-          setProgress(p.progress, "Loading model");
+          setProgress(p.progress, "Downloading model");
+          status("Downloading VoxShot model...");
         }else if(p.status === "load-start"){
           $("progressLabel").textContent = "Starting " + (p.plan || "WebGPU");
-          status("Loading VoxShot model...");
+          status("Starting VoxShot on " + (p.plan || "WebGPU") + "...");
+        }else if(p.status === "load-compiling"){
+          $("progressLabel").textContent = "Compiling WebGPU model";
+          $("progressPercent").textContent = "100%";
+          $("progressBar").style.width = "100%";
+          status("Compiling the model — this can take a few minutes on first load...");
         }else if(p.status === "load-fallback"){
           $("progressLabel").textContent = "Trying fallback";
           status("WebGPU fallback: " + (p.reason || "trying next backend"));
