@@ -1,51 +1,29 @@
 import { VoxShot, ChatterboxEngine } from "https://esm.sh/voxshot@latest";
 
 const $ = id => document.getElementById(id);
-let tts = null, recorder = null, chunks = [], referenceBlob = null, playing = null;
-let lastProgress = -1;
+let tts = null;
+let referenceFile = null;
+let recording = null;
+let chunks = [];
+let currentSpeech = null;
 
-function status(s){ $("status").textContent = s; }
-function log(s){ $("log").textContent = s; }
+function status(text){ $("status").textContent = text; }
+function log(text){ $("log").textContent = text; }
 
-function showProgress(show){
+function progress(show, value = 0, label = "Loading model"){
   $("progressBox").style.display = show ? "block" : "none";
-}
-
-function setProgress(value, label = "Loading model"){
-  const n = Number(value);
-  if(!Number.isFinite(n)) return;
-
-  // VoxShot progress should be 0..1, but protect the UI from malformed events.
-  const pct = Math.max(0, Math.min(100, n <= 1 ? n * 100 : n));
-  const rounded = Math.round(pct);
-
-  // Never let the displayed percentage jump backward because of noisy events.
-  if(rounded < lastProgress) return;
-  lastProgress = rounded;
-
+  const pct = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+  $("progressBar").style.width = pct + "%";
+  $("progressPercent").textContent = pct + "%";
   $("progressLabel").textContent = label;
-  $("progressPercent").textContent = rounded + "%";
-  $("progressBar").style.width = rounded + "%";
 }
 
-function resetProgress(label = "Loading model"){
-  lastProgress = -1;
-  showProgress(true);
-  setProgress(0, label);
-}
-
-function finishProgress(label = "Model ready"){
-  lastProgress = 100;
-  $("progressLabel").textContent = label;
-  $("progressPercent").textContent = "100%";
-  $("progressBar").style.width = "100%";
-}
-
-async function load(){
+async function loadVoxShot(){
   if(tts) return tts;
 
   $("startBtn").disabled = true;
-  resetProgress("Downloading VoxShot");
+  progress(true, 0, "Starting VoxShot");
+  status("Starting VoxShot...");
 
   try{
     const engine = new ChatterboxEngine({
@@ -53,22 +31,16 @@ async function load(){
         if(!p) return;
 
         if(p.status === "progress"){
-          setProgress(p.progress, "Downloading model");
+          const pct = Number(p.progress);
+          progress(true, pct <= 1 ? pct * 100 : pct, "Downloading model");
           status("Downloading VoxShot model...");
-        }else if(p.status === "load-start"){
-          $("progressLabel").textContent = "Starting " + (p.plan || "WebGPU");
-          status("Starting VoxShot on " + (p.plan || "WebGPU") + "...");
-        }else if(p.status === "load-compiling"){
-          $("progressLabel").textContent = "Compiling WebGPU model";
-          $("progressPercent").textContent = "100%";
-          $("progressBar").style.width = "100%";
-          status("Compiling the model — this can take a few minutes on first load...");
-        }else if(p.status === "load-fallback"){
-          $("progressLabel").textContent = "Trying fallback";
-          status("WebGPU fallback: " + (p.reason || "trying next backend"));
-        }else if(p.status === "load-ready"){
-          finishProgress("Model ready");
-          status("VoxShot model ready: " + (p.plan || "local"));
+        }else{
+          const label = String(p.status || "Loading").replaceAll("-", " ");
+          $("progressLabel").textContent = label;
+          if(p.status === "load-ready"){
+            progress(true, 100, "Model ready");
+            status("VoxShot is ready.");
+          }
         }
       }
     });
@@ -79,27 +51,34 @@ async function load(){
       minChunkLength: 20
     });
 
-    finishProgress("Model ready");
-    status("VoxShot model ready");
-    $("startBtn").disabled = false;
-    $("cloneBtn").disabled = !referenceBlob;
-    log("VoxShot backend: " + (tts.device || "auto"));
+    progress(true, 100, "Model ready");
+    status("VoxShot is ready.");
+    log("Backend: " + (tts.device || "auto"));
+    $("startBtn").textContent = "✓ VoxShot Loaded";
+    $("cloneBtn").disabled = !referenceFile;
     return tts;
-  }catch(e){
-    showProgress(true);
-    $("progressLabel").textContent = "Load failed";
+  }catch(error){
+    progress(true, 0, "Load failed");
     status("VoxShot failed to load.");
-    log(e?.message || String(e));
+    log(error?.message || String(error));
     $("startBtn").disabled = false;
-    throw e;
+    throw error;
   }
 }
 
-$("startBtn").onclick = () => load().catch(() => {});
+$("startBtn").onclick = () => loadVoxShot().catch(() => {});
+
+$("fileInput").onchange = event => {
+  const file = event.target.files?.[0];
+  if(!file) return;
+  referenceFile = file;
+  $("referenceInfo").textContent = "Reference: " + file.name;
+  $("cloneBtn").disabled = false;
+};
 
 $("recordBtn").onclick = async()=>{
-  if(recorder?.state === "recording"){
-    recorder.stop();
+  if(recording?.state === "recording"){
+    recording.stop();
     $("recordBtn").textContent = "🎙 Record 5–15 sec";
     return;
   }
@@ -107,49 +86,45 @@ $("recordBtn").onclick = async()=>{
   try{
     const stream = await navigator.mediaDevices.getUserMedia({audio:true});
     chunks = [];
-    recorder = new MediaRecorder(stream);
+    recording = new MediaRecorder(stream);
 
-    recorder.ondataavailable = e => {
-      if(e.data.size) chunks.push(e.data);
+    recording.ondataavailable = event => {
+      if(event.data.size) chunks.push(event.data);
     };
 
-    recorder.onstop = ()=>{
-      referenceBlob = new Blob(chunks, {type: recorder.mimeType || "audio/webm"});
-      stream.getTracks().forEach(t => t.stop());
-      $("referenceInfo").textContent = "Reference recorded.";
+    recording.onstop = ()=>{
+      referenceFile = new File(
+        [new Blob(chunks, {type: recording.mimeType || "audio/webm"})],
+        "microphone-reference.webm",
+        {type: recording.mimeType || "audio/webm"}
+      );
+      stream.getTracks().forEach(track => track.stop());
+      $("referenceInfo").textContent = "Microphone reference recorded.";
       $("cloneBtn").disabled = false;
     };
 
-    recorder.start();
+    recording.start();
     $("recordBtn").textContent = "⏹ Stop recording";
     $("referenceInfo").textContent = "Recording — speak naturally for 5–15 seconds.";
-  }catch(e){
+  }catch(error){
     status("Microphone permission failed.");
-    log(e?.message || String(e));
-  }
-};
-
-$("fileInput").onchange = ()=>{
-  const f = $("fileInput").files?.[0];
-  if(f){
-    referenceBlob = f;
-    $("referenceInfo").textContent = "Reference: " + f.name;
-    $("cloneBtn").disabled = false;
+    log(error?.message || String(error));
   }
 };
 
 $("cloneBtn").onclick = async()=>{
+  if(!referenceFile) return;
+
   try{
-    const v = await load();
-    status("Cloning reference voice...");
-    await v.cloneVoice(referenceBlob);
-    status("Voice cloned!");
+    const v = await loadVoxShot();
+    status("Cloning voice...");
+    await v.cloneVoice(referenceFile);
+    status("Voice cloned! Ready to speak.");
+    log("Voice clone is ready.");
     $("speakBtn").disabled = false;
-    log("Voice embedding cached locally.");
-  }catch(e){
-    console.error(e);
-    status("Clone failed — open Chrome DevTools for details.");
-    log(e?.message || String(e));
+  }catch(error){
+    status("Voice cloning failed.");
+    log(error?.message || String(error));
   }
 };
 
@@ -158,22 +133,24 @@ $("speakBtn").onclick = async()=>{
   if(!text || !tts) return;
 
   try{
-    if(playing) await playing.stop();
-    status("Speaking...");
-    playing = tts.play(text, {speed:+$("speed").value, volume:1});
-    await playing.done;
-    status("Ready");
-  }catch(e){
-    console.error(e);
-    status("Playback failed.");
-    log(e?.message || String(e));
+    if(currentSpeech) await currentSpeech.stop?.();
+
+    status("Generating speech...");
+    const audio = await tts.speak(text);
+    status("Playing...");
+    currentSpeech = audio;
+    await audio.play();
+    status("Ready.");
+  }catch(error){
+    status("Speech failed.");
+    log(error?.message || String(error));
   }finally{
-    playing = null;
+    currentSpeech = null;
   }
 };
 
 $("stopBtn").onclick = async()=>{
-  if(playing) await playing.stop();
-  playing = null;
-  status(tts ? "Ready" : "Not loaded");
+  if(currentSpeech?.stop) await currentSpeech.stop();
+  currentSpeech = null;
+  status(tts ? "Ready." : "Not loaded.");
 };
