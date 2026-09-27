@@ -30,7 +30,6 @@ const recognizer=new sherpa.OnlineRecognizer({
   rule3MinUtteranceLength:0
 });
 
-const tts=sherpa.OfflineTts.createAsync ? null : null;
 let ttsEngine;
 async function initTts(){
   const config={
@@ -126,9 +125,9 @@ wss.on("connection",ws=>{
   });
 });
 
+server.listen(PORT,()=>console.log("Local voice agent: http://127.0.0.1:"+PORT));
 initTts().then(()=>{
-  server.listen(PORT,()=>console.log(`Local voice agent: http://127.0.0.1:${PORT}`));
+  console.log("PocketTTS ready. Reference voice: Recording (10).wav");
 }).catch(e=>{
   console.error("TTS initialization failed:",e);
-  server.listen(PORT,()=>console.log("Server started, but TTS is not ready."));
 });
