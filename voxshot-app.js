@@ -22,16 +22,39 @@ async function loadVoxShot(){
   if(tts) return tts;
 
   $("startBtn").disabled = true;
-  progress(true, 0, "Starting VoxShot");
-  status("Starting VoxShot...");
+  progress(true, 0, "Checking WebGPU");
+  status("Checking Chrome WebGPU...");
+  if(!navigator.gpu){
+    status("WebGPU is unavailable in this Chrome session.");
+    log("Open Chrome with hardware acceleration enabled, then reload.");
+    $("startBtn").disabled = false;
+    return null;
+  }
+  try{
+    const adapter = await navigator.gpu.requestAdapter();
+    if(!adapter){ throw new Error("Chrome could not access a WebGPU adapter."); }
+    log("WebGPU detected. Loading Chatterbox q4...");
+  }catch(error){
+    status("WebGPU check failed.");
+    log(error?.message || String(error));
+    $("startBtn").disabled = false;
+    return null;
+  }
+  progress(true, 0, "Starting Chatterbox");
+  status("Starting Chatterbox...");
 
   try{
     const engine = new ChatterboxEngine({
-      stallTimeoutMs: 300000,
+      stallTimeoutMs: 120000,
+      requiresGpu: true,
+      dtype: "q4",
       onProgress: p => {
         if(!p) return;
 
-        if(p.status === "progress"){
+        if(p.status === "load-start"){ status("Loading " + (p.plan || "Chatterbox") + "..."); }
+        else if(p.status === "load-compiling"){ progress(true, 100, "Compiling ONNX model"); status("Compiling ONNX model — Chrome may be busy for a while..."); }
+        else if(p.status === "load-fallback"){ status("GPU plan failed; " + (p.reason || "load fallback")); }
+        else if(p.status === "progress"){
           const pct = Number(p.progress);
           progress(true, pct <= 1 ? pct * 100 : pct, "Downloading model");
           status("Downloading VoxShot model...");
@@ -48,7 +71,7 @@ async function loadVoxShot(){
 
     tts = await VoxShot.create({
       engine,
-      device: "auto",
+      device: "webgpu",
       minChunkLength: 20
     });
 
