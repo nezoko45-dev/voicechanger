@@ -1,2 +1,0 @@
-Build marker for the Local Hugging Face Repeat Voice server.
-The GitHub Actions workflow builds a Windows self-contained server.exe with PyInstaller.
