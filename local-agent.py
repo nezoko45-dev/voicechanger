@@ -15,7 +15,7 @@ START_RMS = 0.018
 END_RMS = 0.010
 SILENCE = 0.65
 MAX_SECONDS = 15
-VOICE = VOICE_DIR / "en_US-lessac-medium.onnx"
+VOICE = VOICE_DIR / "en_US-amy-medium.onnx"
 
 def rms(x):
     return float(np.sqrt(np.mean(np.square(x), dtype=np.float64))) if x.size else 0
