@@ -1,0 +1,18 @@
+[package]
+name = "voicechanger"
+version = "0.1.0"
+edition = "2021"
+description = "Simple native Rust realtime RVC voice changer for Windows"
+
+[dependencies]
+anyhow = "1"
+eframe = "0.33"
+rfd = "0.15"
+vc-app = { git = "https://github.com/shirohata/vc-rs", rev = "50f50773a04ee25390fba9b96e5ed903d3fb074a", default-features = false, features = ["cpu"] }
+vc-core = { git = "https://github.com/shirohata/vc-rs", rev = "50f50773a04ee25390fba9b96e5ed903d3fb074a", default-features = false, features = ["ort"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
