@@ -40,8 +40,25 @@ async function start(){
  try{
   inputDevice=$("input").value;outputDevice=$("output").value;serverUrl=$("server").value.trim();voice=$("voice").value;
   setStatus("CONNECTING","Local realtime server");
-  ws=new WebSocket(serverUrl);
-  await new Promise((res,rej)=>{ws.onopen=res;ws.onerror=()=>rej(new Error("WebSocket connection failed"))});
+  let connected=false,lastError=null;
+  for(let attempt=1;attempt<=120;attempt++){
+    try{
+      setStatus("STARTING",`Local speech engine loading… ${attempt}/120`);
+      ws=new WebSocket(serverUrl);
+      await new Promise((res,rej)=>{
+        const timer=setTimeout(()=>{try{ws.close()}catch{};rej(new Error("timeout"))},1000);
+        ws.onopen=()=>{clearTimeout(timer);res()};
+        ws.onerror=()=>{clearTimeout(timer);rej(new Error("connection failed"))};
+      });
+      connected=true;
+      break;
+    }catch(e){
+      lastError=e;
+      ws=null;
+      await new Promise(r=>setTimeout(r,1000));
+    }
+  }
+  if(!connected)throw new Error("Local speech backend did not become ready. Make sure the HF Realtime backend window is still running.");
   ws.onmessage=onMessage;ws.onclose=()=>{if(running)stop(false);};
   sendSession();
   ctx=new AudioContext({sampleRate:48000});
