@@ -40,9 +40,9 @@ button.stop{background:#9b3d50}button:disabled{opacity:.45;cursor:not-allowed}.s
 </div>
 <script>
 const $=id=>document.getElementById(id);
-let stream=null,audioContext=null,source=null,processor=null,zeroGain=null,running=false,busy=false,speaking=false,currentAudio=null;
-let phrase=[],preRoll=[],silenceMs=0;
-const SR=16000,SPEECH_RMS=0.012,SILENCE_MS=650,PRE_ROLL=Math.round(SR*0.25),MIN_PHRASE=Math.round(SR*0.3);
+let stream=null,audioContext=null,source=null,processor=null,zeroGain=null,running=false;
+let capture=[],preRoll=[],lastSend=0,transcribing=false,spokenWords=[],ttsQueue=[],ttsPlaying=false;
+const SR=16000,SPEECH_RMS=0.012,CHUNK_MS=900,WINDOW_MS=2600,PRE_ROLL_MS=250;
 
 function setStatus(v){$("status").textContent=v}
 function setLog(v){$("log").textContent=v}
@@ -71,28 +71,69 @@ function makeWav(a){
   let p=44;for(let i=0;i<a.length;i++){const s=Math.max(-1,Math.min(1,a[i]));v.setInt16(p,s<0?s*32768:s*32767,true);p+=2}return new Blob([b],{type:"audio/wav"})
 }
 function rms(a){let s=0;for(let i=0;i<a.length;i++)s+=a[i]*a[i];return Math.sqrt(s/a.length)}
-function keepPre(a){preRoll.push(...a);if(preRoll.length>PRE_ROLL)preRoll=preRoll.slice(-PRE_ROLL)}
 
-async function speakLocal(text){
-  const r=await fetch("/speak",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text})});
-  if(!r.ok)throw new Error(await r.text());
-  const blob=await r.blob(),url=URL.createObjectURL(blob),a=new Audio(url);
-  const sink=$("speaker").value;if(sink&&typeof a.setSinkId==="function"){try{await a.setSinkId(sink)}catch{}}
-  await a.play();await new Promise(res=>{a.onended=res;a.onerror=res});URL.revokeObjectURL(url)
+function normalizeWords(t){return t.toLowerCase().replace(/[^a-z0-9' ]+/g," ").split(/\s+/).filter(Boolean)}
+function getNewWords(text){
+  const words=normalizeWords(text);
+  if(!words.length)return "";
+  if(!spokenWords.length){spokenWords=words.slice();return words.slice(0,7).join(" ")}
+  let overlap=0,max=Math.min(spokenWords.length,words.length,8);
+  for(let n=max;n>=2;n--){
+    let ok=true;
+    for(let i=0;i<n;i++)if(spokenWords[spokenWords.length-n+i]!==words[i]){ok=false;break}
+    if(ok){overlap=n;break}
+  }
+  if(!overlap)return "";
+  const fresh=words.slice(overlap);
+  if(fresh.length){spokenWords=spokenWords.concat(fresh).slice(-40);return fresh.slice(0,7).join(" ")}
+  return "";
 }
 
-async function sendPhrase(samples){
-  if(!running||busy||samples.length<MIN_PHRASE)return;
-  busy=true;setStatus("Transcribing locally...");
+function queueSpeak(text){
+  if(!text)return;
+  ttsQueue.push(text);
+  pumpTTS();
+}
+async function pumpTTS(){
+  if(ttsPlaying||!ttsQueue.length||!running)return;
+  ttsPlaying=true;
+  const text=ttsQueue.shift();
+  try{
+    const r=await fetch("/speak",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text})});
+    if(!r.ok)throw new Error(await r.text());
+    const blob=await r.blob(),url=URL.createObjectURL(blob),a=new Audio(url);
+    const sink=$("speaker").value;
+    if(sink&&typeof a.setSinkId==="function"){try{await a.setSinkId(sink)}catch{}}
+    setStatus("SPEAKING + LISTENING");
+    await a.play();
+    await new Promise(res=>{a.onended=res;a.onerror=res});
+    URL.revokeObjectURL(url);
+  }catch(e){setLog("TTS ERROR: "+(e?.message||String(e)))}
+  ttsPlaying=false;
+  if(running)pumpTTS();
+}
+
+async function streamTranscribe(samples){
+  if(!running||transcribing||samples.length<SR*0.7)return;
+  transcribing=true;
   try{
     const r=await fetch("/transcribe",{method:"POST",body:makeWav(Float32Array.from(samples))});
     if(!r.ok)throw new Error(await r.text());
     const data=await r.json(),text=(data.text||"").trim();
-    if(!text){busy=false;setStatus("LIVE — speak normally.");return}
-    $("heard").textContent=text;setStatus("Speaking locally...");await speakLocal(text);
-    setStatus("LIVE — speak normally.");setLog("Local repeat complete. No cloud service was used.")
-  }catch(e){setLog("LOCAL ERROR: "+(e?.message||String(e)));setStatus("Local processing error.")}
-  finally{busy=false}
+    if(text){
+      $("heard").textContent=text;
+      const fresh=getNewWords(text);
+      if(fresh)queueSpeak(fresh);
+      setStatus(ttsPlaying||ttsQueue.length?"SPEAKING + LISTENING":"LISTENING + STREAMING");
+    }
+  }catch(e){setLog("STREAM ERROR: "+(e?.message||String(e)))}
+  finally{transcribing=false}
+}
+
+function pushAudio(d){
+  capture.push(...d);
+  const max=Math.round(SR*WINDOW_MS/1000);
+  if(capture.length>max)capture=capture.slice(-max);
 }
 
 async function start(){
@@ -101,7 +142,7 @@ async function start(){
   try{
     await refreshDevices();
     const did=$("mic").value||"default";
-    stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:did==="default"?undefined:{exact:did},channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});
+    stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:did==="default"?undefined:{exact:did},channelCount:1,echoCancellation:false,noiseSuppression:true,autoGainControl:true},video:false});
     await refreshDevices();
     audioContext=new AudioContext({sampleRate:SR});if(audioContext.state==="suspended")await audioContext.resume();
     const workletCode='class LocalMicProcessor extends AudioWorkletProcessor { process(inputs){ const input=inputs[0]; if(input&&input[0]) this.port.postMessage(input[0].slice()); return true; } } registerProcessor("local-mic-processor", LocalMicProcessor);';
@@ -109,33 +150,34 @@ async function start(){
     await audioContext.audioWorklet.addModule(workletUrl);URL.revokeObjectURL(workletUrl);
     source=audioContext.createMediaStreamSource(stream);processor=new AudioWorkletNode(audioContext,"local-mic-processor");
     zeroGain=audioContext.createGain();zeroGain.gain.value=0;
+    capture=[];preRoll=[];lastSend=performance.now();transcribing=false;spokenWords=[];ttsQueue=[];
     processor.port.onmessage=e=>{
-      if(!running)return;const d=e.data;
-      if(busy){keepPre(d);return}
+      if(!running)return;
+      const d=e.data;pushAudio(d);
       const level=rms(d);
-      if(level>=SPEECH_RMS){
-        if(!speaking){speaking=true;phrase=preRoll.slice();preRoll=[];setStatus("Listening...")}
-        phrase.push(...d);silenceMs=0
-      }else if(speaking){
-        phrase.push(...d);silenceMs+=d.length*1000/SR;
-        if(silenceMs>=SILENCE_MS){const done=phrase.slice();phrase=[];silenceMs=0;speaking=false;sendPhrase(done)}
-      }else keepPre(d)
+      if(level>=SPEECH_RMS)preRoll=d.slice();else if(preRoll.length>Math.round(SR*PRE_ROLL_MS/1000))preRoll=preRoll.slice(-Math.round(SR*PRE_ROLL_MS/1000));
+      const now=performance.now();
+      if(level>=SPEECH_RMS&&now-lastSend>=CHUNK_MS){
+        lastSend=now;
+        const samples=capture.slice();
+        streamTranscribe(samples);
+      }
     };
     source.connect(processor);processor.connect(zeroGain);zeroGain.connect(audioContext.destination);
-    setStatus("Starting local voice...");
-    setStatus("LIVE — speak normally.");setLog("Local stack is LIVE: Whisper.cpp + Piper.")
+    setStatus("LISTENING + STREAMING");
+    setLog("Continuous mode: microphone stays live while Piper speaks. No turn-taking.");
   }catch(e){setLog("START ERROR: "+(e?.message||String(e)));stop();setStatus("Could not start: "+(e?.message||String(e)))}
 }
 
 function stop(){
-  running=false;busy=false;speaking=false;phrase=[];preRoll=[];silenceMs=0;
-  try{currentAudio?.pause()}catch{}try{stream?.getTracks().forEach(t=>t.stop())}catch{}
+  running=false;transcribing=false;capture=[];preRoll=[];spokenWords=[];ttsQueue=[];
+  try{stream?.getTracks().forEach(t=>t.stop())}catch{}
   try{source?.disconnect()}catch{}try{processor?.disconnect()}catch{}try{zeroGain?.disconnect()}catch{}try{audioContext?.close()}catch{}
-  currentAudio=null;stream=null;source=null;processor=null;zeroGain=null;audioContext=null;
-  $("start").disabled=false;$("stop").disabled=true;setStatus("Stopped.");setLog("Press Start local repeat to begin.")
+  stream=null;source=null;processor=null;zeroGain=null;audioContext=null;
+  $("start").disabled=false;$("stop").disabled=true;setStatus("Stopped.");setLog("Press Start to begin continuous listen/speak mode.")
 }
 $("start").addEventListener("click",start);$("stop").addEventListener("click",stop);
-$("speaker").addEventListener("change",async()=>{});
+$("speaker").addEventListener("change",()=>{});
 refreshDevices().catch(()=>{});
 </script>
 </body>
