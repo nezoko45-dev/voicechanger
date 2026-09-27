@@ -7,6 +7,10 @@ set "BASE=%~dp0local_rvc"
 set "RVC=%BASE%\RVC"
 set "VENV=%BASE%\.venv"
 set "MODEL_DIR=%BASE%\models"
+set "INPUT="
+set "MODEL="
+set "INDEX="
+set "RC=1"
 
 echo ==========================================
 echo          LOCAL WAV VOICE CHANGER
@@ -19,92 +23,103 @@ echo.
 
 if not exist "%VENV%\Scripts\python.exe" (
   echo RVC is not installed yet.
-  echo.
+  echo Running one-time setup...
   call "%~dp0setup-local-rvc.bat"
-  if errorlevel 1 exit /b 1
+  if errorlevel 1 (
+    echo.
+    echo SETUP FAILED.
+    goto :END
+  )
 )
 
 if not exist "%RVC%\infer\cli.py" (
   echo ERROR: RVC CLI is missing.
   echo Run setup-local-rvc.bat again.
-  pause
-  exit /b 1
+  goto :END
 )
 
-if not exist "%MODEL_DIR%" mkdir "%MODEL_DIR%"
+if not exist "%MODEL_DIR%" mkdir "%MODEL_DIR%" >nul 2>nul
+if not exist "%RVC%\assets\weights" mkdir "%RVC%\assets\weights" >nul 2>nul
+if not exist "%RVC%\assets\indices" mkdir "%RVC%\assets\indices" >nul 2>nul
 
-set "INPUT=%~1"
+echo Choose the WAV file to convert.
+for /f "usebackq delims=" %%I in (\`powershell -NoProfile -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.Windows.Forms; $o=New-Object System.Windows.Forms.OpenFileDialog; $o.Filter='WAV audio (*.wav)|*.wav|All supported audio (*.wav;*.flac;*.mp3;*.m4a)|*.wav;*.flac;*.mp3;*.m4a|All files (*.*)|*.*'; $o.Title='Choose the source audio'; if($o.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK){$o.FileName}"\`) do set "INPUT=%%I"
+
 if not defined INPUT (
-  echo Drag your WAV file onto this window, or paste the full path below.
   echo.
-  set /p "INPUT=Source WAV: "
+  echo File picker cancelled.
+  echo You can also drag a WAV file onto this batch file.
+  goto :END
 )
 
-set "INPUT=%INPUT:"=%"
-if not exist "%INPUT%" (
-  echo ERROR: Input file not found:
-  echo %INPUT%
-  pause
-  exit /b 1
-)
+echo.
+echo Source:
+echo "%INPUT%"
+echo.
 
-set "EXT=%~x1"
-if not defined EXT set "EXT=.wav"
-if /I not "%EXT%"==".wav" (
-  echo WARNING: The converter accepts WAV and other formats supported by RVC.
-  echo.
-)
+echo Looking for an RVC voice model in:
+echo "%MODEL_DIR%"
+echo.
 
-set "MODEL="
-for %%M in ("%MODEL_DIR%\*.pth") do if not defined MODEL set "MODEL=%%~fM"
+for /f "delims=" %%M in ('dir /b /a-d "%MODEL_DIR%\*.pth" 2^>nul') do (
+  if not defined MODEL set "MODEL=%MODEL_DIR%\%%M"
+)
 
 if defined MODEL (
-  echo Found RVC model:
-  echo %MODEL%
+  echo Found:
+  echo "%MODEL%"
 ) else (
-  echo.
-  echo No .pth model was found in:
-  echo %MODEL_DIR%
-  echo.
-  set /p "MODEL=Path to target RVC .pth model: "
+  echo No .pth model was found automatically.
+  echo Choose your target voice model.
+  for /f "usebackq delims=" %%I in (\`powershell -NoProfile -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.Windows.Forms; $o=New-Object System.Windows.Forms.OpenFileDialog; $o.Filter='RVC model (*.pth)|*.pth'; $o.Title='Choose the target RVC voice model'; if($o.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK){$o.FileName}"\`) do set "MODEL=%%I"
 )
 
-set "MODEL=%MODEL:"=%"
+if not defined MODEL (
+  echo.
+  echo No RVC model selected.
+  goto :END
+)
+
 if not exist "%MODEL%" (
+  echo.
   echo ERROR: Model not found:
-  echo %MODEL%
-  pause
-  exit /b 1
+  echo "%MODEL%"
+  goto :END
 )
 
 set "MODEL_NAME=%~nxMODEL"
 copy /y "%MODEL%" "%RVC%\assets\weights\%MODEL_NAME%" >nul
 if errorlevel 1 (
-  echo ERROR: Could not copy the model.
-  pause
-  exit /b 1
+  echo.
+  echo ERROR: Could not copy the voice model.
+  goto :END
 )
 
-set "INDEX="
-for %%I in ("%MODEL_DIR%\*.index") do if not defined INDEX set "INDEX=%%~fI"
-if not defined INDEX (
-  for %%I in ("%~dpMODEL\*.index") do if not defined INDEX set "INDEX=%%~fI"
-)
+echo.
+echo Optional: choose a matching .index file.
+echo Cancel the dialog to continue without an index.
+for /f "usebackq delims=" %%I in (\`powershell -NoProfile -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.Windows.Forms; $o=New-Object System.Windows.Forms.OpenFileDialog; $o.Filter='RVC index (*.index)|*.index'; $o.Title='Optional matching RVC index'; if($o.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK){$o.FileName}"\`) do set "INDEX=%%I"
 
+set "INDEX_RATE=0"
 if defined INDEX (
   set "INDEX_NAME=%~nxINDEX"
   copy /y "%INDEX%" "%RVC%\assets\indices\%INDEX_NAME%" >nul
-  set "INDEX_RATE=0.75"
-  echo Index: %INDEX_NAME%
-) else (
-  set "INDEX_RATE=0"
-  echo Index: none - retrieval disabled
+  if errorlevel 1 (
+    echo WARNING: Index could not be copied. Continuing without it.
+    set "INDEX="
+  ) else (
+    set "INDEX_RATE=0.75"
+    echo Index: "%INDEX_NAME%"
+  )
 )
+
+if not defined INDEX echo Index: none
 
 for %%F in ("%INPUT%") do (
   set "STEM=%%~nF"
   set "OUTDIR=%%~dpF"
 )
+
 set "OUT=%OUTDIR%converted_%STEM%.wav"
 
 set "PITCH=0"
@@ -113,12 +128,16 @@ set /p "PITCH=Pitch shift in semitones [0]: "
 if not defined PITCH set "PITCH=0"
 
 echo.
+echo ==========================================
+echo READY TO CONVERT
+echo ==========================================
 echo Source : "%INPUT%"
 echo Model  : "%MODEL_NAME%"
 echo Output : "%OUT%"
 echo Pitch  : %PITCH%
+echo Index  : %INDEX_RATE%
 echo.
-echo Starting offline RVC conversion...
+echo Converting now...
 echo.
 
 pushd "%RVC%"
@@ -133,19 +152,26 @@ popd
 echo.
 if "%RC%"=="0" (
   echo ==========================================
-  echo CONVERSION COMPLETE
+  echo       CONVERSION COMPLETE!
   echo ==========================================
   echo.
+  echo Output:
   echo "%OUT%"
   echo.
-  start "" "%OUT%"
+  if exist "%OUT%" start "" "%OUT%"
 ) else (
   echo ==========================================
-  echo CONVERSION FAILED
+  echo        CONVERSION FAILED
   echo ==========================================
   echo.
   echo RVC returned error code %RC%.
+  echo The console will stay open so you can read the error.
 )
+
+:END
 echo.
+echo ==========================================
+echo This window will stay open.
+echo ==========================================
 pause
 exit /b %RC%
