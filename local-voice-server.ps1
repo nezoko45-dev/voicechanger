@@ -82,6 +82,20 @@ function Run-Piper([string]$text,[string]$wav){
       if((Get-Date) -gt $deadline){throw "Piper TTS timed out."}
       Start-Sleep -Milliseconds 10
     }
+
+    # Piper can create the WAV before it has finished closing its file handle.
+    # Wait until we can open it with exclusive access before the server reads/deletes it.
+    while($true){
+      try{
+        $probe=[System.IO.File]::Open($wav,[System.IO.FileMode]::Open,[System.IO.FileAccess]::Read,[System.IO.FileShare]::None)
+        $probe.Close()
+        $probe.Dispose()
+        break
+      }catch [System.IO.IOException]{
+        if((Get-Date) -gt $deadline){throw "Piper WAV remained locked past the timeout."}
+        Start-Sleep -Milliseconds 10
+      }
+    }
   }finally{
     $PiperBusy.Release()|Out-Null
   }
@@ -126,7 +140,16 @@ try{
     if($text.Length -gt 1000){$text=$text.Substring(0,1000)}
     $wav=Join-Path $Tmp (([Guid]::NewGuid().ToString("N"))+".wav")
     Run-Piper $text $wav
-    $bytes=[System.IO.File]::ReadAllBytes($wav)
+    $bytes=$null
+    $readDeadline=(Get-Date).AddSeconds(5)
+    while($null -eq $bytes){
+      try{
+        $bytes=[System.IO.File]::ReadAllBytes($wav)
+      }catch [System.IO.IOException]{
+        if((Get-Date) -gt $readDeadline){throw "Piper WAV could not be read because it remained locked."}
+        Start-Sleep -Milliseconds 10
+      }
+    }
     Remove-Item $wav -Force -ErrorAction SilentlyContinue
     Send-Bytes $resp $bytes "audio/wav"
    }else{
