@@ -17,7 +17,7 @@ if(-not $Piper){throw "piper.exe missing. Run install-local-voice.bat first."}
 if(-not(Test-Path $WhisperModel)){throw "Whisper model missing. Run install-local-voice.bat first."}
 if(-not(Test-Path $PiperModel)){throw "Piper voice model missing. Run install-local-voice.bat first."}
 
-$Page=Join-Path $Root "local-voice.html"
+$Page=Join-Path $Root "index.html"
 $Q=[char]34
 
 function Send-Bytes($resp,[byte[]]$bytes,[string]$type,[int]$status=200){
@@ -79,7 +79,7 @@ try{
    $req=$ctx.Request
    $resp=$ctx.Response
    $path=$req.Url.AbsolutePath
-   if($req.HttpMethod -eq "GET" -and ($path -eq "/" -or $path -eq "/local-voice.html")){
+   if($req.HttpMethod -eq "GET" -and ($path -eq "/" -or $path -eq "/index.html" -or $path -eq "/local-voice.html")){
     Send-Bytes $resp ([System.IO.File]::ReadAllBytes($Page)) "text/html; charset=utf-8"
    }elseif($req.HttpMethod -eq "GET" -and $path -eq "/health"){
     Send-Bytes $resp ([System.Text.Encoding]::UTF8.GetBytes('{"ok":true,"local":true}')) "application/json; charset=utf-8"
