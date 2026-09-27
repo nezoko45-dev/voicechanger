@@ -1,33 +1,25 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.UI;
-using UnityEngine.EventSystems;
 
 public class VoiceChangerApp : MonoBehaviour
 {
-    [Range(-12f,12f)] public float pitchSemitones = 0f;
-    [Range(0f,2f)] public float inputGain = 1f;
+    [Range(-12f, 12f)] public float pitchSemitones = 0f;
+    [Range(0f, 2f)] public float inputGain = 1f;
     public bool noiseGate = true;
 
     AudioClip micClip;
     AudioSource source;
-    string selectedMic;
+    string selectedMic = "";
     bool running;
     int lastPosition;
     float[] ring = new float[96000];
     int writePos, readPos;
-
-    Text status, pitchText;
-    Dropdown micDropdown;
-    Slider pitchSlider;
-    Button startButton, stopButton;
+    Vector2 scroll;
 
     void Awake()
     {
         Application.runInBackground = true;
-        EnsureEventSystem();
-        BuildUI();
         RefreshMics();
     }
 
@@ -50,7 +42,10 @@ public class VoiceChangerApp : MonoBehaviour
             for (int i = 0; i < frames; i++)
             {
                 float s = temp[i * micClip.channels] * inputGain;
-                if (noiseGate && Mathf.Abs(s) < 0.006f) s = 0f;
+
+                if (noiseGate && Mathf.Abs(s) < 0.006f)
+                    s = 0f;
+
                 Push(s);
             }
 
@@ -58,22 +53,24 @@ public class VoiceChangerApp : MonoBehaviour
         }
     }
 
-    void Push(float s)
+    void Push(float sample)
     {
-        ring[writePos] = s;
+        ring[writePos] = sample;
         writePos = (writePos + 1) % ring.Length;
+
         if (writePos == readPos)
             readPos = (readPos + 1) % ring.Length;
     }
 
     float Pop()
     {
-        int n = writePos - readPos;
-        if (n < 0) n += ring.Length;
-        if (n < 2) return 0f;
+        int available = writePos - readPos;
+        if (available < 0) available += ring.Length;
+        if (available < 2) return 0f;
 
         float a = ring[readPos];
         float b = ring[(readPos + 1) % ring.Length];
+
         readPos = (readPos + 1) % ring.Length;
         return Mathf.Lerp(a, b, 0.5f);
     }
@@ -88,9 +85,10 @@ public class VoiceChangerApp : MonoBehaviour
 
         for (int i = 0; i < data.Length; i += channels)
         {
-            float s = Pop() * 0.96f;
+            float sample = Pop() * 0.96f;
+
             for (int c = 0; c < channels; c++)
-                data[i + c] = s;
+                data[i + c] = sample;
         }
     }
 
@@ -98,32 +96,45 @@ public class VoiceChangerApp : MonoBehaviour
     {
         if (Microphone.devices.Length == 0)
         {
-            SetStatus("NO MICROPHONE FOUND");
+            Debug.LogError("No microphone found.");
             return;
         }
 
-        int index = Mathf.Clamp(micDropdown.value, 0, Microphone.devices.Length - 1);
+        int index = Mathf.Clamp(GetSelectedMicIndex(), 0, Microphone.devices.Length - 1);
         selectedMic = Microphone.devices[index];
 
         micClip = Microphone.Start(selectedMic, true, 2, 48000);
+
+        if (micClip == null)
+        {
+            Debug.LogError("Unity could not start the selected microphone.");
+            return;
+        }
+
         lastPosition = 0;
         writePos = 0;
         readPos = 0;
 
+        source = GetComponent<AudioSource>();
+        if (source == null)
+            source = gameObject.AddComponent<AudioSource>();
+
         source.loop = true;
+        source.playOnAwake = false;
+        source.spatialBlend = 0f;
+
+        // Keep an AudioSource attached to this GameObject so OnAudioFilterRead runs.
         source.clip = AudioClip.Create("RealtimeOutput", 48000, 1, 48000, false);
         source.Play();
 
         running = true;
-        startButton.interactable = false;
-        stopButton.interactable = true;
-        micDropdown.interactable = false;
-        SetStatus("LISTENING — LOCAL C# AUDIO");
+        Debug.Log("VOICE CHANGER STARTED: " + selectedMic);
     }
 
     void StopVoice()
     {
-        if (!running && micClip == null) return;
+        if (!running && micClip == null)
+            return;
 
         if (!string.IsNullOrEmpty(selectedMic) && Microphone.IsRecording(selectedMic))
             Microphone.End(selectedMic);
@@ -133,12 +144,30 @@ public class VoiceChangerApp : MonoBehaviour
 
         running = false;
         micClip = null;
+        Debug.Log("VOICE CHANGER STOPPED");
+    }
 
-        if (startButton != null) startButton.interactable = true;
-        if (stopButton != null) stopButton.interactable = false;
-        if (micDropdown != null) micDropdown.interactable = true;
+    void RefreshMics()
+    {
+        if (Microphone.devices.Length == 0)
+        {
+            selectedMic = "";
+            return;
+        }
 
-        SetStatus("STOPPED");
+        if (string.IsNullOrEmpty(selectedMic))
+            selectedMic = Microphone.devices[0];
+    }
+
+    int GetSelectedMicIndex()
+    {
+        for (int i = 0; i < Microphone.devices.Length; i++)
+        {
+            if (Microphone.devices[i] == selectedMic)
+                return i;
+        }
+
+        return 0;
     }
 
     void OnDisable()
@@ -146,167 +175,101 @@ public class VoiceChangerApp : MonoBehaviour
         StopVoice();
     }
 
-    void RefreshMics()
+    void OnGUI()
     {
-        micDropdown.ClearOptions();
+        GUI.depth = 0;
 
-        var names = new List<string>(Microphone.devices);
-        if (names.Count == 0)
-            names.Add("No microphone detected");
+        float width = 720f;
+        float height = 560f;
+        float x = (Screen.width - width) * 0.5f;
+        float y = (Screen.height - height) * 0.5f;
 
-        micDropdown.AddOptions(names);
-    }
+        GUI.Box(new Rect(x, y, width, height), "");
 
-    void SetStatus(string s)
-    {
-        if (status != null)
-            status.text = s;
-    }
+        GUIStyle title = new GUIStyle(GUI.skin.label);
+        title.fontSize = 30;
+        title.alignment = TextAnchor.MiddleCenter;
+        title.fontStyle = FontStyle.Bold;
 
-    void EnsureEventSystem()
-    {
-        if (FindFirstObjectByType<EventSystem>() != null)
-            return;
+        GUIStyle center = new GUIStyle(GUI.skin.label);
+        center.fontSize = 16;
+        center.alignment = TextAnchor.MiddleCenter;
 
-        var go = new GameObject("EventSystem");
-        go.AddComponent<EventSystem>();
-        go.AddComponent<StandaloneInputModule>();
-    }
+        GUI.Label(new Rect(x + 20, y + 25, width - 40, 45), "UNITY VOICECHANGER", title);
+        GUI.Label(new Rect(x + 20, y + 70, width - 40, 30), "LOCAL C# REALTIME AUDIO", center);
 
-    void BuildUI()
-    {
-        var cg = new GameObject("VoiceChangerUI");
-        var canvas = cg.AddComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        GUIStyle statusStyle = new GUIStyle(GUI.skin.label);
+        statusStyle.fontSize = 18;
+        statusStyle.alignment = TextAnchor.MiddleCenter;
+        statusStyle.normal.textColor = running ? Color.green : Color.white;
 
-        var scaler = cg.AddComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1280, 720);
+        GUI.Label(
+            new Rect(x + 20, y + 110, width - 40, 35),
+            running ? "LISTENING — LOCAL C# AUDIO" : "STOPPED",
+            statusStyle
+        );
 
-        cg.AddComponent<GraphicRaycaster>();
+        GUI.Label(new Rect(x + 65, y + 165, 130, 30), "Microphone");
 
-        var panel = Panel(canvas.transform, new Vector2(720, 560));
+        string[] microphones = Microphone.devices.Length > 0
+            ? Microphone.devices
+            : new[] { "No microphone detected" };
 
-        Text(panel.transform, "UNITY VOICECHANGER", 30, new Vector2(0, 210));
-        Text(panel.transform, "LOCAL C# REALTIME AUDIO", 16, new Vector2(0, 172));
+        int micIndex = GetSelectedMicIndex();
 
-        status = Text(panel.transform, "STOPPED", 18, new Vector2(0, 130));
+        GUI.enabled = !running;
 
-        Text(panel.transform, "Microphone", 16, new Vector2(-210, 75));
-        micDropdown = Dropdown(panel.transform, new Vector2(50, 75));
+        int newMicIndex = GUI.SelectionGrid(
+            new Rect(x + 200, y + 155, 440, 45),
+            micIndex,
+            microphones,
+            1
+        );
 
-        pitchText = Text(panel.transform, "Pitch: 0.0 semitones", 16, new Vector2(0, 15));
+        if (newMicIndex != micIndex && newMicIndex >= 0 && newMicIndex < microphones.Length)
+            selectedMic = microphones[newMicIndex];
 
-        pitchSlider = Slider(panel.transform, new Vector2(0, -25));
-        pitchSlider.minValue = -12f;
-        pitchSlider.maxValue = 12f;
-        pitchSlider.value = 0f;
-        pitchSlider.onValueChanged.AddListener(v =>
-        {
-            pitchSemitones = v;
-            pitchText.text = $"Pitch: {v:+0.0;-0.0;0.0} semitones";
-        });
+        GUI.enabled = true;
 
-        Text(panel.transform, "Output: Windows default audio device / Voicemeeter", 15, new Vector2(0, -90));
-        Text(panel.transform, "Press START to begin realtime microphone audio.", 13, new Vector2(0, -140));
+        GUI.Label(
+            new Rect(x + 40, y + 225, width - 80, 30),
+            "Pitch: " + pitchSemitones.ToString("+0.0;-0.0;0.0") + " semitones",
+            center
+        );
 
-        startButton = Button(panel.transform, "START VOICE CHANGER", new Vector2(-150, -205), true);
-        stopButton = Button(panel.transform, "STOP", new Vector2(150, -205), false);
+        pitchSemitones = GUI.HorizontalSlider(
+            new Rect(x + 120, y + 260, width - 240, 25),
+            pitchSemitones,
+            -12f,
+            12f
+        );
 
-        startButton.onClick.AddListener(StartVoice);
-        stopButton.onClick.AddListener(StopVoice);
+        GUI.Label(
+            new Rect(x + 30, y + 305, width - 60, 30),
+            "Output: Windows default audio device / Voicemeeter",
+            center
+        );
 
-        source = gameObject.AddComponent<AudioSource>();
-        source.playOnAwake = false;
-        source.spatialBlend = 0f;
-    }
+        GUI.Label(
+            new Rect(x + 30, y + 340, width - 60, 30),
+            "Start the realtime microphone audio with the button below.",
+            center
+        );
 
-    GameObject Panel(Transform parent, Vector2 size)
-    {
-        var g = new GameObject("Panel");
-        g.transform.SetParent(parent, false);
+        GUI.enabled = !running;
+        if (GUI.Button(new Rect(x + 80, y + 400, 270, 70), "START VOICE CHANGER"))
+            StartVoice();
 
-        var image = g.AddComponent<Image>();
-        image.color = new Color(0.055f, 0.06f, 0.08f, 0.98f);
+        GUI.enabled = running;
+        if (GUI.Button(new Rect(x + 370, y + 400, 270, 70), "STOP"))
+            StopVoice();
 
-        var rt = g.GetComponent<RectTransform>();
-        rt.sizeDelta = size;
+        GUI.enabled = true;
 
-        return g;
-    }
-
-    Text Text(Transform parent, string value, int size, Vector2 pos)
-    {
-        var g = new GameObject("Text");
-        g.transform.SetParent(parent, false);
-
-        var t = g.AddComponent<Text>();
-        t.text = value;
-        t.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        t.fontSize = size;
-        t.alignment = TextAnchor.MiddleCenter;
-        t.color = Color.white;
-
-        t.rectTransform.sizeDelta = new Vector2(620, 50);
-        t.rectTransform.anchoredPosition = pos;
-
-        return t;
-    }
-
-    Dropdown Dropdown(Transform parent, Vector2 pos)
-    {
-        var g = new GameObject("MicrophoneDropdown");
-        g.transform.SetParent(parent, false);
-
-        var image = g.AddComponent<Image>();
-        image.color = new Color(0.12f, 0.13f, 0.16f);
-
-        var d = g.AddComponent<Dropdown>();
-        d.GetComponent<RectTransform>().sizeDelta = new Vector2(390, 42);
-        d.GetComponent<RectTransform>().anchoredPosition = pos;
-
-        return d;
-    }
-
-    Slider Slider(Transform parent, Vector2 pos)
-    {
-        var g = new GameObject("PitchSlider");
-        g.transform.SetParent(parent, false);
-
-        var s = g.AddComponent<Slider>();
-        s.GetComponent<RectTransform>().sizeDelta = new Vector2(480, 32);
-        s.GetComponent<RectTransform>().anchoredPosition = pos;
-
-        return s;
-    }
-
-    Button Button(Transform parent, string label, Vector2 pos, bool enabled)
-    {
-        var g = new GameObject(label);
-        g.transform.SetParent(parent, false);
-
-        var image = g.AddComponent<Image>();
-        image.color = enabled
-            ? new Color(0.12f, 0.55f, 0.25f, 1f)
-            : new Color(0.35f, 0.12f, 0.12f, 1f);
-
-        var b = g.AddComponent<Button>();
-        b.interactable = enabled;
-
-        var colors = b.colors;
-        colors.normalColor = image.color;
-        colors.highlightedColor = new Color(0.2f, 0.7f, 0.35f, 1f);
-        colors.pressedColor = new Color(0.08f, 0.4f, 0.18f, 1f);
-        colors.disabledColor = new Color(0.25f, 0.25f, 0.25f, 0.6f);
-        b.colors = colors;
-
-        var rt = g.GetComponent<RectTransform>();
-        rt.sizeDelta = new Vector2(230, 65);
-        rt.anchoredPosition = pos;
-
-        var text = Text(g.transform, label, 18, Vector2.zero);
-        text.rectTransform.sizeDelta = new Vector2(220, 55);
-
-        return b;
+        GUI.Label(
+            new Rect(x + 30, y + 485, width - 60, 30),
+            "Local C# audio path — no UI package required",
+            center
+        );
     }
 }
