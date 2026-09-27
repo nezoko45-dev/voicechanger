@@ -1,44 +1,54 @@
-# Unity VoiceChanger + Seed-VC
+# Local RVC Voice Changer
 
-This project uses **Seed-VC** as the local neural voice-conversion engine.
+This repository now uses a **local RVC voice-conversion architecture** instead of Tone.js effects or a cloud speech agent.
 
-Seed-VC provides zero-shot realtime voice conversion from a short reference recording, so an RVC model does not have to be trained first. The project is local after setup and does not use Deepgram credits.
+## Audio path
+
+```
+Microphone
+   ↓
+Local RVC
+   ↓
+Voicemeeter / virtual audio cable
+   ↓
+VRChat microphone
+```
+
+The recommended local engine is **vc-rs**, a native Windows RVC implementation. It supports real-time microphone conversion and does not require a Python/PyTorch environment. It can use Windows ML/DirectML on supported hardware or TensorRT on compatible NVIDIA GPUs.
 
 ## Setup
 
-1. Install Python 3.10.x and Git for Windows.
-2. Run `setup_seedvc.bat`.
-3. Open the Unity project with Unity 6000.2.6f2.
-4. Open `Assets/Scenes/Main.unity`.
-5. Enter Play mode.
-6. Press **CHOOSE REFERENCE WAV**.
-7. Press **START VOICE ENGINE**.
-8. In the Seed-VC window, choose your microphone and output device and start Voice Conversion.
-9. For VRChat, route Seed-VC output to VB-CABLE or Voicemeeter and choose that virtual microphone in VRChat.
+1. Run `setup_rvc.bat`.
+2. Download the **Windows ML** vc-rs package from the official releases page.
+3. Extract the package into the repository's `RVC` folder.
+4. Make sure `RVC\vc-gui.exe` exists.
+5. Run `start_rvc.bat`.
+6. Select your microphone and output device inside RVC.
+7. Select your RVC voice model.
+8. Route the RVC output to Voicemeeter.
+9. Select the matching Voicemeeter virtual microphone in VRChat.
 
-## Starting realtime settings
+For an NVIDIA GPU, the TensorRT package is also available and can provide a faster native GPU path.
 
-- Diffusion steps: 6
-- CFG rate: 0.7
-- Block time: 0.18 seconds
-- Crossfade: 0.04 seconds
-- Extra left context: 2.5 seconds
-- Extra right context: 0.02 seconds
+## Models
 
-If inference takes longer than the selected block time, increase block time. A GPU is strongly recommended for realtime conversion.
+The RVC engine needs a compatible RVC voice model. vc-rs supports ONNX RVC models and can convert supported RVC v2/F0 `.pth` models through its GUI.
 
-## What changed
+The repository intentionally does **not** store large model files.
 
-The Unity MonoBehaviour is now a controller for a real voice-conversion engine instead of simply passing microphone audio through or playing a reference WAV. It provides a scrollable control panel, reference WAV selection, realtime performance controls, and starts the local Seed-VC engine.
+## Why this version
 
-The Seed-VC engine owns the realtime neural audio device stream. This is deliberate: its realtime implementation already handles microphone/output devices, reference audio, chunking, crossfading, and model inference.
+The old browser Tone.js version only changed pitch/EQ/compression. RVC performs neural voice conversion, so your speech timing and delivery are retained while the vocal characteristics are converted.
 
-## VRChat audio path
+There is no Deepgram API usage and no cloud speech-to-speech service in this architecture.
 
-Use:
+## Important
 
-Microphone -> Seed-VC -> VB-CABLE/Voicemeeter -> VRChat microphone
+Chrome cannot launch a local EXE directly. The HTML page is therefore a lightweight information/control page, while `start_rvc.bat` launches the native audio engine.
 
-This keeps the converted stream on Windows and avoids cloud speech services.
+## Upstream
 
-Seed-VC is an external open-source dependency. Its source and license remain governed by its upstream repository.
+vc-rs:
+https://github.com/shirohata/vc-rs
+
+Its own license and third-party model licenses apply to the downloaded engine and models.
