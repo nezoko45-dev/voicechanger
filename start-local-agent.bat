@@ -1,29 +1,23 @@
 @echo off
 setlocal EnableExtensions
 cd /d "%~dp0"
-title Local Python Voice Agent
+title Local Whisper + Piper Voice Repeater
 
 echo ==========================================================
-echo              LOCAL PYTHON VOICE AGENT
+echo          LOCAL WHISPER + PIPER VOICE REPEATER
 echo ==========================================================
 echo.
-echo Whisper STT + Ollama LLM + Piper TTS
-echo No Deepgram. No Moshi. No paid API.
+echo 100%% local - no Ollama, no Deepgram, no cloud API.
 echo.
 
 where py >nul 2>&1
 if %errorlevel%==0 (
-  py -3.12 -c "import sys; print(sys.version)" >nul 2>&1
-  if not errorlevel 1 (
-    set "PY=py -3.12"
-  ) else (
-    set "PY=py -3"
-  )
+  set "PY=py -3"
 ) else (
   where python >nul 2>&1
   if errorlevel 1 (
     echo Python was not found.
-    echo Install Python 3.12 or newer, then run this file again.
+    echo Install Python 3.12, then run this file again.
     pause
     exit /b 1
   )
@@ -31,61 +25,32 @@ if %errorlevel%==0 (
 )
 
 if not exist "%~dp0.local-agent-env\Scripts\python.exe" (
-  echo Creating local Python environment...
+  echo Creating small Python environment...
   %PY% -m venv "%~dp0.local-agent-env"
-  if errorlevel 1 (
-    echo Could not create the Python environment.
-    pause
-    exit /b 1
-  )
+  if errorlevel 1 goto :fail
 )
 
 set "PYTHON=%~dp0.local-agent-env\Scripts\python.exe"
 
-echo Installing local agent packages...
+echo Installing Whisper + Piper...
 "%PYTHON%" -m pip install --upgrade pip
 if errorlevel 1 goto :fail
 "%PYTHON%" -m pip install -r "%~dp0requirements-local-agent.txt"
 if errorlevel 1 goto :fail
 
-echo.
-where ollama >nul 2>&1
-if errorlevel 1 (
-  echo Ollama was not found.
-  echo.
-  echo Install Ollama for Windows, then run this launcher again.
-  echo Official installer: https://ollama.com/download/windows
-  echo.
-  pause
-  exit /b 1
-)
-
-echo Starting local Ollama service...
-powershell -NoProfile -Command "$ok=$false; try { $r=Invoke-WebRequest -UseBasicParsing http://127.0.0.1:11434/api/tags -TimeoutSec 2 -ErrorAction Stop; $ok=$true } catch {}; if(-not $ok){ Start-Process ollama -ArgumentList 'serve' -WindowStyle Minimized }"
-timeout /t 3 /nobreak >nul
-
-echo Checking local Ollama model...
-ollama show llama3.2:3b >nul 2>&1
-if errorlevel 1 (
-  echo Downloading llama3.2:3b...
-  ollama pull llama3.2:3b
-  if errorlevel 1 goto :fail
-)
-
-echo.
-echo Downloading local Piper voice...
 if not exist "%~dp0local_agent_data\voices\en_US-lessac-medium.onnx" (
+  echo.
+  echo Downloading Piper voice...
   "%PYTHON%" -m piper.download_voices --data-dir "%~dp0local_agent_data\voices" en_US-lessac-medium
   if errorlevel 1 goto :fail
 )
 
 echo.
 echo ==========================================================
-echo AGENT READY
+echo READY
 echo ==========================================================
 echo.
-echo Speak into the selected/default microphone.
-echo Replies are played through the selected/default Windows output.
+echo Whisper hears you, then Piper repeats the words.
 echo.
 "%PYTHON%" "%~dp0local-agent.py"
 goto :eof
@@ -96,6 +61,5 @@ echo ==========================================================
 echo SETUP FAILED
 echo ==========================================================
 echo.
-echo The error above is the actual setup error.
 pause
 exit /b 1
