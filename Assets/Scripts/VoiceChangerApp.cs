@@ -1,426 +1,188 @@
 using System;
-using System.Collections.Generic;
-using System.Reflection;
+using System.Diagnostics;
+using System.IO;
 using UnityEngine;
 
 public class VoiceChangerApp : MonoBehaviour
 {
-    [Range(0f, 2f)] public float inputGain = 1f;
-    public bool noiseGate = true;
+    public string engineFolder = "Seed-VC";
+    public string python = "python";
+    public string referenceWav = "";
+    public int diffusionSteps = 6;
+    public float blockTime = 0.18f;
+    public float crossfade = 0.04f;
+    public float cfgRate = 0.7f;
+    public float extraLeft = 2.5f;
+    public float extraRight = 0.02f;
 
-    Type microphoneType;
-    Type audioClipType;
-    object micClip;
-    Component audioSource;
-    string selectedMic = "";
-    bool running;
-    int lastPosition;
+    Process process;
+    Vector2 scroll;
+    string status = "Stopped";
+    string errorText = "";
 
-    readonly float[] ring = new float[96000];
-    int writePos;
-    int readPos;
+    string Root => Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+    string Engine => Path.Combine(Root, engineFolder);
 
     void Awake()
     {
         Application.runInBackground = true;
-        FindAudioTypes();
-        RefreshMics();
-    }
-
-    void FindAudioTypes()
-    {
-        microphoneType = FindType("UnityEngine.Microphone");
-        audioClipType = FindType("UnityEngine.AudioClip");
-    }
-
-    Type FindType(string fullName)
-    {
-        foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
-        {
-            Type type = assembly.GetType(fullName, false);
-            if (type != null)
-                return type;
-        }
-        return null;
-    }
-
-    object CallStatic(Type type, string method, params object[] args)
-    {
-        if (type == null) return null;
-
-        MethodInfo info = type.GetMethod(
-            method,
-            BindingFlags.Public | BindingFlags.Static
-        );
-
-        return info == null ? null : info.Invoke(null, args);
-    }
-
-    string[] GetMicrophones()
-    {
-        object result = CallStatic(microphoneType, "get_devices");
-        return result as string[] ?? Array.Empty<string>();
-    }
-
-    int GetMicPosition()
-    {
-        object result = CallStatic(
-            microphoneType,
-            "GetPosition",
-            selectedMic
-        );
-
-        return result is int value ? value : -1;
-    }
-
-    bool IsMicRecording()
-    {
-        object result = CallStatic(
-            microphoneType,
-            "IsRecording",
-            selectedMic
-        );
-
-        return result is bool value && value;
     }
 
     void Update()
     {
-        if (!running || micClip == null)
-            return;
-
-        int pos = GetMicPosition();
-        if (pos < 0)
-            return;
-
-        int samples = GetIntProperty(micClip, "samples");
-        int channels = GetIntProperty(micClip, "channels");
-
-        if (samples <= 0 || channels <= 0)
-            return;
-
-        int frames = pos - lastPosition;
-        if (frames < 0)
-            frames += samples;
-
-        if (frames > samples)
-            frames = samples;
-
-        if (frames <= 0)
-            return;
-
-        float[] temp = new float[frames * channels];
-
-        MethodInfo getData = micClip.GetType().GetMethod(
-            "GetData",
-            new[] { typeof(float[]), typeof(int) }
-        );
-
-        if (getData == null)
-            return;
-
-        getData.Invoke(micClip, new object[] { temp, lastPosition });
-
-        for (int i = 0; i < frames; i++)
+        if (process != null && process.HasExited)
         {
-            float sample = temp[i * channels] * inputGain;
-
-            if (noiseGate && Mathf.Abs(sample) < 0.006f)
-                sample = 0f;
-
-            Push(sample);
-        }
-
-        lastPosition = pos;
-    }
-
-    int GetIntProperty(object target, string property)
-    {
-        PropertyInfo info = target.GetType().GetProperty(property);
-        if (info == null)
-            return 0;
-
-        object value = info.GetValue(target);
-        return value is int i ? i : 0;
-    }
-
-    void Push(float sample)
-    {
-        ring[writePos] = sample;
-        writePos = (writePos + 1) % ring.Length;
-
-        if (writePos == readPos)
-            readPos = (readPos + 1) % ring.Length;
-    }
-
-    float Pop()
-    {
-        if (writePos == readPos)
-            return 0f;
-
-        float sample = ring[readPos];
-        readPos = (readPos + 1) % ring.Length;
-        return sample;
-    }
-
-    void OnAudioFilterRead(float[] data, int channels)
-    {
-        if (!running)
-        {
-            Array.Clear(data, 0, data.Length);
-            return;
-        }
-
-        for (int i = 0; i < data.Length; i += channels)
-        {
-            float sample = Pop();
-
-            for (int c = 0; c < channels; c++)
-                data[i + c] = sample;
+            process.Dispose();
+            process = null;
+            status = "Seed-VC stopped";
         }
     }
 
-    void StartVoice()
+    void StartEngine()
     {
-        string[] microphones = GetMicrophones();
+        errorText = "";
 
-        if (microphones.Length == 0)
+        if (process != null && !process.HasExited)
+            return;
+
+        string gui = Path.Combine(Engine, "real-time-gui.py");
+        if (!File.Exists(gui))
         {
-            Debug.LogError("No microphone found.");
+            status = "Seed-VC not installed";
+            errorText = "Run setup_seedvc.bat in the repository root.";
             return;
         }
 
-        int index = Mathf.Clamp(GetSelectedMicIndex(), 0, microphones.Length - 1);
-        selectedMic = microphones[index];
-
-        micClip = CallStatic(
-            microphoneType,
-            "Start",
-            selectedMic,
-            true,
-            2,
-            48000
-        );
-
-        if (micClip == null)
+        if (string.IsNullOrWhiteSpace(referenceWav) || !File.Exists(referenceWav))
         {
-            Debug.LogError("Unity could not start the selected microphone.");
+            status = "Reference WAV required";
             return;
         }
 
-        lastPosition = 0;
-        writePos = 0;
-        readPos = 0;
-
-        audioSource = GetComponent("AudioSource");
-
-        if (audioSource == null)
-            audioSource = gameObject.AddComponent("AudioSource");
-
-        SetProperty(audioSource, "loop", true);
-        SetProperty(audioSource, "playOnAwake", false);
-        SetProperty(audioSource, "spatialBlend", 0f);
-
-        MethodInfo create = audioClipType?.GetMethod(
-            "Create",
-            BindingFlags.Public | BindingFlags.Static,
-            null,
-            new[]
+        try
+        {
+            process = Process.Start(new ProcessStartInfo
             {
-                typeof(string),
-                typeof(int),
-                typeof(int),
-                typeof(int),
-                typeof(bool)
-            },
-            null
-        );
-
-        if (create != null)
-        {
-            object outputClip = create.Invoke(
-                null,
-                new object[] { "RealtimeOutput", 48000, 1, 48000, false }
-            );
-
-            SetProperty(audioSource, "clip", outputClip);
+                FileName = python,
+                Arguments = "real-time-gui.py --fp16 True",
+                WorkingDirectory = Engine,
+                UseShellExecute = true,
+                CreateNoWindow = false
+            });
+            status = "Seed-VC started";
         }
-
-        InvokeMethod(audioSource, "Play");
-
-        running = true;
-        Debug.Log("VOICE CHANGER STARTED: " + selectedMic);
-    }
-
-    void StopVoice()
-    {
-        if (!running && micClip == null)
-            return;
-
-        if (!string.IsNullOrEmpty(selectedMic) && IsMicRecording())
-            CallStatic(microphoneType, "End", selectedMic);
-
-        if (audioSource != null)
-            InvokeMethod(audioSource, "Stop");
-
-        running = false;
-        micClip = null;
-
-        Debug.Log("VOICE CHANGER STOPPED");
-    }
-
-    void SetProperty(object target, string name, object value)
-    {
-        if (target == null)
-            return;
-
-        PropertyInfo property = target.GetType().GetProperty(name);
-        if (property != null && property.CanWrite)
-            property.SetValue(target, value);
-    }
-
-    void InvokeMethod(object target, string name)
-    {
-        if (target == null)
-            return;
-
-        MethodInfo method = target.GetType().GetMethod(
-            name,
-            BindingFlags.Public | BindingFlags.Instance
-        );
-
-        method?.Invoke(target, null);
-    }
-
-    void RefreshMics()
-    {
-        string[] microphones = GetMicrophones();
-
-        if (microphones.Length == 0)
+        catch (Exception e)
         {
-            selectedMic = "";
-            return;
+            status = "Start failed";
+            errorText = e.Message;
         }
-
-        if (string.IsNullOrEmpty(selectedMic))
-            selectedMic = microphones[0];
     }
 
-    int GetSelectedMicIndex()
+    void StopEngine()
     {
-        string[] microphones = GetMicrophones();
-
-        for (int i = 0; i < microphones.Length; i++)
+        if (process != null)
         {
-            if (microphones[i] == selectedMic)
-                return i;
+            try { if (!process.HasExited) process.Kill(); } catch { }
+            process.Dispose();
+            process = null;
         }
-
-        return 0;
+        status = "Stopped";
     }
 
-    void OnDisable()
+    void ChooseWav()
     {
-        StopVoice();
+#if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
+        string p = UnityEditorFileDialog.Open("Choose reference WAV");
+        if (!string.IsNullOrEmpty(p))
+            referenceWav = p;
+#endif
     }
+
+    void OnDisable() => StopEngine();
 
     void OnGUI()
     {
-        GUI.depth = 0;
+        float w = Mathf.Min(820, Screen.width - 30);
+        float h = Mathf.Min(680, Screen.height - 30);
+        float x = (Screen.width - w) * .5f;
+        float y = (Screen.height - h) * .5f;
 
-        float width = 720f;
-        float height = 560f;
-        float x = (Screen.width - width) * 0.5f;
-        float y = (Screen.height - height) * 0.5f;
+        GUI.Box(new Rect(x, y, w, h), "LOCAL AI VOICE CHANGER");
 
-        GUI.Box(new Rect(x, y, width, height), "");
+        Rect view = new Rect(x + 15, y + 45, w - 30, h - 60);
+        Rect area = new Rect(0, 0, w - 55, 760);
+        scroll = GUI.BeginScrollView(view, scroll, area);
 
-        GUIStyle title = new GUIStyle(GUI.skin.label);
-        title.fontSize = 30;
-        title.alignment = TextAnchor.MiddleCenter;
-        title.fontStyle = FontStyle.Bold;
+        float cy = 10;
+        GUI.Label(new Rect(10, cy, area.width - 20, 28),
+            "Seed-VC zero-shot realtime voice conversion");
+        cy += 40;
 
-        GUIStyle center = new GUIStyle(GUI.skin.label);
-        center.fontSize = 16;
-        center.alignment = TextAnchor.MiddleCenter;
+        if (GUI.Button(new Rect(10, cy, 190, 32), "CHOOSE REFERENCE WAV"))
+            ChooseWav();
 
-        GUI.Label(new Rect(x + 20, y + 25, width - 40, 45), "UNITY VOICECHANGER", title);
-        GUI.Label(new Rect(x + 20, y + 70, width - 40, 30), "LOCAL C# REALTIME AUDIO", center);
+        cy += 42;
+        GUI.Label(new Rect(10, cy, area.width - 20, 55),
+            string.IsNullOrEmpty(referenceWav) ? "No WAV selected" : referenceWav,
+            GUI.skin.textArea);
+        cy += 70;
 
-        GUIStyle status = new GUIStyle(GUI.skin.label);
-        status.fontSize = 18;
-        status.alignment = TextAnchor.MiddleCenter;
-        status.normal.textColor = running ? Color.green : Color.white;
+        GUI.Label(new Rect(10, cy, 190, 25), "Diffusion steps: " + diffusionSteps);
+        diffusionSteps = Mathf.RoundToInt(GUI.HorizontalSlider(
+            new Rect(210, cy + 8, 300, 20), diffusionSteps, 1, 12));
+        cy += 38;
 
-        GUI.Label(
-            new Rect(x + 20, y + 110, width - 40, 35),
-            running ? "LISTENING — LOCAL C# AUDIO" : "STOPPED",
-            status
-        );
+        GUI.Label(new Rect(10, cy, 190, 25), "CFG rate: " + cfgRate.ToString("0.0"));
+        cfgRate = GUI.HorizontalSlider(new Rect(210, cy + 8, 300, 20), cfgRate, 0, 1);
+        cy += 38;
 
-        GUI.Label(new Rect(x + 65, y + 165, 130, 30), "Microphone");
+        GUI.Label(new Rect(10, cy, 190, 25), "Block: " + blockTime.ToString("0.00") + "s");
+        blockTime = GUI.HorizontalSlider(new Rect(210, cy + 8, 300, 20), blockTime, .08f, .6f);
+        cy += 38;
 
-        string[] microphones = GetMicrophones();
-        if (microphones.Length == 0)
-            microphones = new[] { "No microphone detected" };
+        GUI.Label(new Rect(10, cy, 190, 25), "Crossfade: " + crossfade.ToString("0.00") + "s");
+        crossfade = GUI.HorizontalSlider(new Rect(210, cy + 8, 300, 20), crossfade, .02f, .2f);
+        cy += 38;
 
-        int micIndex = GetSelectedMicIndex();
+        GUI.Label(new Rect(10, cy, 190, 25), "Left context: " + extraLeft.ToString("0.0") + "s");
+        extraLeft = GUI.HorizontalSlider(new Rect(210, cy + 8, 300, 20), extraLeft, .5f, 5f);
+        cy += 38;
 
-        GUI.enabled = !running;
+        GUI.Label(new Rect(10, cy, 190, 25), "Right context: " + extraRight.ToString("0.00") + "s");
+        extraRight = GUI.HorizontalSlider(new Rect(210, cy + 8, 300, 20), extraRight, .02f, .2f);
+        cy += 50;
 
-        int newMicIndex = GUI.SelectionGrid(
-            new Rect(x + 200, y + 155, 440, 45),
-            micIndex,
-            microphones,
-            1
-        );
+        GUI.Label(new Rect(10, cy, area.width - 20, 40), "Status: " + status);
+        cy += 50;
 
-        if (newMicIndex >= 0 && newMicIndex < microphones.Length)
-            selectedMic = microphones[newMicIndex];
+        if (GUI.Button(new Rect(10, cy, 230, 50), "START VOICE ENGINE"))
+            StartEngine();
 
-        GUI.enabled = true;
+        if (GUI.Button(new Rect(250, cy, 180, 50), "STOP"))
+            StopEngine();
 
-        GUI.Label(
-            new Rect(x + 40, y + 225, width - 80, 30),
-            "Input gain: " + inputGain.ToString("0.00"),
-            center
-        );
+        cy += 65;
+        if (!string.IsNullOrEmpty(errorText))
+            GUI.Label(new Rect(10, cy, area.width - 20, 60), errorText, GUI.skin.textArea);
 
-        inputGain = GUI.HorizontalSlider(
-            new Rect(x + 120, y + 260, width - 240, 25),
-            inputGain,
-            0f,
-            2f
-        );
+        cy += 75;
+        GUI.Label(new Rect(10, cy, area.width - 20, 130),
+            "Seed-VC owns the realtime neural audio stream. In its window choose your microphone and output. " +
+            "For VRChat, route the converted output to VB-CABLE or Voicemeeter and choose that virtual microphone in VRChat. " +
+            "Unity is the controller/launcher; the WAV is the voice reference.",
+            GUI.skin.textArea);
 
-        GUI.Label(
-            new Rect(x + 30, y + 305, width - 60, 30),
-            "Output: Windows default audio device / Voicemeeter",
-            center
-        );
-
-        GUI.Label(
-            new Rect(x + 30, y + 340, width - 60, 30),
-            "Local microphone → realtime audio",
-            center
-        );
-
-        GUI.enabled = !running;
-
-        if (GUI.Button(new Rect(x + 80, y + 400, 270, 70), "START VOICE CHANGER"))
-            StartVoice();
-
-        GUI.enabled = running;
-
-        if (GUI.Button(new Rect(x + 370, y + 400, 270, 70), "STOP"))
-            StopVoice();
-
-        GUI.enabled = true;
-
-        GUI.Label(
-            new Rect(x + 30, y + 485, width - 60, 30),
-            "No compile-time AudioSource / AudioClip dependency",
-            center
-        );
+        GUI.EndScrollView();
     }
 }
+
+#if UNITY_EDITOR
+static class UnityEditorFileDialog
+{
+    public static string Open(string title)
+    {
+        string[] r = UnityEditor.EditorUtility.OpenFilePanel(title, "", "wav");
+        return r;
+    }
+}
+#endif
