@@ -92,6 +92,11 @@ async function loadVoxShot(){
 
 $("startBtn").onclick = () => loadVoxShot().catch(() => {});
 
+// The batch launcher opens this page directly, so start VoxShot automatically.
+window.addEventListener("load", () => {
+  setTimeout(() => loadVoxShot().catch(() => {}), 300);
+});
+
 $("fileInput").onchange = event => {
   const file = event.target.files?.[0];
   if(!file) return;
