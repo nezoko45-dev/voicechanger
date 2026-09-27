@@ -11,6 +11,6 @@ echo Whisper.cpp STT + Piper TTS.
 echo Opening browser...
 echo.
 set "PORT=8918"
-set "URL=http://127.0.0.1:%PORT%/?v=SPEECHSTACK-CONTINUOUS-20260927"
+set "URL=http://127.0.0.1:%PORT%/?v=SPEECHSTACK-CONTINUOUS-FIX2-20260927"
 start "" "%URL%"
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0local-voice-server.ps1" -Port %PORT%
