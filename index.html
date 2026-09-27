@@ -41,7 +41,7 @@ button.stop{background:#9b3d50}button:disabled{opacity:.45;cursor:not-allowed}.s
 <script>
 const $=id=>document.getElementById(id);
 let stream=null,audioContext=null,source=null,processor=null,zeroGain=null,running=false;
-let capture=[],preRoll=[],lastSend=0,lastSpeechAt=0,speaking=false,transcribing=false,pendingTranscription=null,spokenWords=[],ttsQueue=[],ttsPlaying=false,currentAudio=null;
+let capture=[],preRoll=[],lastSend=0,lastSpeechAt=0,speaking=false,utteranceId=0,transcribing=false,pendingTranscription=null,pendingUtteranceId=0,spokenWords=[],ttsQueue=[],ttsPlaying=false,currentAudio=null;
 const SR=16000,SPEECH_RMS=0.012,CHUNK_MS=900,WINDOW_MS=2600,PRE_ROLL_MS=250;
 
 function setStatus(v){$("status").textContent=v}
@@ -136,20 +136,22 @@ async function pumpTTS(){
   if(running)pumpTTS();
 }
 
-async function streamTranscribe(samples){
+async function streamTranscribe(samples,id=utteranceId){
   if(!running||samples.length<SR*0.5)return;
   // Never discard a speech window just because Whisper is still working.
   // Keep only the newest window so Piper/Whisper never falls behind with stale audio.
-  pendingTranscription=samples.slice();
+  pendingTranscription=samples.slice();pendingUtteranceId=id;
   if(transcribing)return;
   transcribing=true;
   try{
     while(running&&pendingTranscription){
       const current=pendingTranscription;
+      const currentId=pendingUtteranceId;
       pendingTranscription=null;
       const r=await fetch("/transcribe",{method:"POST",body:makeWav(Float32Array.from(current))});
       if(!r.ok)throw new Error(await r.text());
       const data=await r.json(),text=(data.text||"").trim();
+      if(currentId!==utteranceId)continue;
       if(text){
         $("heard").textContent=text;
         const fresh=getNewWords(text);
@@ -184,7 +186,7 @@ async function start(){
     await audioContext.audioWorklet.addModule(workletUrl);URL.revokeObjectURL(workletUrl);
     source=audioContext.createMediaStreamSource(stream);processor=new AudioWorkletNode(audioContext,"local-mic-processor");
     zeroGain=audioContext.createGain();zeroGain.gain.value=0;
-    capture=[];preRoll=[];lastSend=performance.now();lastSpeechAt=0;speaking=false;transcribing=false;pendingTranscription=null;spokenWords=[];ttsQueue=[];
+    capture=[];preRoll=[];lastSend=performance.now();lastSpeechAt=0;speaking=false;utteranceId=0;transcribing=false;pendingTranscription=null;pendingUtteranceId=0;spokenWords=[];ttsQueue=[];
     currentAudio=new Audio();
     currentAudio.preload="auto";
     currentAudio.src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA=";
@@ -196,18 +198,19 @@ async function start(){
       const d=e.data;pushAudio(d);
       const level=rms(d),now=performance.now(),isSpeech=level>=SPEECH_RMS;
       if(isSpeech){
+        if(!speaking){utteranceId++;spokenWords=[];pendingTranscription=null;}
         speaking=true;
         lastSpeechAt=now;
         if(now-lastSend>=CHUNK_MS){
           lastSend=now;
-          streamTranscribe(capture.slice());
+          streamTranscribe(capture.slice(),utteranceId);
         }
       }else if(speaking&&now-lastSpeechAt>=350){
         // Flush short sentences immediately when the user stops talking.
         speaking=false;
         if(now-lastSend>=250){
           lastSend=now;
-          streamTranscribe(capture.slice());
+          streamTranscribe(capture.slice(),utteranceId);
         }
       }
     };
@@ -218,7 +221,7 @@ async function start(){
 }
 
 function stop(){
-  running=false;transcribing=false;pendingTranscription=null;capture=[];preRoll=[];spokenWords=[];ttsQueue=[];try{currentAudio?.pause();currentAudio.src=""}catch{};currentAudio=null;
+  running=false;transcribing=false;pendingTranscription=null;pendingUtteranceId=0;capture=[];preRoll=[];spokenWords=[];ttsQueue=[];try{currentAudio?.pause();currentAudio.src=""}catch{};currentAudio=null;
   try{stream?.getTracks().forEach(t=>t.stop())}catch{}
   try{source?.disconnect()}catch{}try{processor?.disconnect()}catch{}try{zeroGain?.disconnect()}catch{}try{audioContext?.close()}catch{}
   stream=null;source=null;processor=null;zeroGain=null;audioContext=null;
