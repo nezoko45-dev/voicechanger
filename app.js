@@ -89,18 +89,14 @@ async function start(){
 
     const ctx=Tone.getContext();
 
-    // Route Tone.js output into a MediaStream, then into an HTML audio
-    // element so Chrome can select the exact Windows output device.
-    outputDestination=ctx.createMediaStreamDestination();
-
-    outputAudio=document.createElement("audio");
-    outputAudio.autoplay=true;
-    outputAudio.srcObject=outputDestination.stream;
-    outputAudio.volume=1;
-    document.body.appendChild(outputAudio);
-
-    if(outputId && typeof outputAudio.setSinkId==="function"){
-      try{ await outputAudio.setSinkId(outputId); }catch(e){ console.warn(e); }
+    // Prefer Chrome's native AudioContext output routing when available.
+    const nativeContext=ctx.rawContext || ctx._nativeContext || ctx;
+    if(outputId && typeof nativeContext.setSinkId==="function"){
+      try{
+        await nativeContext.setSinkId(outputId);
+      }catch(e){
+        console.warn("Output selection failed:",e);
+      }
     }
 
     mic=new Tone.UserMedia();
@@ -142,8 +138,7 @@ async function start(){
     gain=new Tone.Gain(0.82);
 
     // Tone.js native destination is replaced by our selected Windows sink.
-    const chain=mic.chain(highpass,lowpass,pitchShift,eq,compressor,gain);
-    chain.connect(outputDestination);
+    mic.chain(highpass,lowpass,pitchShift,eq,compressor,gain, Tone.getDestination());
 
     updateEffect();
 
@@ -167,13 +162,8 @@ function stop(){
     try{n?.dispose();}catch{}
   });
 
-  try{outputAudio?.pause();}catch{}
-  try{outputAudio?.remove();}catch{}
-
   mic=null;
   inputStream=null;
-  outputAudio=null;
-  outputDestination=null;
   highpass=null;
   lowpass=null;
   pitchShift=null;
