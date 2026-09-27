@@ -78,6 +78,29 @@ public class VoiceChangerApp : MonoBehaviour
         }
     }
 
+    void WriteSeedConfig()
+    {
+        string dir = Path.Combine(Engine, "configs", "inuse");
+        Directory.CreateDirectory(dir);
+
+        string json =
+            "{\"reference_audio_path\":\"" + EscapeJson(referenceWav) +
+            "\",\"sr_type\":\"sr_model\",\"diffusion_steps\":" + diffusionSteps +
+            ",\"inference_cfg_rate\":" + cfgRate.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+            ",\"max_prompt_length\":3.0,\"block_time\":" + blockTime.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+            ",\"crossfade_length\":" + crossfade.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+            ",\"extra_time_ce\":" + extraLeft.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+            ",\"extra_time\":" + extraLeft.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+            ",\"extra_time_right\":" + extraRight.ToString(System.Globalization.CultureInfo.InvariantCulture) + "}";
+
+        File.WriteAllText(Path.Combine(dir, "config.json"), json);
+    }
+
+    string EscapeJson(string value)
+    {
+        return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+    }
+
     void StopEngine()
     {
         if (process != null)
@@ -91,10 +114,12 @@ public class VoiceChangerApp : MonoBehaviour
 
     void ChooseWav()
     {
-#if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
-        string p = UnityEditorFileDialog.Open("Choose reference WAV");
+#if UNITY_EDITOR
+        string p = UnityEditor.EditorUtility.OpenFilePanel("Choose reference WAV", "", "wav");
         if (!string.IsNullOrEmpty(p))
             referenceWav = p;
+#else
+        status = "Use the Unity Editor to choose the reference WAV";
 #endif
     }
 
