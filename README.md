@@ -1,53 +1,44 @@
-# Rust RVC Voice Changer
+# WAV Reference Voice Changer
 
-A simple **native Windows Rust voice changer** for VRChat.
+This version is built for having only a WAV recording of the target voice.
 
-## Audio path
+It does not require classic RVC voice.onnx + ContentVec + RMVPE model files.
+
+## Architecture
 
 Microphone
-→ Rust/WASAPI
-→ realtime RVC
-→ selected Windows output / Voicemeeter
-→ VRChat
+-> Seed-VC zero-shot realtime conversion
+-> Windows output / Voicemeeter
+-> VRChat
 
-There is no Chrome audio path, Electron audio path, Deepgram, Hugging Face agent, or Python runtime in the app.
+The Rust program is the native launcher and simple UI. Seed-VC supplies the neural zero-shot conversion runtime.
 
-## What is included
+Seed-VC supports zero-shot realtime voice conversion from a 1-30 second reference recording without training a separate voice model. Its realtime engine uses worker-thread buffering and device selection for live use.
 
-- Native Rust desktop UI
-- Windows WASAPI device enumeration
-- Microphone selection
-- Output selection, including Voicemeeter devices
-- ONNX RVC inference through the Rust `vc-rs` engine
-- ContentVec + RMVPE support
-- Bounded realtime queues
-- Separate inference worker so model loading/inference does not block the audio callback
-- Live pitch/input/output controls
-- 40–300 ms chunk control
+## Setup
 
-## First run
+1. Install Rust.
+2. Install Python 3.10 or newer.
+3. Make sure Git is installed.
+4. Run setup_seedvc.bat.
+5. Choose your WAV reference recording.
+6. Press START.
+7. In the Seed-VC window, select your microphone and Voicemeeter output.
+8. In VRChat, select the Voicemeeter virtual microphone receiving the converted signal.
 
-1. Install Rust/Cargo on Windows.
-2. Run `run_rust.bat`.
-3. The first build downloads Rust dependencies and the ONNX Runtime CPU package.
-4. Put your models in `models\\` or use Browse:
-   - `voice.onnx` — your RVC voice model
-   - `content_vec_500.onnx` — ContentVec
-   - `rmvpe.onnx` — RMVPE
-5. Select your microphone.
-6. Select your Voicemeeter input/output route.
-7. Press **START**.
-8. In VRChat, choose the Voicemeeter virtual microphone that receives the converted signal.
+The Seed-VC model checkpoints are downloaded automatically by its runtime. You do not manually find voice.onnx, content_vec_500.onnx, or rmvpe.onnx.
 
-## Notes
+## Reference WAV
 
-The app currently uses the CPU ONNX backend for the simplest portable Rust build. The engine can be switched to Windows ML/DirectML later without changing the audio architecture.
+Use a clean 1-30 second sample of the target speaker. Speech is preferable to music/noise.
 
-The RVC engine is based on the Rust `vc-rs` project:
-https://github.com/shirohata/vc-rs
+## Realtime
 
-The vc-rs project and its downloaded models retain their own licenses.
+Zero-shot neural voice conversion is much heavier than a pitch/effects processor. A GPU is strongly recommended for realtime use. Seed-VC publishes realtime measurements in the hundreds of milliseconds depending on hardware and settings.
 
-## Why this should behave better
+## Important
 
-The browser/Tone.js approach was an effects processor, not a true RVC engine. This version keeps audio capture, buffering, inference, and playback in one native Windows process. The realtime engine uses bounded queues, so a slow inference worker cannot create an endlessly growing delay queue.
+The Rust launcher itself does not perform the neural inference. A pure-Rust implementation of this zero-shot model would require porting a large PyTorch model stack. Using Seed-VC Realtime keeps the UI native/simple while using the actual WAV-reference zero-shot converter.
+
+Seed-VC Realtime:
+https://github.com/jiaheguo521/seed-vc-realtime
