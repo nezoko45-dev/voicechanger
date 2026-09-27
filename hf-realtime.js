@@ -31,8 +31,7 @@ function sendSession(){
  ws.send(JSON.stringify({type:"session.update",session:{
    instructions:$("instructions").value,
    output_modalities:["audio"],
-   audio:{input:{format:{type:"audio/pcm",rate:24000}},output:{format:{type:"audio/pcm",rate:24000},voice:voice}},
-   turn_detection:{type:"server_vad",interrupt_response:true}
+   audio:{input:{format:{type:"audio/pcm",rate:24000},turn_detection:{type:"server_vad",interrupt_response:true}},output:{format:{type:"audio/pcm",rate:24000},voice:voice}}
  }}));
 }
 async function start(){
