@@ -1,56 +1,147 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using UnityEngine;
 
 public class VoiceChangerApp : MonoBehaviour
 {
-    [Range(-12f, 12f)] public float pitchSemitones = 0f;
     [Range(0f, 2f)] public float inputGain = 1f;
     public bool noiseGate = true;
 
-    AudioClip micClip;
-    AudioSource source;
+    Type microphoneType;
+    Type audioClipType;
+    object micClip;
+    Component audioSource;
     string selectedMic = "";
     bool running;
     int lastPosition;
-    float[] ring = new float[96000];
-    int writePos, readPos;
-    Vector2 scroll;
+
+    readonly float[] ring = new float[96000];
+    int writePos;
+    int readPos;
 
     void Awake()
     {
         Application.runInBackground = true;
+        FindAudioTypes();
         RefreshMics();
+    }
+
+    void FindAudioTypes()
+    {
+        microphoneType = FindType("UnityEngine.Microphone");
+        audioClipType = FindType("UnityEngine.AudioClip");
+    }
+
+    Type FindType(string fullName)
+    {
+        foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            Type type = assembly.GetType(fullName, false);
+            if (type != null)
+                return type;
+        }
+        return null;
+    }
+
+    object CallStatic(Type type, string method, params object[] args)
+    {
+        if (type == null) return null;
+
+        MethodInfo info = type.GetMethod(
+            method,
+            BindingFlags.Public | BindingFlags.Static
+        );
+
+        return info == null ? null : info.Invoke(null, args);
+    }
+
+    string[] GetMicrophones()
+    {
+        object result = CallStatic(microphoneType, "get_devices");
+        return result as string[] ?? Array.Empty<string>();
+    }
+
+    int GetMicPosition()
+    {
+        object result = CallStatic(
+            microphoneType,
+            "GetPosition",
+            selectedMic
+        );
+
+        return result is int value ? value : -1;
+    }
+
+    bool IsMicRecording()
+    {
+        object result = CallStatic(
+            microphoneType,
+            "IsRecording",
+            selectedMic
+        );
+
+        return result is bool value && value;
     }
 
     void Update()
     {
-        if (!running || micClip == null) return;
+        if (!running || micClip == null)
+            return;
 
-        int pos = Microphone.GetPosition(selectedMic);
-        if (pos < 0) return;
+        int pos = GetMicPosition();
+        if (pos < 0)
+            return;
+
+        int samples = GetIntProperty(micClip, "samples");
+        int channels = GetIntProperty(micClip, "channels");
+
+        if (samples <= 0 || channels <= 0)
+            return;
 
         int frames = pos - lastPosition;
-        if (frames < 0) frames += micClip.samples;
-        if (frames > micClip.samples) frames = micClip.samples;
+        if (frames < 0)
+            frames += samples;
 
-        if (frames > 0)
+        if (frames > samples)
+            frames = samples;
+
+        if (frames <= 0)
+            return;
+
+        float[] temp = new float[frames * channels];
+
+        MethodInfo getData = micClip.GetType().GetMethod(
+            "GetData",
+            new[] { typeof(float[]), typeof(int) }
+        );
+
+        if (getData == null)
+            return;
+
+        getData.Invoke(micClip, new object[] { temp, lastPosition });
+
+        for (int i = 0; i < frames; i++)
         {
-            var temp = new float[frames * micClip.channels];
-            micClip.GetData(temp, lastPosition);
+            float sample = temp[i * channels] * inputGain;
 
-            for (int i = 0; i < frames; i++)
-            {
-                float s = temp[i * micClip.channels] * inputGain;
+            if (noiseGate && Mathf.Abs(sample) < 0.006f)
+                sample = 0f;
 
-                if (noiseGate && Mathf.Abs(s) < 0.006f)
-                    s = 0f;
-
-                Push(s);
-            }
-
-            lastPosition = pos;
+            Push(sample);
         }
+
+        lastPosition = pos;
+    }
+
+    int GetIntProperty(object target, string property)
+    {
+        PropertyInfo info = target.GetType().GetProperty(property);
+        if (info == null)
+            return 0;
+
+        object value = info.GetValue(target);
+        return value is int i ? i : 0;
     }
 
     void Push(float sample)
@@ -64,15 +155,12 @@ public class VoiceChangerApp : MonoBehaviour
 
     float Pop()
     {
-        int available = writePos - readPos;
-        if (available < 0) available += ring.Length;
-        if (available < 2) return 0f;
+        if (writePos == readPos)
+            return 0f;
 
-        float a = ring[readPos];
-        float b = ring[(readPos + 1) % ring.Length];
-
+        float sample = ring[readPos];
         readPos = (readPos + 1) % ring.Length;
-        return Mathf.Lerp(a, b, 0.5f);
+        return sample;
     }
 
     void OnAudioFilterRead(float[] data, int channels)
@@ -85,7 +173,7 @@ public class VoiceChangerApp : MonoBehaviour
 
         for (int i = 0; i < data.Length; i += channels)
         {
-            float sample = Pop() * 0.96f;
+            float sample = Pop();
 
             for (int c = 0; c < channels; c++)
                 data[i + c] = sample;
@@ -94,16 +182,25 @@ public class VoiceChangerApp : MonoBehaviour
 
     void StartVoice()
     {
-        if (Microphone.devices.Length == 0)
+        string[] microphones = GetMicrophones();
+
+        if (microphones.Length == 0)
         {
             Debug.LogError("No microphone found.");
             return;
         }
 
-        int index = Mathf.Clamp(GetSelectedMicIndex(), 0, Microphone.devices.Length - 1);
-        selectedMic = Microphone.devices[index];
+        int index = Mathf.Clamp(GetSelectedMicIndex(), 0, microphones.Length - 1);
+        selectedMic = microphones[index];
 
-        micClip = Microphone.Start(selectedMic, true, 2, 48000);
+        micClip = CallStatic(
+            microphoneType,
+            "Start",
+            selectedMic,
+            true,
+            2,
+            48000
+        );
 
         if (micClip == null)
         {
@@ -115,17 +212,41 @@ public class VoiceChangerApp : MonoBehaviour
         writePos = 0;
         readPos = 0;
 
-        source = GetComponent<AudioSource>();
-        if (source == null)
-            source = gameObject.AddComponent<AudioSource>();
+        audioSource = GetComponent("AudioSource");
 
-        source.loop = true;
-        source.playOnAwake = false;
-        source.spatialBlend = 0f;
+        if (audioSource == null)
+            audioSource = gameObject.AddComponent("AudioSource");
 
-        // Keep an AudioSource attached to this GameObject so OnAudioFilterRead runs.
-        source.clip = AudioClip.Create("RealtimeOutput", 48000, 1, 48000, false);
-        source.Play();
+        SetProperty(audioSource, "loop", true);
+        SetProperty(audioSource, "playOnAwake", false);
+        SetProperty(audioSource, "spatialBlend", 0f);
+
+        MethodInfo create = audioClipType?.GetMethod(
+            "Create",
+            BindingFlags.Public | BindingFlags.Static,
+            null,
+            new[]
+            {
+                typeof(string),
+                typeof(int),
+                typeof(int),
+                typeof(int),
+                typeof(bool)
+            },
+            null
+        );
+
+        if (create != null)
+        {
+            object outputClip = create.Invoke(
+                null,
+                new object[] { "RealtimeOutput", 48000, 1, 48000, false }
+            );
+
+            SetProperty(audioSource, "clip", outputClip);
+        }
+
+        InvokeMethod(audioSource, "Play");
 
         running = true;
         Debug.Log("VOICE CHANGER STARTED: " + selectedMic);
@@ -136,34 +257,62 @@ public class VoiceChangerApp : MonoBehaviour
         if (!running && micClip == null)
             return;
 
-        if (!string.IsNullOrEmpty(selectedMic) && Microphone.IsRecording(selectedMic))
-            Microphone.End(selectedMic);
+        if (!string.IsNullOrEmpty(selectedMic) && IsMicRecording())
+            CallStatic(microphoneType, "End", selectedMic);
 
-        if (source != null)
-            source.Stop();
+        if (audioSource != null)
+            InvokeMethod(audioSource, "Stop");
 
         running = false;
         micClip = null;
+
         Debug.Log("VOICE CHANGER STOPPED");
+    }
+
+    void SetProperty(object target, string name, object value)
+    {
+        if (target == null)
+            return;
+
+        PropertyInfo property = target.GetType().GetProperty(name);
+        if (property != null && property.CanWrite)
+            property.SetValue(target, value);
+    }
+
+    void InvokeMethod(object target, string name)
+    {
+        if (target == null)
+            return;
+
+        MethodInfo method = target.GetType().GetMethod(
+            name,
+            BindingFlags.Public | BindingFlags.Instance
+        );
+
+        method?.Invoke(target, null);
     }
 
     void RefreshMics()
     {
-        if (Microphone.devices.Length == 0)
+        string[] microphones = GetMicrophones();
+
+        if (microphones.Length == 0)
         {
             selectedMic = "";
             return;
         }
 
         if (string.IsNullOrEmpty(selectedMic))
-            selectedMic = Microphone.devices[0];
+            selectedMic = microphones[0];
     }
 
     int GetSelectedMicIndex()
     {
-        for (int i = 0; i < Microphone.devices.Length; i++)
+        string[] microphones = GetMicrophones();
+
+        for (int i = 0; i < microphones.Length; i++)
         {
-            if (Microphone.devices[i] == selectedMic)
+            if (microphones[i] == selectedMic)
                 return i;
         }
 
@@ -198,22 +347,22 @@ public class VoiceChangerApp : MonoBehaviour
         GUI.Label(new Rect(x + 20, y + 25, width - 40, 45), "UNITY VOICECHANGER", title);
         GUI.Label(new Rect(x + 20, y + 70, width - 40, 30), "LOCAL C# REALTIME AUDIO", center);
 
-        GUIStyle statusStyle = new GUIStyle(GUI.skin.label);
-        statusStyle.fontSize = 18;
-        statusStyle.alignment = TextAnchor.MiddleCenter;
-        statusStyle.normal.textColor = running ? Color.green : Color.white;
+        GUIStyle status = new GUIStyle(GUI.skin.label);
+        status.fontSize = 18;
+        status.alignment = TextAnchor.MiddleCenter;
+        status.normal.textColor = running ? Color.green : Color.white;
 
         GUI.Label(
             new Rect(x + 20, y + 110, width - 40, 35),
             running ? "LISTENING — LOCAL C# AUDIO" : "STOPPED",
-            statusStyle
+            status
         );
 
         GUI.Label(new Rect(x + 65, y + 165, 130, 30), "Microphone");
 
-        string[] microphones = Microphone.devices.Length > 0
-            ? Microphone.devices
-            : new[] { "No microphone detected" };
+        string[] microphones = GetMicrophones();
+        if (microphones.Length == 0)
+            microphones = new[] { "No microphone detected" };
 
         int micIndex = GetSelectedMicIndex();
 
@@ -226,22 +375,22 @@ public class VoiceChangerApp : MonoBehaviour
             1
         );
 
-        if (newMicIndex != micIndex && newMicIndex >= 0 && newMicIndex < microphones.Length)
+        if (newMicIndex >= 0 && newMicIndex < microphones.Length)
             selectedMic = microphones[newMicIndex];
 
         GUI.enabled = true;
 
         GUI.Label(
             new Rect(x + 40, y + 225, width - 80, 30),
-            "Pitch: " + pitchSemitones.ToString("+0.0;-0.0;0.0") + " semitones",
+            "Input gain: " + inputGain.ToString("0.00"),
             center
         );
 
-        pitchSemitones = GUI.HorizontalSlider(
+        inputGain = GUI.HorizontalSlider(
             new Rect(x + 120, y + 260, width - 240, 25),
-            pitchSemitones,
-            -12f,
-            12f
+            inputGain,
+            0f,
+            2f
         );
 
         GUI.Label(
@@ -252,15 +401,17 @@ public class VoiceChangerApp : MonoBehaviour
 
         GUI.Label(
             new Rect(x + 30, y + 340, width - 60, 30),
-            "Start the realtime microphone audio with the button below.",
+            "Local microphone → realtime audio",
             center
         );
 
         GUI.enabled = !running;
+
         if (GUI.Button(new Rect(x + 80, y + 400, 270, 70), "START VOICE CHANGER"))
             StartVoice();
 
         GUI.enabled = running;
+
         if (GUI.Button(new Rect(x + 370, y + 400, 270, 70), "STOP"))
             StopVoice();
 
@@ -268,7 +419,7 @@ public class VoiceChangerApp : MonoBehaviour
 
         GUI.Label(
             new Rect(x + 30, y + 485, width - 60, 30),
-            "Local C# audio path — no UI package required",
+            "No compile-time AudioSource / AudioClip dependency",
             center
         );
     }
