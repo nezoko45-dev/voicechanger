@@ -1,10 +1,10 @@
 @echo off
 setlocal EnableExtensions
 cd /d "%~dp0"
-title Local Whisper + Piper Voice Repeater
+title Local Whisper + Piper Female Voice Repeater
 
 echo ==========================================================
-echo          LOCAL WHISPER + PIPER VOICE REPEATER
+echo          LOCAL WHISPER + PIPER FEMALE VOICE REPEATER
 echo ==========================================================
 echo.
 echo 100%% local - no Ollama, no Deepgram, no cloud API.
@@ -38,10 +38,10 @@ if errorlevel 1 goto :fail
 "%PYTHON%" -m pip install -r "%~dp0requirements-local-agent.txt"
 if errorlevel 1 goto :fail
 
-if not exist "%~dp0local_agent_data\voices\en_US-lessac-medium.onnx" (
+if not exist "%~dp0local_agent_data\voices\en_US-amy-medium.onnx" (
   echo.
   echo Downloading Piper voice...
-  "%PYTHON%" -m piper.download_voices --data-dir "%~dp0local_agent_data\voices" en_US-lessac-medium
+  "%PYTHON%" -m piper.download_voices --data-dir "%~dp0local_agent_data\voices" en_US-amy-medium
   if errorlevel 1 goto :fail
 )
 
