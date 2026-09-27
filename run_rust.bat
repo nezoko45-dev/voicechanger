@@ -1,20 +1,9 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-
-where cargo >nul 2>nul
-if errorlevel 1 (
-  echo Rust/Cargo is not installed.
-  echo Install Rust from https://rustup.rs/ and run this file again.
-  pause
-  exit /b 1
+if not exist "target\release\voicechanger.exe" (
+  echo Rust launcher is not built yet. Running setup...
+  call setup_seedvc.bat
+  if errorlevel 1 exit /b 1
 )
-
-echo Building Rust RVC voice changer...
-cargo run --release
-
-if errorlevel 1 (
-  echo.
-  echo Build or runtime failed.
-  pause
-)
+start "" "%~dp0target\release\voicechanger.exe"
