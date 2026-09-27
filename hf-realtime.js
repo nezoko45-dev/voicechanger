@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id);
-let ws=null,ctx=null,micStream=null,captureNode=null,outputNode=null,running=false;
+let ws=null,ctx=null,micStream=null,captureNode=null,outputNode=null,outputDest=null,outputAudio=null,running=false;
 let inputDevice="",outputDevice="",serverUrl="ws://127.0.0.1:8765/v1/realtime",voice="af_heart";
 const TARGET=24000;
 
@@ -61,14 +61,17 @@ function onMessage(e){
  if(m.type==="error"){setStatus("ERROR",m.error?.message||"Realtime server error");return}
  if(m.type==="input_audio_buffer.speech_started"){$("orb").className="orb active";setStatus("LISTENING","Hearing you…")}
  if(m.type==="response.created"){$("orb").className="orb thinking";setStatus("THINKING","Local model is preparing the repeat")}
- if(m.type==="response.output_audio.delta"&&outputNode){outputNode.port.postMessage({audio:floatFromInt16(unb64(m.delta))},[floatFromInt16(unb64(m.delta)).buffer])}
+ if(m.type==="response.output_audio.delta"&&outputNode){
+  const pcm=floatFromInt16(unb64(m.delta));
+  outputNode.port.postMessage({audio:pcm},[pcm.buffer]);
+}
  if(m.type==="conversation.item.input_audio_transcription.completed")$("you").textContent=m.transcript||"—";
  if(m.type==="response.output_audio_transcript.delta"){$("agent").textContent+=m.delta||""}
  if(m.type==="response.output_audio_transcript.done"){ $("agent").textContent=m.transcript||$("agent").textContent; }
  if(m.type==="response.done"){$("orb").className="orb active";setStatus("LISTENING","Speak normally — it will repeat your words")}
 }
 async function stop(close=true){
- running=false;if(captureNode)captureNode.disconnect();if(outputNode)outputNode.disconnect();if(micStream)micStream.getTracks().forEach(t=>t.stop());if(ctx)await ctx.close().catch(()=>{});if(ws){try{ws.close()}catch{}};ws=null;ctx=null;captureNode=null;outputNode=null;$("orb").className="orb idle";if(close)setStatus("TAP TO START","Local Hugging Face speech-to-speech")
+ running=false;if(captureNode)captureNode.disconnect();if(outputNode)outputNode.disconnect();if(outputAudio){outputAudio.pause();outputAudio.srcObject=null;}if(micStream)micStream.getTracks().forEach(t=>t.stop());if(ctx)await ctx.close().catch(()=>{});if(ws){try{ws.close()}catch{}};ws=null;ctx=null;captureNode=null;outputNode=null;outputDest=null;outputAudio=null;$("orb").className="orb idle";if(close)setStatus("TAP TO START","Local Hugging Face speech-to-speech")
 }
 $("orb").onclick=()=>running?stop():start();
 $("settings").onclick=()=>$("settings-panel").classList.toggle("hidden");
