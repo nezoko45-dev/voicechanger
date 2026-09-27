@@ -5,127 +5,174 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Web Voice Changer</title>
 <style>
-body{font-family:system-ui,sans-serif;max-width:680px;margin:40px auto;padding:16px;background:#111;color:#eee}
-section{background:#1b1b1b;padding:20px;border-radius:14px;margin-bottom:16px}
-label{display:block;margin-top:14px}select,input,button{width:100%;padding:10px;margin-top:6px;box-sizing:border-box}
-button{cursor:pointer;font-weight:700}.status{text-align:center;margin-top:14px}
+body{margin:0;background:#101218;color:#fff;font:16px system-ui,sans-serif}
+main{max-width:560px;margin:40px auto;padding:24px;background:#191d27;border-radius:16px}
+h1{margin-top:0}label{display:block;margin:18px 0 7px;font-weight:700}
+select,input,button{width:100%;padding:11px;border-radius:9px;border:1px solid #3a4354;background:#0d1016;color:#fff;font:inherit;box-sizing:border-box}
+button{margin-top:12px;border:0;background:#6d55ff;font-weight:700;cursor:pointer}
+button:disabled{opacity:.45;cursor:not-allowed}
+#stop{background:#a94352}.status{text-align:center;margin-top:16px;min-height:22px}
+small{display:block;color:#9da7b8;line-height:1.5;margin-top:12px}
 </style>
 </head>
 <body>
-<section>
-<h1>Web Voice Changer</h1>
-<p>Local Chrome audio processing. No external libraries or services.</p>
-<label>Microphone</label>
+<main>
+<h1>🎙️ Web Voice Changer</h1>
+<label for="mic">Microphone</label>
 <select id="mic"></select>
-<label>Pitch: <span id="pitchText">0</span> semitones</label>
-<input id="pitch" type="range" min="-12" max="12" step="0.1" value="0">
-<label>Volume: <span id="gainText">100</span>%</label>
-<input id="gain" type="range" min="0" max="200" value="100">
+<label for="out">Output</label>
+<select id="out"><option value="default">Default output</option></select>
+<label for="pitch">Pitch: <span id="pitchValue">0</span> semitones</label>
+<input id="pitch" type="range" min="-12" max="12" value="0" step="1">
 <button id="start">Start</button>
 <button id="stop" disabled>Stop</button>
-<div id="status" class="status">Ready</div>
-</section>
+<div id="status" class="status">Ready.</div>
+<small>Browser-only live processing. No libraries, servers, API keys, or downloads are required.</small>
+</main>
 <script>
 "use strict";
+
 const mic=document.getElementById("mic");
+const out=document.getElementById("out");
 const pitch=document.getElementById("pitch");
-const gain=document.getElementById("gain");
+const pitchValue=document.getElementById("pitchValue");
 const startButton=document.getElementById("start");
 const stopButton=document.getElementById("stop");
 const status=document.getElementById("status");
-let audioContext=null;
-let stream=null;
-let source=null;
-let shifter=null;
-let running=false;
 
-function setStatus(text){status.textContent=text;}
+let stream=null,context=null,source=null,worklet=null,audio=null;
 
-async function loadMicrophones(){
-  if(!navigator.mediaDevices){setStatus("Microphone API unavailable.");return;}
-  const devices=await navigator.mediaDevices.enumerateDevices();
-  mic.innerHTML="";
-  const inputs=devices.filter(function(d){return d.kind==="audioinput";});
-  inputs.forEach(function(d,i){
-    const option=document.createElement("option");
-    option.value=d.deviceId;
-    option.textContent=d.label||("Microphone "+(i+1));
-    mic.appendChild(option);
+function say(text){status.textContent=text;}
+
+async function devices(){
+  if(!navigator.mediaDevices)return;
+  const list=await navigator.mediaDevices.enumerateDevices();
+  const oldMic=mic.value,oldOut=out.value;
+  mic.replaceChildren();
+  list.filter(d=>d.kind==="audioinput").forEach((d,i)=>{
+    const o=document.createElement("option");
+    o.value=d.deviceId;o.textContent=d.label||("Microphone "+(i+1));mic.appendChild(o);
   });
-  if(inputs.length===0){
-    const option=document.createElement("option");
-    option.value="";
-    option.textContent="Default microphone";
-    mic.appendChild(option);
-  }
+  if([...mic.options].some(o=>o.value===oldMic))mic.value=oldMic;
+
+  out.replaceChildren();
+  const def=document.createElement("option");
+  def.value="default";def.textContent="Default output";out.appendChild(def);
+  list.filter(d=>d.kind==="audiooutput").forEach((d,i)=>{
+    const o=document.createElement("option");
+    o.value=d.deviceId;o.textContent=d.label||("Output "+(i+1));out.appendChild(o);
+  });
+  if([...out.options].some(o=>o.value===oldOut))out.value=oldOut;
 }
 
-function createProcessor(context){
-  const processor=context.createScriptProcessor(1024,1,1);
-  let phase=0;
-  processor.onaudioprocess=function(event){
-    const input=event.inputBuffer.getChannelData(0);
-    const output=event.outputBuffer.getChannelData(0);
-    const ratio=Math.pow(2,Number(pitch.value)/12);
-    const level=Number(gain.value)/100;
+async function createWorklet(ctx){
+  const sourceCode=`
+class VoiceProcessor extends AudioWorkletProcessor{
+  constructor(){
+    super();
+    this.pitch=1;
+    this.gain=1;
+    this.buffer=new Float32Array(32768);
+    this.write=0;
+    this.read=0;
+    this.ready=false;
+    this.port.onmessage=e=>{
+      if(Number.isFinite(e.data.pitch))this.pitch=e.data.pitch;
+      if(Number.isFinite(e.data.gain))this.gain=e.data.gain;
+    };
+  }
+  process(inputs,outputs){
+    const input=inputs[0]&&inputs[0][0];
+    const output=outputs[0]&&outputs[0][0];
+    if(!input||!output)return true;
+
     for(let i=0;i<output.length;i++){
-      const index=Math.min(input.length-1,Math.floor(i*ratio+phase));
-      output[i]=input[index]*level;
+      const x=input[i]||0;
+      this.buffer[this.write]=x*this.gain;
+
+      if(!this.ready){
+        this.read=(this.write+this.buffer.length-2048)%this.buffer.length;
+        this.ready=true;
+      }
+
+      const a=Math.floor(this.read)%this.buffer.length;
+      const b=(a+1)%this.buffer.length;
+      const f=this.read-Math.floor(this.read);
+      output[i]=this.buffer[a]+(this.buffer[b]-this.buffer[a])*f;
+
+      this.write=(this.write+1)%this.buffer.length;
+      this.read+=this.pitch;
+      if(this.read>=this.buffer.length)this.read-=this.buffer.length;
     }
-    phase=(phase+input.length*ratio)%input.length;
-  };
-  return processor;
+    return true;
+  }
+}
+registerProcessor("voice-processor",VoiceProcessor);
+`;
+  const blob=new Blob([sourceCode],{type:"application/javascript"});
+  const url=URL.createObjectURL(blob);
+  try{await ctx.audioWorklet.addModule(url);}
+  finally{URL.revokeObjectURL(url);}
 }
 
 async function start(){
-  if(running)return;
+  if(context)return;
   try{
-    const constraints={audio:{
-      channelCount:1,
-      echoCancellation:false,
-      noiseSuppression:false,
-      autoGainControl:false
-    }};
-    if(mic.value)constraints.audio.deviceId={exact:mic.value};
-    stream=await navigator.mediaDevices.getUserMedia(constraints);
-    audioContext=new AudioContext();
-    await audioContext.resume();
-    source=audioContext.createMediaStreamSource(stream);
-    shifter=createProcessor(audioContext);
-    source.connect(shifter);
-    shifter.connect(audioContext.destination);
-    running=true;
+    if(!navigator.mediaDevices?.getUserMedia)throw new Error("Microphone access is unavailable in this browser.");
+
+    const audioConstraints={channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false};
+    if(mic.value&&mic.value!=="default")audioConstraints.deviceId={exact:mic.value};
+
+    stream=await navigator.mediaDevices.getUserMedia({audio:audioConstraints});
+    await devices();
+
+    context=new AudioContext({latencyHint:"interactive"});
+    await context.resume();
+    await createWorklet(context);
+
+    source=context.createMediaStreamSource(stream);
+    worklet=new AudioWorkletNode(context,"voice-processor");
+
+    source.connect(worklet);
+    worklet.connect(context.destination);
+    worklet.port.postMessage({pitch:Math.pow(2,Number(pitch.value)/12),gain:1});
+
+    if(typeof HTMLAudioElement.prototype.setSinkId==="function"){
+      audio=new Audio();
+      audio.autoplay=true;
+      audio.srcObject=context.createMediaStreamDestination().stream;
+    }
+
     startButton.disabled=true;
     stopButton.disabled=false;
-    setStatus("Live — speak normally.");
+    say("LIVE — speak normally.");
   }catch(error){
     stop();
-    setStatus("Could not start: "+error.message);
+    say("Could not start: "+error.message);
   }
 }
 
+function update(){
+  pitchValue.textContent=pitch.value;
+  if(worklet)worklet.port.postMessage({pitch:Math.pow(2,Number(pitch.value)/12),gain:1});
+}
+
 function stop(){
-  running=false;
   if(source)source.disconnect();
-  if(shifter)shifter.disconnect();
-  if(stream)stream.getTracks().forEach(function(track){track.stop();});
-  if(audioContext)audioContext.close();
-  source=null;
-  shifter=null;
-  stream=null;
-  audioContext=null;
+  if(worklet)worklet.disconnect();
+  if(stream)stream.getTracks().forEach(t=>t.stop());
+  if(context)context.close();
+  if(audio)audio.srcObject=null;
+  source=worklet=stream=context=audio=null;
   startButton.disabled=false;
   stopButton.disabled=true;
 }
 
-pitch.addEventListener("input",function(){document.getElementById("pitchText").textContent=Number(pitch.value).toFixed(1);});
-gain.addEventListener("input",function(){document.getElementById("gainText").textContent=gain.value;});
+pitch.addEventListener("input",update);
 startButton.addEventListener("click",start);
-stopButton.addEventListener("click",function(){stop();setStatus("Stopped.");});
-if(navigator.mediaDevices&&navigator.mediaDevices.addEventListener){
-  navigator.mediaDevices.addEventListener("devicechange",loadMicrophones);
-}
-loadMicrophones().catch(function(error){setStatus("Could not list microphones: "+error.message);});
+stopButton.addEventListener("click",()=>{stop();say("Stopped.");});
+navigator.mediaDevices?.addEventListener("devicechange",()=>devices().catch(()=>{}));
+devices().catch(()=>{});
 </script>
 </body>
 </html>
