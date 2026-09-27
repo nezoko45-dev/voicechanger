@@ -1,5 +1,9 @@
 import argparse
+import os
+import sys
 import time
+
+sys.path.insert(0, os.getcwd())
 from types import SimpleNamespace
 
 from realtime_vc_engine import RealtimeVCEngine
