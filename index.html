@@ -41,7 +41,7 @@ button.stop{background:#9b3d50}button:disabled{opacity:.45;cursor:not-allowed}.s
 <script>
 const $=id=>document.getElementById(id);
 let stream=null,audioContext=null,source=null,processor=null,zeroGain=null,running=false;
-let capture=[],preRoll=[],lastSend=0,transcribing=false,spokenWords=[],ttsQueue=[],ttsPlaying=false,currentAudio=null;
+let capture=[],preRoll=[],lastSend=0,lastSpeechAt=0,speaking=false,transcribing=false,pendingTranscription=null,spokenWords=[],ttsQueue=[],ttsPlaying=false,currentAudio=null;
 const SR=16000,SPEECH_RMS=0.012,CHUNK_MS=900,WINDOW_MS=2600,PRE_ROLL_MS=250;
 
 function setStatus(v){$("status").textContent=v}
@@ -137,20 +137,31 @@ async function pumpTTS(){
 }
 
 async function streamTranscribe(samples){
-  if(!running||transcribing||samples.length<SR*0.7)return;
+  if(!running||samples.length<SR*0.5)return;
+  // Never discard a speech window just because Whisper is still working.
+  // Keep only the newest window so Piper/Whisper never falls behind with stale audio.
+  pendingTranscription=samples.slice();
+  if(transcribing)return;
   transcribing=true;
   try{
-    const r=await fetch("/transcribe",{method:"POST",body:makeWav(Float32Array.from(samples))});
-    if(!r.ok)throw new Error(await r.text());
-    const data=await r.json(),text=(data.text||"").trim();
-    if(text){
-      $("heard").textContent=text;
-      const fresh=getNewWords(text);
-      if(fresh)queueSpeak(fresh);
-      setStatus(ttsPlaying||ttsQueue.length?"SPEAKING + LISTENING":"LISTENING + STREAMING");
+    while(running&&pendingTranscription){
+      const current=pendingTranscription;
+      pendingTranscription=null;
+      const r=await fetch("/transcribe",{method:"POST",body:makeWav(Float32Array.from(current))});
+      if(!r.ok)throw new Error(await r.text());
+      const data=await r.json(),text=(data.text||"").trim();
+      if(text){
+        $("heard").textContent=text;
+        const fresh=getNewWords(text);
+        if(fresh)queueSpeak(fresh);
+        setStatus(ttsPlaying||ttsQueue.length?"SPEAKING + LISTENING":"LISTENING + STREAMING");
+      }
     }
-  }catch(e){setLog("STREAM ERROR: "+(e?.message||String(e)))}
-  finally{transcribing=false}
+  }catch(e){setLog("WHISPER ERROR: "+(e?.message||String(e)))}
+  finally{
+    transcribing=false;
+    if(running&&pendingTranscription)streamTranscribe(pendingTranscription);
+  }
 }
 
 function pushAudio(d){
@@ -173,7 +184,7 @@ async function start(){
     await audioContext.audioWorklet.addModule(workletUrl);URL.revokeObjectURL(workletUrl);
     source=audioContext.createMediaStreamSource(stream);processor=new AudioWorkletNode(audioContext,"local-mic-processor");
     zeroGain=audioContext.createGain();zeroGain.gain.value=0;
-    capture=[];preRoll=[];lastSend=performance.now();transcribing=false;spokenWords=[];ttsQueue=[];
+    capture=[];preRoll=[];lastSend=performance.now();lastSpeechAt=0;speaking=false;transcribing=false;pendingTranscription=null;spokenWords=[];ttsQueue=[];
     currentAudio=new Audio();
     currentAudio.preload="auto";
     currentAudio.src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA=";
@@ -183,13 +194,21 @@ async function start(){
     processor.port.onmessage=e=>{
       if(!running)return;
       const d=e.data;pushAudio(d);
-      const level=rms(d);
-      if(level>=SPEECH_RMS)preRoll=d.slice();else if(preRoll.length>Math.round(SR*PRE_ROLL_MS/1000))preRoll=preRoll.slice(-Math.round(SR*PRE_ROLL_MS/1000));
-      const now=performance.now();
-      if(level>=SPEECH_RMS&&now-lastSend>=CHUNK_MS){
-        lastSend=now;
-        const samples=capture.slice();
-        streamTranscribe(samples);
+      const level=rms(d),now=performance.now(),isSpeech=level>=SPEECH_RMS;
+      if(isSpeech){
+        speaking=true;
+        lastSpeechAt=now;
+        if(now-lastSend>=CHUNK_MS){
+          lastSend=now;
+          streamTranscribe(capture.slice());
+        }
+      }else if(speaking&&now-lastSpeechAt>=350){
+        // Flush short sentences immediately when the user stops talking.
+        speaking=false;
+        if(now-lastSend>=250){
+          lastSend=now;
+          streamTranscribe(capture.slice());
+        }
       }
     };
     source.connect(processor);processor.connect(zeroGain);zeroGain.connect(audioContext.destination);
@@ -199,7 +218,7 @@ async function start(){
 }
 
 function stop(){
-  running=false;transcribing=false;capture=[];preRoll=[];spokenWords=[];ttsQueue=[];try{currentAudio?.pause();currentAudio.src=""}catch{};currentAudio=null;
+  running=false;transcribing=false;pendingTranscription=null;capture=[];preRoll=[];spokenWords=[];ttsQueue=[];try{currentAudio?.pause();currentAudio.src=""}catch{};currentAudio=null;
   try{stream?.getTracks().forEach(t=>t.stop())}catch{}
   try{source?.disconnect()}catch{}try{processor?.disconnect()}catch{}try{zeroGain?.disconnect()}catch{}try{audioContext?.close()}catch{}
   stream=null;source=null;processor=null;zeroGain=null;audioContext=null;
