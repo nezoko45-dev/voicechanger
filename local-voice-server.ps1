@@ -56,7 +56,7 @@ $PiperBusy=New-Object System.Threading.SemaphoreSlim(1,1)
 function Start-PiperEngine(){
   $psi=New-Object System.Diagnostics.ProcessStartInfo
   $psi.FileName=$Piper.FullName
-  $psi.Arguments="--model $Q$PiperModel$Q --json-input --output_file $Q$Tmp$Q"
+  $psi.Arguments="--model $Q$PiperModel$Q --json-input"
   $psi.UseShellExecute=$false
   $psi.RedirectStandardInput=$true
   $psi.RedirectStandardError=$true
