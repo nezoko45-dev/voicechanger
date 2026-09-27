@@ -28,10 +28,11 @@ impl VoiceChangerApp {
 
         self.stop();
 
-        let mut command = Command::new("python");
+        let python = Self::backend_dir().join("venv").join("Scripts").join("python.exe");
+        let mut command = Command::new(python);
         command.current_dir(Self::backend_dir())
-            .arg("real-time-gui.py")
-            .arg("--reference-path")
+            .arg("../rust_bridge.py")
+            .arg("--reference")
             .arg(wav)
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit());
