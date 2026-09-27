@@ -3,67 +3,64 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Browser RVC Voice Changer</title>
-<style>
-:root{color-scheme:dark}
-*{box-sizing:border-box}
-body{margin:0;min-height:100vh;background:#0d0f14;color:#f5f7fb;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
-main{width:min(760px,94vw);margin:40px auto;padding:26px;border-radius:22px;background:#171a22;box-shadow:0 20px 70px #0009}
-h1{margin-top:0}.sub{color:#aeb6c7}
-.card{padding:16px;margin:14px 0;border:1px solid #292e3b;border-radius:14px;background:#10131a}
-label{display:block;margin:10px 0 6px;font-weight:700}
-select,input[type=file]{width:100%;padding:11px;border-radius:10px;border:1px solid #343b4a;background:#0b0e13;color:#fff}
-button{padding:13px 18px;border:0;border-radius:11px;background:#8ab4ff;color:#08101f;font-weight:800;cursor:pointer;margin:5px 5px 5px 0}
-button:disabled{opacity:.45;cursor:not-allowed}
-.status{font-weight:700}.good{color:#7ee787}.warn{color:#ffd166}
-.small{font-size:.9rem;color:#9aa4b5}.meter{height:8px;background:#292e3b;border-radius:99px;overflow:hidden}.bar{height:100%;width:0;background:#8ab4ff;transition:width .2s}
-audio{width:100%;margin-top:10px}
-</style>
+<title>Hugging Face Realtime — Local Voice Repeater</title>
+<link rel="stylesheet" href="./hf-realtime.css">
 </head>
 <body>
+<header class="topbar">
+  <div>
+    <div class="title-row">
+      <h1>Hugging Face Realtime</h1>
+      <button id="info" class="icon" title="About">i</button>
+    </div>
+    <p>An open, real-time voice chat running locally from your voicechanger repository.</p>
+    <div class="meta">LOCAL • VAD • PARAKEET STT • QWEN • KOKORO TTS</div>
+  </div>
+  <div class="actions">
+    <button id="settings" class="icon" title="Settings">⚙</button>
+  </div>
+</header>
+
 <main>
-<h1>🎙 Browser RVC Voice Changer</h1>
-<p class="sub">No VCClient. No Python. No Electron. The conversion engine runs in Chrome using WebAssembly/WebGPU.</p>
+  <section class="orb-area">
+    <button id="orb" class="orb idle" aria-label="Start voice repeater">
+      <span class="glow"></span><span class="ring"></span><span class="core">
+        <span class="mic">🎙</span>
+        <span class="dots">•••</span>
+      </span>
+    </button>
+    <div id="status">TAP TO START</div>
+    <div id="substatus">Local Hugging Face speech-to-speech</div>
+  </section>
 
-<div class="card">
-<strong>Audio path</strong><br>
-Microphone → browser RVC → selected output → VRChat
-</div>
+  <section class="panel hidden" id="settings-panel">
+    <h2>Settings</h2>
+    <label>Microphone<select id="input"></select></label>
+    <label>Output<select id="output"></select></label>
+    <label>Realtime server<input id="server" value="ws://127.0.0.1:8765/v1/realtime"></label>
+    <label>Voice<select id="voice">
+      <option value="af_heart">af_heart — Kokoro female</option>
+      <option value="af_bella">af_bella — Kokoro female</option>
+      <option value="am_adam">am_adam — Kokoro male</option>
+    </select></label>
+    <label>Instructions<textarea id="instructions">You are a realtime voice repeater. Repeat the user's spoken words exactly and naturally. Do not answer questions, add information, summarize, explain, greet, or ask anything. Output only what the user said.</textarea></label>
+    <button id="save" class="primary">Save</button>
+  </section>
 
-<div class="card">
-<label for="input">Microphone</label>
-<select id="input"><option>Loading devices…</option></select>
-<label for="output">Output</label>
-<select id="output"><option>Loading devices…</option></select>
-<button id="start">Start microphone test</button>
-<button id="stop" disabled>Stop</button>
-</div>
-
-<div class="card">
-<label for="model">RVC voice model (.onnx or .pth)</label>
-<input id="model" type="file" accept=".onnx,.pth,.pt">
-<p class="small">RVC needs a trained target-voice model. A reference WAV by itself cannot be turned into a target RVC voice inside this browser runtime.</p>
-<label for="reference">Reference WAV (optional)</label>
-<input id="reference" type="file" accept=".wav,.mp3,.flac,.ogg,.m4a">
-</div>
-
-<div class="card">
-<div class="status" id="status">Ready — waiting for a voice model.</div>
-<div class="meter"><div class="bar" id="bar"></div></div>
-<audio id="player" controls></audio>
-</div>
-
-<div class="card">
-<strong>What this test is checking</strong>
-<ul>
-<li>Chrome microphone capture</li>
-<li>Local RVC inference</li>
-<li>WebGPU acceleration for the feature/pitch stages when available</li>
-<li>Direct browser audio output</li>
-</ul>
-<p class="small warn">Important: the current browser RVC runtime is an experimental/offline-oriented pipeline, not a finished low-latency live converter. This first version deliberately tests the browser engine before we build a continuous chunk pipeline around it.</p>
-</div>
+  <section class="transcript">
+    <div><span class="label">YOU</span><span id="you">—</span></div>
+    <div><span class="label">LOCAL VOICE</span><span id="agent">—</span></div>
+  </section>
 </main>
-<script type="module" src="./voxshot-app.js"></script>
+
+<dialog id="about">
+  <form method="dialog">
+    <h2>Local Hugging Face Realtime</h2>
+    <p>This version uses the Hugging Face speech-to-speech realtime protocol with a local VAD → STT → LLM → TTS pipeline. Your microphone audio is sent to the local server on this PC.</p>
+    <p>It is configured as a voice repeater rather than a normal assistant.</p>
+    <button class="primary">Close</button>
+  </form>
+</dialog>
+<script type="module" src="./hf-realtime.js"></script>
 </body>
 </html>
