@@ -23,8 +23,11 @@ async function devices(){
 async function check(){
   try {
     const r=await fetch("/health"); const j=await r.json();
-    status(j.ok ? "Local engine ready. Click START." : "Local engine needs setup.");
+    if(j.ok) status("Local STT + PocketTTS ready. Click START.");
+    else if(j.error) status("Setup error: "+j.error.split("\\n")[0]);
+    else status("Local engine is starting…");
   } catch { status("Local server is not running. Use start_local.bat."); }
+  setTimeout(check,3000);
 }
 navigator.mediaDevices.addEventListener?.("devicechange", devices);
 check(); devices();
