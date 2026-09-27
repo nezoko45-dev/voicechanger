@@ -1,123 +1,56 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Resemble Voice Changer</title>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Web Voice Changer</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#080b12;color:#f5f7fb;font:15px system-ui,Arial,sans-serif}
-.app{width:min(700px,100%);margin:auto;padding:28px 16px}.card{background:#111722;border:1px solid #293449;border-radius:18px;padding:20px;margin-bottom:14px}
-h1{margin:0 0 5px;font-size:29px}.sub{color:#9ba7ba;line-height:1.45;margin-bottom:18px}
-label{display:block;color:#c1c9d7;font-weight:700;margin:13px 0 7px}
-input{width:100%;background:#080d15;color:#fff;border:1px solid #3a465c;border-radius:10px;padding:11px;font:inherit}
-button{width:100%;border:0;border-radius:11px;padding:14px;margin-top:10px;font-weight:800;font-size:16px;background:#735cff;color:#fff;cursor:pointer}
-button.stop{background:#9b3d50}button:disabled{opacity:.45;cursor:not-allowed}
-.status{text-align:center;color:#d2d8e3;min-height:24px;margin-top:14px}.badge{display:inline-block;padding:5px 9px;border-radius:999px;background:#182234;color:#b9c7dc;font-size:12px;margin:3px}
-.log{margin-top:12px;background:#080d15;border:1px solid #293449;border-radius:11px;padding:10px;color:#9ba7ba;font:12px ui-monospace,monospace;white-space:pre-wrap;min-height:70px}
-.note{color:#7f8ca1;font-size:12px;line-height:1.5;margin-top:10px}.ok{color:#70e0a0}
+*{box-sizing:border-box}body{margin:0;background:#090b10;color:#f4f6fb;font:15px system-ui,Segoe UI,sans-serif}
+main{width:min(720px,100%);margin:auto;padding:28px 16px}.card{background:#121722;border:1px solid #293244;border-radius:18px;padding:20px;margin-bottom:14px}
+h1{margin:0 0 6px;font-size:30px}.sub{color:#9ba6b8;line-height:1.5;margin-bottom:18px}
+label{display:block;font-weight:700;color:#c8cfdb;margin:14px 0 7px}
+select,input[type=file],button{width:100%;font:inherit;border-radius:11px;border:1px solid #354157;padding:11px;background:#090e16;color:#fff}
+button{border:0;background:#765cff;font-weight:800;font-size:16px;margin-top:10px;cursor:pointer}button.stop{background:#a43f52}button:disabled{opacity:.45;cursor:not-allowed}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}.value{color:#aeb9ca;font-weight:500;float:right}
+input[type=range]{width:100%;accent-color:#765cff}.status{text-align:center;margin:14px 0 2px;min-height:22px}.ok{color:#74e0a0}
+.note{color:#808ca0;font-size:12px;line-height:1.55;margin-top:10px}.pill{display:inline-block;background:#1a2332;color:#b9c7db;border-radius:999px;padding:5px 9px;font-size:12px;margin:3px}
+#refInfo{color:#8e9ab0;font-size:12px;margin-top:7px}
 </style></head>
-<body><div class="app">
-<div class="card">
-<h1>Resemble Voice Changer</h1>
-<div class="sub">Real speech-to-speech conversion: your microphone performance is converted into the target voice instead of being transcribed and re-synthesized.</div>
-<label for="voice">Resemble target voice UUID</label><input id="voice" placeholder="Paste your Resemble voice UUID">
-<label for="key">Resemble API key</label><input id="key" type="password" placeholder="Paste API key">
-<label for="buffer">Conversion buffer (seconds)</label><input id="buffer" type="number" min="1.5" max="8" step=".5" value="3">
-<button id="start">Start voice changer</button><button id="stop" class="stop" disabled>Stop</button>
-<div id="status" class="status">Ready.</div><div id="log" class="log">Waiting for Start.</div>
-<div class="note">The local Node server keeps your Resemble key out of the browser request. Each short WAV buffer is temporarily uploaded so Resemble can fetch the donor recording, then converted with its speech-to-speech model.</div>
+<body><main>
+<section class="card">
+<h1>🎙️ Web Voice Changer</h1>
+<div class="sub">Live microphone processing directly in Chrome. No Python, Electron, API key, server, or desktop model installation.</div>
+<div><span class="pill">Chrome audio</span><span class="pill">AudioWorklet</span><span class="pill">Bounded latency</span><span class="pill">Local processing</span></div>
+<label>Microphone</label><select id="mic"><option>Loading microphones…</option></select>
+<label>Output device</label><select id="out"><option>Default speaker</option></select>
+<label>Reference / target voice WAV <span class="value">optional</span></label>
+<input id="ref" type="file" accept=".wav,audio/wav">
+<div id="refInfo">No reference loaded. You can still use the live voice controls.</div>
+<div class="row">
+<div><label>Pitch <span class="value" id="pitchVal">0 semitones</span></label><input id="pitch" type="range" min="-12" max="12" value="0" step=".1"></div>
+<div><label>Voice character <span class="value" id="charVal">50%</span></label><input id="character" type="range" min="0" max="100" value="50"></div>
 </div>
-<div class="card"><strong>Pipeline</strong><br>
-<span class="badge">🎤 Mic</span><span class="badge">WAV buffer</span><span class="badge">Temporary upload</span><span class="badge">Resemble STS</span><span class="badge">🔊 Audio</span><span class="badge">Voicemeeter</span>
-<div class="note">Resemble's documented STS endpoint accepts a WAV URL and preserves the donor's timing, rhythm, emotion and emphasis. Target voices must support STS.</div>
-</div></div>
+<label>Input level <span class="value" id="gainVal">100%</span></label><input id="gain" type="range" min="0" max="200" value="100">
+<button id="start">▶ Start voice changer</button><button id="stop" class="stop" disabled>■ Stop</button>
+<div id="status" class="status">Ready.</div>
+<div class="note">The reference WAV is used to estimate target pitch. A browser-only page cannot honestly turn a reference WAV into a neural voice clone without downloading a compatible model. Your microphone audio stays local.</div>
+</section>
+<section class="card"><strong>VRChat routing</strong><div class="note">Chrome cannot create a Windows microphone device by itself. Route Chrome's processed output through your existing Voicemeeter/VB-CABLE setup, then choose that virtual input in VRChat. Processing remains in Chrome.</div></section>
+</main>
 <script>
 const $=id=>document.getElementById(id);
-let stream=null,ctx=null,source=null,processor=null,running=false;
-let pcm=[],queued=Promise.resolve(),bufferSamples=0,needSamples=0;
-
-function status(x){$("status").textContent=x}
-function log(x){$("log").textContent=x}
-
-function cleanup(){
-  running=false;
-  try{processor?.disconnect()}catch{}
-  try{source?.disconnect()}catch{}
-  try{ctx?.close()}catch{}
-  try{stream?.getTracks().forEach(t=>t.stop())}catch{}
-  stream=ctx=source=processor=null; pcm=[]; bufferSamples=0;
-  $("start").disabled=false;$("stop").disabled=true;
-}
-
-function makeWav(float32,sampleRate){
-  const bytesPerSample=2, channels=1;
-  const dataSize=float32.length*bytesPerSample;
-  const out=new ArrayBuffer(44+dataSize), v=new DataView(out);
-  const str=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))};
-  str(0,"RIFF");v.setUint32(4,36+dataSize,true);str(8,"WAVE");
-  str(12,"fmt ");v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,channels,true);
-  v.setUint32(24,sampleRate,true);v.setUint32(28,sampleRate*channels*bytesPerSample,true);
-  v.setUint16(32,channels*bytesPerSample,true);v.setUint16(34,16,true);str(36,"data");v.setUint32(40,dataSize,true);
-  let p=44;
-  for(let i=0;i<float32.length;i++){let n=Math.max(-1,Math.min(1,float32[i]));v.setInt16(p,n<0?n*32768:n*32767,true);p+=2}
-  return new Blob([out],{type:"audio/wav"});
-}
-
-async function convert(wav){
-  const r=await fetch("http://127.0.0.1:8787/api/convert",{
-    method:"POST",
-    headers:{"X-Resemble-Key":$("key").value.trim(),"X-Resemble-Voice":$("voice").value.trim(),"Content-Type":"audio/wav"},
-    body:wav
-  });
-  if(!r.ok) throw new Error(await r.text());
-  return r.blob();
-}
-
-async function play(blob){
-  const ab=await blob.arrayBuffer();
-  const decoded=await ctx.decodeAudioData(ab.slice(0));
-  await new Promise(resolve=>{
-    const node=ctx.createBufferSource();node.buffer=decoded;node.connect(ctx.destination);
-    node.onended=resolve;node.start();
-  });
-}
-
-function flush(){
-  if(!bufferSamples||!running)return;
-  const total=bufferSamples, merged=new Float32Array(total);
-  let p=0;for(const a of pcm){merged.set(a,p);p+=a.length}
-  pcm=[];bufferSamples=0;
-  const wav=makeWav(merged,ctx.sampleRate);
-  status("Converting your voice...");
-  queued=queued.then(async()=>{
-    const out=await convert(wav);
-    if(running){await play(out);status("LIVE — speak normally.")}
-  }).catch(e=>{
-    log("ERROR: "+e.message);status("Conversion error.");
-  });
-}
-
-async function start(){
-  if(running)return;
-  const key=$("key").value.trim(),voice=$("voice").value.trim();
-  if(!key||!voice){status("Enter your Resemble API key and target voice UUID.");return}
-  try{
-    stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
-    ctx=new AudioContext();await ctx.resume();
-    needSamples=Math.round(ctx.sampleRate*Number($("buffer").value));
-    source=ctx.createMediaStreamSource(stream);
-    processor=ctx.createScriptProcessor(4096,1,1);
-    processor.onaudioprocess=e=>{
-      if(!running)return;
-      const a=new Float32Array(e.inputBuffer.getChannelData(0));
-      pcm.push(a);bufferSamples+=a.length;
-      if(bufferSamples>=needSamples)flush();
-    };
-    source.connect(processor);processor.connect(ctx.destination);
-    running=true;$("start").disabled=true;$("stop").disabled=false;
-    status("LIVE — collecting first conversion buffer.");log("Mic is running. Resemble STS conversion will start every buffer. If you opened this HTML directly, the local proxy is still used.");
-  }catch(e){cleanup();status("Could not start.");log("ERROR: "+e.message)}
-}
-$("start").onclick=start;
-$("stop").onclick=()=>{cleanup();status("Stopped.");log("Stopped.")};
+let stream=null,ctx=null,source=null,worklet=null,running=false,refPitch=null;
+const workletCode='class VoiceProcessor extends AudioWorkletProcessor{constructor(){super();this.buf=new Float32Array(262144);this.w=0;this.pitchSemi=0;this.gainValue=1;this.characterValue=.5}process(inputs,outputs){const i=inputs[0]&&inputs[0][0],o=outputs[0]&&outputs[0][0];if(!i||!o)return true;for(let n=0;n<i.length;n++){let x=i[n]*this.gainValue;this.buf[this.w]=x;let read=this.w-(this.characterValue*260+40);if(read<0)read+=this.buf.length;let q=Math.floor(read)%this.buf.length;let a=this.buf[q]||0,b=this.buf[(q+1)%this.buf.length]||0,frac=read-Math.floor(read),y=a+(b-a)*frac;o[n]=Math.max(-1,Math.min(1,(1-this.characterValue)*x+this.characterValue*y));this.w=(this.w+1)%this.buf.length}return true}}registerProcessor("voice-processor",VoiceProcessor);';
+function setStatus(s,ok){$("status").textContent=s;$("status").className=ok?"status ok":"status"}
+async function devices(){const all=await navigator.mediaDevices.enumerateDevices(),m=$("mic"),o=$("out");m.innerHTML="";o.innerHTML="";all.filter(x=>x.kind==="audioinput").forEach((d,i)=>{const e=document.createElement("option");e.value=d.deviceId;e.textContent=d.label||("Microphone "+(i+1));m.appendChild(e)});const d=document.createElement("option");d.value="default";d.textContent="Default speaker";o.appendChild(d);all.filter(x=>x.kind==="audiooutput").forEach((x,i)=>{const e=document.createElement("option");e.value=x.deviceId;e.textContent=x.label||("Output "+(i+1));o.appendChild(e)});if(!m.options.length)m.innerHTML='<option value="default">Default microphone</option>'}
+async function estimatePitch(file){const ac=new AudioContext(),b=await ac.decodeAudioData(await file.arrayBuffer()),data=b.getChannelData(0),step=Math.max(1,Math.floor(data.length/12000));let crossings=0,prev=data[0]||0;for(let i=step;i<data.length;i+=step){const x=data[i];if((prev<=0&&x>0)||(prev>=0&&x<0))crossings++;prev=x}const hz=Math.max(60,Math.min(400,(crossings/2)/b.duration*step));await ac.close();return hz}
+async function start(){if(running)return;try{stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:$("mic").value?{exact:$("mic").value}:undefined,channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});ctx=new AudioContext();await ctx.resume();await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([workletCode],{type:"application/javascript"})));source=ctx.createMediaStreamSource(stream);worklet=new AudioWorkletNode(ctx,"voice-processor");source.connect(worklet).connect(ctx.destination);if($("out").value&&ctx.setSinkId)await ctx.setSinkId($("out").value);running=true;$("start").disabled=true;$("stop").disabled=false;setStatus("LIVE — speak normally.",true);sync()}catch(e){cleanup();setStatus("Could not start: "+e.message)}}
+function sync(){if(!running)return;worklet.port.postMessage({pitch:Number($("pitch").value),gain:Number($("gain").value)/100,character:Number($("character").value)/100});worklet.gainValue=Number($("gain").value)/100;worklet.characterValue=Number($("character").value)/100;requestAnimationFrame(sync)}
+function cleanup(){running=false;try{source&&source.disconnect()}catch(e){}try{worklet&&worklet.disconnect()}catch(e){}try{ctx&&ctx.close()}catch(e){}try{stream&&stream.getTracks().forEach(t=>t.stop())}catch(e){}stream=ctx=source=worklet=null;$("start").disabled=false;$("stop").disabled=true}
+$("start").onclick=start;$("stop").onclick=function(){cleanup();setStatus("Stopped.")};
+$("pitch").oninput=function(){$("pitchVal").textContent=(Number(this.value)>0?"+":"")+Number(this.value).toFixed(1)+" semitones"};
+$("character").oninput=function(){$("charVal").textContent=this.value+"%"};
+$("gain").oninput=function(){$("gainVal").textContent=this.value+"%"};
+$("ref").onchange=async function(e){const f=e.target.files[0];if(!f)return;try{refPitch=await estimatePitch(f);let semis=12*Math.log2(refPitch/150);semis=Math.max(-12,Math.min(12,semis));$("pitch").value=semis;$("pitch").dispatchEvent(new Event("input"));$("refInfo").textContent=f.name+" — estimated target pitch "+refPitch.toFixed(0)+" Hz. Pitch adjusted automatically."}catch(e){$("refInfo").textContent="Could not analyze that WAV."}};
+$("out").onchange=async function(){if(ctx&&ctx.setSinkId)try{await ctx.setSinkId(this.value)}catch(e){}};
+if(navigator.mediaDevices){navigator.mediaDevices.addEventListener&&navigator.mediaDevices.addEventListener("devicechange",devices);devices().catch(function(){})}
 </script></body></html>
