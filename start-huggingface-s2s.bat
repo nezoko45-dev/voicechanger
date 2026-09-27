@@ -16,11 +16,12 @@ echo.
 
 where py >nul 2>&1
 if %errorlevel%==0 (
-  set "PY=py -3"
+  py -3.11 -c "import sys" >nul 2>&1
+  if not errorlevel 1 set "PY=py -3.11"
 ) else (
   where python >nul 2>&1
   if errorlevel 1 (
-    echo Python was not found.
+    echo Python 3.11 was not found.
     echo Install Python 3.11 or newer, then run this file again.
     pause
     exit /b 1
@@ -28,15 +29,23 @@ if %errorlevel%==0 (
   set "PY=python"
 )
 
+if exist "%~dp0.hf-s2s-env\Scripts\python.exe" (
+  "%~dp0.hf-s2s-env\Scripts\python.exe" -c "import sys; raise SystemExit(0 if sys.version_info[:2] == (3,11) else 1)" >nul 2>&1
+  if errorlevel 1 (
+    echo Existing HF environment is not Python 3.11. Recreating it...
+    rmdir /s /q "%~dp0.hf-s2s-env"
+  )
+)
+
 if not exist "%~dp0.hf-s2s-env\Scripts\python.exe" (
-  echo Creating Hugging Face speech-to-speech environment...
+  echo Creating Python 3.11 Hugging Face speech-to-speech environment...
   %PY% -m venv "%~dp0.hf-s2s-env"
   if errorlevel 1 goto :fail
 )
 
 set "PYTHON=%~dp0.hf-s2s-env\Scripts\python.exe"
 
-echo Installing Hugging Face Speech-to-Speech + Kokoro...
+echo Installing Hugging Face Speech-to-Speech + Kokoro...\necho Using Python 3.11 to avoid Windows dependency conflicts...
 "%PYTHON%" -m pip install --upgrade pip
 if errorlevel 1 goto :fail
 "%PYTHON%" -m pip install -r "%~dp0requirements-huggingface-s2s.txt"
