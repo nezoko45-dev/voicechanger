@@ -1,100 +1,92 @@
-const $ = id => document.getElementById(id);
-const mic = $("mic"), output = $("output"), start = $("start"), stop = $("stop");
-const statusEl = $("status"), heard = $("heard");
-let stream, ctx, source, worklet, ws, audio = new Audio();
-let running = false;
+const $=id=>document.getElementById(id);
+const mic=$("mic"),output=$("output"),micTest=$("micTest"),stopMic=$("stopMic");
+const generate=$("generate"),text=$("text"),status=$("status"),player=$("player");
+let micStream=null,micContext=null,micSource=null;
 
-function status(s){ statusEl.textContent = s; }
+function setStatus(v){status.textContent=v;}
 
-async function devices(){
-  const list = await navigator.mediaDevices.enumerateDevices();
-  mic.innerHTML = "";
-  output.innerHTML = "";
-  list.filter(d=>d.kind==="audioinput").forEach((d,i)=>{
-    const o=document.createElement("option"); o.value=d.deviceId; o.textContent=d.label||`Microphone ${i+1}`; mic.appendChild(o);
+async function loadDevices(){
+  const devices=await navigator.mediaDevices.enumerateDevices();
+  mic.innerHTML="";
+  output.innerHTML="";
+  const inputs=devices.filter(d=>d.kind==="audioinput");
+  const outputs=devices.filter(d=>d.kind==="audiooutput");
+  inputs.forEach((d,i)=>{
+    const o=document.createElement("option");
+    o.value=d.deviceId;o.textContent=d.label||`Microphone ${i+1}`;mic.appendChild(o);
   });
-  list.filter(d=>d.kind==="audiooutput").forEach((d,i)=>{
-    const o=document.createElement("option"); o.value=d.deviceId; o.textContent=d.label||`Output ${i+1}`; output.appendChild(o);
+  outputs.forEach((d,i)=>{
+    const o=document.createElement("option");
+    o.value=d.deviceId;o.textContent=d.label||`Output ${i+1}`;output.appendChild(o);
   });
-  if(!mic.options.length) mic.innerHTML="<option value=''>Default microphone</option>";
-  if(!output.options.length) output.innerHTML="<option value=''>Default output</option>";
+  if(!inputs.length)mic.innerHTML="<option value=''>Default microphone</option>";
+  if(!outputs.length)output.innerHTML="<option value=''>Default output</option>";
 }
 
 async function check(){
-  try {
-    const r=await fetch("/health"); const j=await r.json();
-    if(j.ok) status("Local STT + PocketTTS ready. Click START.");
-    else if(j.error) status("Setup error: "+j.error.split("\\n")[0]);
-    else status("Local engine is starting…");
-  } catch { status("Local server is not running. Use start_local.bat."); }
-  setTimeout(check,3000);
-}
-navigator.mediaDevices.addEventListener?.("devicechange", devices);
-check(); devices();
-
-output.addEventListener("change", async()=>{
-  if(typeof audio.setSinkId==="function"){
-    try { await audio.setSinkId(output.value); } catch(e) { console.warn(e); }
+  try{
+    const r=await fetch("/health",{cache:"no-store"});
+    const j=await r.json();
+    setStatus(j.ok?"PocketTTS ready — enter text and generate.":j.error||"PocketTTS is starting…");
+  }catch{
+    setStatus("Open the local PocketTTS app through its local server.");
   }
-});
+}
+navigator.mediaDevices.addEventListener?.("devicechange",loadDevices);
 
-start.onclick = async()=>{
-  if(running) return;
-  try {
-    running=true; start.disabled=true; stop.disabled=false; status("Opening microphone…");
+micTest.onclick=async()=>{
+  try{
+    stopMic.click();
     await navigator.mediaDevices.getUserMedia({audio:true});
-    await devices();
+    await loadDevices();
+    micStream=await navigator.mediaDevices.getUserMedia({
+      audio:{deviceId:mic.value?{exact:mic.value}:undefined,
+      channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}
+    });
+    micContext=new AudioContext();
+    micSource=micContext.createMediaStreamSource(micStream);
+    const gain=micContext.createGain();gain.gain.value=.18;
+    micSource.connect(gain).connect(micContext.destination);
+    micTest.disabled=true;stopMic.disabled=false;
+    setStatus("Microphone test running.");
+  }catch(e){setStatus("Microphone error: "+e.message);}
+};
 
-    const constraints={audio:{
-      deviceId: mic.value ? {exact:mic.value}:undefined,
-      channelCount:1, echoCancellation:false, noiseSuppression:false, autoGainControl:false
-    }};
-    stream=await navigator.mediaDevices.getUserMedia(constraints);
+stopMic.onclick=()=>{
+  if(micSource){try{micSource.disconnect()}catch{}micSource=null}
+  if(micContext){try{micContext.close()}catch{}micContext=null}
+  if(micStream){micStream.getTracks().forEach(t=>t.stop());micStream=null}
+  micTest.disabled=false;stopMic.disabled=true;
+  setStatus("Microphone test stopped.");
+};
 
-    ctx=new AudioContext();
-    await ctx.audioWorklet.addModule("capture-worklet.js");
-    source=ctx.createMediaStreamSource(stream);
-    worklet=new AudioWorkletNode(ctx,"downsampler",{processorOptions:{targetRate:16000}});
-    worklet.port.onmessage=e=>{
-      if(ws?.readyState===WebSocket.OPEN) ws.send(e.data.buffer);
-    };
-    source.connect(worklet);
-    const silentSink=ctx.createGain(); silentSink.gain.value=0; worklet.connect(silentSink); silentSink.connect(ctx.destination);
-
-    ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/audio");
-    ws.binaryType="arraybuffer";
-    ws.onopen=()=>{ status("Listening locally… speak normally."); };
-    ws.onmessage=async e=>{
-      const m=JSON.parse(e.data);
-      if(m.type==="partial"){ heard.textContent=m.text||"—"; }
-      if(m.type==="final" && m.text){
-        heard.textContent=m.text;
-        status("Generating local cloned voice…");
-        try{
-          const r=await fetch("/tts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:m.text})});
-          if(!r.ok) throw new Error(await r.text());
-          const blob=await r.blob();
-          audio.src=URL.createObjectURL(blob);
-          if(typeof audio.setSinkId==="function" && output.value) await audio.setSinkId(output.value);
-          await audio.play();
-          status("Listening locally…");
-        }catch(err){ status("TTS error: "+err.message); }
-      }
-      if(m.type==="error") status(m.message);
-    };
-    ws.onerror=()=>status("Local audio connection failed.");
-  } catch(e){
-    status("Start error: "+e.message);
-    stopApp();
+output.onchange=async()=>{
+  if(typeof player.setSinkId==="function"&&output.value){
+    try{await player.setSinkId(output.value)}catch(e){console.warn(e)}
   }
 };
 
-function stopApp(){
-  running=false; start.disabled=false; stop.disabled=true;
-  if(ws){try{ws.close()}catch{} ws=null}
-  if(source){try{source.disconnect()}catch{} source=null}
-  if(worklet){try{worklet.disconnect()}catch{} worklet=null}
-  if(ctx){try{ctx.close()}catch{} ctx=null}
-  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
-}
-stop.onclick=()=>{stopApp();status("Stopped.");};
+generate.onclick=async()=>{
+  const value=text.value.trim();
+  if(!value)return setStatus("Enter some text first.");
+  generate.disabled=true;
+  setStatus("Generating with local PocketTTS…");
+  try{
+    const r=await fetch("/tts",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({text:value})
+    });
+    if(!r.ok)throw new Error(await r.text());
+    const blob=await r.blob();
+    const old=player.src;
+    player.src=URL.createObjectURL(blob);
+    if(old)URL.revokeObjectURL(old);
+    if(typeof player.setSinkId==="function"&&output.value)await player.setSinkId(output.value);
+    await player.play();
+    setStatus("Done — local PocketTTS voice is playing.");
+  }catch(e){setStatus("PocketTTS error: "+e.message)}
+  finally{generate.disabled=false}
+};
+
+(async()=>{try{await navigator.mediaDevices.getUserMedia({audio:true})}catch{}await loadDevices();await check()})();
