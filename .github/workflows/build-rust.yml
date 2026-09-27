@@ -6,7 +6,9 @@ on:
     paths:
       - "Cargo.toml"
       - "src/**"
+      - "rust_bridge.py"
       - "run_rust.bat"
+      - "setup_seedvc.bat"
       - ".github/workflows/build-rust.yml"
 
 jobs:
@@ -15,23 +17,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable-x86_64-pc-windows-msvc
-
       - name: Build release
         run: cargo build --release
-
       - name: Package
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target/release/voicechanger.exe dist/voicechanger.exe
           Copy-Item run_rust.bat dist/run_rust.bat
+          Copy-Item setup_seedvc.bat dist/setup_seedvc.bat
+          Copy-Item rust_bridge.py dist/rust_bridge.py
           Copy-Item README.md dist/README.md
-
       - name: Upload Windows EXE
         uses: actions/upload-artifact@v4
         with:
