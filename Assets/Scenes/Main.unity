@@ -28,7 +28,10 @@ MonoBehaviour:
   m_ObjectHideFlags: 0
   m_GameObject: {fileID: 1000}
   m_Enabled: 1
-  m_Script: {fileID: 11500000, guid: 5d6b3f4b5f2b4a2e9c2e0f9d7a1b3c5d, type: 3}
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0465a5e91c3e409ef271833e85f9dc534f73633f, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
   pitchSemitones: 0
   inputGain: 1
   noiseGate: 1
