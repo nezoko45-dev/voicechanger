@@ -29,6 +29,7 @@ registerProcessor('hf-play',Play);`;
 }
 function sendSession(){
  ws.send(JSON.stringify({type:"session.update",session:{
+   type:"realtime",
    instructions:$("instructions").value,
    output_modalities:["audio"],
    audio:{input:{format:{type:"audio/pcm",rate:24000},turn_detection:{type:"server_vad",interrupt_response:true}},output:{format:{type:"audio/pcm",rate:24000},voice:voice}}
