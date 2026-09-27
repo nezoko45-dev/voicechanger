@@ -1,0 +1,39 @@
+name: Build Rust Voice Changer
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "Cargo.toml"
+      - "src/**"
+      - "run_rust.bat"
+      - ".github/workflows/build-rust.yml"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target/release/voicechanger.exe dist/voicechanger.exe
+          Copy-Item run_rust.bat dist/run_rust.bat
+          Copy-Item README.md dist/README.md
+
+      - name: Upload Windows EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: voicechanger-windows
+          path: dist/
