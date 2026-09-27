@@ -41,7 +41,7 @@ button.stop{background:#9b3d50}button:disabled{opacity:.45;cursor:not-allowed}.s
 <script>
 const $=id=>document.getElementById(id);
 let stream=null,audioContext=null,source=null,processor=null,zeroGain=null,running=false;
-let capture=[],preRoll=[],lastSend=0,transcribing=false,spokenWords=[],ttsQueue=[],ttsPlaying=false;
+let capture=[],preRoll=[],lastSend=0,transcribing=false,spokenWords=[],ttsQueue=[],ttsPlaying=false,currentAudio=null;
 const SR=16000,SPEECH_RMS=0.012,CHUNK_MS=900,WINDOW_MS=2600,PRE_ROLL_MS=250;
 
 function setStatus(v){$("status").textContent=v}
@@ -101,12 +101,14 @@ async function pumpTTS(){
   try{
     const r=await fetch("/speak",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text})});
     if(!r.ok)throw new Error(await r.text());
-    const blob=await r.blob(),url=URL.createObjectURL(blob),a=new Audio(url);
+    const blob=await r.blob(),url=URL.createObjectURL(blob),a=currentAudio||new Audio();
     const sink=$("speaker").value;
     if(sink&&typeof a.setSinkId==="function"){try{await a.setSinkId(sink)}catch{}}
+    a.src=url;
+    a.currentTime=0;
     setStatus("SPEAKING + LISTENING");
     await a.play();
-    await new Promise(res=>{a.onended=res;a.onerror=res});
+    await new Promise(res=>{a.onended=res;a.onerror=()=>res()});
     URL.revokeObjectURL(url);
   }catch(e){setLog("TTS ERROR: "+(e?.message||String(e)))}
   ttsPlaying=false;
@@ -151,6 +153,12 @@ async function start(){
     source=audioContext.createMediaStreamSource(stream);processor=new AudioWorkletNode(audioContext,"local-mic-processor");
     zeroGain=audioContext.createGain();zeroGain.gain.value=0;
     capture=[];preRoll=[];lastSend=performance.now();transcribing=false;spokenWords=[];ttsQueue=[];
+    currentAudio=new Audio();
+    currentAudio.preload="auto";
+    currentAudio.src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA=";
+    const sink=$("speaker").value;
+    if(sink&&typeof currentAudio.setSinkId==="function"){try{await currentAudio.setSinkId(sink)}catch{}}
+    try{await currentAudio.play();currentAudio.pause();currentAudio.currentTime=0}catch(e){setLog("AUDIO UNLOCK: "+(e?.message||String(e)))}
     processor.port.onmessage=e=>{
       if(!running)return;
       const d=e.data;pushAudio(d);
@@ -170,7 +178,7 @@ async function start(){
 }
 
 function stop(){
-  running=false;transcribing=false;capture=[];preRoll=[];spokenWords=[];ttsQueue=[];
+  running=false;transcribing=false;capture=[];preRoll=[];spokenWords=[];ttsQueue=[];try{currentAudio?.pause();currentAudio.src=""}catch{};currentAudio=null;
   try{stream?.getTracks().forEach(t=>t.stop())}catch{}
   try{source?.disconnect()}catch{}try{processor?.disconnect()}catch{}try{zeroGain?.disconnect()}catch{}try{audioContext?.close()}catch{}
   stream=null;source=null;processor=null;zeroGain=null;audioContext=null;
