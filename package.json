@@ -1,0 +1,9 @@
+{
+  "name":"local-wav-voice-agent",
+  "private":true,
+  "version":"1.0.0",
+  "description":"Local browser voice agent using sherpa-onnx streaming ASR and PocketTTS WAV voice cloning",
+  "main":"server.js",
+  "scripts":{"start":"node server.js"},
+  "dependencies":{"sherpa-onnx-node":"latest","ws":"^8.18.0"}
+}
