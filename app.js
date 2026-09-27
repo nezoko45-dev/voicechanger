@@ -56,7 +56,7 @@ start.onclick = async()=>{
       if(ws?.readyState===WebSocket.OPEN) ws.send(e.data.buffer);
     };
     source.connect(worklet);
-    worklet.connect(ctx.destination);
+    const silentSink=ctx.createGain(); silentSink.gain.value=0; worklet.connect(silentSink); silentSink.connect(ctx.destination);
 
     ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/audio");
     ws.binaryType="arraybuffer";
