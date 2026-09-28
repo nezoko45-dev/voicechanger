@@ -34,12 +34,14 @@ async function loadPocketTTS(){
   if(tts)return;
   setStatus("Loading browser PocketTTS model… first load can take a while.");
   // Direct browser module; no Node server is needed for GitHub Pages.
-  const mod=await import("https://cdn.jsdelivr.net/npm/pocket-tts-js@0.1.0/src/index.js");
+  const mod=await import("https://cdn.jsdelivr.net/gh/vlapky/pocket-tts-js@main/src/index.js");
   tts=new mod.PocketTTS({
     language:"english_2026-04",
     quantized:true,
     voiceCloning:true,
-    cache:true
+    cache:true,
+    modelBaseUrl:"https://huggingface.co/akrv/pocket-tts-onnx/resolve/main/onnx",
+    ortBaseUrl:"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.0/dist/"
   });
   await tts.load(p=>{
     if(p.total){
