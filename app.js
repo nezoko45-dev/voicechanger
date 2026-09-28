@@ -43,7 +43,9 @@ async function loadPocketTTS(){
     voiceCloning:true,
     cache:true,
     cacheName:"pocket-tts-safe-v2",
-    maxThreads:2,
+    maxThreads:1,
+    deferSynthesis:true,
+    maxReferenceSeconds:6,
     modelBaseUrl:"https://huggingface.co/akrv/pocket-tts-onnx/resolve/main/onnx",
     ortBaseUrl:"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.0/dist/"
   });
@@ -71,9 +73,12 @@ async function loadPocketTTS(){
 
   await decodeCtx.close();
 
+  setStatus("Loading speech models...");
+  await tts.finishLoad();
+
   audioCtx=new AudioContext();
   await audioCtx.resume().catch(()=>{});
-  setStatus("PocketTTS ready - stable single-buffer mode.");
+  setStatus("PocketTTS ready - low-memory single-buffer mode.");
 }
 
 function makeWavBlob(chunks,sampleRate){
