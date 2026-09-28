@@ -1,9 +1,8 @@
 {
-  "name":"pockettts-local-echo",
+  "name":"pockettts-windows-voicechanger",
   "private":true,
-  "version":"1.1.0",
-  "description":"Local microphone to Whisper to PocketTTS echo app",
+  "version":"2.0.0",
+  "description":"Simple microphone speech recognition to PocketTTS with native Windows audio playback",
   "main":"server.js",
-  "scripts":{"start":"node server.js"},
-  "dependencies":{"sherpa-onnx-node":"latest"}
+  "scripts":{"start":"node server.js"}
 }
