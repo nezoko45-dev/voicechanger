@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Deepgram STT + PocketTTS Voice Changer</title>
+<title>ElevenLabs Scribe + PocketTTS Voice Changer</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}
 body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0d0d0f;color:#eee;font:15px system-ui,Segoe UI,sans-serif}
@@ -23,13 +23,13 @@ audio{width:100%;margin-top:14px}.badge{display:inline-block;margin-bottom:12px;
 </head>
 <body>
 <main class="card">
-<div class="badge">DEEPGRAM STT + POCKETTTS</div>
+<div class="badge">ELEVENLABS SCRIBE + POCKETTTS</div>
 <h1>🎙 Live Voice Changer</h1>
-<p class="sub">Mic → Deepgram streaming STT → PocketTTS cloned voice → selected output</p>
+<p class="sub">Mic → ElevenLabs Scribe Realtime → PocketTTS cloned voice → selected output</p>
 
-<label>Deepgram API key</label>
-<input id="deepgramKey" type="password" autocomplete="off" placeholder="Paste your Deepgram API key">
-<div class="note">The key is stored only in this browser's local storage. Do not publish a permanent API key in the repository.</div>
+<label>ElevenLabs API key</label>
+<input id="elevenKey" type="password" autocomplete="off" placeholder="Paste your ElevenLabs API key">
+<div class="note">Used only to request a short-lived Scribe realtime token. For a public deployment, put token generation on a server so the permanent API key never reaches the browser.</div>
 
 <label>Microphone</label>
 <select id="mic"><option>Choose microphone…</option></select>
@@ -42,13 +42,13 @@ audio{width:100%;margin-top:14px}.badge{display:inline-block;margin-bottom:12px;
 <button id="stop" disabled>STOP</button>
 </div>
 
-<div class="status" id="status">Enter your Deepgram key and press START.</div>
+<div class="status" id="status">Enter your ElevenLabs key and press START.</div>
 <div class="transcript" id="transcript">Heard: —</div>
 <audio id="player" controls></audio>
 
 <div class="small">
 Reference voice: <b>Recording (10).wav</b><br>
-Deepgram keeps the microphone stream open continuously and sends interim transcription while you speak. A ~300 ms speech endpoint hands the completed utterance to PocketTTS, which generates the cloned voice as one stable audio buffer.<br>
+ElevenLabs Scribe Realtime sends partial transcription while you speak and commits a segment using voice activity detection. The committed text is immediately handed to PocketTTS, which keeps the cloned voice playback as a stable single audio buffer.<br>
 For VRChat, select a Voicemeeter/virtual-cable playback device here and select the matching virtual microphone in VRChat.
 </div>
 </main>
