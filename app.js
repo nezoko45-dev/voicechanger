@@ -55,7 +55,7 @@ async function loadPocketTTS(){
     voiceCloning:true,
     cache:true,
     cacheName:"pocket-tts-safe-v2",
-    maxThreads:1,
+    maxThreads:2,
     deferSynthesis:true,
     maxReferenceSeconds:6,
     modelBaseUrl:"https://huggingface.co/akrv/pocket-tts-onnx/resolve/main/onnx",
