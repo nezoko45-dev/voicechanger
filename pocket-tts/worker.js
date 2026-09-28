@@ -659,7 +659,7 @@ async function generate(text, voiceRef) {
             }
         }
 
-        if (chunkEnded && isGenerating && chunkLatents.length) {
+        if (isGenerating && chunkLatents.length) {
             const decodeLatents = new Float32Array(chunkLatents.length * latentDim);
             for (let frame = 0; frame < chunkLatents.length; frame++) {
                 decodeLatents.set(chunkLatents[frame], frame * latentDim);
