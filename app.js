@@ -76,6 +76,7 @@ async function loadPocketTTS(){
   streamingPlayer=new modPlayer.StreamingPlayer({
     sampleRate:tts.sampleRate,
     audioContext:audioCtx,
+    outputElement:player,
     primeSeconds:0.08,
     leadSeconds:0.015,
     onUnderrun:info=>console.warn("PocketTTS audio underrun",info)
