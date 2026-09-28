@@ -27,6 +27,8 @@ export class StreamingPlayer {
         this._primeSeconds = opts.primeSeconds != null ? opts.primeSeconds : 0.4;
         this._leadSeconds = opts.leadSeconds != null ? opts.leadSeconds : 0.05;
         this._onUnderrun = opts.onUnderrun || null;
+        this.outputElement = opts.outputElement || null;
+        this._mediaDestination = null;
 
         this._nextStartTime = 0;
         this._sources = new Set();
@@ -49,7 +51,16 @@ export class StreamingPlayer {
             this.analyser = this.audioContext.createAnalyser();
             this.analyser.fftSize = 2048;
             this._gain.connect(this.analyser);
-            this.analyser.connect(this.audioContext.destination);
+            if (this.outputElement) {
+                this._mediaDestination = this.audioContext.createMediaStreamDestination();
+                this.analyser.connect(this._mediaDestination);
+                this.outputElement.srcObject = this._mediaDestination.stream;
+                this.outputElement.autoplay = true;
+                this.outputElement.playsInline = true;
+                this.outputElement.play().catch(() => {});
+            } else {
+                this.analyser.connect(this.audioContext.destination);
+            }
         }
     }
 
