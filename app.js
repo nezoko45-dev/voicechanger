@@ -94,15 +94,11 @@ async function loadPocketTTS(){
 }
 
 function makeWavBlob(chunks,sampleRate){
+  // Build the final PCM buffer directly. The old path first created a
+  // Float32Array copy and then converted it, doubling the peak temporary
+  // memory and adding another full pass over the generated audio.
   const total=chunks.reduce((n,c)=>n+c.length,0);
-  const pcm=new Float32Array(total);
-  let offset=0;
-  for(const chunk of chunks){
-    pcm.set(chunk,offset);
-    offset+=chunk.length;
-  }
-
-  const dataSize=pcm.length*2;
+  const dataSize=total*2;
   const buffer=new ArrayBuffer(44+dataSize);
   const view=new DataView(buffer);
   const write=(pos,str)=>{
@@ -124,10 +120,12 @@ function makeWavBlob(chunks,sampleRate){
   view.setUint32(40,dataSize,true);
 
   let pos=44;
-  for(const sample of pcm){
-    const s=Math.max(-1,Math.min(1,sample));
-    view.setInt16(pos,s<0?s*0x8000:s*0x7fff,true);
-    pos+=2;
+  for(const chunk of chunks){
+    for(const sample of chunk){
+      const s=Math.max(-1,Math.min(1,sample));
+      view.setInt16(pos,s<0?s*0x8000:s*0x7fff,true);
+      pos+=2;
+    }
   }
   return new Blob([buffer],{type:"audio/wav"});
 }
@@ -145,7 +143,7 @@ async function speak(text){
     transcript.textContent="Heard: "+text;
     lastSpokenText=normalizeSpeech(text);
     lastSpokenAt=Date.now();
-    setStatus("Generating complete audio...");
+    setStatus("Generating fast single-buffer audio...");
     await setOutput();
 
     const chunks=[];
@@ -158,7 +156,7 @@ async function speak(text){
 
     if(!chunks.length)throw new Error("PocketTTS returned no audio.");
 
-    setStatus("Preparing single audio buffer...");
+    setStatus("Preparing audio buffer...");
     const blob=makeWavBlob(chunks,tts.sampleRate);
     const url=URL.createObjectURL(blob);
 
