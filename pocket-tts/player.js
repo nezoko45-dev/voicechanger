@@ -24,7 +24,9 @@ export class StreamingPlayer {
         this.sampleRate = opts.sampleRate || 24000;
         this.audioContext = opts.audioContext || null;
         this._ownsContext = !opts.audioContext;
-        this._primeSeconds = opts.primeSeconds != null ? opts.primeSeconds : 0.4;
+        this._primeSeconds = opts.primeSeconds != null ? opts.primeSeconds : 0.18;
+        this._minPrimeSeconds = opts.minPrimeSeconds != null ? opts.minPrimeSeconds : 0.18;
+        this._maxPrimeSeconds = opts.maxPrimeSeconds != null ? opts.maxPrimeSeconds : 0.45;
         this._leadSeconds = opts.leadSeconds != null ? opts.leadSeconds : 0.05;
         this._onUnderrun = opts.onUnderrun || null;
         this.outputElement = opts.outputElement || null;
@@ -38,6 +40,7 @@ export class StreamingPlayer {
         this._pending = [];
         this._pendingDuration = 0;
         this._primed = false;
+        this._adaptivePrime = this._primeSeconds;
         this.underruns = 0;
     }
 
@@ -77,6 +80,7 @@ export class StreamingPlayer {
         this._pending = [];
         this._pendingDuration = 0;
         this._primed = false;
+        this._adaptivePrime = this._primeSeconds;
         this.underruns = 0;
     }
 
@@ -92,7 +96,7 @@ export class StreamingPlayer {
         if (!this._primed) {
             this._pending.push(float32);
             this._pendingDuration += float32.length / this.sampleRate;
-            if (this._pendingDuration >= this._primeSeconds || (meta && meta.isLast)) {
+            if (this._pendingDuration >= this._adaptivePrime || (meta && meta.isLast)) {
                 this._flushPending();
             }
             return;
@@ -130,7 +134,9 @@ export class StreamingPlayer {
         if (this._nextStartTime < now) {
             // The producer fell behind the playback clock: a gap is unavoidable.
             this.underruns++;
-            if (this._onUnderrun) this._onUnderrun({ gapSeconds: now - this._nextStartTime, count: this.underruns });
+            const gap = now - this._nextStartTime;
+            this._adaptivePrime = Math.min(this._maxPrimeSeconds, Math.max(this._adaptivePrime + 0.06, this._minPrimeSeconds + gap * 1.5));
+            if (this._onUnderrun) this._onUnderrun({ gapSeconds: gap, count: this.underruns, nextPrimeSeconds: this._adaptivePrime });
         }
         const startAt = Math.max(now, this._nextStartTime);
         source.start(startAt);
@@ -153,6 +159,7 @@ export class StreamingPlayer {
         this._pending = [];
         this._pendingDuration = 0;
         this._primed = false;
+        this._adaptivePrime = this._primeSeconds;
         if (this.audioContext) this._nextStartTime = this.audioContext.currentTime;
     }
 
