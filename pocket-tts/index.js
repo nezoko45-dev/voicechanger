@@ -45,6 +45,8 @@ export class PocketTTS {
             ortBaseUrl: options.ortBaseUrl || DEFAULT_ORT_BASE_URL,
             voicesUrl: options.voicesUrl || null,
             maxThreads: options.maxThreads || 8,
+            deferSynthesis: options.deferSynthesis === true,
+            maxReferenceSeconds: options.maxReferenceSeconds || 6,
             cache: options.cache !== false,
             cacheName: options.cacheName || CACHE_NAME,
         };
@@ -133,10 +135,20 @@ export class PocketTTS {
      */
     async load(onProgress) {
         this._onProgress = onProgress || null;
-        // The worker emits a `ready` message (captured in _handleMessage,
-        // populating this.bundle) before resolving the init request.
         await this._request("init", this.options);
         this.ready = true;
+        return this.bundle;
+    }
+
+    /**
+     * Finish loading the synthesis models after a cloned voice has been
+     * encoded. This staged path keeps the voice encoder out of memory while
+     * the larger synthesis stack is active.
+     */
+    async finishLoad() {
+        if (!this.worker) throw new Error("PocketTTS has not been loaded.");
+        await this._request("loadSynthesis", {});
+        if (this.bundle) this.bundle.synthesisReady = true;
         return this.bundle;
     }
 
@@ -155,8 +167,8 @@ export class PocketTTS {
         if (opts.inputSampleRate && opts.inputSampleRate !== target) {
             pcm = resampleLinear(audio, opts.inputSampleRate, target);
         }
-        // Cap the reference to 10 s (matches model expectations).
-        const maxSamples = target * 10;
+        // Keep the reference short to limit encoder peak memory.
+        const maxSamples = target * this.options.maxReferenceSeconds;
         if (pcm.length > maxSamples) pcm = pcm.slice(0, maxSamples);
 
         const ref = opts.name || `clone:${++this._cloneCounter}`;
@@ -184,6 +196,9 @@ export class PocketTTS {
      * @returns {Promise<{rtfx:number,genTime:number,audioDuration:number}>}
      */
     async generate(text, opts = {}) {
+        if (!this.bundle?.synthesisReady) {
+            throw new Error("PocketTTS synthesis models are not loaded yet.");
+        }
         if (!opts.voice) throw new Error("generate() requires a `voice` reference.");
         this._onChunk = opts.onChunk || null;
         try {
