@@ -1,0 +1,28 @@
+RVC REFERENCE TRAINING
+
+1. Run setup_rvc.bat once.
+2. Run train_reference_rvc.bat.
+3. The script converts Recording (10).wav to rvc-dataset\reference.wav.
+4. The RVC WebUI opens.
+
+Training values:
+- Model/experiment name: uwu_girl
+- Dataset folder: <voicechanger repo>\rvc-dataset
+- Sample rate: 40k
+- Version: v2
+- F0/pitch method: RMVPE
+
+RVC recommends at least about 10 minutes of clean, low-noise speech for a small-data training set.
+A short/noisy reference can still run, but the resulting voice model may be weaker.
+
+After training:
+- The inference-ready .pth belongs in rvc-realtime\assets\weights
+- The generated index belongs in rvc-realtime\assets\indices
+- Use rvc_realtime.bat for live conversion.
+
+IMPORTANT:
+Recording (10).wav in this repo is mislabeled: its container is MP4 even though its filename ends in .wav.
+The training launcher converts it to a genuine mono PCM WAV before RVC uses it.
+
+Official RVC documentation:
+https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI
