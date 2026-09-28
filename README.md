@@ -1,53 +1,25 @@
-# Local PocketTTS Echo
+# ElevenLabs Scribe + PocketTTS Voice Changer
 
-This app listens to the selected microphone, transcribes each spoken sentence with a **local sherpa-onnx Whisper model**, then sends that text to **PocketTTS**. PocketTTS uses `Recording (10).wav` as the reference voice and the generated audio is played through the selected output.
+This app uses **ElevenLabs Scribe Realtime** for live speech-to-text and **PocketTTS** for the cloned voice output.
 
 Pipeline:
 
-**Microphone → local Whisper STT → PocketTTS voice clone → output**
+**Microphone → ElevenLabs Scribe Realtime STT → PocketTTS voice clone → selected output**
 
-No Deepgram or cloud speech API is used by the app.
-
-## Models
-
-PocketTTS:
-
-`models/sherpa-onnx-pocket-tts-int8-2026-01-26/`
-
-Required:
-- lm_flow.int8.onnx
-- lm_main.int8.onnx
-- encoder.onnx
-- decoder.int8.onnx
-- text_conditioner.onnx
-- vocab.json
-- token_scores.json
-
-Local STT:
-
-`models/sherpa-onnx-whisper-tiny.en/`
-
-Required:
-- tiny.en-encoder.int8.onnx
-- tiny.en-decoder.int8.onnx
-- tiny.en-tokens.txt
-
-The official sherpa-onnx documentation provides the Whisper tiny.en ONNX model and shows the encoder/decoder/token configuration used for offline recognition. citeturn1search0turn1search1
+The browser requests a short-lived ElevenLabs realtime Scribe token and then connects to Scribe over WebSocket. PocketTTS remains local in the browser and uses `Recording (10).wav` as the reference voice.
 
 ## Run
 
-Install the local `sherpa-onnx-node` dependency once, then:
+Open the GitHub Pages app, enter an ElevenLabs API key, choose the microphone and output, then press **START VOICE CHANGER**.
 
-`node server.js`
+For a production/public deployment, token creation should be moved to a server so the permanent ElevenLabs API key is never exposed to the browser.
 
-Open:
+## PocketTTS
 
-`http://127.0.0.1:8787/`
+PocketTTS is loaded from the repository's `pocket-tts/` implementation and uses the ONNX model hosted on Hugging Face.
 
-The Node addon is the recommended sherpa-onnx JavaScript path and supports local native ASR/TTS. citeturn0search5turn0search1
+Reference voice:
 
-## How echo works
+`Recording (10).wav`
 
-Press **START LISTENING**, speak a sentence, then pause briefly. The browser sends raw microphone samples to the local Node server. Whisper transcribes them locally. PocketTTS then generates the sentence using `Recording (10).wav`, and the browser plays the resulting WAV.
-
-This is sentence-based speech-to-speech, not waveform-to-waveform conversion. PocketTTS itself is a TTS voice-cloning model that accepts text plus reference audio. citeturn0search7
+For VRChat, route the selected browser output through Voicemeeter or a virtual cable and choose the matching virtual microphone in VRChat.
