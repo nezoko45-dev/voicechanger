@@ -9,6 +9,19 @@ const ASR=path.join(ROOT,"models","sherpa-onnx-whisper-tiny.en");
 const REF=path.join(ROOT,"Recording (10).wav");
 const PORT=8787;
 
+async function createScribeToken(apiKey){
+  const r=await fetch("https://api.elevenlabs.io/v1/single-use-token/realtime_scribe",{
+    method:"POST",
+    headers:{"xi-api-key":apiKey}
+  });
+  const text=await r.text();
+  let data={};
+  try{data=JSON.parse(text)}catch{}
+  if(!r.ok)throw new Error("ElevenLabs token request failed ("+r.status+"): "+(data.detail||text.slice(0,500)));
+  if(!data.token)throw new Error("ElevenLabs returned no realtime Scribe token.");
+  return data.token;
+}
+
 let tts=null,recognizer=null,error=null,reference=null;
 const pocketFiles=["lm_flow.int8.onnx","lm_main.int8.onnx","encoder.onnx","decoder.int8.onnx","text_conditioner.onnx","vocab.json","token_scores.json"];
 const asrFiles=["tiny.en-encoder.int8.onnx","tiny.en-decoder.int8.onnx","tiny.en-tokens.txt"];
@@ -91,6 +104,25 @@ async function recognize(samples,sampleRate){
 }
 
 const server=http.createServer((req,res)=>{
+  const u=new URL(req.url,"http://127.0.0.1");
+  if(u.pathname==="/scribe-token"&&req.method==="POST"){
+    let body="";
+    req.on("data",c=>{body+=c;if(body.length>10000)req.destroy()});
+    req.on("end",async()=>{
+      try{
+        const j=JSON.parse(body||"{}");
+        const apiKey=String(j.apiKey||"").trim();
+        if(!apiKey)throw new Error("Missing ElevenLabs API key.");
+        const token=await createScribeToken(apiKey);
+        res.writeHead(200,{"Content-Type":"application/json","Cache-Control":"no-store"});
+        res.end(JSON.stringify({token}));
+      }catch(e){
+        res.writeHead(500,{"Content-Type":"application/json","Cache-Control":"no-store"});
+        res.end(JSON.stringify({error:e.message||"Scribe token error."}));
+      }
+    });
+    return;
+  }
   const u=new URL(req.url,"http://127.0.0.1");
   if(u.pathname==="/health"){
     res.writeHead(200,{"Content-Type":"application/json"});
