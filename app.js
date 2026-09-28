@@ -8,6 +8,7 @@ let audioCtx=null;
 const speechQueue=[];
 let processingQueue=false;
 let recognitionRestartTimer=null;
+let recognitionRefreshTimer=null;
 let recognitionGeneration=0;
 let lastQueuedText="";
 let lastQueuedAt=0;
@@ -94,9 +95,6 @@ async function loadPocketTTS(){
 }
 
 function makeWavBlob(chunks,sampleRate){
-  // Build the final PCM buffer directly. The old path first created a
-  // Float32Array copy and then converted it, doubling the peak temporary
-  // memory and adding another full pass over the generated audio.
   const total=chunks.reduce((n,c)=>n+c.length,0);
   const dataSize=total*2;
   const buffer=new ArrayBuffer(44+dataSize);
@@ -136,10 +134,6 @@ async function speak(text){
   busy=true;
 
   try{
-    // IMPORTANT: do not stop SpeechRecognition here. The old version
-    // stopped listening while PocketTTS generated/played audio, which meant
-    // anything the user said during that gap was thrown away and they had
-    // to repeat themselves.
     transcript.textContent="Heard: "+text;
     lastSpokenText=normalizeSpeech(text);
     lastSpokenAt=Date.now();
@@ -191,10 +185,7 @@ async function speak(text){
   }finally{
     busy=false;
 
-    // Chrome SpeechRecognition can end naturally while PocketTTS is
-    // generating/playing. Once PocketTTS is done, make sure listening is
-    // alive again so the user never has to repeat the next sentence.
-    if(listening && !recognition) scheduleRecognitionRestart(100);
+    if(listening&&!recognition) scheduleRecognitionRestart(100);
   }
 }
 
@@ -214,14 +205,7 @@ function enqueueSpeech(text){
   const normalized=normalizeSpeech(clean);
   const now=Date.now();
 
-  // Ignore the same recognition result arriving twice during a recognition
-  // restart. This prevents duplicate TTS without blocking normal speech.
   if(normalized===lastQueuedText && now-lastQueuedAt<1800)return;
-
-  // If the microphone hears the cloned voice coming from the speakers,
-  // Chrome can recognize the exact sentence we just played. Ignore that
-  // echo for a short window, but allow the user to intentionally repeat it
-  // later.
   if(normalized===lastSpokenText && now-lastSpokenAt<5000)return;
 
   lastQueuedText=normalized;
@@ -256,6 +240,24 @@ function scheduleRecognitionRestart(delay=150){
       startRecognition();
     }
   },delay);
+}
+
+function refreshRecognition(){
+  if(!listening||busy||!recognition)return;
+
+  // Give Chrome a short, regular recognition-session reset. This prevents
+  // long-running SpeechRecognition sessions from silently dying.
+  const old=recognition;
+  recognition=null;
+  recognitionGeneration++;
+
+  try{old.abort()}catch{}
+
+  setTimeout(()=>{
+    if(listening&&!busy&&!recognition){
+      startRecognition();
+    }
+  },100);
 }
 
 function startRecognition(){
@@ -307,6 +309,23 @@ function startRecognition(){
   }
 }
 
+function startRecognitionRefresh(){
+  if(recognitionRefreshTimer)clearInterval(recognitionRefreshTimer);
+
+  recognitionRefreshTimer=setInterval(()=>{
+    // Do not interrupt PocketTTS generation/playback. The next 4-second
+    // tick will refresh recognition once the voice pipeline is idle.
+    if(listening&&!busy)refreshRecognition();
+  },4000);
+}
+
+function stopRecognitionRefresh(){
+  if(recognitionRefreshTimer){
+    clearInterval(recognitionRefreshTimer);
+    recognitionRefreshTimer=null;
+  }
+}
+
 async function resumeAudioPipeline(){
   if(!audioCtx)return;
   try{
@@ -322,9 +341,6 @@ function reconnectMicMonitor(){
     if(micMonitorSource)micMonitorSource.disconnect();
     if(micMonitorGain)micMonitorGain.disconnect();
 
-    // Keep the microphone as a live media pipeline without sending the mic
-    // back to the speakers. This avoids feedback while preserving the
-    // browser's active capture state.
     micMonitorSource=audioCtx.createMediaStreamSource(stream);
     micMonitorGain=audioCtx.createGain();
     micMonitorGain.gain.value=0;
@@ -365,8 +381,6 @@ async function recoverAfterTabSwitch(){
       }
     }
 
-    // Chrome SpeechRecognition can stop producing results after a tab is
-    // backgrounded. Recreate it rather than trusting the old instance.
     if(listening&&!busy){
       recognitionGeneration++;
 
@@ -431,11 +445,13 @@ async function startListening(){
 
     listening=true;
     stop.disabled=false;
-    setStatus("Listening - speak naturally.");
+    setStatus("Listening - speech recognition refreshes every 4 seconds.");
     startRecognition();
+    startRecognitionRefresh();
   }catch(e){
     console.error(e);
     listening=false;
+    stopRecognitionRefresh();
     stop.disabled=true;
     start.disabled=false;
     setStatus(e.name==="NotAllowedError"
@@ -449,6 +465,7 @@ function stopListening(){
   speechQueue.length=0;
   processingQueue=false;
   recognitionGeneration++;
+  stopRecognitionRefresh();
 
   if(recognitionRestartTimer){
     clearTimeout(recognitionRestartTimer);
