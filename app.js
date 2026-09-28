@@ -4,11 +4,6 @@ const status=$("status"),transcript=$("transcript"),player=$("player");
 
 let tts=null,voice=null,recognition=null,listening=false,busy=false,stream=null;
 
-// Small prebuffer keeps playback from clipping while reducing response delay.
-const PREBUFFER_SECONDS=0.18;
-const START_AHEAD_SECONDS=0.03;
-const TAIL_SECONDS=0.08;
-
 function setStatus(v){status.textContent=v;}
 
 async function loadDevices(){
@@ -72,68 +67,50 @@ async function speak(text){
   let ctx=null;
   try{
     if(recognition){try{recognition.stop()}catch{}}
-    setStatus("PocketTTS generating…");
+    setStatus("PocketTTS generating whole sentence…");
     await setOutput();
 
     const chunks=[];
-    const pending=[];
-    ctx=new AudioContext({latencyHint:"interactive"});
-    await ctx.resume();
-
-    let nextTime=ctx.currentTime+START_AHEAD_SECONDS;
-    let bufferedSeconds=0;
-    let started=false;
-
-    const scheduleChunk=audio=>{
-      if(!audio||!audio.length)return;
-      const buf=ctx.createBuffer(1,audio.length,tts.sampleRate);
-      buf.copyToChannel(audio,0);
-      const src=ctx.createBufferSource();
-      src.buffer=buf;
-      src.connect(ctx.destination);
-      const when=Math.max(nextTime,ctx.currentTime+0.005);
-      src.start(when);
-      nextTime=when+buf.duration;
-    };
-
-    const flush=()=>{
-      while(pending.length)scheduleChunk(pending.shift());
-    };
-
     await tts.generate(text,{
       voice,
       onChunk:audio=>{
-        chunks.push(audio);
-        pending.push(audio);
-        bufferedSeconds+=audio.length/tts.sampleRate;
-
-        if(!started&&bufferedSeconds<PREBUFFER_SECONDS){
-          setStatus(`PocketTTS buffering… ${Math.round(bufferedSeconds*1000)} ms`);
-          return;
-        }
-
-        if(!started){
-          started=true;
-          setStatus("PocketTTS playing…");
-        }
-        flush();
+        if(audio&&audio.length)chunks.push(audio);
+        const total=chunks.reduce((n,c)=>n+c.length,0);
+        setStatus(`PocketTTS generating… ${Math.round(total/tts.sampleRate*1000)} ms`);
       }
     });
 
-    // Flush short sentences too.
-    flush();
+    if(!chunks.length)throw new Error("PocketTTS returned no audio.");
 
-    const remaining=Math.max(0,(nextTime-ctx.currentTime)+TAIL_SECONDS);
-    await new Promise(r=>setTimeout(r,remaining*1000));
-
+    // Join every streamed chunk into one continuous sentence buffer.
     const total=chunks.reduce((n,c)=>n+c.length,0);
-    const all=new Float32Array(total);
-    let p=0;
-    for(const c of chunks){all.set(c,p);p+=c.length}
-    if(total)player.src=makeWavUrl(all,tts.sampleRate);
+    const sentence=new Float32Array(total);
+    let offset=0;
+    for(const chunk of chunks){
+      sentence.set(chunk,offset);
+      offset+=chunk.length;
+    }
 
+    setStatus("Playing complete sentence…");
+
+    ctx=new AudioContext({latencyHint:"interactive"});
+    await ctx.resume();
+
+    const buffer=ctx.createBuffer(1,sentence.length,tts.sampleRate);
+    buffer.copyToChannel(sentence,0);
+
+    const src=ctx.createBufferSource();
+    src.buffer=buffer;
+    src.connect(ctx.destination);
+    src.start(ctx.currentTime+0.03);
+
+    player.src=makeWavUrl(sentence,tts.sampleRate);
+
+    await new Promise(r=>setTimeout(r,(buffer.duration+0.08)*1000));
+    src.stop();
     await ctx.close();
     ctx=null;
+
     setStatus("Echo complete — say another sentence.");
   }catch(e){
     console.error(e);
