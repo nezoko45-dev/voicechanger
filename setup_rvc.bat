@@ -42,7 +42,7 @@ if not exist "rvc-realtimewebui.py" (
 
 cd /d "%~dp0rvc-realtime"
 
-if not exist "venvScriptspython.exe" (
+if not exist "venv\Scripts\python.exe" (
   echo Creating the RVC Python environment...
   %PYEXE% -m venv venv
   if errorlevel 1 goto :fail
@@ -50,7 +50,7 @@ if not exist "venvScriptspython.exe" (
 
 echo.
 echo Upgrading pip...
-venvScriptspython.exe -m pip install --upgrade pip
+venv\Scripts\python.exe -m pip install --upgrade pip
 if errorlevel 1 goto :fail
 
 echo.
@@ -62,19 +62,19 @@ nvidia-smi --query-gpu=name --format=csv,noheader 2>nul | findstr /i "RTX 50" >n
 if not errorlevel 1 goto :cu128
 
 echo NVIDIA GPU detected - using CUDA 11.8 dependencies.
-venvScriptspython.exe -m pip install -r requirments_cu118_py312.txt
+venv\Scripts\python.exe -m pip install -r requirments_cu118_py312.txt
 if errorlevel 1 goto :fail
 goto :models
 
 :cu128
 echo RTX 50-series NVIDIA GPU detected - using CUDA 12.8 dependencies.
-venvScriptspython.exe -m pip install -r requirments_cu128_py312.txt
+venv\Scripts\python.exe -m pip install -r requirments_cu128_py312.txt
 if errorlevel 1 goto :fail
 goto :models
 
 :cpu
 echo No NVIDIA GPU detected - using CPU/AMD/Intel dependency set.
-venvScriptspython.exe -m pip install -r requirments_cpu_py312.txt
+venv\Scripts\python.exe -m pip install -r requirments_cpu_py312.txt
 if errorlevel 1 goto :fail
 
 :models
