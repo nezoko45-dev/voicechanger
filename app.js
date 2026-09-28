@@ -3,7 +3,7 @@ const mic=$("mic"),output=$("output"),start=$("start"),stop=$("stop");
 const status=$("status"),transcript=$("transcript"),player=$("player");
 
 let tts=null,voice=null,recognition=null,listening=false,busy=false,stream=null;
-let lastWavUrl=null;
+let streamingPlayer=null,audioCtx=null;
 
 function setStatus(v){status.textContent=v;}
 
@@ -14,11 +14,11 @@ async function loadDevices(){
     output.innerHTML="";
     devices.filter(d=>d.kind==="audioinput").forEach((d,i)=>{
       const o=document.createElement("option");
-      o.value=d.deviceId;o.textContent=d.label||`Microphone ${i+1}`;mic.appendChild(o);
+      o.value=d.deviceId;o.textContent=d.label||("Microphone "+(i+1));mic.appendChild(o);
     });
     devices.filter(d=>d.kind==="audiooutput").forEach((d,i)=>{
       const o=document.createElement("option");
-      o.value=d.deviceId;o.textContent=d.label||`Output ${i+1}`;output.appendChild(o);
+      o.value=d.deviceId;o.textContent=d.label||("Output "+(i+1));output.appendChild(o);
     });
     if(!mic.options.length)mic.innerHTML="<option value=''>Default microphone</option>";
     if(!output.options.length)output.innerHTML="<option value=''>Default output</option>";
@@ -33,109 +33,103 @@ async function setOutput(){
 
 async function loadPocketTTS(){
   if(tts)return;
-  setStatus("Loading browser PocketTTS model… first load can take a while.");
+
+  setStatus("Loading PocketTTS... first load only.");
   const mod=await import("./pocket-tts/index.js");
+
   tts=new mod.PocketTTS({
     language:"english_2026-04",
     quantized:true,
     voiceCloning:true,
     cache:true,
+    maxThreads:8,
     modelBaseUrl:"https://huggingface.co/akrv/pocket-tts-onnx/resolve/main/onnx",
     ortBaseUrl:"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.0/dist/"
   });
+
   await tts.load(p=>{
     if(p.total){
       const pct=Math.round(p.loaded/p.total*100);
-      setStatus(`Loading PocketTTS: ${pct}% — ${p.label||"model"}`);
+      setStatus("Loading PocketTTS: "+pct+"%");
     }
   });
 
   const refUrl=new URL("./Recording%20(10).wav",location.href);
   const response=await fetch(refUrl);
-  if(!response.ok)throw new Error("Recording (10).wav could not be loaded from GitHub Pages.");
+  if(!response.ok)throw new Error("Recording (10).wav could not be loaded.");
+
   const bytes=await response.arrayBuffer();
-  const audioCtx=new AudioContext();
-  const decoded=await audioCtx.decodeAudioData(bytes);
+  const decodeCtx=new AudioContext();
+  const decoded=await decodeCtx.decodeAudioData(bytes);
   const mono=decoded.getChannelData(0).slice();
-  voice=await tts.cloneVoice(mono,{inputSampleRate:decoded.sampleRate,name:"recording-10"});
-  await audioCtx.close();
-  setStatus("PocketTTS ready.");
+
+  voice=await tts.cloneVoice(mono,{
+    inputSampleRate:decoded.sampleRate,
+    name:"recording-10"
+  });
+
+  await decodeCtx.close();
+
+  const modPlayer=await import("./pocket-tts/player.js");
+
+  audioCtx=new AudioContext({sampleRate:tts.sampleRate});
+  streamingPlayer=new modPlayer.StreamingPlayer({
+    sampleRate:tts.sampleRate,
+    audioContext:audioCtx,
+    primeSeconds:0.08,
+    leadSeconds:0.015,
+    onUnderrun:info=>console.warn("PocketTTS audio underrun",info)
+  });
+
+  await streamingPlayer.resume();
+  setStatus("PocketTTS ready - fast streaming mode.");
 }
 
 async function speak(text){
-  if(!text||busy)return;
+  if(!text||busy||!tts||!voice)return;
+
   busy=true;
+
   try{
     if(recognition){try{recognition.stop()}catch{}}
-    setStatus("Converting your sentence to the cloned voice…");
+
+    transcript.textContent="Heard: "+text;
+    setStatus("Generating...");
     await setOutput();
 
-    const chunks=[];
-    await tts.generate(text,{
+    if(!streamingPlayer)throw new Error("Streaming audio player is not ready.");
+
+    streamingPlayer.reset();
+    await streamingPlayer.resume();
+
+    let firstChunk=true;
+    let chunkCount=0;
+
+    const metrics=await tts.generate(text,{
       voice,
       onChunk:audio=>{
-        if(audio&&audio.length)chunks.push(audio);
+        if(!audio||!audio.length)return;
+
+        chunkCount++;
+
+        if(firstChunk){
+          firstChunk=false;
+          setStatus("Playing cloned voice...");
+        }
+
+        streamingPlayer.play(audio);
       }
     });
 
-    if(!chunks.length)throw new Error("PocketTTS returned no audio.");
+    streamingPlayer.flush();
 
-    // PocketTTS can stream multiple PCM chunks. Keep them in memory and
-    // turn the entire sentence into one WAV before playback.
-    const fadeSamples=Math.max(1,Math.round(tts.sampleRate*0.004));
-    const usable=chunks.filter(c=>c&&c.length);
-    let total=usable.reduce((n,c)=>n+c.length,0);
-    for(let i=1;i<usable.length;i++){
-      total-=Math.min(fadeSamples,usable[i-1].length,usable[i].length);
-    }
+    if(!chunkCount)throw new Error("PocketTTS returned no audio.");
 
-    const sentence=new Float32Array(total);
-    let offset=0;
+    const ms=metrics&&metrics.genTime?Math.round(metrics.genTime*1000):0;
+    setStatus(ms?("Playing - generated in ~"+ms+" ms."):"Playing cloned voice...");
 
-    for(let i=0;i<usable.length;i++){
-      const chunk=usable[i];
-
-      if(i===0){
-        sentence.set(chunk,offset);
-        offset+=chunk.length;
-        continue;
-      }
-
-      const prev=usable[i-1];
-      const fade=Math.min(fadeSamples,prev.length,chunk.length);
-      const start=offset-fade;
-
-      // Tiny equal-power-ish crossfade prevents clicks between model chunks.
-      for(let j=0;j<fade;j++){
-        const t=(j+1)/(fade+1);
-        const a=Math.cos(t*Math.PI*0.5);
-        const b=Math.sin(t*Math.PI*0.5);
-        sentence[start+j]=prev[prev.length-fade+j]*a+chunk[j]*b;
-      }
-
-      sentence.set(chunk.subarray(fade),offset);
-      offset+=chunk.length-fade;
-    }
-
-    if(lastWavUrl)URL.revokeObjectURL(lastWavUrl);
-    lastWavUrl=makeWavUrl(sentence,tts.sampleRate);
-
-    player.src=lastWavUrl;
-    player.currentTime=0;
-    player.loop=false;
-    setStatus("Playing converted sentence…");
-
-    await player.play();
-
-    await new Promise(resolve=>{
-      const done=()=>{
-        player.removeEventListener("ended",done);
-        resolve();
-      };
-      player.addEventListener("ended",done,{once:true});
-    });
-
-    setStatus("Voice changer ready — say another sentence.");
+    await waitForPlayback();
+    setStatus("Ready - speak again.");
   }catch(e){
     console.error(e);
     setStatus("PocketTTS error: "+e.message);
@@ -145,24 +139,19 @@ async function speak(text){
   }
 }
 
-function makeWavUrl(samples,rate){
-  const data=new DataView(new ArrayBuffer(44+samples.length*2));
-  data.setUint8(0,82);data.setUint8(1,73);data.setUint8(2,70);data.setUint8(3,70);
-  data.setUint32(4,36+samples.length*2,true);
-  data.setUint8(8,87);data.setUint8(9,65);data.setUint8(10,86);data.setUint8(11,69);
-  data.setUint8(12,102);data.setUint8(13,109);data.setUint8(14,116);data.setUint8(15,32);
-  data.setUint32(16,16,true);data.setUint16(20,1,true);data.setUint16(22,1,true);
-  data.setUint32(24,rate,true);data.setUint32(28,rate*2,true);
-  data.setUint16(32,2,true);data.setUint16(34,16,true);
-  data.setUint8(36,100);data.setUint8(37,97);data.setUint8(38,116);data.setUint8(39,97);
-  data.setUint32(40,samples.length*2,true);
+function waitForPlayback(){
+  return new Promise(resolve=>{
+    if(!streamingPlayer||!streamingPlayer.audioContext){resolve();return;}
 
-  for(let i=0;i<samples.length;i++){
-    const v=Math.max(-1,Math.min(1,samples[i]));
-    data.setInt16(44+i*2,v<0?v*32768:v*32767,true);
-  }
-
-  return URL.createObjectURL(new Blob([data.buffer],{type:"audio/wav"}));
+    const ctx=streamingPlayer.audioContext;
+    const check=()=>{
+      if(!streamingPlayer||ctx.state==="closed"){resolve();return;}
+      const remaining=streamingPlayer._nextStartTime-ctx.currentTime;
+      if(remaining<=0.02)resolve();
+      else setTimeout(check,Math.min(30,Math.max(5,remaining*1000)));
+    };
+    check();
+  });
 }
 
 function startRecognition(){
@@ -170,7 +159,7 @@ function startRecognition(){
 
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){
-    setStatus("Chrome speech recognition is not available in this browser.");
+    setStatus("Chrome speech recognition is not available.");
     return;
   }
 
@@ -182,18 +171,17 @@ function startRecognition(){
 
   recognition.onresult=async e=>{
     const result=e.results[e.results.length-1];
-    if(!result.isFinal)return;
+    if(!result.isFinal||busy)return;
 
     const text=result[0].transcript.trim();
     if(!text)return;
 
-    transcript.textContent="Heard: "+text;
     await speak(text);
   };
 
   recognition.onerror=e=>{
     if(e.error==="not-allowed"||e.error==="service-not-allowed"){
-      setStatus("Microphone/speech permission was blocked. Allow microphone access for this GitHub Pages site, then press START again.");
+      setStatus("Allow microphone permission in Chrome, then press START again.");
     }else if(e.error!=="aborted"){
       setStatus("Speech recognition: "+e.error);
     }
@@ -201,7 +189,7 @@ function startRecognition(){
 
   recognition.onend=()=>{
     recognition=null;
-    if(listening&&!busy)setTimeout(startRecognition,100);
+    if(listening&&!busy)setTimeout(startRecognition,50);
   };
 
   try{recognition.start()}catch(e){}
@@ -212,7 +200,7 @@ async function startListening(){
 
   try{
     start.disabled=true;
-    setStatus("Requesting microphone permission…");
+    setStatus("Requesting microphone...");
 
     stream=await navigator.mediaDevices.getUserMedia({
       audio:{
@@ -229,7 +217,7 @@ async function startListening(){
 
     listening=true;
     stop.disabled=false;
-    setStatus("Listening… say a sentence.");
+    setStatus("Listening - speak naturally.");
     startRecognition();
   }catch(e){
     console.error(e);
@@ -238,7 +226,7 @@ async function startListening(){
     start.disabled=false;
 
     setStatus(e.name==="NotAllowedError"
-      ?"Microphone permission was blocked. Click the lock/site-permissions icon in Chrome, allow Microphone, then press START again."
+      ?"Microphone permission was blocked. Allow microphone access, then START again."
       :"Start error: "+e.message);
   }
 }
@@ -255,6 +243,8 @@ function stopListening(){
     stream.getTracks().forEach(t=>t.stop());
     stream=null;
   }
+
+  if(streamingPlayer)streamingPlayer.stop();
 
   start.disabled=false;
   stop.disabled=true;
