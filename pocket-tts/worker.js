@@ -45,6 +45,7 @@ let customEmbeddings = new Map(); // voiceRef -> mimi embedding for cloned voice
 
 let stTensors = [];
 let isGenerating = false;
+let synthesisLoaded = false;
 
 function modelUrl(language, filename) {
     return `${config.modelBaseUrl}/${language}/${filename}`;
@@ -392,10 +393,14 @@ async function loadOrt() {
 
 async function createSession(language, name, onProgress) {
     const bytes = await fetchWithProgress(modelUrl(language, stem(name)), name, onProgress);
-    return ort.InferenceSession.create(bytes, {
+    const session = await ort.InferenceSession.create(bytes, {
         executionProviders: ["wasm"],
         graphOptimizationLevel: "basic",
+        executionMode: "sequential",
+        enableCpuMemArena: false,
+        enableMemPattern: false,
     });
+    return session;
 }
 
 async function init(cfg) {
@@ -421,21 +426,18 @@ async function init(cfg) {
     );
     tokenizer = SentencePieceTokenizer.fromBytes(tokBytes);
 
-    // Decide which models to download. The encoder is only needed for cloning.
-    const needed = ["text_conditioner", "flow_lm_main", "flow_lm_flow", "mimi_decoder"];
-    if (config.voiceCloning) needed.unshift("mimi_encoder");
-
     const onProgress = (p) => post({ type: "progress", ...p });
-    const sessions = {};
-    // Sequential downloads keep peak memory low and give clean progress events.
-    for (const name of needed) {
-        sessions[name] = await createSession(language, name, onProgress);
+
+    // Start with the smallest possible runtime footprint. When voice cloning is
+    // enabled and deferSynthesis is true, only the encoder is loaded here.
+    // The encoder is released immediately after cloneVoice(), before the four
+    // synthesis models are loaded.
+    if (config.deferSynthesis && config.voiceCloning) {
+        post({ type: "status", status: "loading-voice-encoder" });
+        mimiEncoderSession = await createSession(language, "mimi_encoder", onProgress);
+    } else {
+        await loadSynthesisModels();
     }
-    mimiEncoderSession = sessions.mimi_encoder || null;
-    textConditionerSession = sessions.text_conditioner;
-    flowLmMainSession = sessions.flow_lm_main;
-    flowLmFlowSession = sessions.flow_lm_flow;
-    mimiDecoderSession = sessions.mimi_decoder;
 
     bosBeforeVoice = null;
     if (config.voiceCloning && bundleMetadata.bos_before_voice_file) {
@@ -460,9 +462,36 @@ async function init(cfg) {
             language,
             sampleRate,
             samplesPerFrame,
+            synthesisReady: synthesisLoaded,
             predefinedVoices: bundleMetadata.predefined_voices || [],
         },
     });
+}
+
+async function loadSynthesisModels() {
+    if (synthesisLoaded) return;
+
+    post({ type: "status", status: "loading-synthesis-models" });
+    const onProgress = (p) => post({ type: "progress", ...p });
+    const needed = ["text_conditioner", "flow_lm_main", "flow_lm_flow", "mimi_decoder"];
+    const sessions = {};
+
+    for (const name of needed) {
+        sessions[name] = await createSession(config.language, name, onProgress);
+    }
+
+    textConditionerSession = sessions.text_conditioner;
+    flowLmMainSession = sessions.flow_lm_main;
+    flowLmFlowSession = sessions.flow_lm_flow;
+    mimiDecoderSession = sessions.mimi_decoder;
+    synthesisLoaded = true;
+
+    // Finish preparing any cloned voices captured before synthesis loaded.
+    for (const [ref, emb] of customEmbeddings.entries()) {
+        if (!voiceStateCache.has(ref)) {
+            voiceStateCache.set(ref, await buildVoiceConditionedState(emb));
+        }
+    }
 }
 
 async function ensureVoicesBin() {
@@ -490,9 +519,26 @@ async function loadBuiltinVoice(name) {
 }
 
 async function cloneVoice(audioData, ref) {
+    if (!mimiEncoderSession) {
+        if (!config.voiceCloning) throw new Error("Voice cloning is disabled.");
+        mimiEncoderSession = await createSession(config.language, "mimi_encoder", (p) => post({ type: "progress", ...p }));
+    }
+
     const emb = await encodeVoiceAudio(audioData);
     customEmbeddings.set(ref, emb);
-    voiceStateCache.set(ref, await buildVoiceConditionedState(emb));
+
+    // The encoder is only needed to create the embedding. Release it before
+    // the larger synthesis stack is loaded so Chrome does not have to hold
+    // both model stacks in memory at once.
+    try {
+        await mimiEncoderSession.release();
+    } catch {}
+    mimiEncoderSession = null;
+
+    if (synthesisLoaded) {
+        voiceStateCache.set(ref, await buildVoiceConditionedState(emb));
+    }
+
     return ref;
 }
 
@@ -503,6 +549,7 @@ function cloneState(state) {
 }
 
 async function generate(text, voiceRef) {
+    if (!synthesisLoaded) throw new Error("PocketTTS synthesis models are not loaded yet.");
     if (!voiceStateCache.has(voiceRef)) {
         throw new Error(`Voice '${voiceRef}' is not prepared.`);
     }
@@ -698,6 +745,9 @@ self.onmessage = async (e) => {
         } else if (type === "loadBuiltinVoice") {
             const ref = await loadBuiltinVoice(payload.name);
             post({ id, type: "result", result: { ref } });
+        } else if (type === "loadSynthesis") {
+            await loadSynthesisModels();
+            post({ id, type: "result", result: { ok: true } });
         } else if (type === "generate") {
             const metrics = await generate(payload.text, payload.voiceRef);
             post({ id, type: "result", result: { metrics } });
