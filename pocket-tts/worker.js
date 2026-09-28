@@ -395,10 +395,10 @@ async function createSession(language, name, onProgress) {
     const bytes = await fetchWithProgress(modelUrl(language, stem(name)), name, onProgress);
     const session = await ort.InferenceSession.create(bytes, {
         executionProviders: ["wasm"],
-        graphOptimizationLevel: "basic",
+        graphOptimizationLevel: "all",
         executionMode: "sequential",
-        enableCpuMemArena: false,
-        enableMemPattern: false,
+        enableCpuMemArena: true,
+        enableMemPattern: true,
     });
     return session;
 }
@@ -563,8 +563,6 @@ async function generate(text, voiceRef) {
     const emptyTextEmb = createTensor("float32", new Float32Array(0), [1, 0, conditioningDim]);
     let flowLmState = cloneState(baseFlowState);
 
-    const firstChunkFrames = 3;
-    const normalChunkFrames = 12;
     let isFirstAudioChunk = true;
     let totalFlowLmTime = 0;
     let totalDecodeTime = 0;
@@ -600,15 +598,18 @@ async function generate(text, voiceRef) {
         updateStateFromManifestOutputs(flowLmState, condResult, bundleMetadata.flow_lm_state_manifest);
 
         const chunkLatents = [];
-        let chunkDecodedFrames = 0;
         let currentLatent = createTensor("float32", new Float32Array(latentDim).fill(NaN), [1, 1, latentDim]);
         let eosStep = null;
         let chunkEnded = false;
         let chunkGenTimeMs = 0;
 
+        // The UI now uses single-buffer playback, so there is no benefit in
+        // repeatedly decoding 3/12 frames while generation is still running.
+        // Generate all latents first, then decode the whole sentence chunk once.
+        // This removes many ONNX decoder calls and reduces total latency.
         for (let step = 0; step < MAX_FRAMES; step++) {
             if (!isGenerating) break;
-            if (step > 0 && step % 4 === 0) await new Promise((r) => setTimeout(r, 0));
+            if (step > 0 && step % 8 === 0) await new Promise((r) => setTimeout(r, 0));
 
             const stepStart = performance.now();
             const arResult = await flowLmMainSession.run({
@@ -652,57 +653,46 @@ async function generate(text, voiceRef) {
             currentLatent = createTensor("float32", latentData, [1, 1, latentDim]);
             updateStateFromManifestOutputs(flowLmState, arResult, bundleMetadata.flow_lm_state_manifest);
 
-            const pending = chunkLatents.length - chunkDecodedFrames;
-            let decodeSize = 0;
-            if (shouldStop) decodeSize = pending;
-            else if (isFirstAudioChunk && pending >= firstChunkFrames) decodeSize = firstChunkFrames;
-            else if (pending >= normalChunkFrames) decodeSize = normalChunkFrames;
-
-            if (decodeSize > 0) {
-                const decodeLatents = new Float32Array(decodeSize * latentDim);
-                for (let frame = 0; frame < decodeSize; frame++) {
-                    decodeLatents.set(chunkLatents[chunkDecodedFrames + frame], frame * latentDim);
-                }
-                const decoderStart = performance.now();
-                const decodeResult = await mimiDecoderSession.run({
-                    latent: createTensor("float32", decodeLatents, [1, decodeSize, latentDim]),
-                    ...mimiState,
-                });
-                const decoderElapsed = performance.now() - decoderStart;
-                chunkGenTimeMs += decoderElapsed;
-                totalDecodeTime += decoderElapsed;
-
-                for (const entry of bundleMetadata.mimi_state_manifest) {
-                    mimiState[entry.input_name] = decodeResult[entry.output_name];
-                }
-                chunkDecodedFrames += decodeSize;
-
-                const audioFloat32 = new Float32Array(decodeResult[mimiDecoderSession.outputNames[0]].data);
-                const isLastChunk = shouldStop && chunkIdx === chunks.length - 1;
-                post(
-                    {
-                        type: "chunk",
-                        audio: audioFloat32,
-                        meta: {
-                            chunkDuration: audioFloat32.length / sampleRate,
-                            genTimeSec: chunkGenTimeMs / 1000,
-                            isFirst: isFirstAudioChunk,
-                            isLast: isLastChunk,
-                            chunkStart: isFirstAudioChunkOfTextChunk,
-                            isSilence: false,
-                        },
-                    },
-                    [audioFloat32.buffer]
-                );
-                isFirstAudioChunk = false;
-                isFirstAudioChunkOfTextChunk = false;
-                chunkGenTimeMs = 0;
-            }
-
             if (shouldStop) {
                 chunkEnded = true;
                 break;
             }
+        }
+
+        if (chunkEnded && isGenerating && chunkLatents.length) {
+            const decodeLatents = new Float32Array(chunkLatents.length * latentDim);
+            for (let frame = 0; frame < chunkLatents.length; frame++) {
+                decodeLatents.set(chunkLatents[frame], frame * latentDim);
+            }
+
+            const decoderStart = performance.now();
+            const decodeResult = await mimiDecoderSession.run({
+                latent: createTensor("float32", decodeLatents, [1, chunkLatents.length, latentDim]),
+                ...mimiState,
+            });
+            const decoderElapsed = performance.now() - decoderStart;
+            chunkGenTimeMs += decoderElapsed;
+            totalDecodeTime += decoderElapsed;
+
+            const audioFloat32 = new Float32Array(decodeResult[mimiDecoderSession.outputNames[0]].data);
+            const isLastChunk = chunkIdx === chunks.length - 1;
+            post(
+                {
+                    type: "chunk",
+                    audio: audioFloat32,
+                    meta: {
+                        chunkDuration: audioFloat32.length / sampleRate,
+                        genTimeSec: chunkGenTimeMs / 1000,
+                        isFirst: isFirstAudioChunk,
+                        isLast: isLastChunk,
+                        chunkStart: isFirstAudioChunkOfTextChunk,
+                        isSilence: false,
+                    },
+                },
+                [audioFloat32.buffer]
+            );
+            isFirstAudioChunk = false;
+            isFirstAudioChunkOfTextChunk = false;
         }
 
         if (chunkEnded && isGenerating && chunkIdx < chunks.length - 1) {
