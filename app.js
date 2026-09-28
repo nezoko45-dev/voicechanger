@@ -1,34 +1,46 @@
 const $=id=>document.getElementById(id);
 const mic=$("mic"),output=$("output"),start=$("start"),stop=$("stop");
 const status=$("status"),transcript=$("transcript"),player=$("player");
-const deepgramKeyInput=$("deepgramKey");
+const elevenKeyInput=$("elevenKey");
 
 let tts=null,voice=null,listening=false,busy=false,stream=null;
-let audioCtx=null,deepgram=null,micSource=null,micProcessor=null,micGain=null;
-let deepgramReady=false;
-let speechQueue=[],processingQueue=false;
+let audioCtx=null,eleven=null,micSource=null,micProcessor=null,micGain=null;
+let elevenReady=false,speechQueue=[],processingQueue=false;
 let lastQueuedText="",lastQueuedAt=0,lastSpokenText="",lastSpokenAt=0;
-let deepgramReconnectTimer=null,keepAliveTimer=null,reconnectAttempts=0;
-let utteranceParts=[];
+let reconnectTimer=null,reconnectAttempts=0,utteranceParts=[];
 let recovering=false;
 
 function setStatus(v){status.textContent=v;}
 
-function getDeepgramKey(){
-  return (deepgramKeyInput?.value||localStorage.getItem("deepgram_api_key")||"").trim();
+function getElevenKey(){
+  return (elevenKeyInput?.value||"").trim();
 }
 
-function saveDeepgramKey(){
-  const key=(deepgramKeyInput?.value||"").trim();
-  if(key)localStorage.setItem("deepgram_api_key",key);
-  else localStorage.removeItem("deepgram_api_key");
+async function getRealtimeToken(){
+  const key=getElevenKey();
+  if(!key)throw new Error("ElevenLabs API key is required.");
+
+  const response=await fetch("https://api.elevenlabs.io/v1/single-use-token/realtime_scribe",{
+    method:"POST",
+    headers:{"xi-api-key":key}
+  });
+
+  if(!response.ok){
+    let detail="";
+    try{detail=(await response.json()).detail||"";}catch{}
+    throw new Error("ElevenLabs token request failed ("+response.status+"). "+detail);
+  }
+
+  const data=await response.json();
+  if(!data.token)throw new Error("ElevenLabs did not return a realtime Scribe token.");
+  return data.token;
 }
 
 async function loadDevices(){
   try{
     const devices=await navigator.mediaDevices.enumerateDevices();
     const oldMic=mic.value,oldOutput=output.value;
-    mic.innerHTML=""; output.innerHTML="";
+    mic.innerHTML="";output.innerHTML="";
     devices.filter(d=>d.kind==="audioinput").forEach((d,i)=>{
       const o=document.createElement("option");
       o.value=d.deviceId;o.textContent=d.label||("Microphone "+(i+1));mic.appendChild(o);
@@ -86,7 +98,6 @@ async function loadPocketTTS(){
   });
 
   await decodeCtx.close();
-
   setStatus("Loading speech models...");
   await tts.finishLoad();
 
@@ -97,9 +108,7 @@ async function loadPocketTTS(){
 
 function makeWavBlob(chunks,sampleRate){
   const total=chunks.reduce((n,c)=>n+c.length,0);
-  const dataSize=total*2;
-  const buffer=new ArrayBuffer(44+dataSize);
-  const view=new DataView(buffer);
+  const dataSize=total*2,buffer=new ArrayBuffer(44+dataSize),view=new DataView(buffer);
   const write=(pos,str)=>{for(let i=0;i<str.length;i++)view.setUint8(pos+i,str.charCodeAt(i));};
   write(0,"RIFF");view.setUint32(4,36+dataSize,true);write(8,"WAVE");
   write(12,"fmt ");view.setUint32(16,16,true);view.setUint16(20,1,true);
@@ -107,11 +116,9 @@ function makeWavBlob(chunks,sampleRate){
   view.setUint32(28,sampleRate*2,true);view.setUint16(32,2,true);
   view.setUint16(34,16,true);write(36,"data");view.setUint32(40,dataSize,true);
   let pos=44;
-  for(const chunk of chunks){
-    for(const sample of chunk){
-      const s=Math.max(-1,Math.min(1,sample));
-      view.setInt16(pos,s<0?s*0x8000:s*0x7fff,true);pos+=2;
-    }
+  for(const chunk of chunks)for(const sample of chunk){
+    const s=Math.max(-1,Math.min(1,sample));
+    view.setInt16(pos,s<0?s*0x8000:s*0x7fff,true);pos+=2;
   }
   return new Blob([buffer],{type:"audio/wav"});
 }
@@ -121,27 +128,21 @@ async function speak(text){
   busy=true;
   try{
     transcript.textContent="Heard: "+text;
-    lastSpokenText=normalizeSpeech(text);
-    lastSpokenAt=Date.now();
+    lastSpokenText=normalizeSpeech(text);lastSpokenAt=Date.now();
     setStatus("Generating cloned voice...");
     await setOutput();
 
     const chunks=[];
-    const metrics=await tts.generate(text,{
-      voice,
-      onChunk:audio=>{if(audio&&audio.length)chunks.push(new Float32Array(audio));}
-    });
+    const metrics=await tts.generate(text,{voice,onChunk:audio=>{
+      if(audio&&audio.length)chunks.push(new Float32Array(audio));
+    }});
     if(!chunks.length)throw new Error("PocketTTS returned no audio.");
 
     const blob=makeWavBlob(chunks,tts.sampleRate);
-    const url=URL.createObjectURL(blob);
-    const oldUrl=player.dataset.blobUrl;
+    const url=URL.createObjectURL(blob),oldUrl=player.dataset.blobUrl;
     if(oldUrl)URL.revokeObjectURL(oldUrl);
-    player.dataset.blobUrl=url;
-    player.src=url;
-    player.load();
-    await setOutput();
-    await player.play();
+    player.dataset.blobUrl=url;player.src=url;player.load();
+    await setOutput();await player.play();
 
     const ms=metrics&&metrics.genTime?Math.round(metrics.genTime*1000):0;
     setStatus(ms?"Playing cloned voice (~"+ms+" ms generation).":"Playing cloned voice...");
@@ -156,8 +157,7 @@ async function speak(text){
       player.addEventListener("error",done,{once:true});
     });
   }catch(e){
-    console.error(e);
-    setStatus("PocketTTS error: "+(e.message||e));
+    console.error(e);setStatus("PocketTTS error: "+(e.message||e));
   }finally{
     busy=false;
     if(listening&&speechQueue.length)processSpeechQueue();
@@ -178,17 +178,14 @@ function enqueueSpeech(text){
   if(normalized===lastQueuedText&&now-lastQueuedAt<1200)return;
   if(normalized===lastSpokenText&&now-lastSpokenAt<3500)return;
   lastQueuedText=normalized;lastQueuedAt=now;
-  speechQueue.push(clean);
-  processSpeechQueue();
+  speechQueue.push(clean);processSpeechQueue();
 }
 
 async function processSpeechQueue(){
   if(processingQueue||!listening||!tts||!voice)return;
   processingQueue=true;
   try{
-    while(listening&&speechQueue.length){
-      await speak(speechQueue.shift());
-    }
+    while(listening&&speechQueue.length)await speak(speechQueue.shift());
   }finally{
     processingQueue=false;
     if(listening&&speechQueue.length)processSpeechQueue();
@@ -197,139 +194,130 @@ async function processSpeechQueue(){
 
 function downsampleFloat32(input,inputRate,outputRate){
   if(inputRate===outputRate)return new Float32Array(input);
-  const ratio=inputRate/outputRate;
-  const outLength=Math.max(1,Math.round(input.length/ratio));
-  const output=new Float32Array(outLength);
-  let offset=0;
+  const ratio=inputRate/outputRate,outLength=Math.max(1,Math.round(input.length/ratio));
+  const output=new Float32Array(outLength);let offset=0;
   for(let i=0;i<outLength;i++){
     const next=Math.min(input.length,Math.round((i+1)*ratio));
     let sum=0,count=0;
     for(let j=offset;j<next;j++){sum+=input[j];count++;}
-    output[i]=count?sum/count:0;
-    offset=next;
+    output[i]=count?sum/count:0;offset=next;
   }
   return output;
 }
 
-function floatTo16BitPCM(input){
-  const out=new ArrayBuffer(input.length*2);
-  const view=new DataView(out);
+function floatTo16Bit(input){
+  const out=new ArrayBuffer(input.length*2),view=new DataView(out);
   for(let i=0;i<input.length;i++){
     const s=Math.max(-1,Math.min(1,input[i]));
     view.setInt16(i*2,s<0?s*0x8000:s*0x7fff,true);
   }
-  return out;
+  return new Uint8Array(out);
 }
 
-function scheduleDeepgramReconnect(delay=500){
-  if(!listening||deepgramReconnectTimer)return;
-  deepgramReconnectTimer=setTimeout(()=>{
-    deepgramReconnectTimer=null;
-    if(listening)connectDeepgram();
+function bytesToBase64(bytes){
+  let binary="";
+  const step=0x8000;
+  for(let i=0;i<bytes.length;i+=step){
+    binary+=String.fromCharCode(...bytes.subarray(i,i+step));
+  }
+  return btoa(binary);
+}
+
+function scheduleReconnect(delay=500){
+  if(!listening||reconnectTimer)return;
+  reconnectTimer=setTimeout(()=>{
+    reconnectTimer=null;
+    if(listening)connectEleven();
   },delay);
 }
 
-function closeDeepgram(){
-  if(deepgramReconnectTimer){clearTimeout(deepgramReconnectTimer);deepgramReconnectTimer=null;}
-  if(keepAliveTimer){clearInterval(keepAliveTimer);keepAliveTimer=null;}
-  if(deepgram){
-    try{deepgram.close();}catch{}
-    deepgram=null;
-  }
-  deepgramReady=false;
+function closeEleven(){
+  if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
+  if(eleven){try{eleven.close();}catch{}eleven=null;}
+  elevenReady=false;
 }
 
-function connectDeepgram(){
-  const key=getDeepgramKey();
-  if(!key){
-    setStatus("Enter your Deepgram API key, then press START.");
-    return;
-  }
-  closeDeepgram();
+async function connectEleven(){
+  if(!listening)return;
+  try{
+    setStatus("Getting ElevenLabs realtime token...");
+    const token=await getRealtimeToken();
+    if(!listening)return;
 
-  const params=new URLSearchParams({
-    model:"nova-3",
-    language:"en-US",
-    encoding:"linear16",
-    sample_rate:"16000",
-    channels:"1",
-    interim_results:"true",
-    endpointing:"300",
-    punctuate:"true",
-    smart_format:"true",
-    vad_events:"true"
-  });
+    const params=new URLSearchParams({
+      model_id:"scribe_v2_realtime",
+      token,
+      audio_format:"pcm_16000",
+      sample_rate:"16000",
+      language_code:"en",
+      commit_strategy:"vad",
+      vad_silence_threshold_secs:"0.3",
+      vad_threshold:"0.4",
+      min_speech_duration_ms:"80",
+      min_silence_duration_ms:"100"
+    });
 
-  const ws=new WebSocket(
-    "wss://api.deepgram.com/v1/listen?"+params.toString(),
-    ["token",key]
-  );
-  deepgram=ws;
+    const ws=new WebSocket(
+      "wss://api.elevenlabs.io/v1/speech-to-text/realtime?"+params.toString()
+    );
+    eleven=ws;
 
-  ws.binaryType="arraybuffer";
+    ws.onopen=()=>{
+      if(eleven!==ws)return;
+      reconnectAttempts=0;
+      setStatus("Connecting ElevenLabs Scribe...");
+    };
 
-  ws.onopen=()=>{
-    if(deepgram!==ws)return;
-    deepgramReady=true;
-    reconnectAttempts=0;
-    utteranceParts=[];
-    setStatus("Listening - Deepgram streaming STT + PocketTTS.");
-    if(keepAliveTimer)clearInterval(keepAliveTimer);
-    keepAliveTimer=setInterval(()=>{
-      if(ws.readyState===WebSocket.OPEN){
-        try{ws.send(JSON.stringify({type:"KeepAlive"}));}catch{}
+    ws.onmessage=event=>{
+      if(typeof event.data!=="string")return;
+      let msg;try{msg=JSON.parse(event.data);}catch{return;}
+
+      if(msg.message_type==="session_started"){
+        elevenReady=true;utteranceParts=[];
+        setStatus("Listening - ElevenLabs Scribe + PocketTTS.");
+        return;
       }
-    },8000);
-  };
 
-  ws.onmessage=event=>{
-    if(typeof event.data!=="string")return;
-    let msg;
-    try{msg=JSON.parse(event.data);}catch{return;}
+      if(msg.message_type==="partial_transcript"){
+        const text=String(msg.text||"").trim();
+        if(text)transcript.textContent="Listening: "+[...utteranceParts,text].join(" ");
+        return;
+      }
 
-    if(msg.type==="Results"){
-      const alt=msg.channel?.alternatives?.[0];
-      const text=alt?.transcript?.trim()||"";
-      if(!text)return;
-
-      if(msg.is_final){
+      if(msg.message_type==="committed_transcript"){
+        const text=String(msg.text||"").trim();
+        if(!text)return;
         utteranceParts.push(text);
         transcript.textContent="Heard: "+utteranceParts.join(" ");
-      }else{
-        transcript.textContent="Listening: "+[...utteranceParts,text].join(" ");
-      }
-
-      if(msg.speech_final){
         const utterance=utteranceParts.join(" ").trim();
         utteranceParts=[];
         if(utterance)enqueueSpeech(utterance);
+        return;
       }
-    }else if(msg.type==="SpeechStarted"){
-      setStatus("Listening...");
-    }else if(msg.type==="UtteranceEnd"){
-      const utterance=utteranceParts.join(" ").trim();
-      utteranceParts=[];
-      if(utterance)enqueueSpeech(utterance);
-    }else if(msg.type==="Error"){
-      console.error("Deepgram:",msg);
-      setStatus("Deepgram error: "+(msg.message||"stream error"));
-    }
-  };
 
-  ws.onerror=()=>{
-    if(deepgram===ws)setStatus("Deepgram connection error - reconnecting...");
-  };
+      if(msg.message_type==="error"||msg.message_type==="rate_limited"){
+        console.error("ElevenLabs:",msg);
+        setStatus("ElevenLabs error: "+(msg.error||msg.message||"request failed"));
+      }
+    };
 
-  ws.onclose=()=>{
-    if(deepgram!==ws)return;
-    deepgramReady=false;
-    if(keepAliveTimer){clearInterval(keepAliveTimer);keepAliveTimer=null;}
-    deepgram=null;
-    if(listening){
-      reconnectAttempts++;
-      scheduleDeepgramReconnect(Math.min(4000,300*Math.max(1,reconnectAttempts)));
-    }
-  };
+    ws.onerror=()=>{
+      if(eleven===ws)setStatus("ElevenLabs connection error - reconnecting...");
+    };
+
+    ws.onclose=()=>{
+      if(eleven!==ws)return;
+      elevenReady=false;eleven=null;
+      if(listening){
+        reconnectAttempts++;
+        scheduleReconnect(Math.min(5000,500*Math.max(1,reconnectAttempts)));
+      }
+    };
+  }catch(e){
+    console.error(e);
+    setStatus(e.message||"ElevenLabs connection failed.");
+    if(listening)scheduleReconnect(1500);
+  }
 }
 
 function startMicStreaming(){
@@ -341,22 +329,23 @@ function startMicStreaming(){
 
     micSource=audioCtx.createMediaStreamSource(stream);
     micProcessor=audioCtx.createScriptProcessor(4096,1,1);
-    micGain=audioCtx.createGain();
-    micGain.gain.value=0;
+    micGain=audioCtx.createGain();micGain.gain.value=0;
 
     micProcessor.onaudioprocess=e=>{
-      if(!deepgramReady||!deepgram||deepgram.readyState!==WebSocket.OPEN)return;
-      const input=e.inputBuffer.getChannelData(0);
-      const pcm16=downsampleFloat32(input,audioCtx.sampleRate,16000);
-      if(pcm16.length)deepgram.send(floatTo16BitPCM(pcm16));
+      if(!elevenReady||!eleven||eleven.readyState!==WebSocket.OPEN)return;
+      const pcm=downsampleFloat32(e.inputBuffer.getChannelData(0),audioCtx.sampleRate,16000);
+      if(!pcm.length)return;
+      eleven.send(JSON.stringify({
+        message_type:"input_audio_chunk",
+        audio_base_64:bytesToBase64(floatTo16Bit(pcm))
+      }));
     };
 
     micSource.connect(micProcessor);
     micProcessor.connect(micGain);
     micGain.connect(audioCtx.destination);
   }catch(e){
-    console.error(e);
-    throw new Error("Could not start microphone streaming: "+(e.message||e));
+    console.error(e);throw new Error("Could not start microphone streaming: "+(e.message||e));
   }
 }
 
@@ -384,7 +373,7 @@ async function recoverAfterTabSwitch(){
       });
       startMicStreaming();
     }
-    if(!deepgramReady)connectDeepgram();
+    if(!elevenReady)connectEleven();
   }catch(e){console.warn("Recovery:",e);}
   finally{recovering=false;}
 }
@@ -403,8 +392,7 @@ async function startListening(){
   if(listening)return;
   try{
     start.disabled=true;
-    saveDeepgramKey();
-    if(!getDeepgramKey())throw new Error("Deepgram API key is required.");
+    if(!getElevenKey())throw new Error("Enter your ElevenLabs API key first.");
 
     setStatus("Requesting microphone...");
     stream=await navigator.mediaDevices.getUserMedia({
@@ -418,46 +406,25 @@ async function startListening(){
     await loadPocketTTS();
     await resumeAudioPipeline();
 
-    listening=true;
-    stop.disabled=false;
-    speechQueue=[];
-    utteranceParts=[];
-
+    listening=true;stop.disabled=false;speechQueue=[];utteranceParts=[];
     startMicStreaming();
-    connectDeepgram();
+    await connectEleven();
   }catch(e){
-    console.error(e);
-    listening=false;
-    stop.disabled=true;
-    start.disabled=false;
-    stopMicStreaming();
+    console.error(e);listening=false;stop.disabled=true;start.disabled=false;
+    stopMicStreaming();closeEleven();
     if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
-    closeDeepgram();
     setStatus(e.message||e);
   }
 }
 
 function stopListening(){
-  listening=false;
-  speechQueue=[];
-  processingQueue=false;
-  utteranceParts=[];
-  stopMicStreaming();
-  closeDeepgram();
-
+  listening=false;speechQueue=[];processingQueue=false;utteranceParts=[];
+  stopMicStreaming();closeEleven();
   if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
-  player.pause();
-  player.currentTime=0;
-  start.disabled=false;
-  stop.disabled=true;
-  setStatus("Stopped.");
+  player.pause();player.currentTime=0;
+  start.disabled=false;stop.disabled=true;setStatus("Stopped.");
 }
 
-if(deepgramKeyInput){
-  deepgramKeyInput.value=localStorage.getItem("deepgram_api_key")||"";
-  deepgramKeyInput.addEventListener("change",saveDeepgramKey);
-  deepgramKeyInput.addEventListener("blur",saveDeepgramKey);
-}
 start.onclick=startListening;
 stop.onclick=stopListening;
 output.onchange=setOutput;
