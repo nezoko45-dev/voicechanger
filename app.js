@@ -328,11 +328,11 @@ async function startListening(){
       }
     });
 
-    await resumeAudioPipeline();
-    reconnectMicMonitor();
-
     await loadDevices();
     await loadPocketTTS();
+
+    await resumeAudioPipeline();
+    reconnectMicMonitor();
 
     listening=true;
     stop.disabled=false;
