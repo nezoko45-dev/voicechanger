@@ -243,22 +243,13 @@ function scheduleRecognitionRestart(delay=150){
 }
 
 function refreshRecognition(){
-  // NEVER refresh Chrome recognition while PocketTTS is doing anything with
-  // audio. This keeps TTS playback completely independent from recognition.
-  if(!listening||busy||!recognition||!player.paused)return;
-  if(speechQueue.length||processingQueue)return;
+  // This is a WATCHDOG, not a forced restart.
+  // Never abort a healthy recognition session because doing so can cut off
+  // the first words of a sentence.
+  if(!listening||busy||processingQueue||speechQueue.length)return;
+  if(recognition)return;
 
-  const old=recognition;
-  recognition=null;
-  recognitionGeneration++;
-
-  try{old.abort()}catch{}
-
-  setTimeout(()=>{
-    if(listening&&!busy&&!recognition&&!speechQueue.length&&player.paused){
-      startRecognition();
-    }
-  },100);
+  startRecognition();
 }
 
 function startRecognition(){
@@ -314,8 +305,8 @@ function startRecognitionRefresh(){
   if(recognitionRefreshTimer)clearInterval(recognitionRefreshTimer);
 
   recognitionRefreshTimer=setInterval(()=>{
-    // Refresh only during a completely quiet audio gap. If PocketTTS is
-    // generating, preparing, playing, or has queued speech, leave it alone.
+    // Every 4 seconds, verify that recognition is still alive.
+    // A healthy session is NEVER restarted.
     if(listening&&!busy&&!processingQueue&&!speechQueue.length&&player.paused){
       refreshRecognition();
     }
@@ -448,7 +439,7 @@ async function startListening(){
 
     listening=true;
     stop.disabled=false;
-    setStatus("Listening - speech recognition refreshes every 4 seconds.");
+    setStatus("Listening - speech recognition watchdog active.");
     startRecognition();
     startRecognitionRefresh();
   }catch(e){
