@@ -13,7 +13,7 @@ let ort = null;
 const MODEL_STEMS = ["mimi_encoder", "text_conditioner", "flow_lm_main", "flow_lm_flow", "mimi_decoder"];
 
 // Bump the version suffix to invalidate previously cached assets.
-const CACHE_NAME = "pocket-tts-js-v1";
+const CACHE_NAME = "pocket-tts-safe-v2";
 
 const CHUNK_GAP_SEC = 0.25;
 const MAX_FRAMES = 500;
@@ -394,7 +394,7 @@ async function createSession(language, name, onProgress) {
     const bytes = await fetchWithProgress(modelUrl(language, stem(name)), name, onProgress);
     return ort.InferenceSession.create(bytes, {
         executionProviders: ["wasm"],
-        graphOptimizationLevel: "all",
+        graphOptimizationLevel: "basic",
     });
 }
 
