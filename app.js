@@ -4,6 +4,9 @@ const status=$("status"),transcript=$("transcript"),player=$("player");
 
 let tts=null,voice=null,recognition=null,listening=false,busy=false,stream=null;
 let audioCtx=null;
+let micMonitorSource=null;
+let micMonitorGain=null;
+let recovering=false;
 
 function setStatus(v){status.textContent=v;}
 
@@ -217,6 +220,97 @@ function startRecognition(){
   try{recognition.start()}catch(e){}
 }
 
+async function resumeAudioPipeline(){
+  if(!audioCtx)return;
+  try{
+    if(audioCtx.state!=="running")await audioCtx.resume();
+  }catch(e){
+    console.warn("AudioContext resume:",e);
+  }
+}
+
+function reconnectMicMonitor(){
+  if(!audioCtx||!stream)return;
+  try{
+    if(micMonitorSource)micMonitorSource.disconnect();
+    if(micMonitorGain)micMonitorGain.disconnect();
+
+    // Keep the microphone as a live media pipeline without sending the mic
+    // back to the speakers. This avoids feedback while preserving the
+    // browser's active capture state.
+    micMonitorSource=audioCtx.createMediaStreamSource(stream);
+    micMonitorGain=audioCtx.createGain();
+    micMonitorGain.gain.value=0;
+    micMonitorSource.connect(micMonitorGain);
+    micMonitorGain.connect(audioCtx.destination);
+  }catch(e){
+    console.warn("Mic monitor setup:",e);
+  }
+}
+
+async function recoverAfterTabSwitch(){
+  if(recovering||!listening)return;
+  recovering=true;
+
+  try{
+    await resumeAudioPipeline();
+
+    if(stream){
+      const dead=stream.getAudioTracks().some(t=>t.readyState==="ended");
+      if(dead){
+        setStatus("Microphone stopped by Chrome - reconnecting...");
+        try{
+          stream=await navigator.mediaDevices.getUserMedia({
+            audio:{
+              deviceId:mic.value?{exact:mic.value}:undefined,
+              channelCount:1,
+              echoCancellation:true,
+              noiseSuppression:true,
+              autoGainControl:true
+            }
+          });
+          reconnectMicMonitor();
+        }catch(e){
+          console.warn("Microphone reconnect:",e);
+        }
+      }else{
+        reconnectMicMonitor();
+      }
+    }
+
+    // Chrome SpeechRecognition can stop producing results after a tab is
+    // backgrounded. Recreate it rather than trusting the old instance.
+    if(listening&&!busy){
+      if(recognition){
+        try{recognition.abort()}catch{}
+        recognition=null;
+      }
+      startRecognition();
+      setStatus("Listening - background tab recovered.");
+    }
+  }finally{
+    recovering=false;
+  }
+}
+
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState==="visible"){
+    recoverAfterTabSwitch();
+  }
+});
+
+document.addEventListener("resume",()=>{
+  if(document.visibilityState==="visible")recoverAfterTabSwitch();
+});
+
+window.addEventListener("pageshow",()=>{
+  if(document.visibilityState==="visible")recoverAfterTabSwitch();
+});
+
+window.addEventListener("focus",()=>{
+  if(document.visibilityState==="visible")recoverAfterTabSwitch();
+});
+
 async function startListening(){
   if(listening)return;
 
@@ -233,6 +327,9 @@ async function startListening(){
         autoGainControl:true
       }
     });
+
+    await resumeAudioPipeline();
+    reconnectMicMonitor();
 
     await loadDevices();
     await loadPocketTTS();
@@ -258,6 +355,15 @@ function stopListening(){
   if(recognition){
     try{recognition.stop()}catch{}
     recognition=null;
+  }
+
+  if(micMonitorSource){
+    try{micMonitorSource.disconnect()}catch{}
+    micMonitorSource=null;
+  }
+  if(micMonitorGain){
+    try{micMonitorGain.disconnect()}catch{}
+    micMonitorGain=null;
   }
 
   if(stream){
