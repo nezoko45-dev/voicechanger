@@ -4,6 +4,13 @@ const status=$("status"),transcript=$("transcript"),player=$("player");
 
 let tts=null,voice=null,recognition=null,listening=false,busy=false,stream=null;
 
+// Playback buffering: wait for a little audio to accumulate before starting.
+// This prevents a fast first chunk followed by a tiny generation gap from
+// cutting the voice off.
+const PREBUFFER_SECONDS=0.35;
+const START_AHEAD_SECONDS=0.08;
+const TAIL_SECONDS=0.20;
+
 function setStatus(v){status.textContent=v;}
 
 async function loadDevices(){
@@ -33,7 +40,6 @@ async function setOutput(){
 async function loadPocketTTS(){
   if(tts)return;
   setStatus("Loading browser PocketTTS model… first load can take a while.");
-  // Direct browser module; no Node server is needed for GitHub Pages.
   const mod=await import("./pocket-tts/index.js");
   tts=new mod.PocketTTS({
     language:"english_2026-04",
@@ -65,41 +71,89 @@ async function loadPocketTTS(){
 async function speak(text){
   if(!text||busy)return;
   busy=true;
+  let ctx=null;
   try{
     if(recognition){try{recognition.stop()}catch{}}
-    setStatus("PocketTTS is echoing you…");
+    setStatus("PocketTTS is generating + buffering…");
     await setOutput();
+
     const chunks=[];
-    const ctx=new AudioContext({latencyHint:"interactive"});
+    ctx=new AudioContext({latencyHint:"interactive"});
     await ctx.resume();
-    const playerState={next:ctx.currentTime+0.05,nodes:[]};
+
+    let nextTime=ctx.currentTime+START_AHEAD_SECONDS;
+    let started=false;
+    let bufferedSeconds=0;
+    const nodes=[];
+
+    const scheduleChunk=(audio)=>{
+      if(!audio||!audio.length)return;
+      const buf=ctx.createBuffer(1,audio.length,tts.sampleRate);
+      buf.copyToChannel(audio,0);
+      const src=ctx.createBufferSource();
+      src.buffer=buf;
+      src.connect(ctx.destination);
+
+      const when=Math.max(nextTime,ctx.currentTime+0.01);
+      src.start(when);
+      nextTime=when+buf.duration;
+      nodes.push(src);
+    };
+
+    const pending=[];
+
+    const flushPending=()=>{
+      while(pending.length){
+        scheduleChunk(pending.shift());
+      }
+    };
 
     await tts.generate(text,{
       voice,
       onChunk:(audio)=>{
         chunks.push(audio);
-        const buf=ctx.createBuffer(1,audio.length,tts.sampleRate);
-        buf.copyToChannel(audio,0);
-        const src=ctx.createBufferSource();
-        src.buffer=buf;
-        src.connect(ctx.destination);
-        const when=Math.max(playerState.next,ctx.currentTime+0.01);
-        src.start(when);
-        playerState.next=when+buf.duration;
-        playerState.nodes.push(src);
+        pending.push(audio);
+
+        bufferedSeconds+=audio.length/tts.sampleRate;
+
+        // Hold the first ~350 ms so playback has breathing room.
+        if(!started && bufferedSeconds<PREBUFFER_SECONDS){
+          setStatus(`PocketTTS buffering… ${Math.round(bufferedSeconds*1000)} ms`);
+          return;
+        }
+
+        if(!started){
+          started=true;
+          setStatus("PocketTTS playing buffered voice…");
+        }
+        flushPending();
       }
     });
+
+    // If the generated sentence was shorter than the prebuffer target,
+    // start it after generation rather than dropping the pending chunks.
+    if(pending.length){
+      if(!started)started=true;
+      flushPending();
+    }
+
+    // Keep the AudioContext alive until the final scheduled sample plus a
+    // small tail. AudioBufferSourceNode playback is scheduled on currentTime.
+    const remaining=Math.max(0,(nextTime-ctx.currentTime)+TAIL_SECONDS);
+    await new Promise(r=>setTimeout(r,remaining*1000));
 
     // Also provide a normal audio player for the most recent echo.
     const total=chunks.reduce((n,c)=>n+c.length,0);
     const all=new Float32Array(total);let p=0;
     for(const c of chunks){all.set(c,p);p+=c.length}
-    player.src=makeWavUrl(all,tts.sampleRate);
-    await new Promise(r=>setTimeout(r,Math.max(100,(playerState.next-ctx.currentTime)*1000)));
+    if(total)player.src=makeWavUrl(all,tts.sampleRate);
+
     await ctx.close();
+    ctx=null;
     setStatus("Echo complete — say another sentence.");
   }catch(e){
     console.error(e);
+    try{if(ctx)await ctx.close()}catch{}
     setStatus("PocketTTS error: "+e.message);
   }finally{
     busy=false;
@@ -164,8 +218,6 @@ async function startListening(){
   try{
     start.disabled=true;
     setStatus("Requesting microphone permission…");
-    // Permission is requested from the button click, which avoids the old
-    // automatic "NotAllowedError" on page load.
     stream=await navigator.mediaDevices.getUserMedia({
       audio:{deviceId:mic.value?{exact:mic.value}:undefined,channelCount:1,
       echoCancellation:true,noiseSuppression:true,autoGainControl:true}
