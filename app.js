@@ -264,18 +264,39 @@ function startRecognition(){
   recognition=new SR();
   recognition.lang="en-US";
   recognition.continuous=true;
-  recognition.interimResults=false;
+  // Keep partial words flowing back from Chrome while the mic stays live.
+  // Final results are still the only text sent to PocketTTS, so interim
+  // updates never cause duplicate TTS.
+  recognition.interimResults=true;
   recognition.maxAlternatives=1;
 
   const myGeneration=++recognitionGeneration;
 
   recognition.onresult=e=>{
+    let interim="";
+    let newestFinal="";
+
     for(let i=e.resultIndex;i<e.results.length;i++){
       const result=e.results[i];
-      if(!result.isFinal)continue;
-
       const text=result[0].transcript.trim();
-      if(text)enqueueSpeech(text);
+      if(!text)continue;
+
+      if(result.isFinal){
+        newestFinal=text;
+      }else{
+        interim+=(interim?" ":"")+text;
+      }
+    }
+
+    // Show the live transcription immediately instead of waiting for a
+    // final recognition result.
+    if(interim){
+      transcript.textContent="Listening: "+interim;
+    }
+
+    if(newestFinal){
+      transcript.textContent="Heard: "+newestFinal;
+      enqueueSpeech(newestFinal);
     }
   };
 
@@ -294,7 +315,15 @@ function startRecognition(){
   };
 
   try{
-    recognition.start();
+    // Feed Chrome the SAME live MediaStreamTrack selected by the user.
+    // This creates a direct mic -> SpeechRecognition pipeline instead of
+    // making recognition independently grab the browser default mic.
+    const track=stream?.getAudioTracks?.()[0];
+    if(track&&track.readyState==="live"){
+      recognition.start(track);
+    }else{
+      recognition.start();
+    }
   }catch(e){
     recognition=null;
     scheduleRecognitionRestart(300);
