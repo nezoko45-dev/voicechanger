@@ -190,6 +190,11 @@ async function speak(text){
     setStatus("PocketTTS error: "+(e.message||e));
   }finally{
     busy=false;
+
+    // Chrome SpeechRecognition can end naturally while PocketTTS is
+    // generating/playing. Once PocketTTS is done, make sure listening is
+    // alive again so the user never has to repeat the next sentence.
+    if(listening && !recognition) scheduleRecognitionRestart(100);
   }
 }
 
