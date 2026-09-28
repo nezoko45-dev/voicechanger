@@ -4,6 +4,15 @@ const status=$("status"),transcript=$("transcript"),player=$("player");
 
 let tts=null,voice=null,recognition=null,listening=false,busy=false,stream=null;
 let audioCtx=null;
+
+const speechQueue=[];
+let processingQueue=false;
+let recognitionRestartTimer=null;
+let recognitionGeneration=0;
+let lastQueuedText="";
+let lastQueuedAt=0;
+let lastSpokenText="";
+let lastSpokenAt=0;
 let micMonitorSource=null;
 let micMonitorGain=null;
 let recovering=false;
@@ -124,14 +133,18 @@ function makeWavBlob(chunks,sampleRate){
 }
 
 async function speak(text){
-  if(!text||busy||!tts||!voice)return;
+  if(!text||!tts||!voice)return;
 
   busy=true;
 
   try{
-    if(recognition){try{recognition.stop()}catch{}}
-
+    // IMPORTANT: do not stop SpeechRecognition here. The old version
+    // stopped listening while PocketTTS generated/played audio, which meant
+    // anything the user said during that gap was thrown away and they had
+    // to repeat themselves.
     transcript.textContent="Heard: "+text;
+    lastSpokenText=normalizeSpeech(text);
+    lastSpokenAt=Date.now();
     setStatus("Generating complete audio...");
     await setOutput();
 
@@ -171,18 +184,79 @@ async function speak(text){
       player.addEventListener("error",done,{once:true});
     });
 
-    setStatus("Ready - speak again.");
+    setStatus(speechQueue.length
+      ? "Queued speech - processing next..."
+      : "Ready - speak again.");
   }catch(e){
     console.error(e);
     setStatus("PocketTTS error: "+(e.message||e));
   }finally{
     busy=false;
-    if(listening)startRecognition();
   }
 }
 
-function startRecognition(){
+function normalizeSpeech(text){
+  return String(text||"")
+    .toLowerCase()
+    .replace(/[\u2018\u2019]/g,"'")
+    .replace(/[\u201C\u201D]/g,'"')
+    .replace(/\s+/g," ")
+    .trim();
+}
+
+function enqueueSpeech(text){
+  const clean=String(text||"").replace(/\s+/g," ").trim();
+  if(!clean)return;
+
+  const normalized=normalizeSpeech(clean);
+  const now=Date.now();
+
+  // Ignore the same recognition result arriving twice during a recognition
+  // restart. This prevents duplicate TTS without blocking normal speech.
+  if(normalized===lastQueuedText && now-lastQueuedAt<1800)return;
+
+  // If the microphone hears the cloned voice coming from the speakers,
+  // Chrome can recognize the exact sentence we just played. Ignore that
+  // echo for a short window, but allow the user to intentionally repeat it
+  // later.
+  if(normalized===lastSpokenText && now-lastSpokenAt<5000)return;
+
+  lastQueuedText=normalized;
+  lastQueuedAt=now;
+  speechQueue.push(clean);
+  processSpeechQueue();
+}
+
+async function processSpeechQueue(){
+  if(processingQueue||!listening||!tts||!voice)return;
+  processingQueue=true;
+
+  try{
+    while(listening&&speechQueue.length){
+      const text=speechQueue.shift();
+      await speak(text);
+    }
+  }finally{
+    processingQueue=false;
+    if(listening&&speechQueue.length)processSpeechQueue();
+  }
+}
+
+function scheduleRecognitionRestart(delay=150){
   if(!listening||busy)return;
+  if(recognitionRestartTimer)clearTimeout(recognitionRestartTimer);
+
+  const generation=recognitionGeneration;
+  recognitionRestartTimer=setTimeout(()=>{
+    recognitionRestartTimer=null;
+    if(listening&&!busy&&generation===recognitionGeneration&&!recognition){
+      startRecognition();
+    }
+  },delay);
+}
+
+function startRecognition(){
+  if(!listening||busy||recognition)return;
 
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){
@@ -196,12 +270,16 @@ function startRecognition(){
   recognition.interimResults=false;
   recognition.maxAlternatives=1;
 
-  recognition.onresult=async e=>{
-    const result=e.results[e.results.length-1];
-    if(!result.isFinal||busy)return;
-    const text=result[0].transcript.trim();
-    if(!text)return;
-    await speak(text);
+  const myGeneration=++recognitionGeneration;
+
+  recognition.onresult=e=>{
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const result=e.results[i];
+      if(!result.isFinal)continue;
+
+      const text=result[0].transcript.trim();
+      if(text)enqueueSpeech(text);
+    }
   };
 
   recognition.onerror=e=>{
@@ -213,11 +291,17 @@ function startRecognition(){
   };
 
   recognition.onend=()=>{
+    if(myGeneration!==recognitionGeneration)return;
     recognition=null;
-    if(listening&&!busy)setTimeout(startRecognition,150);
+    scheduleRecognitionRestart(150);
   };
 
-  try{recognition.start()}catch(e){}
+  try{
+    recognition.start();
+  }catch(e){
+    recognition=null;
+    scheduleRecognitionRestart(300);
+  }
 }
 
 async function resumeAudioPipeline(){
@@ -281,10 +365,18 @@ async function recoverAfterTabSwitch(){
     // Chrome SpeechRecognition can stop producing results after a tab is
     // backgrounded. Recreate it rather than trusting the old instance.
     if(listening&&!busy){
+      recognitionGeneration++;
+
+      if(recognitionRestartTimer){
+        clearTimeout(recognitionRestartTimer);
+        recognitionRestartTimer=null;
+      }
+
       if(recognition){
         try{recognition.abort()}catch{}
         recognition=null;
       }
+
       startRecognition();
       setStatus("Listening - background tab recovered.");
     }
@@ -351,6 +443,14 @@ async function startListening(){
 
 function stopListening(){
   listening=false;
+  speechQueue.length=0;
+  processingQueue=false;
+  recognitionGeneration++;
+
+  if(recognitionRestartTimer){
+    clearTimeout(recognitionRestartTimer);
+    recognitionRestartTimer=null;
+  }
 
   if(recognition){
     try{recognition.stop()}catch{}
