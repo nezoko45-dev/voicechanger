@@ -29,26 +29,15 @@ function makeWav(chunks,rate){
  let p=44;for(const c of chunks)for(const x of c){const s=Math.max(-1,Math.min(1,x));v.setInt16(p,s<0?s*32768:s*32767,true);p+=2;}return new Blob([buf],{type:"audio/wav"});
 }
 function b64(blob){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(",")[1]);r.onerror=reject;r.readAsDataURL(blob);});}
-async function playWindows(blob){
-  // Chrome remains the audio output. Keep the page/session active with a
-  // lightweight internal refresh every 4 seconds rather than reloading the page.
-  const url=URL.createObjectURL(blob);
-  const audio=new Audio(url);
-  audio.preload="auto";
-  if(typeof audio.setSinkId==="function"&&output.value){
-    try{await audio.setSinkId(output.value);}catch(e){console.warn("Output device:",e);}
-  }
-  try{
-    await audio.play();
-    await new Promise((resolve,reject)=>{
-      audio.onended=resolve;
-      audio.onerror=()=>reject(new Error("Chrome audio playback failed."));
-    });
-  }finally{
-    audio.pause();
-    audio.src="";
-    URL.revokeObjectURL(url);
-  }
+async function playChrome(blob){
+ const url=URL.createObjectURL(blob);
+ const audio=new Audio(url);
+ audio.preload="auto";
+ if(typeof audio.setSinkId==="function"&&output.value){try{await audio.setSinkId(output.value);}catch(e){console.warn("Chrome output:",e);}}
+ try{
+  await audio.play();
+  await new Promise((resolve,reject)=>{audio.onended=resolve;audio.onerror=()=>reject(new Error("Chrome audio playback failed."));});
+ }finally{audio.pause();audio.src="";URL.revokeObjectURL(url);}
 }
 
 let sessionRefreshTimer=null;
@@ -77,8 +66,8 @@ async function processQueue(){
  if(processingQueue||!listening||!tts||!voice)return;processingQueue=true;
  try{while(listening&&speechQueue.length){const text=speechQueue.shift();transcript.textContent="Heard: "+text;setStatus("Generating PocketTTS...");
   const chunks=[];await tts.generate(text,{voice,onChunk:a=>{if(a?.length)chunks.push(new Float32Array(a));}});
-  if(!chunks.length)throw new Error("PocketTTS returned no audio.");setStatus("Playing through Windows audio...");await playWindows(makeWav(chunks,tts.sampleRate));setStatus("Listening...");
- }}catch(e){console.error(e);setStatus("PocketTTS/Windows error: "+(e.message||e));}finally{processingQueue=false;if(listening&&speechQueue.length)processQueue();}
+  if(!chunks.length)throw new Error("PocketTTS returned no audio.");setStatus("Playing through Chrome...");await playChrome(makeWav(chunks,tts.sampleRate));setStatus("Listening...");
+ }}catch(e){console.error(e);setStatus("PocketTTS/Chrome error: "+(e.message||e));}finally{processingQueue=false;if(listening&&speechQueue.length)processQueue();}
 }
 function setupRecognition(){
  const C=window.SpeechRecognition||window.webkitSpeechRecognition;if(!C)throw new Error("Chrome Speech Recognition is required for this TTS version.");
