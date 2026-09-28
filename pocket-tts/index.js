@@ -8,7 +8,7 @@
 const DEFAULT_MODEL_BASE_URL = "https://huggingface.co/vlapky/pocket-tts-onnx/resolve/main/onnx";
 const DEFAULT_ORT_BASE_URL = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.0/dist/";
 // Keep in sync with CACHE_NAME in worker.js.
-const CACHE_NAME = "pocket-tts-js-v1";
+const CACHE_NAME = "pocket-tts-safe-v2";
 
 export const LANGUAGES = [
     "english_2026-04",
