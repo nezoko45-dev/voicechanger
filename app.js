@@ -34,7 +34,7 @@ async function loadPocketTTS(){
   if(tts)return;
   setStatus("Loading browser PocketTTS model… first load can take a while.");
   // Direct browser module; no Node server is needed for GitHub Pages.
-  const mod=await import("https://cdn.jsdelivr.net/gh/vlapky/pocket-tts-js@main/src/index.js");
+  const mod=await import("./pocket-tts/index.js");
   tts=new mod.PocketTTS({
     language:"english_2026-04",
     quantized:true,
