@@ -18,21 +18,11 @@ function getElevenKey(){
 
 async function getRealtimeToken(){
   const key=getElevenKey();
-  if(!key)throw new Error("ElevenLabs API key is required.");
-
-  const response=await fetch("https://api.elevenlabs.io/v1/single-use-token/realtime_scribe",{
-    method:"POST",
-    headers:{"xi-api-key":key}
-  });
-
-  if(!response.ok){
-    let detail="";
-    try{detail=(await response.json()).detail||"";}catch{}
-    throw new Error("ElevenLabs token request failed ("+response.status+"). "+detail);
-  }
-
+  if(!key)throw new Error("Enter your ElevenLabs API key first.");
+  const response=await fetch("/scribe-token",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({apiKey:key})});
+  if(!response.ok){let detail="";try{const data=await response.json();detail=data.error||data.detail||"";}catch{}throw new Error("Local Scribe token server failed ("+response.status+"). "+detail);}
   const data=await response.json();
-  if(!data.token)throw new Error("ElevenLabs did not return a realtime Scribe token.");
+  if(!data.token)throw new Error("Token server did not return a Scribe token.");
   return data.token;
 }
 
@@ -265,7 +255,7 @@ async function connectEleven(){
     ws.onopen=()=>{
       if(eleven!==ws)return;
       reconnectAttempts=0;
-      setStatus("Connecting ElevenLabs Scribe...");
+      setStatus("ElevenLabs Scribe connected.");
     };
 
     ws.onmessage=event=>{
@@ -301,15 +291,15 @@ async function connectEleven(){
       }
     };
 
-    ws.onerror=()=>{
-      if(eleven===ws)setStatus("ElevenLabs connection error - reconnecting...");
-    };
-
-    ws.onclose=()=>{
+    ws.onerror=()=>{if(eleven===ws)setStatus("ElevenLabs WebSocket error - check the key/token server.");};
+    ws.onclose=(event)=>{
       if(eleven!==ws)return;
+      console.warn("ElevenLabs WebSocket closed:",event.code,event.reason);
       elevenReady=false;eleven=null;
       if(listening){
         reconnectAttempts++;
+        const reason=event.reason?(" "+event.reason):"";
+        setStatus("Scribe disconnected ("+event.code+"). Reconnecting..."+reason);
         scheduleReconnect(Math.min(5000,500*Math.max(1,reconnectAttempts)));
       }
     };
