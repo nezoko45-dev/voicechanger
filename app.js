@@ -3,6 +3,7 @@ const mic=$("mic"),output=$("output"),start=$("start"),stop=$("stop");
 const status=$("status"),transcript=$("transcript"),player=$("player");
 
 let tts=null,voice=null,recognition=null,listening=false,busy=false,stream=null;
+let lastWavUrl=null;
 
 function setStatus(v){status.textContent=v;}
 
@@ -66,7 +67,7 @@ async function speak(text){
   busy=true;
   try{
     if(recognition){try{recognition.stop()}catch{}}
-    setStatus("PocketTTS generating whole sentence…");
+    setStatus("Converting your sentence to the cloned voice…");
     await setOutput();
 
     const chunks=[];
@@ -79,10 +80,9 @@ async function speak(text){
 
     if(!chunks.length)throw new Error("PocketTTS returned no audio.");
 
-    // Stitch all model chunks into one continuous sentence.
-    // PocketTTS streams audio in chunks; a tiny overlap crossfade removes
-    // clicks/pops at chunk boundaries without playing each chunk separately.
-    const fadeSamples=Math.max(1,Math.round(tts.sampleRate*0.004)); // 4 ms
+    // PocketTTS can stream multiple PCM chunks. Keep them in memory and
+    // turn the entire sentence into one WAV before playback.
+    const fadeSamples=Math.max(1,Math.round(tts.sampleRate*0.004));
     const usable=chunks.filter(c=>c&&c.length);
     let total=usable.reduce((n,c)=>n+c.length,0);
     for(let i=1;i<usable.length;i++){
@@ -91,8 +91,10 @@ async function speak(text){
 
     const sentence=new Float32Array(total);
     let offset=0;
+
     for(let i=0;i<usable.length;i++){
       const chunk=usable[i];
+
       if(i===0){
         sentence.set(chunk,offset);
         offset+=chunk.length;
@@ -103,7 +105,7 @@ async function speak(text){
       const fade=Math.min(fadeSamples,prev.length,chunk.length);
       const start=offset-fade;
 
-      // Equal-power-ish short crossfade for a smooth waveform transition.
+      // Tiny equal-power-ish crossfade prevents clicks between model chunks.
       for(let j=0;j<fade;j++){
         const t=(j+1)/(fade+1);
         const a=Math.cos(t*Math.PI*0.5);
@@ -115,15 +117,16 @@ async function speak(text){
       offset+=chunk.length-fade;
     }
 
-    // Use the existing HTMLAudioElement for one stable playback path.
-    // This avoids repeatedly creating/scheduling AudioContexts, which can
-    // cause clicks, drift, or delayed audio behind the current sentence.
-    player.src=makeWavUrl(sentence,tts.sampleRate);
+    if(lastWavUrl)URL.revokeObjectURL(lastWavUrl);
+    lastWavUrl=makeWavUrl(sentence,tts.sampleRate);
+
+    player.src=lastWavUrl;
     player.currentTime=0;
     player.loop=false;
-    setStatus("Playing complete sentence…");
+    setStatus("Playing converted sentence…");
 
     await player.play();
+
     await new Promise(resolve=>{
       const done=()=>{
         player.removeEventListener("ended",done);
@@ -132,7 +135,7 @@ async function speak(text){
       player.addEventListener("ended",done,{once:true});
     });
 
-    setStatus("Echo complete — say another sentence.");
+    setStatus("Voice changer ready — say another sentence.");
   }catch(e){
     console.error(e);
     setStatus("PocketTTS error: "+e.message);
@@ -153,33 +156,41 @@ function makeWavUrl(samples,rate){
   data.setUint16(32,2,true);data.setUint16(34,16,true);
   data.setUint8(36,100);data.setUint8(37,97);data.setUint8(38,116);data.setUint8(39,97);
   data.setUint32(40,samples.length*2,true);
+
   for(let i=0;i<samples.length;i++){
     const v=Math.max(-1,Math.min(1,samples[i]));
     data.setInt16(44+i*2,v<0?v*32768:v*32767,true);
   }
+
   return URL.createObjectURL(new Blob([data.buffer],{type:"audio/wav"}));
 }
 
 function startRecognition(){
   if(!listening||busy)return;
+
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){
     setStatus("Chrome speech recognition is not available in this browser.");
     return;
   }
+
   recognition=new SR();
   recognition.lang="en-US";
   recognition.continuous=true;
   recognition.interimResults=false;
   recognition.maxAlternatives=1;
+
   recognition.onresult=async e=>{
     const result=e.results[e.results.length-1];
     if(!result.isFinal)return;
+
     const text=result[0].transcript.trim();
     if(!text)return;
+
     transcript.textContent="Heard: "+text;
     await speak(text);
   };
+
   recognition.onerror=e=>{
     if(e.error==="not-allowed"||e.error==="service-not-allowed"){
       setStatus("Microphone/speech permission was blocked. Allow microphone access for this GitHub Pages site, then press START again.");
@@ -187,31 +198,45 @@ function startRecognition(){
       setStatus("Speech recognition: "+e.error);
     }
   };
+
   recognition.onend=()=>{
     recognition=null;
     if(listening&&!busy)setTimeout(startRecognition,100);
   };
+
   try{recognition.start()}catch(e){}
 }
 
 async function startListening(){
   if(listening)return;
+
   try{
     start.disabled=true;
     setStatus("Requesting microphone permission…");
+
     stream=await navigator.mediaDevices.getUserMedia({
-      audio:{deviceId:mic.value?{exact:mic.value}:undefined,channelCount:1,
-      echoCancellation:true,noiseSuppression:true,autoGainControl:true}
+      audio:{
+        deviceId:mic.value?{exact:mic.value}:undefined,
+        channelCount:1,
+        echoCancellation:true,
+        noiseSuppression:true,
+        autoGainControl:true
+      }
     });
+
     await loadDevices();
     await loadPocketTTS();
+
     listening=true;
     stop.disabled=false;
     setStatus("Listening… say a sentence.");
     startRecognition();
   }catch(e){
     console.error(e);
-    listening=false;stop.disabled=true;start.disabled=false;
+    listening=false;
+    stop.disabled=true;
+    start.disabled=false;
+
     setStatus(e.name==="NotAllowedError"
       ?"Microphone permission was blocked. Click the lock/site-permissions icon in Chrome, allow Microphone, then press START again."
       :"Start error: "+e.message);
@@ -220,13 +245,27 @@ async function startListening(){
 
 function stopListening(){
   listening=false;
-  if(recognition){try{recognition.stop()}catch{}recognition=null}
-  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
-  start.disabled=false;stop.disabled=true;
+
+  if(recognition){
+    try{recognition.stop()}catch{}
+    recognition=null;
+  }
+
+  if(stream){
+    stream.getTracks().forEach(t=>t.stop());
+    stream=null;
+  }
+
+  start.disabled=false;
+  stop.disabled=true;
 }
 
 start.onclick=startListening;
-stop.onclick=()=>{stopListening();setStatus("Stopped.");};
+stop.onclick=()=>{
+  stopListening();
+  setStatus("Stopped.");
+};
+
 output.onchange=setOutput;
 navigator.mediaDevices.addEventListener?.("devicechange",loadDevices);
 
