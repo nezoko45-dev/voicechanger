@@ -64,7 +64,6 @@ async function loadPocketTTS(){
 async function speak(text){
   if(!text||busy)return;
   busy=true;
-  let ctx=null;
   try{
     if(recognition){try{recognition.stop()}catch{}}
     setStatus("PocketTTS generating whole sentence…");
@@ -75,14 +74,12 @@ async function speak(text){
       voice,
       onChunk:audio=>{
         if(audio&&audio.length)chunks.push(audio);
-        const total=chunks.reduce((n,c)=>n+c.length,0);
-        setStatus(`PocketTTS generating… ${Math.round(total/tts.sampleRate*1000)} ms`);
       }
     });
 
     if(!chunks.length)throw new Error("PocketTTS returned no audio.");
 
-    // Join every streamed chunk into one continuous sentence buffer.
+    // Combine every generated chunk into one complete sentence.
     const total=chunks.reduce((n,c)=>n+c.length,0);
     const sentence=new Float32Array(total);
     let offset=0;
@@ -91,30 +88,26 @@ async function speak(text){
       offset+=chunk.length;
     }
 
+    // Use the existing HTMLAudioElement for one stable playback path.
+    // This avoids repeatedly creating/scheduling AudioContexts, which can
+    // cause clicks, drift, or delayed audio behind the current sentence.
+    player.src=makeWavUrl(sentence,tts.sampleRate);
+    player.currentTime=0;
+    player.loop=false;
     setStatus("Playing complete sentence…");
 
-    ctx=new AudioContext({latencyHint:"interactive"});
-    await ctx.resume();
-
-    const buffer=ctx.createBuffer(1,sentence.length,tts.sampleRate);
-    buffer.copyToChannel(sentence,0);
-
-    const src=ctx.createBufferSource();
-    src.buffer=buffer;
-    src.connect(ctx.destination);
-    src.start(ctx.currentTime+0.03);
-
-    player.src=makeWavUrl(sentence,tts.sampleRate);
-
-    await new Promise(r=>setTimeout(r,(buffer.duration+0.08)*1000));
-    src.stop();
-    await ctx.close();
-    ctx=null;
+    await player.play();
+    await new Promise(resolve=>{
+      const done=()=>{
+        player.removeEventListener("ended",done);
+        resolve();
+      };
+      player.addEventListener("ended",done,{once:true});
+    });
 
     setStatus("Echo complete — say another sentence.");
   }catch(e){
     console.error(e);
-    try{if(ctx)await ctx.close()}catch{}
     setStatus("PocketTTS error: "+e.message);
   }finally{
     busy=false;
