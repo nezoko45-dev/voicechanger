@@ -29,7 +29,7 @@ audio{width:100%;margin-top:14px}.badge{display:inline-block;margin-bottom:12px;
 
 <label>ElevenLabs API key</label>
 <input id="elevenKey" type="password" autocomplete="off" placeholder="Paste your ElevenLabs API key">
-<div class="note">Used only to request a short-lived Scribe realtime token. For a public deployment, put token generation on a server so the permanent API key never reaches the browser.</div>
+<div class="note">Used only to request a short-lived Scribe realtime token. The permanent API key is sent only to the local token endpoint; it is not placed in the WebSocket URL.</div>
 
 <label>Microphone</label>
 <select id="mic"><option>Choose microphone…</option></select>
