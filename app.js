@@ -79,13 +79,40 @@ async function speak(text){
 
     if(!chunks.length)throw new Error("PocketTTS returned no audio.");
 
-    // Combine every generated chunk into one complete sentence.
-    const total=chunks.reduce((n,c)=>n+c.length,0);
+    // Stitch all model chunks into one continuous sentence.
+    // PocketTTS streams audio in chunks; a tiny overlap crossfade removes
+    // clicks/pops at chunk boundaries without playing each chunk separately.
+    const fadeSamples=Math.max(1,Math.round(tts.sampleRate*0.004)); // 4 ms
+    const usable=chunks.filter(c=>c&&c.length);
+    let total=usable.reduce((n,c)=>n+c.length,0);
+    for(let i=1;i<usable.length;i++){
+      total-=Math.min(fadeSamples,usable[i-1].length,usable[i].length);
+    }
+
     const sentence=new Float32Array(total);
     let offset=0;
-    for(const chunk of chunks){
-      sentence.set(chunk,offset);
-      offset+=chunk.length;
+    for(let i=0;i<usable.length;i++){
+      const chunk=usable[i];
+      if(i===0){
+        sentence.set(chunk,offset);
+        offset+=chunk.length;
+        continue;
+      }
+
+      const prev=usable[i-1];
+      const fade=Math.min(fadeSamples,prev.length,chunk.length);
+      const start=offset-fade;
+
+      // Equal-power-ish short crossfade for a smooth waveform transition.
+      for(let j=0;j<fade;j++){
+        const t=(j+1)/(fade+1);
+        const a=Math.cos(t*Math.PI*0.5);
+        const b=Math.sin(t*Math.PI*0.5);
+        sentence[start+j]=prev[prev.length-fade+j]*a+chunk[j]*b;
+      }
+
+      sentence.set(chunk.subarray(fade),offset);
+      offset+=chunk.length-fade;
     }
 
     // Use the existing HTMLAudioElement for one stable playback path.
