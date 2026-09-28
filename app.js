@@ -42,7 +42,8 @@ async function loadPocketTTS(){
     quantized:true,
     voiceCloning:true,
     cache:true,
-    maxThreads:8,
+    cacheName:"pocket-tts-safe-v2",
+    maxThreads:2,
     modelBaseUrl:"https://huggingface.co/akrv/pocket-tts-onnx/resolve/main/onnx",
     ortBaseUrl:"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.0/dist/"
   });
