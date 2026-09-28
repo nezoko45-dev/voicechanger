@@ -30,9 +30,45 @@ function makeWav(chunks,rate){
 }
 function b64(blob){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(",")[1]);r.onerror=reject;r.readAsDataURL(blob);});}
 async function playWindows(blob){
- const r=await fetch("/play",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({wavBase64:await b64(blob)})});
- if(!r.ok){let m="Windows audio playback failed.";try{m=(await r.json()).error||m;}catch{}throw new Error(m);}
+  // Chrome remains the audio output. Keep the page/session active with a
+  // lightweight internal refresh every 4 seconds rather than reloading the page.
+  const url=URL.createObjectURL(blob);
+  const audio=new Audio(url);
+  audio.preload="auto";
+  if(typeof audio.setSinkId==="function"&&output.value){
+    try{await audio.setSinkId(output.value);}catch(e){console.warn("Output device:",e);}
+  }
+  try{
+    await audio.play();
+    await new Promise((resolve,reject)=>{
+      audio.onended=resolve;
+      audio.onerror=()=>reject(new Error("Chrome audio playback failed."));
+    });
+  }finally{
+    audio.pause();
+    audio.src="";
+    URL.revokeObjectURL(url);
+  }
 }
+
+let sessionRefreshTimer=null;
+function startSessionRefresh(){
+  clearInterval(sessionRefreshTimer);
+  sessionRefreshTimer=setInterval(()=>{
+    if(!listening)return;
+    // Touch the page state without reloading it, stopping recognition, or
+    // clearing PocketTTS. This prevents the long-running session from going stale.
+    try{
+      document.title="PocketTTS • "+new Date().toLocaleTimeString();
+      void navigator.mediaDevices.enumerateDevices();
+    }catch{}
+  },4000);
+}
+function stopSessionRefresh(){
+  clearInterval(sessionRefreshTimer);
+  sessionRefreshTimer=null;
+}
+
 function enqueue(text){
  const clean=String(text||"").replace(/\s+/g," ").trim();if(!clean)return;const n=clean.toLowerCase(),now=Date.now();
  if(n===lastQueuedText&&now-lastQueuedAt<1200)return;lastQueuedText=n;lastQueuedAt=now;speechQueue.push(clean);processQueue();
@@ -58,5 +94,5 @@ async function startListening(){
   await loadDevices();await loadPocketTTS();setupRecognition();listening=true;stop.disabled=false;speechQueue=[];recognition.start();
  }catch(e){console.error(e);listening=false;stop.disabled=true;start.disabled=false;setStatus(e.message||String(e));}
 }
-function stopListening(){listening=false;speechQueue=[];if(recognition){try{recognition.onend=null;recognition.stop();}catch{}recognition=null;}start.disabled=false;stop.disabled=true;setStatus("Stopped.");}
+function stopListening(){stopSessionRefresh();listening=false;speechQueue=[];if(recognition){try{recognition.onend=null;recognition.stop();}catch{}recognition=null;}start.disabled=false;stop.disabled=true;setStatus("Stopped.");}
 start.onclick=startListening;stop.onclick=stopListening;navigator.mediaDevices.addEventListener?.("devicechange",loadDevices);loadDevices();
