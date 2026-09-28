@@ -77,7 +77,9 @@ async function loadPocketTTS(){
     sampleRate:tts.sampleRate,
     audioContext:audioCtx,
     outputElement:player,
-    primeSeconds:0.08,
+    primeSeconds:0.18,
+    minPrimeSeconds:0.18,
+    maxPrimeSeconds:0.45,
     leadSeconds:0.015,
     onUnderrun:info=>console.warn("PocketTTS audio underrun",info)
   });
