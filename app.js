@@ -153,7 +153,7 @@ async function processQueue(){
   while(queue.length&&running){
    const raw=queue.shift();
    const audio16=downsample(raw,captureContext.sampleRate,16000);
-   setStatus("RVC converting… queue: "+queue.length);
+   setStatus("RVC WebGPU converting… queue: "+queue.length);
    const model=selectedFile(modelInput,null);
    const contentVec=autoContentVec;
    const rmvpe=autoRMVPE;
@@ -167,7 +167,7 @@ async function processQueue(){
       else if(event.type==="chunk")setStatus("RVC: chunk "+event.current+"/"+event.total);
     }},
     {timeout:120000,pitchShift:Number(pitch.value)||0,medianFilter:true,medianFilterWindow:3,
-     contentVecBackend:"webgpu",rmvpeBackend:"webgpu",rvcBackend:"wasm",chunkDuration:Number(chunk.value),padDuration:.15});
+     contentVecBackend:"webgpu",rmvpeBackend:"webgpu",rvcBackend:"webgpu",chunkDuration:Number(chunk.value),padDuration:.15});
    if(result.state!=="success"||!result.outputAudio)throw new Error(result.errorMessage||"RVC conversion failed.");
    await playPCM(result.outputAudio,48000);
    setStatus(running?"RVC live — listening.":"Stopped.");
@@ -181,7 +181,7 @@ async function startRVC(){
  if(running)return;
  try{
   start.disabled=true;
-  if(!await checkWebGPU())throw new Error("WebGPU is required for the accelerated ContentVec/RMVPE path.");
+  if(!await checkWebGPU())throw new Error("WebGPU is required for the browser-only RVC path.");
   const model=selectedFile(modelInput,null);
   if(!model)throw new Error("Choose your trained RVC .onnx or .pth voice model first.");
   setStatus("Preparing browser RVC…");
