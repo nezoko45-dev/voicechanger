@@ -49,7 +49,7 @@ audio{width:100%;margin-top:8px}
 <button id="stop" class="danger" type="button" disabled>STOP</button>
 </div>
 <div class="meter"><i id="meterBar"></i></div>
-<div class="note" style="margin-top:9px">Each generated WAV is physically time-stretched to match your measured microphone speech duration. Playback stays at normal 1× speed, so the voice does not become chipmunk-like.</div>
+<div class="note" style="margin-top:9px">The microphone tone detector only tracks when you are speaking. Your WAV-cloned voice is generated and played at PocketTTS's natural duration — no mic-duration matching or time-stretching.</div>
 </div>
 
 <div class="panel">
@@ -61,8 +61,8 @@ audio{width:100%;margin-top:8px}
 
 <div class="status" id="status">Choose your WAV first.</div>
 <div class="small" id="info"></div>
-<div class="flow">🎙 mic → continuous Chrome recognition → short speech segments → PocketTTS using your WAV → Chrome speaker + MediaPlayer result</div>
+<div class="flow">🎙 mic tone detection → full-sentence Chrome recognition → PocketTTS using YOUR WAV → natural-speed Chrome playback</div>
 </main>
-<script type="module" src="./app.js?v=wav-duration-pitch-20260929-7"></script>
+<script type="module" src="./app.js?v=natural-wav-timing-20260929-8"></script>
 </body>
 </html>
