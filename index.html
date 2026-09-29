@@ -8,10 +8,12 @@
 <p class="sub">Your microphone → local speech recognition → PocketTTS cloned voice</p>
 <label>Microphone</label><select id="mic"><option>Choose microphone…</option></select>
 <label>Output</label><select id="output"><option value="">Default Windows output</option></select>
+<button id="chooseOutput">CHOOSE WINDOWS OUTPUT</button>
+<div class="note">If the dropdown only shows the default device, use CHOOSE WINDOWS OUTPUT. Chrome will open its speaker-device picker so you can select headphones, speakers, Voicemeeter, etc.</div>
 <div class="note">Choose where the cloned voice is played. Your selected Windows/Voicemeeter output is used when Chrome supports output-device selection.</div>
 <div class="note">Reference voice: <b>Recording (10).wav</b>. Your mic is captured through an AudioWorklet while you speak. Browser SpeechRecognition converts your speech to text locally from the page, and PocketTTS keeps generating the cloned voice continuously.</div>
 <div class="note">PocketTTS runs locally in the page. The reference WAV is used only to clone the voice. Generated PCM is streamed through the AudioWorklet without creating WAV files.</div>
 <div class="row"><button id="start" class="primary">START LISTENING</button><button id="stop" disabled>STOP</button></div><button id="test" disabled>TEST LOCAL TTS</button>
 <div class="status" id="status">Press START LISTENING and speak.</div>
 <div class="small">No Deepgram API or cloud TTS API is used. PocketTTS uses the local <b>Recording (10).wav</b> as its cloned voice reference.</div>
-</main><script src="app.js?v=github-pages-output-20260929-2"></script></body></html>
+</main><script src="app.js?v=github-pages-output-picker-20260929-3"></script></body></html>
