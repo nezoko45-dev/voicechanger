@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Deepgram + PocketTTS Chrome Voice Changer</title>
+<title>PocketTTS Chrome Voice Changer</title>
 <style>
 :root{color-scheme:dark}
 *{box-sizing:border-box}
@@ -12,33 +12,27 @@ body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090b1
 h1{margin:0 0 7px;font-size:28px}.sub{margin:0 0 20px;color:#a3a9b5;line-height:1.5}
 .badge{display:inline-block;margin-bottom:12px;padding:5px 9px;border-radius:999px;background:#192a20;color:#9ff0b8;font-size:12px;font-weight:800}
 label{display:block;margin:14px 0 7px;color:#b4bac5;font-size:13px}
-input,select,textarea,button,audio{width:100%;padding:11px;border:1px solid #363b48;border-radius:10px;background:#0d1016;color:#fff;font:inherit}
-input[type=file]{padding:9px}audio{padding:4px}textarea{min-height:100px;resize:vertical}
-button{cursor:pointer;font-weight:800;min-height:46px}
-button:disabled{opacity:.45;cursor:not-allowed}
-.primary{background:#8d5cff;border-color:#9b70ff}
-.danger{background:#3a1519;border-color:#693039}
+input,select,textarea,button{width:100%;padding:11px;border:1px solid #363b48;border-radius:10px;background:#0d1016;color:#fff;font:inherit}
+input[type=file]{padding:9px}textarea{min-height:100px;resize:vertical}
+button{cursor:pointer;font-weight:800;min-height:46px}button:disabled{opacity:.45;cursor:not-allowed}
+.primary{background:#8d5cff;border-color:#9b70ff}.danger{background:#3a1519;border-color:#693039}
 .panel{margin-top:15px;padding:16px;border:1px solid #292e39;border-radius:14px;background:#10131a}
 .note,.small{color:#8f96a3;font-size:12px;line-height:1.5}
 .status{margin-top:15px;padding:12px;border-radius:10px;background:#0d1016;color:#b9c0cc}
 .flow{margin-top:12px;color:#777f8e;font-size:12px}
-.keyrow{display:flex;gap:8px}.keyrow input{flex:1}.keyrow button{width:auto;white-space:nowrap}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
 </style>
 </head>
 <body>
 <main class="card">
-<div class="badge">CHROME • DEEPGRAM WEBSOCKET STT • POCKETTTS • WAV VOICE</div>
-<h1>🎙 Deepgram + PocketTTS Voice Changer</h1>
-<p class="sub">Speak into your microphone. Deepgram transcribes the live stream, PocketTTS speaks the finished sentence using your WAV reference voice, and only the generated voice is played.</p>
+<div class="badge">CHROME • SPEECH RECOGNITION • POCKETTTS • WAV VOICE</div>
+<h1>🎙 PocketTTS Voice Changer</h1>
+<p class="sub">Speak naturally. Chrome recognizes your speech locally through its browser speech interface, PocketTTS converts the recognized sentence using your WAV reference voice, and the generated voice streams directly to your selected Chrome speaker.</p>
 
 <div class="panel">
-<label>Deepgram API key</label>
-<div class="keyrow"><input id="apiKey" type="password" autocomplete="off" placeholder="Paste your Deepgram API key for this local session"><button id="clearKey" type="button">CLEAR</button></div>
-<div class="note">Used only by this local Chrome page. It is not saved or committed to GitHub.</div>
-
 <label>Voice reference WAV</label>
 <input id="reference" type="file" accept=".wav,audio/wav,audio/x-wav,audio/*">
-<div class="note">Choose a short, clean voice recording for PocketTTS voice cloning.</div>
+<div class="note">Choose a short, clean voice recording. This is the voice PocketTTS will clone.</div>
 
 <label>Chrome speaker / output</label>
 <select id="output"><option value="">Default Windows output</option></select>
@@ -46,24 +40,20 @@ button:disabled{opacity:.45;cursor:not-allowed}
 </div>
 
 <div class="panel">
-<label>Generated PocketTTS audio</label>
-<audio id="player" controls preload="auto"></audio>
-<div class="note">Your raw microphone audio is never sent to this player.</div>
-
-<label>Live Deepgram transcription</label>
+<label>Live transcription</label>
 <textarea id="text" readonly placeholder="Your recognized speech will appear here..."></textarea>
 
 <div class="row">
-<button id="start" class="primary" type="button" disabled>START VOICE CHANGER</button>
+<button id="start" class="primary" type="button" disabled>START POCKETTTS</button>
 <button id="stop" class="danger" type="button" disabled>STOP</button>
 </div>
-<div class="note" style="margin-top:9px">Enter the key and choose a WAV. The START button becomes available automatically.</div>
+<div class="note" style="margin-top:9px">Choose a WAV first. Then press START and allow microphone access.</div>
 </div>
 
 <div class="status" id="status">Loading controls…</div>
 <div class="small" id="info"></div>
-<div class="flow">Pipeline: 🎙 mic → Deepgram WebSocket STT → final sentence → PocketTTS voice clone → WAV → Chrome audio output.</div>
+<div class="flow">Pipeline: 🎙 mic → Chrome Speech Recognition → PocketTTS voice clone → streaming PCM → Chrome speaker.</div>
 </main>
-<script type="module" src="./app.js?v=deepgram-pockettts-20260929-2"></script>
+<script type="module" src="./app.js?v=pockettts-only-20260929-1"></script>
 </body>
 </html>
