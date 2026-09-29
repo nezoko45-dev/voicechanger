@@ -50,8 +50,9 @@ async function initTTS(){
   quantized:true,
   voiceCloning:true,
   cache:true,
+  cacheName:"pocket-tts-wav-only-v3",
   maxThreads:8,
-  maxReferenceSeconds:20
+  maxReferenceSeconds:6
  });
  ttsPlayer=new mod.StreamingPlayer({sampleRate:tts.sampleRate});
  await ttsPlayer.resume();
@@ -78,7 +79,7 @@ async function prepareVoice(){
   voiceRef=await tts.cloneVoice(mono,{inputSampleRate:decoded.sampleRate,name:"pockettts-wav-clone"});
  }finally{await ac.close();}
  await tts.finishLoad();
- info.textContent="Chrome mic → Speech Recognition → PocketTTS → selected speaker.";
+ info.textContent="Chrome mic → WAV voice clone → PocketTTS → selected speaker. No preset voice is used.";
 }
 
 async function speak(phrase){
