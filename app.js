@@ -51,7 +51,7 @@ async function initTTS(){
   voiceCloning:true,
   cache:true,
   maxThreads:8,
-  maxReferenceSeconds:6
+  maxReferenceSeconds:20
  });
  ttsPlayer=new mod.StreamingPlayer({sampleRate:tts.sampleRate});
  await ttsPlayer.resume();
@@ -74,7 +74,7 @@ async function prepareVoice(){
   const decoded=await ac.decodeAudioData(buf);
   if(decoded.numberOfChannels<1)throw new Error("The WAV has no audio channel.");
   const mono=decoded.getChannelData(0).slice();
-  setStatus("Cloning WAV voice…");
+  setStatus("Using ONLY your WAV voice reference…");
   voiceRef=await tts.cloneVoice(mono,{inputSampleRate:decoded.sampleRate,name:"pockettts-wav-clone"});
  }finally{await ac.close();}
  await tts.finishLoad();
