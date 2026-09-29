@@ -227,7 +227,13 @@ function matchDurationPitchSafe(chunks,sampleRate,targetSeconds){
  const input=new Float32Array(total);
  let at=0;
  for(const x of list){input.set(x,at);at+=x.length;}
- const target=Math.max(0.18,Number(targetSeconds)||input.length/sampleRate);
+ const requestedTarget=Math.max(0.18,Number(targetSeconds)||input.length/sampleRate);
+ // Do not force a generated sentence to race unnaturally fast. The WAV still
+ // follows the user's timing, but we keep the compression within a natural
+ // range so full sentences remain intelligible.
+ const generatedSeconds=input.length/sampleRate;
+ const minimumNaturalSeconds=generatedSeconds*.72;
+ const target=Math.max(requestedTarget,minimumNaturalSeconds);
  const targetLength=Math.max(1,Math.round(target*sampleRate));
  if(targetLength===input.length)return input;
 
