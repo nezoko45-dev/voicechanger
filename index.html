@@ -5,7 +5,24 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Deepgram + PocketTTS Chrome Voice Changer</title>
 <style>
-:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090b10;color:#f4f5f7;font:15px system-ui,Segoe UI,sans-serif}.card{width:min(760px,94vw);padding:26px;border:1px solid #292e39;border-radius:20px;background:#151820;box-shadow:0 22px 70px #0009}h1{margin:0 0 7px;font-size:28px}.sub{margin:0 0 20px;color:#a3a9b5;line-height:1.5}.badge{display:inline-block;margin-bottom:12px;padding:5px 9px;border-radius:999px;background:#192a20;color:#9ff0b8;font-size:12px;font-weight:800}label{display:block;margin:14px 0 7px;color:#b4bac5;font-size:13px}input[type=password],input[type=file],select,textarea,button,audio{width:100%;padding:11px;border:1px solid #363b48;border-radius:10px;background:#0d1016;color:#fff;font:inherit}input[type=file]{padding:9px}audio{padding:4px}textarea{min-height:100px;resize:vertical}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}button{cursor:pointer;font-weight:800}button:disabled{opacity:.45;cursor:not-allowed}.primary{background:#8d5cff;border-color:#9b70ff}.danger{background:#3a1519;border-color:#693039}.panel{margin-top:15px;padding:16px;border:1px solid #292e39;border-radius:14px;background:#10131a}.note,.small{color:#8f96a3;font-size:12px;line-height:1.5}.status{margin-top:15px;padding:12px;border-radius:10px;background:#0d1016;color:#b9c0cc}.flow{margin-top:12px;color:#777f8e;font-size:12px}.keyrow{display:flex;gap:8px}.keyrow input{flex:1}.keyrow button{width:auto;white-space:nowrap}
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090b10;color:#f4f5f7;font:15px system-ui,Segoe UI,sans-serif}
+.card{width:min(760px,94vw);padding:26px;border:1px solid #292e39;border-radius:20px;background:#151820;box-shadow:0 22px 70px #0009}
+h1{margin:0 0 7px;font-size:28px}.sub{margin:0 0 20px;color:#a3a9b5;line-height:1.5}
+.badge{display:inline-block;margin-bottom:12px;padding:5px 9px;border-radius:999px;background:#192a20;color:#9ff0b8;font-size:12px;font-weight:800}
+label{display:block;margin:14px 0 7px;color:#b4bac5;font-size:13px}
+input,select,textarea,button,audio{width:100%;padding:11px;border:1px solid #363b48;border-radius:10px;background:#0d1016;color:#fff;font:inherit}
+input[type=file]{padding:9px}audio{padding:4px}textarea{min-height:100px;resize:vertical}
+button{cursor:pointer;font-weight:800;min-height:46px}
+button:disabled{opacity:.45;cursor:not-allowed}
+.primary{background:#8d5cff;border-color:#9b70ff}
+.danger{background:#3a1519;border-color:#693039}
+.panel{margin-top:15px;padding:16px;border:1px solid #292e39;border-radius:14px;background:#10131a}
+.note,.small{color:#8f96a3;font-size:12px;line-height:1.5}
+.status{margin-top:15px;padding:12px;border-radius:10px;background:#0d1016;color:#b9c0cc}
+.flow{margin-top:12px;color:#777f8e;font-size:12px}
+.keyrow{display:flex;gap:8px}.keyrow input{flex:1}.keyrow button{width:auto;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -16,7 +33,7 @@
 
 <div class="panel">
 <label>Deepgram API key</label>
-<div class="keyrow"><input id="apiKey" type="password" autocomplete="off" placeholder="Paste your Deepgram API key for this local session"><button id="clearKey">CLEAR</button></div>
+<div class="keyrow"><input id="apiKey" type="password" autocomplete="off" placeholder="Paste your Deepgram API key for this local session"><button id="clearKey" type="button">CLEAR</button></div>
 <div class="note">Used only by this local Chrome page. It is not saved or committed to GitHub.</div>
 
 <label>Voice reference WAV</label>
@@ -25,7 +42,7 @@
 
 <label>Chrome speaker / output</label>
 <select id="output"><option value="">Default Windows output</option></select>
-<button id="chooseOutput" style="margin-top:8px">CHOOSE CHROME SPEAKER</button>
+<button id="chooseOutput" type="button" style="margin-top:8px">CHOOSE CHROME SPEAKER</button>
 </div>
 
 <div class="panel">
@@ -37,15 +54,16 @@
 <textarea id="text" readonly placeholder="Your recognized speech will appear here..."></textarea>
 
 <div class="row">
-<button id="start" class="primary">START VOICE CHANGER</button>
-<button id="stop" class="danger" disabled>STOP</button>
+<button id="start" class="primary" type="button" disabled>START VOICE CHANGER</button>
+<button id="stop" class="danger" type="button" disabled>STOP</button>
 </div>
+<div class="note" style="margin-top:9px">Enter the key and choose a WAV. The START button becomes available automatically.</div>
 </div>
 
-<div class="status" id="status">Choose a WAV voice and enter your Deepgram key, then press START.</div>
+<div class="status" id="status">Loading controls…</div>
 <div class="small" id="info"></div>
 <div class="flow">Pipeline: 🎙 mic → Deepgram WebSocket STT → final sentence → PocketTTS voice clone → WAV → Chrome audio output.</div>
 </main>
-<script type="module" src="./app.js?v=deepgram-pockettts-20260929-1"></script>
+<script type="module" src="./app.js?v=deepgram-pockettts-20260929-2"></script>
 </body>
 </html>
