@@ -6,6 +6,7 @@ const TTS_URL="./pocket-tts/index.js";
 const TARGET_RATE=16000;
 
 let socket=null,micStream=null,micContext=null,micSource=null,processor=null,muteGain=null;
+let agentReady=false;
 let tts=null,voiceRef=null,ttsPlayer=null,running=false,ttsBusy=false,ttsQueue=[];
 let reconnectTimer=null,reconnectDelay=500,reconnectGeneration=0,keepAliveTimer=null;
 
@@ -91,7 +92,7 @@ async function startMic(){
  muteGain=micContext.createGain();
  muteGain.gain.value=0;
  processor.onaudioprocess=e=>{
-  if(!running||!socket||socket.readyState!==WebSocket.OPEN)return;
+  if(!running||!agentReady||!socket||socket.readyState!==WebSocket.OPEN)return;
   const pcm=downsampleFloat32To16(e.inputBuffer.getChannelData(0),micContext.sampleRate);
   socket.send(pcm.buffer);
  };
@@ -100,6 +101,7 @@ async function startMic(){
  muteGain.connect(micContext.destination);
 }
 function stopMic(){
+ agentReady=false;
  try{processor?.disconnect();}catch{}try{muteGain?.disconnect();}catch{}try{micSource?.disconnect();}catch{}
  processor=null;muteGain=null;micSource=null;
  micStream?.getTracks().forEach(t=>t.stop());micStream=null;
@@ -121,6 +123,7 @@ function scheduleReconnect(reason="connection lost"){
 }
 function connectAgent(){
  if(!running)return;
+ agentReady=false;
  try{socket?.close();}catch{}
  const ws=new WebSocket(AGENT_URL,["token",key.value.trim()]);
  socket=ws;
@@ -141,6 +144,7 @@ function connectAgent(){
     }
    }));
   }else if(m.type==="SettingsApplied"){
+   agentReady=true;
    reconnectDelay=500;
    setStatus("Deepgram listening — speak naturally.");
   }else if(m.type==="ConversationText"){
@@ -183,13 +187,13 @@ async function startAll(){
   running=true;stop.disabled=false;reconnectDelay=500;reconnectGeneration++;cancelReconnect();connectAgent();
  }catch(e){
   console.error(e);running=false;stop.disabled=true;stopMic();cancelReconnect();stopKeepAlive();
-  try{socket?.close();}catch{}socket=null;
+  try{socket?.close();}catch{}socket=null;agentReady=false;
   if(ttsPlayer){try{await ttsPlayer.destroy();}catch{}ttsPlayer=null;}
   setStatus("Start error: "+(e.message||e));updateStartButton();
  }
 }
 async function stopAll(){
- running=false;reconnectGeneration++;cancelReconnect();stopKeepAlive();ttsQueue=[];
+ running=false;agentReady=false;reconnectGeneration++;cancelReconnect();stopKeepAlive();ttsQueue=[];
  try{socket?.close();}catch{}socket=null;stopMic();
  if(tts){try{await tts.stop();}catch{}}
  if(ttsPlayer){try{await ttsPlayer.destroy();}catch{}ttsPlayer=null;}
