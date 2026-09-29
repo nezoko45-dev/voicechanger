@@ -10,12 +10,22 @@ if errorlevel 1 (
  exit /b 1
 )
 
-echo Starting local PocketTTS voice app...
-start "" "chrome.exe" "http://127.0.0.1:8787/"
-if errorlevel 1 (
- echo Chrome was not found on PATH. Opening the local app with the default browser instead.
- start "" "http://127.0.0.1:8787/"
+if not exist node_modules\speaker\package.json (
+ echo Installing local audio backend...
+ call npm install
+ if errorlevel 1 (
+  echo npm install failed.
+  pause
+  exit /b 1
+ )
 )
+
+echo.
+echo Starting local PocketTTS voice changer...
+echo Windows audio backend will play the cloned voice directly.
+echo.
+start "" "chrome.exe" "http://127.0.0.1:8787/"
+if errorlevel 1 start "" "http://127.0.0.1:8787/"
 
 node server.js
 pause
