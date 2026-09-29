@@ -232,7 +232,7 @@ function matchDurationPitchSafe(chunks,sampleRate,targetSeconds){
  // follows the user's timing, but we keep the compression within a natural
  // range so full sentences remain intelligible.
  const generatedSeconds=input.length/sampleRate;
- const minimumNaturalSeconds=generatedSeconds*.72;
+ const minimumNaturalSeconds=generatedSeconds*.90;
  const target=Math.max(requestedTarget,minimumNaturalSeconds);
  const targetLength=Math.max(1,Math.round(target*sampleRate));
  if(targetLength===input.length)return input;
