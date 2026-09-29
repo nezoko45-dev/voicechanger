@@ -1,59 +1,37 @@
-// Reliable local PocketTTS PCM playback.
-// Each generated PCM chunk is scheduled into one browser AudioContext.
-// The audio never leaves the local browser for playback.
+// PocketTTS PCM transport to the local Windows audio backend.
+// Chrome generates the voice; Node handles the final Windows speaker playback.
 export class StreamingPlayer{
  constructor(opts={}){
   this.sampleRate=opts.sampleRate||24000;
-  this.audioContext=opts.audioContext||null;
-  this._ownsContext=!opts.audioContext;
+  this.socket=null;
   this._ready=false;
-  this._nextTime=0;
-  this._sources=new Set();
  }
  async resume(){
-  if(!this.audioContext){
-   const Ctx=globalThis.AudioContext||globalThis.webkitAudioContext;
-   if(!Ctx)throw new Error("Web Audio is not supported in this browser.");
-   this.audioContext=new Ctx({sampleRate:this.sampleRate,latencyHint:"interactive"});
-  }
-  if(this.audioContext.state==="suspended")await this.audioContext.resume();
-  if(this.audioContext.state!=="running")throw new Error("Browser audio output is not running.");
-  this._ready=true;
-  if(this._nextTime<this.audioContext.currentTime)this._nextTime=this.audioContext.currentTime+0.02;
+  if(this._ready&&this.socket?.readyState===WebSocket.OPEN)return;
+  await new Promise((resolve,reject)=>{
+   const ws=new WebSocket("ws://127.0.0.1:8788");
+   ws.binaryType="arraybuffer";
+   ws.onopen=()=>{this.socket=ws;this._ready=true;resolve();};
+   ws.onerror=()=>reject(new Error("Local Windows audio backend is not running. Start start_pockettts.bat first."));
+   ws.onclose=()=>{this._ready=false;};
+  });
  }
  play(float32){
   if(!float32?.length)return;
-  if(!this._ready)throw new Error("StreamingPlayer is not ready.");
-  const ctx=this.audioContext;
-  if(ctx.state==="suspended")return;
+  if(!this._ready||this.socket?.readyState!==WebSocket.OPEN)
+   throw new Error("Local Windows audio backend is disconnected.");
   const audio=new Float32Array(float32);
-  const buffer=ctx.createBuffer(1,audio.length,this.sampleRate);
-  buffer.copyToChannel(audio,0);
-  const source=ctx.createBufferSource();
-  source.buffer=buffer;
-  source.connect(ctx.destination);
-  const now=ctx.currentTime;
-  if(this._nextTime<now+0.01)this._nextTime=now+0.01;
-  const startAt=this._nextTime;
-  source.start(startAt);
-  this._nextTime=startAt+buffer.duration;
-  this._sources.add(source);
-  source.onended=()=>{this._sources.delete(source);source.disconnect();};
+  this.socket.send(audio.buffer);
  }
  flush(){}
- reset(){
-  for(const source of this._sources){try{source.stop();}catch{}try{source.disconnect();}catch{}}
-  this._sources.clear();
-  if(this.audioContext)this._nextTime=this.audioContext.currentTime+0.02;
- }
- stop(){this.reset();}
- async destroy(){
-  this.reset();
-  if(this._ownsContext&&this.audioContext){
-   try{await this.audioContext.close();}catch{}
+ reset(){}
+ stop(){
+  if(this.socket){
+   try{this.socket.close();}catch{}
   }
-  this.audioContext=null;
+  this.socket=null;
   this._ready=false;
  }
+ async destroy(){this.stop();}
 }
-export function chunksToWavBlob(){throw new Error("WAV output is disabled; PocketTTS streams PCM directly.");}
+export function chunksToWavBlob(){throw new Error("WAV output is disabled; PocketTTS streams PCM to the local Windows backend.");}
