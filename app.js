@@ -158,14 +158,19 @@ async function startAll(){
  try{
   if(!reference.files?.[0])throw new Error("Choose your WAV voice reference first.");
   start.disabled=true;
-  setStatus("Starting PocketTTS…");
-  await initTTS();
-  await prepareVoice();
-  await loadOutputs();
-  await setOutput();
   running=true;
   stop.disabled=false;
+  text.value="";
+  setStatus("Starting microphone…");
   startRecognition();
+  setStatus("Listening… PocketTTS is preparing your voice.");
+  await initTTS();
+  if(!running)return;
+  await prepareVoice();
+  if(!running)return;
+  await loadOutputs();
+  await setOutput();
+  if(running)setStatus("Listening — speak now.");
  }catch(e){
   console.error(e);
   running=false;
@@ -173,6 +178,8 @@ async function startAll(){
   if(ttsPlayer){try{ttsPlayer.destroy();}catch{}ttsPlayer=null;}
   setStatus("Start error: "+(e.message||e));
   updateStartButton();
+ }finally{
+  if(!running)stop.disabled=true;
  }
 }
 
