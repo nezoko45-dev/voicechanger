@@ -10,29 +10,29 @@ audio{padding:4px}textarea{min-height:90px;resize:vertical}button{margin-top:10p
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.panel{padding:13px;border:1px solid #292d38;border-radius:13px;background:#101217;margin-top:14px}
 .status{margin-top:14px;padding:12px;border-radius:10px;background:#0d0f14;color:#b9bfca;min-height:44px}.note,.small{margin-top:7px;color:#777f8d;font-size:11px;line-height:1.45}
 </style></head><body><main class="card">
-<div class="badge">CHROME AUDIO • POCKETTTS • AUTO TRANSCRIPTION</div>
+<div class="badge">MIC • CHROME SPEECH RECOGNITION • POCKETTTS • WAV VOICE</div>
 <h1>🎙 PocketTTS Chrome Voice Changer</h1>
-<p class="sub">Speak normally. Chrome transcribes your speech automatically, PocketTTS speaks the text with your cloned WAV voice, and the generated audio plays through the media player.</p>
+<p class="sub">Speak into your microphone. Chrome turns your speech into text, PocketTTS speaks it using your selected WAV voice, and only the generated voice is played.</p>
 <div class="panel">
-<label>Voice reference WAV</label>
-<input id="reference" type="file" accept="audio/*,.wav">
-<div class="note">Choose a short clean voice recording. PocketTTS uses it to clone the voice.</div>
+<label>Voice reference file</label>
+<input id="reference" type="file" accept=".wav,audio/wav,audio/x-wav,audio/*">
+<div class="note">Pick a short, clean WAV recording of the voice you want PocketTTS to clone.</div>
 </div>
 <div>
-<label>Speaker / output</label>
+<label>Chrome speaker / output</label>
 <select id="output"><option value="">Default Windows output</option></select>
 </div>
-<button id="chooseOutput">CHOOSE CHROME SPEAKER</button><a href="webgpu.html" style="display:block;margin-top:10px;padding:11px;text-align:center;border:1px solid #343946;border-radius:10px;background:#0d0f14;color:#9cc7ff;text-decoration:none;font-weight:800">OPEN EXPERIMENTAL WEBGPU VOICE CONVERTER</a>
+<button id="chooseOutput">CHOOSE CHROME SPEAKER</button>
 <div class="panel">
-<label>PocketTTS audio player</label>
+<label>Generated PocketTTS audio</label>
 <audio id="player" controls preload="auto"></audio>
-<div class="note">This player contains only PocketTTS-generated audio. Your raw microphone audio is never played.</div>
-<label>Live transcription</label>
-<textarea id="text" placeholder="Press START MIC and speak..."></textarea>
+<div class="note">Raw microphone audio is never sent to the player.</div>
+<label>Live Chrome transcription</label>
+<textarea id="text" readonly placeholder="Press START POCKETTTS, then START MIC and speak..."></textarea>
 <div class="row"><button id="start" class="primary">START POCKETTTS</button><button id="micBtn">START MIC</button></div>
 <button id="stop" disabled>STOP</button>
 </div>
-<div class="status" id="status">Choose a voice reference, then press START POCKETTTS.</div>
+<div class="status" id="status">Choose a voice reference file, then press START POCKETTTS.</div>
 <div class="small" id="info"></div>
-<div class="small">Chrome Speech Recognition supplies text only. The generated PocketTTS WAV is loaded into the media player and routed to the selected Chrome output.</div>
-</main><script type="module" src="app.js?v=pockettts-auto-transcribe-player-20260929-2"></script></body></html>
+<div class="small">Pipeline: microphone → Chrome Speech Recognition → text → PocketTTS voice clone → WAV audio → Chrome media player → selected speaker.</div>
+</main><script type="module" src="app.js?v=pockettts-mic-wav-20260929-3"></script></body></html>
