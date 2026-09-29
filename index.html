@@ -29,7 +29,7 @@ audio{width:100%;margin-top:8px}
 <main class="card">
 <div class="badge">GITHUB PAGES • CHROME MIC • YOUR WAV</div>
 <h1>🎙 WAV Voice Changer</h1>
-<p class="sub">Continuous low-latency browser voice pipeline. Your WAV is used as the voice reference; there is no Deepgram or preset voice.</p>
+<p class="sub">Automatic browser voice pipeline. Speak into the mic and your WAV-cloned PocketTTS voice is generated and played automatically.</p>
 
 <div class="panel">
 <label>Voice reference WAV</label>
@@ -54,15 +54,15 @@ audio{width:100%;margin-top:8px}
 
 <div class="panel">
 <div class="resultTitle">🔊 MediaPlayer — Generated Voice Result</div>
-<div class="small">The latest PocketTTS-generated audio appears here. Use this player to verify the actual generated result independently of the live stream.</div>
+<div class="small">The latest PocketTTS-generated audio is played automatically here and through the live Chrome audio output.</div>
 <audio id="resultPlayer" controls preload="metadata"></audio>
 <div id="resultInfo" class="small" style="margin-top:7px">No generated result yet.</div>
 </div>
 
 <div class="status" id="status">Choose your WAV first.</div>
 <div class="small" id="info"></div>
-<div class="flow">🎙 mic tone detection → full-sentence Chrome recognition → PocketTTS using YOUR WAV → natural-speed Chrome playback</div>
+<div class="flow">🎙 speak → automatic Chrome recognition → PocketTTS using YOUR WAV → automatic natural-speed playback → repeat</div>
 </main>
-<script type="module" src="./app.js?v=natural-wav-timing-20260929-8"></script>
+<script type="module" src="./app.js?v=auto-wav-tts-20260929-1"></script>
 </body>
 </html>
