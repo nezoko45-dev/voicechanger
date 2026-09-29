@@ -312,16 +312,25 @@ function commitFinal(raw){
  spokenWords=W.length;
 }
 
+let recognitionGeneration=0;
+
 function startRecognition(){
  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
  if(!SR)throw new Error("Chrome Speech Recognition is unavailable. Use Google Chrome.");
- recognition=new SR();
- recognition.lang="en-US";
- recognition.continuous=true;
- recognition.interimResults=true;
- recognition.maxAlternatives=1;
- recognition.onstart=()=>setStatus("Listening — speak now.");
- recognition.onresult=e=>{
+ clearTimeout(restartTimer);
+ restartTimer=null;
+ const generation=++recognitionGeneration;
+ const r=new SR();
+ recognition=r;
+ r.lang="en-US";
+ r.continuous=true;
+ r.interimResults=true;
+ r.maxAlternatives=1;
+ r.onstart=()=>{
+  if(running&&generation===recognitionGeneration)setStatus("Listening — speak now.");
+ };
+ r.onresult=e=>{
+  if(generation!==recognitionGeneration)return;
   for(let i=e.resultIndex;i<e.results.length;i++){
    const result=e.results[i],phrase=result[0]?.transcript?.trim();
    if(!phrase)continue;
@@ -329,28 +338,49 @@ function startRecognition(){
    else commitInterim(phrase);
   }
  };
- recognition.onerror=e=>{
+ r.onerror=e=>{
   console.warn("SpeechRecognition:",e.error);
   if(e.error==="not-allowed"||e.error==="service-not-allowed"){
    setStatus("Chrome microphone/speech permission was denied.");
    running=false;stopRecognition();updateStartButton();stop.disabled=true;return;
   }
-  if(running)setStatus("Reconnecting microphone recognition…");
+  if(running&&generation===recognitionGeneration)setStatus("Reconnecting speech recognition…");
  };
- recognition.onend=()=>{
-  if(!running)return;
+ r.onend=()=>{
+  if(!running||generation!==recognitionGeneration)return;
+  // Chrome frequently ends continuous recognition on its own. Do NOT reuse
+  // the ended object: create a completely fresh session instead.
+  if(recognition===r)recognition=null;
   clearTimeout(restartTimer);
   restartTimer=setTimeout(()=>{
-   if(running){try{recognition.start();}catch{}}
-  },40);
+   if(!running||generation!==recognitionGeneration)return;
+   try{
+    startRecognition();
+   }catch(e){
+    console.warn("SpeechRecognition restart:",e);
+    if(running)setStatus("Reconnecting speech recognition…");
+    clearTimeout(restartTimer);
+    restartTimer=setTimeout(()=>{if(running)startRecognition();},500);
+   }
+  },150);
  };
- recognition.start();
+ try{
+  r.start();
+ }catch(e){
+  if(running){
+   console.warn("SpeechRecognition start:",e);
+   clearTimeout(restartTimer);
+   restartTimer=setTimeout(()=>{if(running)startRecognition();},300);
+  }else throw e;
+ }
 }
 
 function stopRecognition(){
  clearTimeout(restartTimer);restartTimer=null;
- try{recognition?.stop();}catch{}
+ ++recognitionGeneration;
+ const r=recognition;
  recognition=null;
+ try{r?.stop();}catch{}
 }
 
 async function startAll(){
