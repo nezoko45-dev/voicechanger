@@ -1,12 +1,8 @@
 {
-  "name":"pockettts-windows-voicechanger",
+  "name":"deepgram-pockettts-chrome-voicechanger",
   "private":true,
-  "version":"3.0.0",
-  "description":"Live PocketTTS voice changer with local Windows audio backend",
+  "version":"4.0.0",
+  "description":"Local Chrome voice changer using Deepgram WebSocket STT and PocketTTS browser TTS",
   "main":"server.js",
-  "scripts":{"start":"node server.js"},
-  "dependencies":{
-    "speaker":"^0.5.5",
-    "ws":"^8.18.3"
-  }
+  "scripts":{"start":"node server.js"}
 }
