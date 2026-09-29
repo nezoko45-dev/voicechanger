@@ -29,15 +29,24 @@ function makeWav(chunks,rate){
  let p=44;for(const c of chunks)for(const x of c){const s=Math.max(-1,Math.min(1,x));v.setInt16(p,s<0?s*32768:s*32767,true);p+=2;}return new Blob([buf],{type:"audio/wav"});
 }
 function b64(blob){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(",")[1]);r.onerror=reject;r.readAsDataURL(blob);});}
-async function playChrome(blob){
- const url=URL.createObjectURL(blob);
- const audio=new Audio(url);
- audio.preload="auto";
- if(typeof audio.setSinkId==="function"&&output.value){try{await audio.setSinkId(output.value);}catch(e){console.warn("Chrome output:",e);}}
+async function playChromeStream(chunks,rate){
+ const ctx=new AudioContext();
  try{
-  await audio.play();
-  await new Promise((resolve,reject)=>{audio.onended=resolve;audio.onerror=()=>reject(new Error("Chrome audio playback failed."));});
- }finally{audio.pause();audio.src="";URL.revokeObjectURL(url);}
+  if(typeof ctx.setSinkId==="function"&&output.value){try{await ctx.setSinkId(output.value);}catch(e){console.warn("Chrome output:",e);}}
+  if(ctx.state==="suspended")await ctx.resume();
+  let cursor=ctx.currentTime+0.02;
+  for(const chunk of chunks){
+   if(!chunk?.length)continue;
+   const data=chunk instanceof Float32Array?chunk:new Float32Array(chunk);
+   const buffer=ctx.createBuffer(1,data.length,rate);
+   buffer.copyToChannel(data,0);
+   const source=ctx.createBufferSource();
+   source.buffer=buffer;source.connect(ctx.destination);
+   source.start(cursor);
+   cursor+=buffer.duration;
+  }
+  await new Promise(resolve=>setTimeout(resolve,Math.max(0,(cursor-ctx.currentTime)*1000)));
+ }finally{await ctx.close();}
 }
 
 let sessionRefreshTimer=null;
@@ -65,8 +74,16 @@ function enqueue(text){
 async function processQueue(){
  if(processingQueue||!listening||!tts||!voice)return;processingQueue=true;
  try{while(listening&&speechQueue.length){const text=speechQueue.shift();transcript.textContent="Heard: "+text;setStatus("Generating PocketTTS...");
-  const chunks=[];await tts.generate(text,{voice,onChunk:a=>{if(a?.length)chunks.push(new Float32Array(a));}});
-  if(!chunks.length)throw new Error("PocketTTS returned no audio.");setStatus("Playing through Chrome...");await playChrome(makeWav(chunks,tts.sampleRate));setStatus("Listening...");
+  const chunks=[];let heardAudio=false;setStatus("Generating & playing through Chrome...");
+  await tts.generate(text,{voice,onChunk:a=>{
+   if(!a?.length)return;
+   chunks.push(new Float32Array(a));
+   heardAudio=true;
+   if(chunks.length===1)setStatus("Playing through Chrome instantly...");
+  }});
+  if(!chunks.length)throw new Error("PocketTTS returned no audio.");
+  await playChromeStream(chunks,tts.sampleRate);
+  setStatus("Listening...");
  }}catch(e){console.error(e);setStatus("PocketTTS/Chrome error: "+(e.message||e));}finally{processingQueue=false;if(listening&&speechQueue.length)processQueue();}
 }
 function setupRecognition(){
