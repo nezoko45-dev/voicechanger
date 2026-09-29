@@ -1,7 +1,7 @@
 const $=id=>document.getElementById(id);
 const reference=$("reference"),output=$("output"),chooseOutput=$("chooseOutput"),text=$("text"),start=$("start"),stop=$("stop"),status=$("status"),info=$("info"),meterBar=$("meterBar"),resultPlayer=$("resultPlayer"),resultInfo=$("resultInfo");
 const TTS_URL="./pocket-tts/index.js";
-const BUILD="auto-wav-tts-20260929-1";
+const BUILD="stream-wav-tts-20260929-2";
 
 let tts=null,voiceRef=null,ttsPlayer=null,running=false;
 let recognition=null,restartTimer=null;
@@ -167,27 +167,25 @@ async function drainSpeech(){
    latestResultChunks=[];
    latestResultToken=token;
    setStatus("Generating: "+phrase);
+   await ttsPlayer?.resume?.();
+   ttsPlayer?.setPlaybackRate?.(1);
+
+   // Stream each PocketTTS chunk immediately while also keeping a copy of the
+   // exact generated chunks for the completed WAV.
    await tts.generate(phrase,{
     voice:voiceRef,
     onChunk:(audio,meta)=>{
-     if(running&&token===generationToken){
-      latestResultChunks.push(audio instanceof Float32Array?audio.slice():new Float32Array(audio));
-     }
+     if(!running||token!==generationToken)return;
+     const chunk=audio instanceof Float32Array?audio.slice():new Float32Array(audio);
+     latestResultChunks.push(chunk);
+     ttsPlayer?.play(chunk,meta);
     }
    });
-   if(running&&token===generationToken&&latestResultChunks.length){
-    // Keep PocketTTS at its natural generated duration. There is NO mic-duration
-    // matching or time-stretching. Explicitly resume the Web Audio context before
-    // every sentence so Chrome cannot leave the TTS output suspended.
-    const naturalAudio=latestResultChunks.slice();
-    await ttsPlayer?.resume?.();
-    ttsPlayer?.setPlaybackRate?.(1);
-    ttsPlayer?.play(naturalAudio);
-    // Do not flush here: flush can move the scheduling clock while a sentence is
-    // being queued. Let the player keep the audio clock naturally.
 
-    // Put the freshly generated WAV on the MediaPlayer BEFORE asking Chrome to play.
-    // This also gives the user a second, independently verifiable playback path.
+   if(running&&token===generationToken&&latestResultChunks.length){
+    // The live path has already streamed the sentence. Now assemble those exact
+    // chunks into a WAV for the MediaPlayer/replay path.
+    const naturalAudio=latestResultChunks.slice();
     const blob=modToWavBlob(naturalAudio,tts.sampleRate);
     if(resultUrl)URL.revokeObjectURL(resultUrl);
     resultUrl=URL.createObjectURL(blob);
