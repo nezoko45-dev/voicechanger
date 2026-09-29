@@ -320,6 +320,9 @@ function startRecognition(){
  clearTimeout(restartTimer);
  restartTimer=null;
  const generation=++recognitionGeneration;
+ // Every new Chrome recognition session has a brand-new transcript. Reset only
+ // the word cursor; the cloned WAV voiceRef and PocketTTS engine stay intact.
+ if(generation>1)spokenWords=0;
  const r=new SR();
  recognition=r;
  r.lang="en-US";
