@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
-const reference=$("reference"),mic=$("mic"),output=$("output"),chooseOutput=$("chooseOutput"),text=$("text"),start=$("start"),micBtn=$("micBtn"),stop=$("stop"),status=$("status"),info=$("info");
-let tts=null,voiceRef=null,running=false,playback=null,recognition=null,recognizing=false,ttsQueue=Promise.resolve();
+const reference=$("reference"),output=$("output"),chooseOutput=$("chooseOutput"),text=$("text"),start=$("start"),micBtn=$("micBtn"),stop=$("stop"),status=$("status"),info=$("info");
+let tts=null,voiceRef=null,running=false,playback=null,recognition=null,recognizing=false;
 
 const TTS_URL="./pocket-tts/index.js";
 
@@ -18,24 +18,18 @@ async function setOutput(){
  }
 }
 
-async function loadDevices(){
+async function loadOutputs(){
  if(!navigator.mediaDevices?.enumerateDevices)return;
  try{
   const devices=await navigator.mediaDevices.enumerateDevices();
-  const oldMic=mic.value,oldOut=output.value;
-  mic.innerHTML="<option value=''>Default microphone</option>";
-  for(const d of devices.filter(x=>x.kind==="audioinput")){
-   const o=document.createElement("option");
-   o.value=d.deviceId;o.textContent=d.label||"Microphone "+mic.options.length;
-   mic.appendChild(o);
-  }
+  const oldOut=output.value;
   output.innerHTML="<option value=''>Default Windows output</option>";
   for(const d of devices.filter(x=>x.kind==="audiooutput")){
    const o=document.createElement("option");
-   o.value=d.deviceId;o.textContent=d.label||"Speaker / output "+output.options.length;
+   o.value=d.deviceId;
+   o.textContent=d.label||"Speaker / output "+output.options.length;
    output.appendChild(o);
   }
-  if([...mic.options].some(x=>x.value===oldMic))mic.value=oldMic;
   if([...output.options].some(x=>x.value===oldOut))output.value=oldOut;
  }catch(e){console.warn(e);}
 }
@@ -50,7 +44,8 @@ async function chooseChromeSpeaker(){
   if(d?.deviceId){
    output.innerHTML="";
    const o=document.createElement("option");
-   o.value=d.deviceId;o.textContent=d.label||"Selected Chrome speaker";
+   o.value=d.deviceId;
+   o.textContent=d.label||"Selected Chrome speaker";
    output.appendChild(o);
    await setOutput();
    setStatus("Chrome speaker selected: "+(d.label||"selected output"));
@@ -112,10 +107,7 @@ async function speak(value){
  playChunk.nextAt=playback?.currentTime||0;
  setStatus("PocketTTS speaking…");
  const localQueue=[];
- await tts.generate(phrase,{
-  voice:voiceRef,
-  onChunk:audio=>localQueue.push(audio)
- });
+ await tts.generate(phrase,{voice:voiceRef,onChunk:audio=>localQueue.push(audio)});
  for(const audio of localQueue)await playChunk(audio);
  if(running)setStatus("Ready — speak or type another sentence.");
 }
@@ -131,7 +123,7 @@ async function startTTS(){
   await setOutput();
   running=true;
   stop.disabled=false;
-  setStatus("PocketTTS ready — microphone speech will become WAV voice only.");
+  setStatus("PocketTTS ready — browser speech recognition feeds text into the cloned WAV voice.");
   const value=text.value.trim();
   if(value)await speak(value);
  }catch(e){
@@ -148,13 +140,12 @@ function stopAll(){
  if(recognition){try{recognition.stop();}catch{}}
  recognition=null;
  if(tts){try{tts.stop();}catch{}}
- ttsQueue=Promise.resolve();
  if(playback){try{void playback.suspend();}catch{}}
  stop.disabled=true;
  start.disabled=false;
  micBtn.disabled=false;
  micBtn.textContent="START MIC";
- setStatus("Stopped. No microphone audio is monitored.");
+ setStatus("Stopped. This app has no microphone audio playback path.");
 }
 
 function startMic(){
@@ -171,19 +162,19 @@ function startMic(){
  recognition.onstart=()=>{
   recognizing=true;
   micBtn.textContent="MIC LISTENING";
-  setStatus("Mic → Speech Recognition → PocketTTS → WAV voice. Raw mic audio is not played.");
+  setStatus("Listening for speech only — mic audio is NOT routed to Chrome output.");
  };
 
  recognition.onerror=e=>{
   recognizing=false;
   micBtn.textContent="START MIC";
-  setStatus("Mic recognition error: "+e.error);
+  setStatus("Speech recognition error: "+e.error);
  };
 
  recognition.onend=()=>{
   recognizing=false;
   micBtn.textContent="START MIC";
-  if(running)setStatus("Mic stopped. Press START MIC to listen again.");
+  if(running)setStatus("Speech recognition stopped. Press START MIC to listen again.");
  };
 
  recognition.onresult=async e=>{
@@ -194,7 +185,7 @@ function startMic(){
   setStatus("Recognized: "+phrase+" — sending text to PocketTTS…");
   await speak(phrase);
  };
- 
+
  recognition.start();
 }
 
@@ -207,5 +198,5 @@ stop.onclick=stopAll;
 micBtn.onclick=startMic;
 chooseOutput.onclick=chooseChromeSpeaker;
 output.onchange=()=>void setOutput();
-navigator.mediaDevices?.addEventListener?.("devicechange",loadDevices);
-void loadDevices();
+navigator.mediaDevices?.addEventListener?.("devicechange",loadOutputs);
+void loadOutputs();
