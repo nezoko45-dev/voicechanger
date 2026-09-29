@@ -239,26 +239,42 @@ function commitFinal(raw){
 
 let recognitionGeneration=0;
 
+function scheduleRecognitionRestart(delay=200){
+ if(!running||restartTimer)return;
+ clearTimeout(restartTimer);
+ restartTimer=setTimeout(()=>{
+  restartTimer=null;
+  if(!running||recognition)return;
+  try{startRecognition();}
+  catch(e){
+   console.warn("SpeechRecognition restart:",e);
+   setStatus("Reconnecting speech recognition…");
+   scheduleRecognitionRestart(500);
+  }
+ },delay);
+}
+
 function startRecognition(){
  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
  if(!SR)throw new Error("Chrome Speech Recognition is unavailable. Use Google Chrome.");
+ if(!running)return;
  clearTimeout(restartTimer);
  restartTimer=null;
- const generation=++recognitionGeneration;
- // Every new Chrome recognition session has a brand-new transcript. Reset only
- // the word cursor; the cloned WAV voiceRef and PocketTTS engine stay intact.
- if(generation>1)spokenWords=0;
+ if(recognition)return;
+
  const r=new SR();
  recognition=r;
  r.lang="en-US";
  r.continuous=true;
  r.interimResults=true;
  r.maxAlternatives=1;
+
  r.onstart=()=>{
-  if(running&&generation===recognitionGeneration)setStatus("Listening — speak now.");
+  if(running&&recognition===r)setStatus("Listening — speak now.");
  };
+
  r.onresult=e=>{
-  if(generation!==recognitionGeneration)return;
+  if(!running||recognition!==r)return;
   for(let i=e.resultIndex;i<e.results.length;i++){
    const result=e.results[i],phrase=result[0]?.transcript?.trim();
    if(!phrase)continue;
@@ -266,39 +282,37 @@ function startRecognition(){
    else commitInterim(phrase);
   }
  };
+
  r.onerror=e=>{
   console.warn("SpeechRecognition:",e.error);
+  if(!running)return;
+
+  // Never stop the whole voice changer because Chrome's speech service
+  // temporarily errors. Only a real permission denial requires user action.
   if(e.error==="not-allowed"||e.error==="service-not-allowed"){
-   setStatus("Chrome microphone/speech permission was denied.");
-   running=false;stopRecognition();updateStartButton();stop.disabled=true;return;
+   setStatus("Chrome speech permission was denied. The voice changer remains running.");
+  }else{
+   setStatus("Speech recognition reconnecting…");
   }
-  if(running&&generation===recognitionGeneration)setStatus("Reconnecting speech recognition…");
  };
+
  r.onend=()=>{
-  if(!running||generation!==recognitionGeneration)return;
-  // Chrome frequently ends continuous recognition on its own. Do NOT reuse
-  // the ended object: create a completely fresh session instead.
   if(recognition===r)recognition=null;
-  clearTimeout(restartTimer);
-  restartTimer=setTimeout(()=>{
-   if(!running||generation!==recognitionGeneration)return;
-   try{
-    startRecognition();
-   }catch(e){
-    console.warn("SpeechRecognition restart:",e);
-    if(running)setStatus("Reconnecting speech recognition…");
-    clearTimeout(restartTimer);
-    restartTimer=setTimeout(()=>{if(running)startRecognition();},500);
-   }
-  },150);
+  if(!running)return;
+
+  // Chrome can end a continuous session immediately after a sentence.
+  // Keep the app running and create a fresh session automatically.
+  scheduleRecognitionRestart(180);
  };
+
  try{
   r.start();
  }catch(e){
+  if(recognition===r)recognition=null;
   if(running){
    console.warn("SpeechRecognition start:",e);
-   clearTimeout(restartTimer);
-   restartTimer=setTimeout(()=>{if(running)startRecognition();},300);
+   setStatus("Speech recognition reconnecting…");
+   scheduleRecognitionRestart(350);
   }else throw e;
  }
 }
