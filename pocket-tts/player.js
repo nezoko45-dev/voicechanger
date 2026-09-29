@@ -6,7 +6,7 @@
 export class StreamingPlayer{
  constructor(opts={}){
   this.sampleRate=opts.sampleRate||24000;
-  this.playbackRate=opts.playbackRate||1.2;
+  this.playbackRate=opts.playbackRate||1;
   this.audioContext=null;
   this.nextStartTime=0;
   this.started=false;
