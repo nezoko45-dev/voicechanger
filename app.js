@@ -111,10 +111,11 @@ function startKeepAlive(){
  keepAliveTimer=setInterval(()=>{if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:"KeepAlive"}));},8000);
 }
 function stopKeepAlive(){clearInterval(keepAliveTimer);keepAliveTimer=null;}
-function scheduleReconnect(){
+function scheduleReconnect(reason="connection lost"){
  if(!running||reconnectTimer)return;
  const gen=++reconnectGeneration,delay=Math.min(reconnectDelay,5000);
- setStatus("Deepgram Agent disconnected — reconnecting in "+(delay/1000).toFixed(1)+"s…");
+ try{if(socket&&socket.readyState!==WebSocket.CLOSED)socket.close();}catch{}
+ setStatus("Deepgram Agent "+reason+" — reconnecting in "+(delay/1000).toFixed(1)+"s…");
  reconnectTimer=setTimeout(()=>{reconnectTimer=null;if(!running||gen!==reconnectGeneration)return;connectAgent();},delay);
  reconnectDelay=Math.min(reconnectDelay*1.5,5000);
 }
@@ -152,12 +153,24 @@ function connectAgent(){
    // Keep PocketTTS streaming unless a new turn arrives; no raw mic playback.
   }else if(m.type==="Error"||m.type==="Warning"){
    console.warn("Deepgram Agent",m);
-   setStatus((m.type==="Error"?"Deepgram error: ":"Deepgram warning: ")+(m.description||m.message||"unknown"));
+   const desc=m.description||m.message||"unknown";
+   if(m.type==="Error"){
+    setStatus("Deepgram error: "+desc+" — reconnecting…");
+    scheduleReconnect(m.code||"error");
+   }else{
+    setStatus("Deepgram warning: "+desc);
+    if(m.code==="MAXIMUM_SESSION_LENGTH_APPROACHING"){
+     setStatus("Deepgram session ending soon — preparing a fresh connection…");
+     scheduleReconnect("session rollover");
+    }
+   }
   }
  };
  ws.onerror=()=>{if(running)setStatus("Deepgram Agent connection error — reconnecting…");};
- ws.onclose=()=>{if(running)scheduleReconnect();};
+ ws.onclose=(ev)=>{if(running)scheduleReconnect(ev?.reason||"disconnected");};
  startKeepAlive();
+ // Deepgram can close an idle Agent, but normal mic streaming should prevent that.
+ // Restart the session if the browser/network drops the WebSocket.
 }
 async function startAll(){
  if(running)return;
