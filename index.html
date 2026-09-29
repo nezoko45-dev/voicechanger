@@ -12,24 +12,24 @@ textarea{min-height:90px;resize:vertical}button{margin-top:10px;font-weight:800;
 </style></head><body><main class="card">
 <div class="badge">CHROME AUDIO • POCKETTTS • LOCAL BROWSER</div>
 <h1>🎙 PocketTTS Chrome Voice Changer</h1>
-<p class="sub">PocketTTS runs in the browser worker and plays directly through Chrome audio.</p>
+<p class="sub">Speech recognition captures your words as text. Only PocketTTS-generated voice is sent to the selected Chrome output.</p>
 <div class="panel">
 <label>Voice reference WAV</label>
 <input id="reference" type="file" accept="audio/*,.wav">
 <div class="note">Choose a short clean voice recording. PocketTTS uses it to clone the voice.</div>
 </div>
-<div class="grid">
-<div><label>Microphone</label><select id="mic"><option value="">Default microphone</option></select></div>
-<div><label>Speaker / output</label><select id="output"><option value="">Default Windows output</option></select></div>
+<div>
+<label>Speaker / output</label>
+<select id="output"><option value="">Default Windows output</option></select>
 </div>
 <button id="chooseOutput">CHOOSE CHROME SPEAKER</button>
 <div class="panel">
-<label>Text / speech input</label>
+<label>Speech input</label>
 <textarea id="text" placeholder="Type something, or use START MIC and speak..."></textarea>
 <div class="row"><button id="start" class="primary">START POCKETTTS</button><button id="micBtn">START MIC</button></div>
 <button id="stop" disabled>STOP</button>
 </div>
 <div class="status" id="status">Choose a voice reference, then press START POCKETTTS.</div>
 <div class="small" id="info"></div>
-<div class="small">Audio playback is Chrome AudioContext only. No Node speaker, Electron, Voicemeeter, or local Windows audio backend.</div>
-</main><script type="module" src="app.js?v=pockettts-chrome-20260929-1"></script></body></html>
+<div class="small">No getUserMedia microphone audio stream is created by this app. Chrome Speech Recognition supplies text only; raw microphone samples are never connected to the output.</div>
+</main><script type="module" src="app.js?v=pockettts-remove-mic-20260929-2"></script></body></html>
