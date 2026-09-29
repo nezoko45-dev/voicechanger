@@ -13,7 +13,7 @@ let ort = null;
 const MODEL_STEMS = ["mimi_encoder", "text_conditioner", "flow_lm_main", "flow_lm_flow", "mimi_decoder"];
 
 // Bump the version suffix to invalidate previously cached assets.
-const CACHE_NAME = "pocket-tts-safe-v2";
+const CACHE_NAME = "pocket-tts-wav-only-v3";
 
 const CHUNK_GAP_SEC = 0.25;
 const MAX_FRAMES = 500;
@@ -509,6 +509,7 @@ async function ensureVoicesBin() {
 }
 
 async function loadBuiltinVoice(name) {
+    throw new Error("Preset PocketTTS voices are disabled. Use the uploaded WAV.");
     await ensureVoicesBin();
     if (!predefinedVoiceRecords[name]) throw new Error(`Unknown built-in voice: ${name}`);
     const ref = `builtin:${name}`;
