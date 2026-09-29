@@ -1,10 +1,11 @@
 const $=id=>document.getElementById(id);
-const reference=$("reference"),output=$("output"),chooseOutput=$("chooseOutput"),text=$("text"),start=$("start"),stop=$("stop"),status=$("status"),info=$("info"),meterBar=$("meterBar");
+const reference=$("reference"),output=$("output"),chooseOutput=$("chooseOutput"),text=$("text"),start=$("start"),stop=$("stop"),status=$("status"),info=$("info"),meterBar=$("meterBar"),resultPlayer=$("resultPlayer"),resultInfo=$("resultInfo");
 const TTS_URL="./pocket-tts/index.js";
 
 let tts=null,voiceRef=null,ttsPlayer=null,running=false;
 let recognition=null,restartTimer=null;
 let spokenWords=0;
+let latestResultChunks=[],latestResultToken=0,resultUrl="";
 
 function setStatus(v){status.textContent=v;}
 function updateStartButton(){start.disabled=!(reference.files?.[0]&&!running);}
@@ -55,7 +56,6 @@ async function initTTS(){
   maxThreads:8,
   maxReferenceSeconds:6
  });
- // 1.2x compresses the generated audio timing so it can keep up better.
  ttsPlayer=new mod.StreamingPlayer({sampleRate:tts.sampleRate,primeSeconds:.01,playbackRate:1.2});
  if(ttsPlayer.setPlaybackRate)ttsPlayer.setPlaybackRate(1.2);
  await ttsPlayer.resume();
@@ -110,14 +110,27 @@ async function drainSpeech(){
    const phrase=pendingPhrase;
    pendingPhrase="";
    const token=++generationToken;
+   latestResultChunks=[];
+   latestResultToken=token;
    setStatus("Speaking: "+phrase);
    await tts.generate(phrase,{
     voice:voiceRef,
     onChunk:(audio,meta)=>{
-     if(running&&token===generationToken)ttsPlayer?.play(audio,meta);
+     if(running&&token===generationToken){
+      latestResultChunks.push(audio instanceof Float32Array?audio.slice():new Float32Array(audio));
+      ttsPlayer?.play(audio,meta);
+     }
     }
    });
-   if(running&&token===generationToken)ttsPlayer?.flush();
+   if(running&&token===generationToken){
+    ttsPlayer?.flush();
+    const blob=modToWavBlob(latestResultChunks,tts.sampleRate);
+    if(resultUrl)URL.revokeObjectURL(resultUrl);
+    resultUrl=URL.createObjectURL(blob);
+    resultPlayer.src=resultUrl;
+    resultPlayer.playbackRate=1.2;
+    resultInfo.textContent="Generated result • 120% playback timing • "+(blob.size/1024).toFixed(1)+" KB";
+   }
   }
  }catch(e){
   if(running)setStatus("PocketTTS error: "+(e.message||e));
@@ -126,6 +139,28 @@ async function drainSpeech(){
   if(running&&pendingPhrase)void drainSpeech();
   else if(running)setStatus("Listening — speak now.");
  }
+}
+
+function modToWavBlob(chunks,sampleRate){
+ const list=(chunks||[]).filter(x=>x?.length);
+ const total=list.reduce((n,x)=>n+x.length,0);
+ const pcm=new Int16Array(total);
+ let offset=0;
+ for(const chunk of list){
+  for(let i=0;i<chunk.length;i++){
+   const s=Math.max(-1,Math.min(1,chunk[i]));
+   pcm[offset++]=s<0?s*32768:s*32767;
+  }
+ }
+ const buf=new ArrayBuffer(44+pcm.length*2),view=new DataView(buf);
+ const write=(pos,str)=>{for(let i=0;i<str.length;i++)view.setUint8(pos+i,str.charCodeAt(i));};
+ write(0,"RIFF");view.setUint32(4,36+pcm.length*2,true);write(8,"WAVE");
+ write(12,"fmt ");view.setUint32(16,16,true);view.setUint16(20,1,true);
+ view.setUint16(22,1,true);view.setUint32(24,sampleRate,true);
+ view.setUint32(28,sampleRate*2,true);view.setUint16(32,2,true);view.setUint16(34,16,true);
+ write(36,"data");view.setUint32(40,pcm.length*2,true);
+ new Uint8Array(buf,44).set(new Uint8Array(pcm.buffer));
+ return new Blob([buf],{type:"audio/wav"});
 }
 
 function commitInterim(raw){
@@ -197,6 +232,7 @@ async function startAll(){
   if(!reference.files?.[0])throw new Error("Choose your WAV voice reference first.");
   start.disabled=true;running=true;stop.disabled=false;
   text.value="";spokenWords=0;pendingPhrase="";generationToken++;
+  latestResultChunks=[];
   setStatus("Loading your WAV voice…");
   await initTTS();
   if(!running)return;
