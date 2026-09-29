@@ -36,7 +36,12 @@ async function ensurePlayer(){
 async function setOutputDevice(){
  if(!player?.audioContext||!output)return;
  const deviceId=output.value;
- if(!deviceId)return;
+ if(!deviceId){
+  if(typeof player.audioContext.setSinkId==="function"){
+   try{await player.audioContext.setSinkId("");}catch{}
+  }
+  return;
+ }
  if(typeof player.audioContext.setSinkId!=="function"){
   setStatus("Output selection is not supported by this Chrome version; using the default Windows output.");
   return;
@@ -176,6 +181,7 @@ async function startListening(){
  try{
   start.disabled=true;setStatus("Loading local voice...");
   await loadDevices();await loadOutputDevices();await loadPocketTTS();await ensurePlayer();await startAudioWorklet();
+  await loadOutputDevices();
   listening=true;stop.disabled=false;
   setupSpeechRecognition();
   setStatus("Listening — speak naturally. PocketTTS will continue speaking while you keep talking.");
@@ -196,7 +202,19 @@ function stopListening(){
 
 start.onclick=startListening;stop.onclick=stopListening;
 const test=$("test");
-if(test)test.onclick=()=>speak("Hello! This is your local PocketTTS voice.");
+if(test)test.onclick=async()=>{
+ try{
+  await ensurePlayer();
+  const ctx=player.audioContext;
+  const osc=ctx.createOscillator(),gain=ctx.createGain();
+  gain.gain.value=0.08;
+  osc.frequency.value=440;
+  osc.connect(gain).connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime+0.25);
+  setStatus("Output test played. Selected output is active.");
+ }catch(e){setStatus("Output test failed: "+(e.message||e));}
+};
 navigator.mediaDevices.addEventListener?.("devicechange",()=>{loadDevices();loadOutputDevices();});
 if(output)output.addEventListener("change",setOutputDevice);
 loadDevices();loadOutputDevices();
