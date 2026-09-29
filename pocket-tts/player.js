@@ -1,212 +1,25 @@
-// Minimal gapless streaming player for mono Float32 PCM chunks.
-//
-// Schedules AudioBufferSourceNodes back-to-back on an AudioContext so chunks
-// produced by the worker play smoothly as they arrive. No AudioWorklet file is
-// needed, which keeps the package small and avoids cross-origin-isolation
-// requirements for playback itself.
-//
-// To avoid an under-run after the first (intentionally tiny, low-latency)
-// chunk, playback is primed: incoming chunks are buffered until ~`primeSeconds`
-// of audio is queued, then released back-to-back. Because synthesis runs faster
-// than real time once warmed up, that initial cushion keeps the schedule ahead
-// of the producer for the rest of the stream.
-
-export class StreamingPlayer {
-    /**
-     * @param {object} [opts]
-     * @param {number} [opts.sampleRate=24000]
-     * @param {AudioContext} [opts.audioContext]  Reuse an existing context if provided.
-     * @param {number} [opts.primeSeconds=0.4]  Audio to buffer before playback starts (jitter cushion). 0 = play immediately.
-     * @param {number} [opts.leadSeconds=0.05]  Small scheduling lead applied when playback starts.
-     * @param {(info:{gapSeconds:number,count:number}) => void} [opts.onUnderrun]  Called when a chunk arrives late.
-     */
-    constructor(opts = {}) {
-        this.sampleRate = opts.sampleRate || 24000;
-        this.audioContext = opts.audioContext || null;
-        this._ownsContext = !opts.audioContext;
-        this._primeSeconds = opts.primeSeconds != null ? opts.primeSeconds : 0.18;
-        this._minPrimeSeconds = opts.minPrimeSeconds != null ? opts.minPrimeSeconds : 0.18;
-        this._maxPrimeSeconds = opts.maxPrimeSeconds != null ? opts.maxPrimeSeconds : 0.45;
-        this._leadSeconds = opts.leadSeconds != null ? opts.leadSeconds : 0.05;
-        this._onUnderrun = opts.onUnderrun || null;
-        this.outputElement = opts.outputElement || null;
-        this._mediaDestination = null;
-
-        this._nextStartTime = 0;
-        this._sources = new Set();
-        this._gain = null;
-        this.analyser = null;
-
-        this._pending = [];
-        this._pendingDuration = 0;
-        this._primed = false;
-        this._adaptivePrime = this._primeSeconds;
-        this.underruns = 0;
-    }
-
-    _ensureContext() {
-        if (!this.audioContext) {
-            const Ctx = globalThis.AudioContext || globalThis.webkitAudioContext;
-            this.audioContext = new Ctx({ sampleRate: this.sampleRate });
-        }
-        if (!this._gain) {
-            this._gain = this.audioContext.createGain();
-            this.analyser = this.audioContext.createAnalyser();
-            this.analyser.fftSize = 2048;
-            this._gain.connect(this.analyser);
-            if (this.outputElement) {
-                this._mediaDestination = this.audioContext.createMediaStreamDestination();
-                this.analyser.connect(this._mediaDestination);
-                this.outputElement.srcObject = this._mediaDestination.stream;
-                this.outputElement.autoplay = true;
-                this.outputElement.playsInline = true;
-                this.outputElement.play().catch(() => {});
-            } else {
-                this.analyser.connect(this.audioContext.destination);
-            }
-        }
-    }
-
-    /** Resume the underlying context (call from a user gesture if suspended). */
-    async resume() {
-        this._ensureContext();
-        if (this.audioContext.state === "suspended") await this.audioContext.resume();
-    }
-
-    /** Reset for a new generation. */
-    reset() {
-        this.stop();
-        this._nextStartTime = 0;
-        this._pending = [];
-        this._pendingDuration = 0;
-        this._primed = false;
-        this._adaptivePrime = this._primeSeconds;
-        this.underruns = 0;
-    }
-
-    /**
-     * Enqueue one mono Float32 chunk.
-     * @param {Float32Array} float32
-     * @param {{isLast?:boolean}} [meta]  When meta.isLast is set, any buffered audio is flushed immediately.
-     */
-    play(float32, meta) {
-        this._ensureContext();
-        if (!float32 || float32.length === 0) return;
-
-        if (!this._primed) {
-            this._pending.push(float32);
-            this._pendingDuration += float32.length / this.sampleRate;
-            if (this._pendingDuration >= this._adaptivePrime || (meta && meta.isLast)) {
-                this._flushPending();
-            }
-            return;
-        }
-        this._schedule(float32);
-    }
-
-    /** Release any buffered audio immediately (e.g. when generation ends). */
-    flush() {
-        if (!this._primed) this._flushPending();
-    }
-
-    _flushPending() {
-        this._primed = true;
-        this._ensureContext();
-        // Start the schedule a touch in the future so the first buffer isn't
-        // already "late" relative to the audio clock.
-        this._nextStartTime = this.audioContext.currentTime + this._leadSeconds;
-        const pending = this._pending;
-        this._pending = [];
-        this._pendingDuration = 0;
-        for (const chunk of pending) this._schedule(chunk);
-    }
-
-    _schedule(float32) {
-        const ctx = this.audioContext;
-        const buffer = ctx.createBuffer(1, float32.length, this.sampleRate);
-        buffer.copyToChannel(float32, 0);
-
-        const source = ctx.createBufferSource();
-        source.buffer = buffer;
-        source.connect(this._gain);
-
-        const now = ctx.currentTime;
-        if (this._nextStartTime < now) {
-            // The producer fell behind the playback clock: a gap is unavoidable.
-            this.underruns++;
-            const gap = now - this._nextStartTime;
-            this._adaptivePrime = Math.min(this._maxPrimeSeconds, Math.max(this._adaptivePrime + 0.06, this._minPrimeSeconds + gap * 1.5));
-            if (this._onUnderrun) this._onUnderrun({ gapSeconds: gap, count: this.underruns, nextPrimeSeconds: this._adaptivePrime });
-        }
-        const startAt = Math.max(now, this._nextStartTime);
-        source.start(startAt);
-        this._nextStartTime = startAt + buffer.duration;
-
-        this._sources.add(source);
-        source.onended = () => this._sources.delete(source);
-    }
-
-    /** Stop all scheduled sources immediately and drop any buffered audio. */
-    stop() {
-        for (const source of this._sources) {
-            try {
-                source.stop();
-            } catch {
-                /* already stopped */
-            }
-        }
-        this._sources.clear();
-        this._pending = [];
-        this._pendingDuration = 0;
-        this._primed = false;
-        this._adaptivePrime = this._primeSeconds;
-        if (this.audioContext) this._nextStartTime = this.audioContext.currentTime;
-    }
-
-    /** Release the AudioContext if this player created it. */
-    async destroy() {
-        this.stop();
-        if (this._ownsContext && this.audioContext) {
-            await this.audioContext.close();
-            this.audioContext = null;
-        }
-    }
+// Persistent AudioWorklet PCM player for PocketTTS.
+// PCM chunks are streamed directly into one browser audio pipeline.
+// No WAV files and no per-chunk AudioBufferSourceNodes.
+export class StreamingPlayer{
+ constructor(opts={}){
+  this.sampleRate=opts.sampleRate||24000;this.audioContext=opts.audioContext||null;
+  this._ownsContext=!opts.audioContext;this._ready=false;this._node=null;this._workletUrl=null;
+ }
+ async resume(){
+  if(!this.audioContext){const Ctx=globalThis.AudioContext||globalThis.webkitAudioContext;this.audioContext=new Ctx({sampleRate:this.sampleRate,latencyHint:"interactive"});}
+  if(this.audioContext.state==="suspended")await this.audioContext.resume();
+  if(this._ready)return;
+  if(!this.audioContext.audioWorklet)throw new Error("AudioWorklet is not supported in this browser.");
+  this._workletUrl=URL.createObjectURL(new Blob(["class PocketPCMProcessor extends AudioWorkletProcessor{\n constructor(){\n  super();this.queue=[];this.current=null;this.offset=0;\n  this.port.onmessage=e=>{const m=e.data||{};if(m.type===\"push\"&&m.audio){const a=new Float32Array(m.audio);if(a.length)this.queue.push(a);}else if(m.type===\"reset\"){this.queue=[];this.current=null;this.offset=0;}};\n }\n process(inputs,outputs){\n  const out=outputs[0]?.[0];if(!out)return true;out.fill(0);let w=0;\n  while(w<out.length){\n   if(!this.current||this.offset>=this.current.length){this.current=this.queue.shift()||null;this.offset=0;if(!this.current)break;}\n   const n=Math.min(out.length-w,this.current.length-this.offset);\n   out.set(this.current.subarray(this.offset,this.offset+n),w);this.offset+=n;w+=n;\n  }\n  return true;\n }\n}\nregisterProcessor(\"pocket-pcm\",PocketPCMProcessor);"],{type:"application/javascript"}));
+  await this.audioContext.audioWorklet.addModule(this._workletUrl);
+  this._node=new AudioWorkletNode(this.audioContext,"pocket-pcm",{numberOfInputs:0,numberOfOutputs:1,outputChannelCount:[1]});
+  this._node.connect(this.audioContext.destination);this._ready=true;
+ }
+ play(float32){if(!float32?.length)return;if(!this._ready)throw new Error("StreamingPlayer is not ready.");const copy=new Float32Array(float32);this._node.port.postMessage({type:"push",audio:copy.buffer},[copy.buffer]);}
+ flush(){}
+ reset(){if(this._node)this._node.port.postMessage({type:"reset"});}
+ stop(){this.reset();}
+ async destroy(){this.reset();if(this._node){try{this._node.disconnect();}catch{}this._node=null;}if(this._workletUrl){URL.revokeObjectURL(this._workletUrl);this._workletUrl=null;}if(this._ownsContext&&this.audioContext){try{await this.audioContext.close();}catch{}this.audioContext=null;}this._ready=false;}
 }
-
-/** Concatenate Float32 chunks into a 16-bit PCM WAV Blob. */
-export function chunksToWavBlob(chunks, sampleRate) {
-    const total = chunks.reduce((sum, c) => sum + c.length, 0);
-    const pcm = new Float32Array(total);
-    let offset = 0;
-    for (const c of chunks) {
-        pcm.set(c, offset);
-        offset += c.length;
-    }
-
-    const dataSize = pcm.length * 2;
-    const buffer = new ArrayBuffer(44 + dataSize);
-    const view = new DataView(buffer);
-    const writeString = (o, s) => {
-        for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i));
-    };
-    writeString(0, "RIFF");
-    view.setUint32(4, 36 + dataSize, true);
-    writeString(8, "WAVE");
-    writeString(12, "fmt ");
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, 1, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * 2, true);
-    view.setUint16(32, 2, true);
-    view.setUint16(34, 16, true);
-    writeString(36, "data");
-    view.setUint32(40, dataSize, true);
-
-    let o = 44;
-    for (let i = 0; i < pcm.length; i++, o += 2) {
-        const s = Math.max(-1, Math.min(1, pcm[i]));
-        view.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-    }
-    return new Blob([buffer], { type: "audio/wav" });
-}
+export function chunksToWavBlob(){throw new Error("WAV output is disabled; PocketTTS streams PCM directly.");}
