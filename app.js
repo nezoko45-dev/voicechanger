@@ -55,7 +55,8 @@ async function initTTS(){
   maxThreads:8,
   maxReferenceSeconds:6
  });
- ttsPlayer=new mod.StreamingPlayer({sampleRate:tts.sampleRate,primeSeconds:.01});
+ ttsPlayer=new mod.StreamingPlayer({sampleRate:tts.sampleRate,primeSeconds:.01,playbackRate:1.0});
+ if(ttsPlayer.setPlaybackRate) ttsPlayer.setPlaybackRate(1.0);
  await ttsPlayer.resume();
  setStatus("Loading PocketTTS models…");
  await tts.load(p=>{
