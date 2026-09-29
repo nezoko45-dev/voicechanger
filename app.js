@@ -1,20 +1,16 @@
 const $=id=>document.getElementById(id);
-const mic=$("mic"),output=$("output"),apiKey=$("apiKey"),start=$("start"),stop=$("stop"),status=$("status"),transcript=$("transcript");
-let tts=null,voice=null,listening=false,processingQueue=false,deepgram=null,mediaStream=null,audioContext=null,workletNode=null,speechQueue=[];
+const mic=$("mic"),apiKey=$("apiKey"),start=$("start"),stop=$("stop"),status=$("status"),transcript=$("transcript");
+let tts=null,voice=null,player=null,listening=false,processingQueue=false,deepgram=null,mediaStream=null,audioContext=null,workletNode=null,speechQueue=[];
 let lastQueuedText="",lastQueuedAt=0,sessionRefreshTimer=null;
 
 function setStatus(v){status.textContent=v;}
 
 async function loadDevices(){
  try{
-  const ds=await navigator.mediaDevices.enumerateDevices(),om=mic.value,oo=output.value;
-  mic.innerHTML="";output.innerHTML="";
+  const ds=await navigator.mediaDevices.enumerateDevices(),om=mic.value;mic.innerHTML="";
   ds.filter(d=>d.kind==="audioinput").forEach((d,i)=>{const o=document.createElement("option");o.value=d.deviceId;o.textContent=d.label||("Microphone "+(i+1));mic.appendChild(o);});
-  ds.filter(d=>d.kind==="audiooutput").forEach((d,i)=>{const o=document.createElement("option");o.value=d.deviceId;o.textContent=d.label||("Chrome output "+(i+1));output.appendChild(o);});
   if(!mic.options.length)mic.innerHTML="<option value=''>Default microphone</option>";
-  if(!output.options.length)output.innerHTML="<option value=''>Chrome default output</option>";
   if(om&&[...mic.options].some(o=>o.value===om))mic.value=om;
-  if(oo&&[...output.options].some(o=>o.value===oo))output.value=oo;
  }catch(e){console.warn(e);}
 }
 
@@ -30,21 +26,9 @@ async function loadPocketTTS(){
  await ctx.close();await tts.finishLoad();setStatus("PocketTTS ready.");
 }
 
-async function startChromeStream(rate){
- const ctx=new AudioContext();
- if(typeof ctx.setSinkId==="function"&&output.value){try{await ctx.setSinkId(output.value);}catch(e){console.warn("Chrome output:",e);}}
- if(ctx.state==="suspended")await ctx.resume();
- let cursor=ctx.currentTime+0.02,closed=false;
- const push=chunk=>{
-  if(closed||!chunk?.length)return;
-  const data=chunk instanceof Float32Array?chunk:new Float32Array(chunk);
-  const buffer=ctx.createBuffer(1,data.length,rate);buffer.copyToChannel(data,0);
-  const source=ctx.createBufferSource();source.buffer=buffer;source.connect(ctx.destination);
-  cursor=Math.max(cursor,ctx.currentTime+0.01);source.start(cursor);cursor+=buffer.duration;
- };
- const finish=async()=>{if(closed)return;await new Promise(r=>setTimeout(r,Math.max(0,(cursor-ctx.currentTime)*1000)));closed=true;await ctx.close();};
- const cancel=async()=>{if(closed)return;closed=true;try{await ctx.close();}catch{}};
- return {push,finish,cancel};
+async function startBrowserPlayer(){
+ if(!player){const mod=await import("./pocket-tts/index.js");player=new mod.StreamingPlayer({sampleRate:tts.sampleRate});}
+ await player.resume();
 }
 
 function enqueue(text){
@@ -55,26 +39,15 @@ function enqueue(text){
 }
 
 async function processQueue(){
- if(processingQueue||!listening||!tts||!voice)return;
+ if(processingQueue||!listening||!tts||!voice||!player)return;
  processingQueue=true;
- try{
-  while(listening&&speechQueue.length){
-   const text=speechQueue.shift();transcript.textContent="Heard: "+text;
-   const stream=await startChromeStream(tts.sampleRate);
-   let heardAudio=false;
-   try{
-    setStatus("Generating PocketTTS — playing audio immediately...");
-    await tts.generate(text,{voice,onChunk:a=>{
-     if(!a?.length)return;
-     stream.push(a);
-     if(!heardAudio){heardAudio=true;setStatus("Playing TTS through Chrome...");}
-    }});
-    if(!heardAudio)throw new Error("PocketTTS returned no audio.");
-    await stream.finish();
-   }catch(e){await stream.cancel();throw e;}
-   setStatus("Listening with Deepgram...");
-  }
- }catch(e){console.error(e);setStatus("PocketTTS/Deepgram error: "+(e.message||e));}
+ try{while(listening&&speechQueue.length){
+  const text=speechQueue.shift();transcript.textContent="Heard: "+text;let heardAudio=false;
+  setStatus("Generating PocketTTS — streaming audio...");
+  await tts.generate(text,{voice,onChunk:a=>{if(!a?.length)return;player.play(a);if(!heardAudio){heardAudio=true;setStatus("Speaking...");}}});
+  if(!heardAudio)throw new Error("PocketTTS returned no audio.");
+  player.flush();setStatus("Listening with Deepgram...");
+ }}catch(e){console.error(e);setStatus("PocketTTS/Deepgram error: "+(e.message||e));}
  finally{processingQueue=false;if(listening&&speechQueue.length)processQueue();}
 }
 
@@ -166,7 +139,7 @@ async function startListening(){
  if(listening)return;
  try{
   start.disabled=true;setStatus("Requesting microphone...");
-  await loadDevices();await loadPocketTTS();await connectDeepgram();await startAudioCapture();
+  await loadDevices();await loadPocketTTS();await startBrowserPlayer();await connectDeepgram();await startAudioCapture();
   listening=true;stop.disabled=false;speechQueue=[];startSessionRefresh();
   setStatus("Listening with Deepgram...");
  }catch(e){
@@ -179,7 +152,7 @@ function stopListening(){
  if(deepgram){try{deepgram.close();}catch{}deepgram=null;}
  if(workletNode){try{workletNode.disconnect();}catch{}workletNode=null;}
  if(mediaStream){mediaStream.getTracks().forEach(t=>t.stop());mediaStream=null;}
- if(audioContext){try{audioContext.close();}catch{}audioContext=null;}
+ if(audioContext){try{audioContext.close();}catch{}audioContext=null;}if(player)player.stop();
  start.disabled=false;stop.disabled=true;setStatus("Stopped.");
 }
 
