@@ -10,7 +10,7 @@ if errorlevel 1 (
  exit /b 1
 )
 
-echo Starting local PocketTTS + Deepgram STT app...
+echo Starting local PocketTTS voice app...
 start "" "chrome.exe" "http://127.0.0.1:8787/"
 if errorlevel 1 (
  echo Chrome was not found on PATH. Opening the local app with the default browser instead.
