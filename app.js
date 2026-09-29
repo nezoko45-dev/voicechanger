@@ -206,6 +206,7 @@ async function startListening(){
   await loadDevices();await loadOutputDevices();await loadPocketTTS();await ensurePlayer();await startAudioWorklet();
   await loadOutputDevices();
   listening=true;stop.disabled=false;
+  if(test)test.disabled=false;
   setupSpeechRecognition();
   setStatus("Listening — speak naturally. PocketTTS will continue speaking while you keep talking.");
  }catch(e){
