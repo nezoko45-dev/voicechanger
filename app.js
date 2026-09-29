@@ -48,7 +48,7 @@ async function initTTS(){
  tts=new mod.PocketTTS({
   language:"english_2026-04",
   quantized:true,
-  voiceCloning:true,
+  voiceCloning:false,
   cache:true,
   maxThreads:8,
   maxReferenceSeconds:6
@@ -75,7 +75,7 @@ async function prepareVoice(){
   if(decoded.numberOfChannels<1)throw new Error("The WAV has no audio channel.");
   const mono=decoded.getChannelData(0).slice();
   setStatus("Cloning WAV voice…");
-  voiceRef=await tts.cloneVoice(mono,{inputSampleRate:decoded.sampleRate,name:"pockettts-mic-clone"});
+  voiceRef=await tts.loadVoice("alba");
  }finally{await ac.close();}
  await tts.finishLoad();
  info.textContent="Chrome mic → Speech Recognition → PocketTTS → selected speaker.";
