@@ -292,24 +292,22 @@ function modToWavBlob(chunks,sampleRate){
 function commitInterim(raw){
  const current=normalize(raw);
  if(!current)return;
+ // Show the live sentence, but DO NOT generate partial phrases.
+ // This keeps the cloned voice from speaking word-by-word.
  text.value=current;
- const W=words(current);
- // Start producing after a few words, but do not wait for the entire sentence.
- const safeCount=Math.max(0,W.length-1);
- if(safeCount<=spokenWords)return;
- const piece=W.slice(spokenWords,safeCount).join(" ");
- if(piece)queueLatest(piece,takeChunkDuration(false));
- spokenWords=safeCount;
 }
 
 function commitFinal(raw){
  const current=normalize(raw);
  if(!current)return;
  text.value=current;
- const W=words(current);
- const remaining=W.slice(Math.min(spokenWords,W.length)).join(" ");
- if(remaining)queueLatest(remaining,takeChunkDuration(true));
- spokenWords=W.length;
+
+ // Generate the COMPLETE recognized sentence as one unit. Its target WAV
+ // duration is the actual amount of time spent speaking since the mic speech
+ // segment began, so the resulting file matches the user's sentence timing.
+ const duration=takeChunkDuration(true);
+ queueLatest(current,duration);
+ spokenWords=words(current).length;
 }
 
 let recognitionGeneration=0;
