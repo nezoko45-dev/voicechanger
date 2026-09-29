@@ -6,12 +6,13 @@
 export class StreamingPlayer{
  constructor(opts={}){
   this.sampleRate=opts.sampleRate||24000;
+  this.playbackRate=opts.playbackRate||1.2;
   this.audioContext=null;
   this.nextStartTime=0;
   this.started=false;
   this.pending=[];
   this.scheduled=[];
-  this.minLead=0.08;
+  this.minLead=0.03;
   this.deviceId="";
   this.gainNode=null;
  }
@@ -38,6 +39,10 @@ export class StreamingPlayer{
   }
  }
 
+ setPlaybackRate(rate=1.2){
+  this.playbackRate=Math.max(0.5,Math.min(2.0,Number(rate)||1.2));
+ }
+
  play(float32,meta){
   if(!float32?.length)return;
   if(!this.audioContext)throw new Error("PocketTTS StreamingPlayer has not been resumed.");
@@ -49,12 +54,17 @@ export class StreamingPlayer{
 
   const source=this.audioContext.createBufferSource();
   source.buffer=buffer;
+  source.playbackRate.value=this.playbackRate;
   source.connect(this.gainNode||this.audioContext.destination);
 
   const now=this.audioContext.currentTime;
-  const startTime=Math.max(now+0.015,this.nextStartTime||now+this.minLead);
+  const startTime=Math.max(now+0.008,this.nextStartTime||now+this.minLead);
   source.start(startTime);
-  this.nextStartTime=startTime+buffer.duration;
+
+  // Schedule using the compressed playback duration, not the original
+  // generated-buffer duration. This prevents the generated audio queue from
+  // falling behind while speech is still arriving.
+  this.nextStartTime=startTime+(buffer.duration/this.playbackRate);
   this.scheduled.push(source);
   source.onended=()=>{
    const i=this.scheduled.indexOf(source);
