@@ -194,7 +194,9 @@ function stopListening(){
  generating=false;start.disabled=false;stop.disabled=true;if(test)test.disabled=true;setStatus("Stopped.");
 }
 
-start.onclick=startListening;stop.onclick=stopListening;\nconst test=$("test");\nif(test)test.onclick=()=>speak("Hello! This is your local PocketTTS voice.");
+start.onclick=startListening;stop.onclick=stopListening;
+const test=$("test");
+if(test)test.onclick=()=>speak("Hello! This is your local PocketTTS voice.");
 navigator.mediaDevices.addEventListener?.("devicechange",()=>{loadDevices();loadOutputDevices();});
 if(output)output.addEventListener("change",setOutputDevice);
 loadDevices();loadOutputDevices();
