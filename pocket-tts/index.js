@@ -8,7 +8,7 @@
 const DEFAULT_MODEL_BASE_URL = "https://huggingface.co/vlapky/pocket-tts-onnx/resolve/main/onnx";
 const DEFAULT_ORT_BASE_URL = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.0/dist/";
 // Keep in sync with CACHE_NAME in worker.js.
-const CACHE_NAME = "pocket-tts-safe-v2";
+const CACHE_NAME = "pocket-tts-wav-only-v3";
 
 export const LANGUAGES = [
     "english_2026-04",
@@ -183,6 +183,7 @@ export class PocketTTS {
      * @returns {Promise<string>} A voice reference usable in generate().
      */
     async loadVoice(name) {
+        throw new Error("Preset PocketTTS voices are disabled. This build accepts WAV voice cloning only.");
         const { ref } = await this._request("loadBuiltinVoice", { name });
         return ref;
     }
