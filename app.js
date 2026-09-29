@@ -1,16 +1,21 @@
 const $=id=>document.getElementById(id);
 const reference=$("reference"),mic=$("mic"),output=$("output"),chooseOutput=$("chooseOutput"),text=$("text"),start=$("start"),micBtn=$("micBtn"),stop=$("stop"),status=$("status"),info=$("info");
-let tts=null,voiceRef=null,running=false,playback=null,recognition=null,recognizing=false,micStream=null,micSource=null,micGain=null;
+let tts=null,voiceRef=null,running=false,playback=null,micPlayback=null,recognition=null,recognizing=false,micStream=null,micSource=null,micGain=null,ttsQueue=Promise.resolve();
 
 const TTS_URL="./pocket-tts/index.js";
 
 function setStatus(v){status.textContent=v;}
-function createPlayback(){return new AudioContext({latencyHint:"interactive"});}
+function createPlayback(){
+ const sink=output?.value||"";
+ try{return sink?new AudioContext({latencyHint:"interactive",sinkId:sink}):new AudioContext({latencyHint:"interactive"});}
+ catch{return new AudioContext({latencyHint:"interactive"});}
+}
 
 async function setOutput(){
- if(!playback)return;
- if(typeof playback.setSinkId==="function"){
-  try{await playback.setSinkId(output.value||"");}catch(e){console.warn("setSinkId",e);}
+ for(const ctx of [playback,micPlayback]){
+  if(ctx&&typeof ctx.setSinkId==="function"){
+   try{await ctx.setSinkId(output.value||"");}catch(e){console.warn("setSinkId",e);}
+  }
  }
 }
 async function loadDevices(){
@@ -72,33 +77,39 @@ async function playChunk(audio){
  await playback.resume();await setOutput();
  const buffer=playback.createBuffer(1,audio.length,tts.sampleRate);
  buffer.copyToChannel(audio,0);
- const node=playback.createBufferSource();node.buffer=buffer;node.connect(playback.destination);
+ const node=playback.createBufferSource();
+ node.buffer=buffer;
+ node.connect(playback.destination);
  const now=playback.currentTime;
  const at=Math.max(now,playChunk.nextAt||now);
- node.start(at);playChunk.nextAt=at+buffer.duration;
+ node.start(at);
+ playChunk.nextAt=at+buffer.duration;
 }
 async function speak(value){
  if(!running)return;
  const phrase=value.trim();if(!phrase)return;
  playChunk.nextAt=playback?.currentTime||0;
  setStatus("PocketTTS speaking…");
- await tts.generate(phrase,{voice:voiceRef,onChunk:(audio)=>{void playChunk(audio);}});
+ await tts.generate(phrase,{voice:voiceRef,onChunk:(audio)=>{
+   ttsQueue=ttsQueue.then(()=>playChunk(audio));
+ }});
+ await ttsQueue;
  if(running)setStatus("Ready — speak or type another sentence.");
 }
 async function startMicAudio(){
- if(!playback)playback=createPlayback();
- await playback.resume();
+ if(!micPlayback)micPlayback=createPlayback();
+ await micPlayback.resume();
  await setOutput();
  if(micStream)return;
  const deviceId=mic.value;
  micStream=await navigator.mediaDevices.getUserMedia({
   audio:deviceId?{deviceId:{exact:deviceId},echoCancellation:false,noiseSuppression:false,autoGainControl:false}:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}
  });
- micSource=playback.createMediaStreamSource(micStream);
- micGain=playback.createGain();
+ micSource=micPlayback.createMediaStreamSource(micStream);
+ micGain=micPlayback.createGain();
  micGain.gain.value=1;
  micSource.connect(micGain);
- micGain.connect(playback.destination);
+ micGain.connect(micPlayback.destination);
  setStatus("Live microphone audio is streaming through Chrome.");
 }
 async function stopMicAudio(){
@@ -120,6 +131,7 @@ async function startTTS(){
 function stopAll(){
  running=false;recognizing=false;
  void stopMicAudio();
+ if(micPlayback){try{void micPlayback.close();}catch{}micPlayback=null;}
  if(recognition){try{recognition.stop();}catch{}}
  if(tts){try{tts.stop();}catch{}}
  stop.disabled=true;start.disabled=false;micBtn.disabled=false;setStatus("Stopped.");
