@@ -123,6 +123,7 @@ async function startTTS(){
   await setOutput();
   running=true;
   stop.disabled=false;
+  micBtn.disabled=false;
   setStatus("PocketTTS ready — browser speech recognition feeds text into the cloned WAV voice.");
   const value=text.value.trim();
   if(value)await speak(value);
