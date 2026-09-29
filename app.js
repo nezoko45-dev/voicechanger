@@ -229,14 +229,16 @@ const test=$("test");
 if(test)test.onclick=async()=>{
  try{
   await ensurePlayer();
-  const ctx=player.audioContext;
-  const osc=ctx.createOscillator(),gain=ctx.createGain();
-  gain.gain.value=0.08;
-  osc.frequency.value=440;
-  osc.connect(gain).connect(ctx.destination);
-  osc.start();
-  osc.stop(ctx.currentTime+0.25);
-  setStatus("Output test played. Selected output is active.");
+  const seconds=0.5;
+  const rate=player.sampleRate||24000;
+  const audio=new Float32Array(Math.floor(rate*seconds));
+  for(let i=0;i<audio.length;i++){
+   const t=i/rate;
+   const fade=Math.min(1,i/(rate*0.03),(audio.length-i)/(rate*0.03));
+   audio[i]=Math.sin(2*Math.PI*440*t)*0.12*Math.max(0,fade);
+  }
+  player.play(audio);
+  setStatus("Local Windows audio test sent to the backend.");
  }catch(e){setStatus("Output test failed: "+(e.message||e));}
 };
 navigator.mediaDevices.addEventListener?.("devicechange",()=>{loadDevices();loadOutputDevices();});
