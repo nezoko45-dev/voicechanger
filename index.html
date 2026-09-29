@@ -21,6 +21,8 @@ button{cursor:pointer;font-weight:800;min-height:46px}button:disabled{opacity:.4
 .note,.small{color:#8f96a3;font-size:12px;line-height:1.5}.flow{margin-top:12px;color:#777f8e;font-size:12px}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
 .meter{height:7px;background:#090c12;border-radius:9px;overflow:hidden;margin-top:12px}.meter>i{display:block;width:0;height:100%;background:#8d5cff;transition:width .12s}
+audio{width:100%;margin-top:8px}
+.resultTitle{font-weight:800;margin-bottom:4px}
 </style>
 </head>
 <body>
@@ -47,13 +49,20 @@ button{cursor:pointer;font-weight:800;min-height:46px}button:disabled{opacity:.4
 <button id="stop" class="danger" type="button" disabled>STOP</button>
 </div>
 <div class="meter"><i id="meterBar"></i></div>
-<div class="note" style="margin-top:9px">The recognizer stays continuous. Short speech segments are committed while you talk instead of waiting for an entire paragraph.</div>
+<div class="note" style="margin-top:9px">Generated audio is played at 120% timing to reduce lag. Each generated result is also captured below.</div>
+</div>
+
+<div class="panel">
+<div class="resultTitle">🔊 MediaPlayer — Generated Voice Result</div>
+<div class="small">The latest PocketTTS-generated audio appears here. Use this player to verify the actual generated result independently of the live stream.</div>
+<audio id="resultPlayer" controls preload="metadata"></audio>
+<div id="resultInfo" class="small" style="margin-top:7px">No generated result yet.</div>
 </div>
 
 <div class="status" id="status">Choose your WAV first.</div>
 <div class="small" id="info"></div>
-<div class="flow">🎙 mic → continuous Chrome recognition → short speech segments → PocketTTS using your WAV → Chrome speaker</div>
+<div class="flow">🎙 mic → continuous Chrome recognition → short speech segments → PocketTTS using your WAV → Chrome speaker + MediaPlayer result</div>
 </main>
-<script type="module" src="./app.js?v=low-latency-wav-20260929-4"></script>
+<script type="module" src="./app.js?v=media-player-wav-20260929-5"></script>
 </body>
 </html>
