@@ -9,7 +9,7 @@
 <label>Microphone</label><select id="mic"><option>Choose microphone…</option></select>
 <div class="note">Reference voice: <b>Recording (10).wav</b>. Your mic is captured through an AudioWorklet while you speak. Browser SpeechRecognition converts your speech to text locally from the page, and PocketTTS keeps generating the cloned voice continuously.</div>
 <div class="note">PocketTTS runs locally in the page. The reference WAV is used only to clone the voice. Generated PCM is streamed through the AudioWorklet without creating WAV files.</div>
-<div class="row"><button id="start" class="primary">START LISTENING</button><button id="stop" disabled>STOP</button></div>
+<div class="row"><button id="start" class="primary">START LISTENING</button><button id="stop" disabled>STOP</button></div><button id="test" disabled>TEST LOCAL TTS</button>
 <div class="status" id="status">Press START LISTENING and speak.</div>
 <div class="small">No Deepgram API or cloud TTS API is used. PocketTTS uses the local <b>Recording (10).wav</b> as its cloned voice reference.</div>
 </main><script src="app.js?v=live-pockettts-20260928-1"></script></body></html>
