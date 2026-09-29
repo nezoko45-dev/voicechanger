@@ -170,11 +170,15 @@ async function drainSpeech(){
    });
    if(running&&token===generationToken&&latestResultChunks.length){
     // Keep PocketTTS at its natural generated duration. There is NO mic-duration
-    // matching or time-stretching, so the cloned voice cannot be rushed by timing.
+    // matching or time-stretching. Explicitly resume the Web Audio context before
+    // every sentence so Chrome cannot leave the TTS output suspended.
     const naturalAudio=latestResultChunks.slice();
+    await ttsPlayer?.resume?.();
     ttsPlayer?.setPlaybackRate?.(1);
     ttsPlayer?.play(naturalAudio);
-    ttsPlayer?.flush();
+    // Do not flush here: flush can move the scheduling clock while a sentence is
+    // being queued. Let the player keep the audio clock naturally.
+    try{await resultPlayer.play();}catch(e){console.warn("MediaPlayer autoplay:",e);}
 
     const blob=modToWavBlob(naturalAudio,tts.sampleRate);
     if(resultUrl)URL.revokeObjectURL(resultUrl);
