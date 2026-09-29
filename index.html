@@ -49,7 +49,7 @@ audio{width:100%;margin-top:8px}
 <button id="stop" class="danger" type="button" disabled>STOP</button>
 </div>
 <div class="meter"><i id="meterBar"></i></div>
-<div class="note" style="margin-top:9px">Generated audio automatically matches the measured length of your microphone speech. Short chunks are generated early so the app does not wait for a whole sentence.</div>
+<div class="note" style="margin-top:9px">Each generated WAV is physically time-stretched to match your measured microphone speech duration. Playback stays at normal 1× speed, so the voice does not become chipmunk-like.</div>
 </div>
 
 <div class="panel">
@@ -63,6 +63,6 @@ audio{width:100%;margin-top:8px}
 <div class="small" id="info"></div>
 <div class="flow">🎙 mic → continuous Chrome recognition → short speech segments → PocketTTS using your WAV → Chrome speaker + MediaPlayer result</div>
 </main>
-<script type="module" src="./app.js?v=mic-timing-wav-20260929-6"></script>
+<script type="module" src="./app.js?v=wav-duration-pitch-20260929-7"></script>
 </body>
 </html>
