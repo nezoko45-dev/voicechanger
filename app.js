@@ -1,9 +1,10 @@
 const $=id=>document.getElementById(id);
-const reference=$("reference"),output=$("output"),chooseOutput=$("chooseOutput"),text=$("text"),start=$("start"),stop=$("stop"),status=$("status"),info=$("info");
+const reference=$("reference"),output=$("output"),chooseOutput=$("chooseOutput"),text=$("text"),start=$("start"),stop=$("stop"),status=$("status"),info=$("info"),meterBar=$("meterBar");
 const TTS_URL="./pocket-tts/index.js";
 
-let tts=null,voiceRef=null,ttsPlayer=null,running=false,ttsBusy=false,ttsQueue=[];
-let recognition=null,restartTimer=null;
+let tts=null,voiceRef=null,ttsPlayer=null,running=false,ttsBusy=false;
+let recognition=null,restartTimer=null,recognitionStarted=false;
+let spokenWords=0,lastInterim="",pendingText="",speechTimer=null;
 
 function setStatus(v){status.textContent=v;}
 function updateStartButton(){start.disabled=!(reference.files?.[0]&&!running);}
@@ -17,7 +18,7 @@ async function loadOutputs(){
  if(!navigator.mediaDevices?.enumerateDevices)return;
  try{
   const devices=await navigator.mediaDevices.enumerateDevices(),old=output.value;
-  output.innerHTML="<option value=''>Default Windows output</option>";
+  output.innerHTML="<option value=''>Default Chrome output</option>";
   devices.filter(d=>d.kind==="audiooutput").forEach(d=>{
    const o=document.createElement("option");
    o.value=d.deviceId;o.textContent=d.label||"Speaker / output "+output.options.length;
@@ -26,9 +27,10 @@ async function loadOutputs(){
   if([...output.options].some(o=>o.value===old))output.value=old;
  }catch(e){console.warn(e);}
 }
+
 async function chooseChromeSpeaker(){
  if(!navigator.mediaDevices?.selectAudioOutput){
-  setStatus("Chrome speaker picker unavailable; using default output.");return;
+  setStatus("Chrome speaker picker unavailable; using the default output.");return;
  }
  try{
   const d=await navigator.mediaDevices.selectAudioOutput();
@@ -50,17 +52,18 @@ async function initTTS(){
   quantized:true,
   voiceCloning:true,
   cache:true,
-  cacheName:"pocket-tts-wav-only-v3",
+  cacheName:"pocket-tts-wav-only-v4",
   maxThreads:8,
   maxReferenceSeconds:6
  });
- ttsPlayer=new mod.StreamingPlayer({sampleRate:tts.sampleRate});
+ ttsPlayer=new mod.StreamingPlayer({sampleRate:tts.sampleRate,primeSeconds:.04});
  await ttsPlayer.resume();
  setStatus("Loading PocketTTS models…");
  await tts.load(p=>{
   if(p?.label){
    const pct=p.total?Math.round(p.loaded/p.total*100):"";
    setStatus("PocketTTS: "+p.label+(pct!==""?" "+pct+"%":""));
+   if(p.total)meterBar.style.width=Math.min(100,Math.round(p.loaded/p.total*100))+"%";
   }
  });
  await setOutput();
@@ -68,43 +71,93 @@ async function initTTS(){
 
 async function prepareVoice(){
  const file=reference.files?.[0];
- if(!file)throw new Error("Choose a WAV voice reference first.");
- const buf=await file.arrayBuffer();
- const ac=new AudioContext();
+ if(!file)throw new Error("Choose your WAV voice reference first.");
+ const buf=await file.arrayBuffer(),ac=new AudioContext();
  try{
   const decoded=await ac.decodeAudioData(buf);
   if(decoded.numberOfChannels<1)throw new Error("The WAV has no audio channel.");
+  if(decoded.duration<1)throw new Error("The WAV is too short. Use the working WAV reference.");
   const mono=decoded.getChannelData(0).slice();
-  setStatus("Using ONLY your WAV voice reference…");
-  voiceRef=await tts.cloneVoice(mono,{inputSampleRate:decoded.sampleRate,name:"pockettts-wav-clone"});
+  setStatus("Preparing YOUR WAV voice…");
+  voiceRef=await tts.cloneVoice(mono,{inputSampleRate:decoded.sampleRate,name:"github-pages-wav-voice"});
  }finally{await ac.close();}
- await tts.finishLoad();
- info.textContent="Chrome mic → WAV voice clone → PocketTTS → selected speaker. No preset voice is used.";
+ await tts.finishLoad?.();
+ info.textContent="WAV voice loaded. No preset voice is selected.";
 }
 
-async function speak(phrase){
- phrase=phrase.trim();
- if(!running||!phrase)return;
- ttsQueue.push(phrase);
- if(ttsBusy)return;
- ttsBusy=true;
+function normalize(s){return s.replace(/\s+/g," ").trim();}
+function words(s){return normalize(s).split(" ").filter(Boolean);}
+function commonPrefixWords(a,b){
+ const A=words(a),B=words(b),n=Math.min(A.length,B.length);let i=0;
+ while(i<n&&A[i].toLowerCase()===B[i].toLowerCase())i++;
+ return i;
+}
+
+/*
+  Low-latency commit:
+  - Chrome gives interim text continuously.
+  - We keep the last 2 words uncommitted so the recognizer can revise them.
+  - Once 3+ stable words exist, they are sent to PocketTTS.
+  - This prevents waiting for an entire sentence while also avoiding repeated
+    words from every interim recognition event.
+*/
+function handleInterim(raw){
+ const current=normalize(raw);
+ if(!current)return;
+ text.value=current;
+ lastInterim=current;
+
+ const W=words(current);
+ const safeCount=Math.max(0,W.length-2);
+ const safe=W.slice(0,safeCount).join(" ");
+ if(!safe)return;
+
+ const already=spokenWords;
+ if(W.length>already+2){
+  const piece=W.slice(already,safeCount).join(" ");
+  if(piece)queueSpeech(piece);
+  spokenWords=safeCount;
+ }
+}
+
+function handleFinal(raw){
+ const current=normalize(raw);
+ if(!current)return;
+ text.value=current;
+ const W=words(current);
+ const remaining=W.slice(Math.min(spokenWords,W.length)).join(" ");
+ if(remaining)queueSpeech(remaining);
+ spokenWords=W.length;
+ lastInterim="";
+}
+
+let speechQueue=[],speechWorker=false;
+function queueSpeech(s){
+ s=normalize(s);
+ if(!s)return;
+ speechQueue.push(s);
+ if(speechQueue.length>2)speechQueue.splice(0,speechQueue.length-2);
+ void drainSpeech();
+}
+
+async function drainSpeech(){
+ if(speechWorker)return;
+ speechWorker=true;
  try{
-  while(running&&ttsQueue.length){
-   const current=ttsQueue.shift();
-   text.value=current;
-   setStatus("PocketTTS speaking…");
-   await tts.generate(current,{
-    voice:voiceRef,
-    onChunk:(audio,meta)=>{if(running)ttsPlayer.play(audio,meta);}
-   });
-   if(running)ttsPlayer.flush();
+  while(running&&speechQueue.length){
+   const phrase=speechQueue.shift();
+   setStatus("Speaking: "+phrase);
+   await tts.generate(phrase,{voice:voiceRef,onChunk:(audio,meta)=>{
+    if(running)ttsPlayer?.play(audio,meta);
+   }});
+   if(running)ttsPlayer?.flush();
   }
  }catch(e){
-  console.error(e);
   if(running)setStatus("PocketTTS error: "+(e.message||e));
  }finally{
-  ttsBusy=false;
-  if(running)setStatus("Listening…");
+  speechWorker=false;
+  if(running&&speechQueue.length)void drainSpeech();
+  else if(running)setStatus("Listening — speak now.");
  }
 }
 
@@ -118,84 +171,77 @@ function startRecognition(){
  recognition.interimResults=true;
  recognition.maxAlternatives=1;
 
- recognition.onstart=()=>setStatus("Listening — speak now.");
+ recognition.onstart=()=>{
+  recognitionStarted=true;
+  setStatus("Listening — speak now.");
+ };
  recognition.onresult=e=>{
   for(let i=e.resultIndex;i<e.results.length;i++){
-   const result=e.results[i];
-   const phrase=result[0]?.transcript?.trim();
+   const result=e.results[i],phrase=result[0]?.transcript?.trim();
    if(!phrase)continue;
-   text.value=phrase;
-   if(result.isFinal)void speak(phrase);
+   if(result.isFinal)handleFinal(phrase);
+   else handleInterim(phrase);
   }
  };
  recognition.onerror=e=>{
   console.warn("SpeechRecognition:",e.error);
   if(e.error==="not-allowed"||e.error==="service-not-allowed"){
-   setStatus("Chrome speech recognition permission was denied.");
-   return;
+   setStatus("Chrome microphone/speech permission was denied.");
+   running=false;stopRecognition();updateStartButton();stop.disabled=true;return;
   }
-  if(running)setStatus("Speech recognition reconnecting…");
+  if(running)setStatus("Reconnecting microphone recognition…");
  };
  recognition.onend=()=>{
+  recognitionStarted=false;
   if(!running)return;
   clearTimeout(restartTimer);
   restartTimer=setTimeout(()=>{
    if(running){
-    try{recognition.start();}catch(e){}
+    try{recognition.start();}catch{}
    }
-  },100);
+  },60);
  };
  recognition.start();
 }
 
 function stopRecognition(){
  clearTimeout(restartTimer);restartTimer=null;
- try{recognition?.stop();}catch(e){}
- recognition=null;
+ try{recognition?.stop();}catch{}
+ recognition=null;recognitionStarted=false;
 }
 
 async function startAll(){
  if(running)return;
  try{
   if(!reference.files?.[0])throw new Error("Choose your WAV voice reference first.");
-  start.disabled=true;
-  running=true;
-  stop.disabled=false;
-  text.value="";
-  setStatus("Starting microphone…");
-  startRecognition();
-  setStatus("Listening… PocketTTS is preparing your voice.");
+  start.disabled=true;running=true;stop.disabled=false;
+  text.value="";spokenWords=0;lastInterim="";pendingText="";speechQueue=[];
+  setStatus("Loading your WAV voice…");
   await initTTS();
   if(!running)return;
   await prepareVoice();
   if(!running)return;
-  await loadOutputs();
-  await setOutput();
-  if(running)setStatus("Listening — speak now.");
+  await loadOutputs();await setOutput();
+  startRecognition();
+  setStatus("Listening — speak now.");
  }catch(e){
   console.error(e);
-  running=false;
-  stopRecognition();
-  if(ttsPlayer){try{ttsPlayer.destroy();}catch{}ttsPlayer=null;}
+  running=false;stopRecognition();speechQueue=[];
+  try{ttsPlayer?.stop?.();}catch{}
   setStatus("Start error: "+(e.message||e));
-  updateStartButton();
- }finally{
-  if(!running)stop.disabled=true;
+  stop.disabled=true;updateStartButton();
  }
 }
 
 async function stopAll(){
- running=false;
- stopRecognition();
- ttsQueue=[];
- if(tts){try{await tts.stop();}catch{}}
- if(ttsPlayer){try{ttsPlayer.destroy();}catch{}ttsPlayer=null;}
- stop.disabled=true;
- updateStartButton();
- setStatus("Stopped. Raw microphone audio is never played.");
+ running=false;stopRecognition();speechQueue=[];spokenWords=0;
+ try{await tts?.stop();}catch{}
+ try{ttsPlayer?.stop?.();}catch{}
+ stop.disabled=true;updateStartButton();
+ setStatus("Stopped.");
 }
 
-reference.onchange=updateStartButton;
+reference.onchange=()=>{updateStartButton();if(reference.files?.[0])setStatus("WAV selected — press START.");};
 start.onclick=()=>void startAll();
 stop.onclick=()=>void stopAll();
 chooseOutput.onclick=chooseChromeSpeaker;
