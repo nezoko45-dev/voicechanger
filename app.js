@@ -75,7 +75,7 @@ async function prepareVoice(){
   if(decoded.numberOfChannels<1)throw new Error("The WAV has no audio channel.");
   const mono=decoded.getChannelData(0).slice();
   setStatus("Cloning WAV voice…");
-  voiceRef=await tts.loadVoice("alba");
+  voiceRef=await tts.loadVoice("eve");
  }finally{await ac.close();}
  await tts.finishLoad();
  info.textContent="Chrome mic → Speech Recognition → PocketTTS → selected speaker.";
