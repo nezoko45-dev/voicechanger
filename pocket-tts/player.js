@@ -13,14 +13,19 @@ export class StreamingPlayer{
   this.scheduled=[];
   this.minLead=0.08;
   this.deviceId="";
+  this.gainNode=null;
  }
 
  async resume(){
   if(!this.audioContext){
    this.audioContext=new AudioContext({latencyHint:"interactive"});
+   this.gainNode=this.audioContext.createGain();
+   this.gainNode.gain.value=1.25;
+   this.gainNode.connect(this.audioContext.destination);
    if(this.deviceId)await this.setSinkId(this.deviceId);
   }
   if(this.audioContext.state!=="running")await this.audioContext.resume();
+  if(this.audioContext.state!=="running")throw new Error("Chrome audio output is suspended.");
   this.started=true;
   this.nextStartTime=Math.max(this.nextStartTime,this.audioContext.currentTime+this.minLead);
  }
@@ -36,7 +41,7 @@ export class StreamingPlayer{
  play(float32,meta){
   if(!float32?.length)return;
   if(!this.audioContext)throw new Error("PocketTTS StreamingPlayer has not been resumed.");
-  if(this.audioContext.state!=="running")void this.audioContext.resume();
+  if(this.audioContext.state!=="running")void this.audioContext.resume().catch(()=>{});
 
   const data=float32 instanceof Float32Array?float32:new Float32Array(float32);
   const buffer=this.audioContext.createBuffer(1,data.length,this.sampleRate);
@@ -44,7 +49,7 @@ export class StreamingPlayer{
 
   const source=this.audioContext.createBufferSource();
   source.buffer=buffer;
-  source.connect(this.audioContext.destination);
+  source.connect(this.gainNode||this.audioContext.destination);
 
   const now=this.audioContext.currentTime;
   const startTime=Math.max(now+0.015,this.nextStartTime||now+this.minLead);
@@ -88,6 +93,7 @@ export class StreamingPlayer{
    try{await this.audioContext.close();}catch{}
   }
   this.audioContext=null;
+  this.gainNode=null;
   this.started=false;
  }
 }
