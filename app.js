@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 const reference=$("reference"),mic=$("mic"),output=$("output"),chooseOutput=$("chooseOutput"),text=$("text"),start=$("start"),micBtn=$("micBtn"),stop=$("stop"),status=$("status"),info=$("info");
-let tts=null,voiceRef=null,running=false,playback=null,recognition=null,recognizing=false;
+let tts=null,voiceRef=null,running=false,playback=null,recognition=null,recognizing=false,micStream=null,micSource=null,micGain=null;
 
 const TTS_URL="./pocket-tts/index.js";
 
@@ -85,11 +85,33 @@ async function speak(value){
  await tts.generate(phrase,{voice:voiceRef,onChunk:(audio)=>{void playChunk(audio);}});
  if(running)setStatus("Ready — speak or type another sentence.");
 }
+async function startMicAudio(){
+ if(!playback)playback=createPlayback();
+ await playback.resume();
+ await setOutput();
+ if(micStream)return;
+ const deviceId=mic.value;
+ micStream=await navigator.mediaDevices.getUserMedia({
+  audio:deviceId?{deviceId:{exact:deviceId},echoCancellation:false,noiseSuppression:false,autoGainControl:false}:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}
+ });
+ micSource=playback.createMediaStreamSource(micStream);
+ micGain=playback.createGain();
+ micGain.gain.value=1;
+ micSource.connect(micGain);
+ micGain.connect(playback.destination);
+ setStatus("Live microphone audio is streaming through Chrome.");
+}
+async function stopMicAudio(){
+ if(micSource){try{micSource.disconnect();}catch{}micSource=null;}
+ if(micGain){try{micGain.disconnect();}catch{}micGain=null;}
+ if(micStream){for(const track of micStream.getTracks())track.stop();micStream=null;}
+}
 async function startTTS(){
  try{
   start.disabled=true;micBtn.disabled=true;
   await initTTS();await prepareVoice();
   if(!playback)playback=createPlayback();await playback.resume();await setOutput();
+  await startMicAudio();
   running=true;stop.disabled=false;
   setStatus("PocketTTS ready — type a sentence or use START MIC.");
   const value=text.value.trim();if(value)await speak(value);
@@ -97,12 +119,14 @@ async function startTTS(){
 }
 function stopAll(){
  running=false;recognizing=false;
+ void stopMicAudio();
  if(recognition){try{recognition.stop();}catch{}}
  if(tts){try{tts.stop();}catch{}}
  stop.disabled=true;start.disabled=false;micBtn.disabled=false;setStatus("Stopped.");
 }
 function startMic(){
  if(!running){setStatus("Start PocketTTS first.");return;}
+ void startMicAudio();
  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
  if(!SR){setStatus("Chrome speech recognition is unavailable in this browser.");return;}
  if(recognizing)return;
