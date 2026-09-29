@@ -1,7 +1,7 @@
 // Browser-native streaming player for PocketTTS.
 // PocketTTS produces Float32 PCM chunks in a Web Worker. This player schedules
-// those chunks directly on a Web Audio clock instead of assembling a WAV or
-// sending PCM to the old Windows backend.
+// those chunks directly on a Web Audio clock and can also expose generated
+// chunks for the MediaPlayer result.
 
 export class StreamingPlayer{
  constructor(opts={}){
@@ -60,10 +60,6 @@ export class StreamingPlayer{
   const now=this.audioContext.currentTime;
   const startTime=Math.max(now+0.008,this.nextStartTime||now+this.minLead);
   source.start(startTime);
-
-  // Schedule using the compressed playback duration, not the original
-  // generated-buffer duration. This prevents the generated audio queue from
-  // falling behind while speech is still arriving.
   this.nextStartTime=startTime+(buffer.duration/this.playbackRate);
   this.scheduled.push(source);
   source.onended=()=>{
@@ -92,9 +88,7 @@ export class StreamingPlayer{
    try{source.disconnect();}catch{}
   }
   this.scheduled=[];
-  if(this.audioContext){
-   this.nextStartTime=this.audioContext.currentTime;
-  }
+  if(this.audioContext)this.nextStartTime=this.audioContext.currentTime;
  }
 
  async destroy(){
@@ -108,6 +102,26 @@ export class StreamingPlayer{
  }
 }
 
-export function chunksToWavBlob(){
- throw new Error("WAV assembly is disabled. PocketTTS uses direct streaming playback.");
+export function chunksToWavBlob(chunks,sampleRate=24000){
+ const list=(chunks||[]).filter(x=>x?.length);
+ const total=list.reduce((n,x)=>n+x.length,0);
+ const pcm=new Int16Array(total);
+ let offset=0;
+ for(const chunk of list){
+  for(let i=0;i<chunk.length;i++){
+   const s=Math.max(-1,Math.min(1,chunk[i]));
+   pcm[offset++]=s<0?s*32768:s*32767;
+  }
+ }
+ const bytes=44+pcm.length*2;
+ const buf=new ArrayBuffer(bytes);
+ const view=new DataView(buf);
+ const write=(pos,str)=>{for(let i=0;i<str.length;i++)view.setUint8(pos+i,str.charCodeAt(i));};
+ write(0,"RIFF");view.setUint32(4,36+pcm.length*2,true);write(8,"WAVE");
+ write(12,"fmt ");view.setUint32(16,16,true);view.setUint16(20,1,true);
+ view.setUint16(22,1,true);view.setUint32(24,sampleRate,true);
+ view.setUint32(28,sampleRate*2,true);view.setUint16(32,2,true);view.setUint16(34,16,true);
+ write(36,"data");view.setUint32(40,pcm.length*2,true);
+ new Uint8Array(buf,44).set(new Uint8Array(pcm.buffer));
+ return new Blob([buf],{type:"audio/wav"});
 }
