@@ -15,8 +15,12 @@ if errorlevel 1 (
 echo.
 echo Starting Deepgram + PocketTTS Chrome Voice Changer...
 echo.
+
+start "Deepgram PocketTTS Server" /min cmd /c "node server.js"
+timeout /t 2 /nobreak >nul
+
 start "" "chrome.exe" "http://127.0.0.1:8787/"
 if errorlevel 1 start "" "http://127.0.0.1:8787/"
 
-node server.js
-pause
+echo Chrome app opened.
+echo Close the server window when you are finished.
