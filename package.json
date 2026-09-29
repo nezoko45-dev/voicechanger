@@ -1,8 +1,12 @@
 {
   "name":"pockettts-windows-voicechanger",
   "private":true,
-  "version":"2.0.0",
-  "description":"Simple microphone speech recognition to PocketTTS with native Windows audio playback",
+  "version":"3.0.0",
+  "description":"Live PocketTTS voice changer with local Windows audio backend",
   "main":"server.js",
-  "scripts":{"start":"node server.js"}
+  "scripts":{"start":"node server.js"},
+  "dependencies":{
+    "speaker":"^0.5.5",
+    "ws":"^8.18.3"
+  }
 }
