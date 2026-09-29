@@ -4,7 +4,7 @@ const apiKey=$("apiKey"),clearKey=$("clearKey"),reference=$("reference"),output=
 const TTS_URL="./pocket-tts/index.js";
 const DG_URL="wss://api.deepgram.com/v1/listen?model=nova-3&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&smart_format=true&punctuate=true&endpointing=300&utterance_end_ms=1000&vad_events=true";
 
-let tts=null,voiceRef=null,running=false;
+let tts=null,voiceRef=null,ttsPlayer=null,running=false;
 let dg=null,reconnectTimer=null,keepAliveTimer=null;
 let micStream=null,audioContext=null,sourceNode=null,processor=null,gainNode=null;
 let recognizing=false,utteranceParts=[],speaking=false,speechQueue=[];
@@ -18,8 +18,9 @@ function updateStartButton(){
 }
 
 async function setOutput(){
- if(player&&typeof player.setSinkId==="function"){
-  try{await player.setSinkId(output.value||"");}catch(e){console.warn("setSinkId",e);}
+ if(ttsPlayer?.setSinkId){
+  try{await ttsPlayer.setSinkId(output.value||"");}
+  catch(e){console.warn("PocketTTS output device",e);}
  }
 }
 
@@ -61,6 +62,9 @@ async function initTTS(){
  setStatus("Loading PocketTTS browser engine and models…");
  const mod=await import(TTS_URL);
  tts=new mod.PocketTTS({language:"english_2026-04",quantized:true,voiceCloning:true,cache:true,maxThreads:8,maxReferenceSeconds:6});
+ ttsPlayer=new mod.StreamingPlayer({sampleRate:tts.sampleRate});
+ await ttsPlayer.resume();
+ await setOutput();
  await tts.load(p=>{
   if(p?.label)setStatus("PocketTTS: "+p.label);
   else if(p?.status)setStatus("PocketTTS: "+p.status);
@@ -84,30 +88,7 @@ async function prepareVoice(){
  voiceRef=await tts.cloneVoice(ref.audio,{inputSampleRate:ref.sampleRate,name:"deepgram-chrome-clone"});
  setStatus("Voice clone ready. Loading PocketTTS synthesis models…");
  await tts.finishLoad();
- info.textContent="PocketTTS ready at "+tts.sampleRate+" Hz.";
-}
-
-function floatToWavBlob(samples,sampleRate){
- const buffer=new ArrayBuffer(44+samples.length*2),view=new DataView(buffer);
- const write=(o,s)=>{for(let i=0;i<s.length;i++)view.setUint8(o+i,s.charCodeAt(i));};
- write(0,"RIFF");view.setUint32(4,36+samples.length*2,true);write(8,"WAVE");write(12,"fmt ");
- view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);
- view.setUint32(24,sampleRate,true);view.setUint32(28,sampleRate*2,true);view.setUint16(32,2,true);view.setUint16(34,16,true);
- write(36,"data");view.setUint32(40,samples.length*2,true);
- let p=44;
- for(const sample of samples){const s=Math.max(-1,Math.min(1,sample));view.setInt16(p,s<0?s*32768:s*32767,true);p+=2;}
- return new Blob([buffer],{type:"audio/wav"});
-}
-
-async function playSamples(samples){
- const blob=floatToWavBlob(samples,tts.sampleRate),url=URL.createObjectURL(blob);
- if(player._blobUrl)URL.revokeObjectURL(player._blobUrl);
- player._blobUrl=url;
- await setOutput();
- player.src=url;player.load();
- try{await player.play();}catch(e){throw new Error("Chrome blocked audio playback. Press the play button once, then speak again.");}
- await new Promise(resolve=>{const done=()=>{player.removeEventListener("ended",done);resolve();};player.addEventListener("ended",done);});
- URL.revokeObjectURL(url);player._blobUrl=null;
+ info.textContent="PocketTTS ready at "+tts.sampleRate+" Hz — streaming directly to Chrome.";
 }
 
 async function speak(phrase){
@@ -118,19 +99,19 @@ async function speak(phrase){
  try{
   while(running&&speechQueue.length){
    const current=speechQueue.shift();
-   setStatus("PocketTTS generating: "+current);
-   const chunks=[];
-   await tts.generate(current,{voice:voiceRef,onChunk:audio=>chunks.push(audio)});
-   if(!chunks.length)continue;
-   let length=0;for(const c of chunks)length+=c.length;
-   const samples=new Float32Array(length);
-   let offset=0;for(const c of chunks){samples.set(c,offset);offset+=c.length;}
-   setStatus("Playing generated PocketTTS voice…");
-   await playSamples(samples);
+   setStatus("PocketTTS streaming: "+current);
+   await tts.generate(current,{
+    voice:voiceRef,
+    onChunk:(audio,meta)=>{
+     if(!running)return;
+     ttsPlayer.play(audio,meta);
+    }
+   });
+   if(running)ttsPlayer.flush();
   }
  }catch(e){
   console.error(e);
-  if(running)setStatus("PocketTTS playback error: "+(e.message||e));
+  if(running)setStatus("PocketTTS streaming error: "+(e.message||e));
  }finally{
   speaking=false;
   if(running)setStatus(recognizing?"Listening — speak naturally.":"Ready.");
@@ -239,7 +220,9 @@ async function startAll(){
   connectDeepgram();
  }catch(e){
   console.error(e);running=false;stop.disabled=true;start.disabled=false;
-  stopMic();closeDeepgram();setStatus("Start error: "+(e.message||e));updateStartButton();
+  stopMic();closeDeepgram();
+  if(ttsPlayer){try{ttsPlayer.stop();}catch{}ttsPlayer=null;}
+  setStatus("Start error: "+(e.message||e));updateStartButton();
  }
 }
 
@@ -247,11 +230,8 @@ function stopAll(){
  running=false;speechQueue=[];utteranceParts=[];recognizing=false;
  closeDeepgram();stopMic();
  if(tts){try{tts.stop();}catch{}}
- if(player){
-  player.pause();player.currentTime=0;
-  if(player._blobUrl){URL.revokeObjectURL(player._blobUrl);player._blobUrl=null;}
-  player.removeAttribute("src");player.load();
- }
+ if(ttsPlayer){try{ttsPlayer.stop();}catch{}ttsPlayer=null;}
+ if(player){player.pause();player.removeAttribute("src");player.load();}
  stop.disabled=true;updateStartButton();
  setStatus("Stopped. Raw microphone audio is never played.");
 }
