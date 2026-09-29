@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id);
-const mic=$("mic"),start=$("start"),stop=$("stop"),status=$("status"),transcript=$("transcript");
+const mic=$("mic"),output=$("output"),start=$("start"),stop=$("stop"),status=$("status"),transcript=$("transcript");
 
 let tts=null,voice=null,player=null,recognition=null,mediaStream=null,captureContext=null,captureNode=null;
 let listening=false,generating=false,lastText="",restartTimer=null,ttsChunks=0;
@@ -25,8 +25,28 @@ async function loadPocketTTS(){
 }
 
 async function ensurePlayer(){
- if(!player){const mod=await import("./pocket-tts/index.js");player=new mod.StreamingPlayer({sampleRate:tts.sampleRate});}
+ if(!player){
+  const mod=await import("./pocket-tts/index.js");
+  player=new mod.StreamingPlayer({sampleRate:tts.sampleRate});
+ }
  await player.resume();
+ await setOutputDevice();
+}
+
+async function setOutputDevice(){
+ if(!player?.audioContext||!output)return;
+ const deviceId=output.value;
+ if(!deviceId)return;
+ if(typeof player.audioContext.setSinkId!=="function"){
+  setStatus("Output selection is not supported by this Chrome version; using the default Windows output.");
+  return;
+ }
+ try{
+  await player.audioContext.setSinkId(deviceId);
+ }catch(e){
+  console.warn("Output device selection failed",e);
+  setStatus("Could not select that output; using the default Windows output.");
+ }
 }
 
 function captureWorkletSource(){
@@ -124,6 +144,22 @@ async function speak(text){
  finally{generating=false;}
 }
 
+async function loadOutputDevices(){
+ if(!output)return;
+ try{
+  const current=output.value;
+  const ds=await navigator.mediaDevices.enumerateDevices();
+  output.innerHTML="<option value=\"\">Default Windows output</option>";
+  ds.filter(d=>d.kind==="audiooutput").forEach((d,n)=>{
+   const o=document.createElement("option");
+   o.value=d.deviceId;
+   o.textContent=d.label||("Output "+(n+1));
+   output.appendChild(o);
+  });
+  if(current&&[...output.options].some(o=>o.value===current))output.value=current;
+ }catch(e){console.warn(e);}
+}
+
 async function loadDevices(){
  try{
   const ds=await navigator.mediaDevices.enumerateDevices(),old=mic.value;mic.innerHTML="";
@@ -139,7 +175,7 @@ async function startListening(){
  if(listening)return;
  try{
   start.disabled=true;setStatus("Loading local voice...");
-  await loadDevices();await loadPocketTTS();await ensurePlayer();await startAudioWorklet();
+  await loadDevices();await loadOutputDevices();await loadPocketTTS();await ensurePlayer();await startAudioWorklet();
   listening=true;stop.disabled=false;
   setupSpeechRecognition();
   setStatus("Listening — speak naturally. PocketTTS will continue speaking while you keep talking.");
@@ -159,5 +195,6 @@ function stopListening(){
 }
 
 start.onclick=startListening;stop.onclick=stopListening;\nconst test=$("test");\nif(test)test.onclick=()=>speak("Hello! This is your local PocketTTS voice.");
-navigator.mediaDevices.addEventListener?.("devicechange",loadDevices);
-loadDevices();
+navigator.mediaDevices.addEventListener?.("devicechange",()=>{loadDevices();loadOutputDevices();});
+if(output)output.addEventListener("change",setOutputDevice);
+loadDevices();loadOutputDevices();
