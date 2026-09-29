@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id);
-const mic=$("mic"),output=$("output"),start=$("start"),stop=$("stop"),status=$("status"),transcript=$("transcript");
+const mic=$("mic"),output=$("output"),chooseOutput=$("chooseOutput"),start=$("start"),stop=$("stop"),status=$("status"),transcript=$("transcript");
 
 let tts=null,voice=null,player=null,recognition=null,mediaStream=null,captureContext=null,captureNode=null;
 let listening=false,generating=false,lastText="",restartTimer=null,ttsChunks=0;
@@ -31,6 +31,29 @@ async function ensurePlayer(){
  }
  await player.resume();
  await setOutputDevice();
+}
+
+async function chooseWindowsOutput(){
+ if(!player?.audioContext)return;
+ if(!navigator.mediaDevices?.selectAudioOutput){
+  setStatus("Chrome does not expose the speaker picker here. Use the Default Windows output.");
+  return;
+ }
+ try{
+  const device=await navigator.mediaDevices.selectAudioOutput();
+  if(device?.deviceId){
+   await player.audioContext.setSinkId(device.deviceId);
+   output.innerHTML="";
+   const o=document.createElement("option");
+   o.value=device.deviceId;
+   o.textContent=device.label||"Selected Windows output";
+   output.appendChild(o);
+   output.value=device.deviceId;
+   setStatus("Output selected: "+(device.label||"Windows audio device"));
+  }
+ }catch(e){
+  if(e?.name!=="NotAllowedError")setStatus("Output picker failed: "+(e.message||e));
+ }
 }
 
 async function setOutputDevice(){
@@ -217,4 +240,5 @@ if(test)test.onclick=async()=>{
 };
 navigator.mediaDevices.addEventListener?.("devicechange",()=>{loadDevices();loadOutputDevices();});
 if(output)output.addEventListener("change",setOutputDevice);
+if(chooseOutput)chooseOutput.addEventListener("click",async()=>{try{await ensurePlayer();await chooseWindowsOutput();}catch(e){setStatus("Output picker failed: "+(e.message||e));}});
 loadDevices();loadOutputDevices();
