@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 const model=$("model"),mic=$("mic"),output=$("output"),chooseOutput=$("chooseOutput"),start=$("start"),micBtn=$("micBtn"),stop=$("stop"),player=$("player"),status=$("status"),diagnostic=$("diagnostic");
-let ort=null,session=null,running=false,stream=null,ctx=null,processor=null;
+let ort=null,session=null,running=false,stream=null,ctx=null,processor=null,silentGain=null;
 
 const setStatus=v=>status.textContent=v;
 function setDiag(v){diagnostic.textContent=v;}
@@ -85,7 +85,7 @@ async function startMic(){
    if(out?.data){const samples=Float32Array.from(out.data);await play(samples,ctx.sampleRate);}
   }catch(err){setStatus("WebGPU model inference failed: "+err.message);stopAll();}
  };
- source.connect(processor);processor.connect(ctx.destination);
+ source.connect(processor);silentGain=ctx.createGain();silentGain.gain.value=0;processor.connect(silentGain);silentGain.connect(ctx.destination);
  setStatus("WEBGPU MIC ACTIVE — converted audio is sent only to Chrome player.");
 }
 async function startAll(){
@@ -97,8 +97,8 @@ async function startAll(){
 }
 function stopAll(){
  running=false;micBtn.disabled=true;stop.disabled=true;start.disabled=false;
- try{processor?.disconnect();}catch{}try{stream?.getTracks().forEach(t=>t.stop());}catch{}try{ctx?.close();}catch{}
- processor=null;stream=null;ctx=null;if(player){player.pause();player.removeAttribute("src");player.load();}
+ try{processor?.disconnect();}catch{}try{silentGain?.disconnect();}catch{}try{stream?.getTracks().forEach(t=>t.stop());}catch{}try{ctx?.close();}catch{}
+ processor=null;silentGain=null;stream=null;ctx=null;if(player){player.pause();player.removeAttribute("src");player.load();}
  setStatus("Stopped. No raw microphone audio is played.");
 }
 chooseOutput.onclick=chooseSpeaker;start.onclick=()=>void startAll();micBtn.onclick=()=>void startMic();stop.onclick=stopAll;
