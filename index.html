@@ -27,12 +27,12 @@ button{cursor:pointer;font-weight:800;min-height:46px}button:disabled{opacity:.4
 <main class="card">
 <div class="badge">CHROME MIC • POCKETTTS • WAV VOICE</div>
 <h1>🎙 PocketTTS Voice Changer</h1>
-<p class="sub">No Deepgram, no API key, no server. Chrome listens to your mic, then PocketTTS streams the words in your WAV-cloned voice.</p>
+<p class="sub">No Deepgram, no API key, no server. Chrome listens to your mic, then PocketTTS generates speech using ONLY your uploaded WAV voice reference.</p>
 
 <div class="panel">
 <label>Voice reference WAV</label>
 <input id="reference" type="file" accept=".wav,audio/wav,audio/x-wav,audio/*">
-<div class="note">Choose a short, clean voice recording. This is the voice PocketTTS will clone.</div>
+<div class="note">Choose a short, clean voice recording. This WAV is the ONLY voice reference used for generated speech.</div>
 
 <label>Chrome speaker / output</label>
 <select id="output"><option value="">Default Windows output</option></select>
@@ -47,13 +47,13 @@ button{cursor:pointer;font-weight:800;min-height:46px}button:disabled{opacity:.4
 <button id="start" class="primary" type="button" disabled>START POCKETTTS</button>
 <button id="stop" class="danger" type="button" disabled>STOP</button>
 </div>
-<div class="note" style="margin-top:9px">Choose a WAV, then press START. Chrome handles the mic recognition; PocketTTS supplies the audible voice.</div>
+<div class="note" style="margin-top:9px">Choose a WAV, then press START. Chrome handles the mic recognition; PocketTTS supplies the audible voice from your WAV reference.</div>
 </div>
 
 <div class="status" id="status">Loading controls…</div>
 <div class="small" id="info"></div>
 <div class="flow">Pipeline: 🎙 mic → Chrome Speech Recognition → PocketTTS voice clone → Chrome speaker.
 </main>
-<script type="module" src="./app.js?v=pockettts-mic-20260929-2"></script>
+<script type="module" src="./app.js?v=pockettts-wav-only-20260929-3"></script>
 </body>
 </html>
