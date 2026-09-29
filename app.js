@@ -2,9 +2,9 @@ const $=id=>document.getElementById(id);
 const reference=$("reference"),output=$("output"),chooseOutput=$("chooseOutput"),text=$("text"),start=$("start"),stop=$("stop"),status=$("status"),info=$("info"),meterBar=$("meterBar");
 const TTS_URL="./pocket-tts/index.js";
 
-let tts=null,voiceRef=null,ttsPlayer=null,running=false,ttsBusy=false;
-let recognition=null,restartTimer=null,recognitionStarted=false;
-let spokenWords=0,lastInterim="",pendingText="",speechTimer=null;
+let tts=null,voiceRef=null,ttsPlayer=null,running=false;
+let recognition=null,restartTimer=null;
+let spokenWords=0;
 
 function setStatus(v){status.textContent=v;}
 function updateStartButton(){start.disabled=!(reference.files?.[0]&&!running);}
@@ -27,7 +27,6 @@ async function loadOutputs(){
   if([...output.options].some(o=>o.value===old))output.value=old;
  }catch(e){console.warn(e);}
 }
-
 async function chooseChromeSpeaker(){
  if(!navigator.mediaDevices?.selectAudioOutput){
   setStatus("Chrome speaker picker unavailable; using the default output.");return;
@@ -56,7 +55,7 @@ async function initTTS(){
   maxThreads:8,
   maxReferenceSeconds:6
  });
- ttsPlayer=new mod.StreamingPlayer({sampleRate:tts.sampleRate,primeSeconds:.04});
+ ttsPlayer=new mod.StreamingPlayer({sampleRate:tts.sampleRate,primeSeconds:.01});
  await ttsPlayer.resume();
  setStatus("Loading PocketTTS models…");
  await tts.load(p=>{
@@ -87,56 +86,30 @@ async function prepareVoice(){
 
 function normalize(s){return s.replace(/\s+/g," ").trim();}
 function words(s){return normalize(s).split(" ").filter(Boolean);}
-function commonPrefixWords(a,b){
- const A=words(a),B=words(b),n=Math.min(A.length,B.length);let i=0;
- while(i<n&&A[i].toLowerCase()===B[i].toLowerCase())i++;
- return i;
-}
 
 /*
-  Low-latency commit:
-  - Chrome gives interim text continuously.
-  - We keep the last 2 words uncommitted so the recognizer can revise them.
-  - Once 3+ stable words exist, they are sent to PocketTTS.
-  - This prevents waiting for an entire sentence while also avoiding repeated
-    words from every interim recognition event.
+ Keep-up mode:
+ - Do NOT build a long FIFO of old speech.
+ - Chrome interim text is treated as a moving window.
+ - Only 1-2 newly stable words are submitted at a time.
+ - If PocketTTS is still generating, replace the pending phrase with the
+   newest phrase instead of making the output fall further behind.
 */
-function handleInterim(raw){
- const current=normalize(raw);
- if(!current)return;
- text.value=current;
- lastInterim=current;
+let pendingPhrase="";
+let speechWorker=false;
+let generationToken=0;
 
- const W=words(current);
- const safeCount=Math.max(0,W.length-2);
- const safe=W.slice(0,safeCount).join(" ");
- if(!safe)return;
-
- const already=spokenWords;
- if(W.length>already+2){
-  const piece=W.slice(already,safeCount).join(" ");
-  if(piece)queueSpeech(piece);
-  spokenWords=safeCount;
- }
-}
-
-function handleFinal(raw){
- const current=normalize(raw);
- if(!current)return;
- text.value=current;
- const W=words(current);
- const remaining=W.slice(Math.min(spokenWords,W.length)).join(" ");
- if(remaining)queueSpeech(remaining);
- spokenWords=W.length;
- lastInterim="";
-}
-
-let speechQueue=[],speechWorker=false;
-function queueSpeech(s){
+function queueLatest(s){
  s=normalize(s);
  if(!s)return;
- speechQueue.push(s);
- if(speechQueue.length>2)speechQueue.splice(0,speechQueue.length-2);
+
+ // Never let old speech accumulate. The newest text wins.
+ pendingPhrase=pendingPhrase ? normalize(pendingPhrase+" "+s) : s;
+
+ // Keep the pending buffer tiny so it follows the microphone.
+ const w=words(pendingPhrase);
+ if(w.length>3)pendingPhrase=w.slice(-3).join(" ");
+
  void drainSpeech();
 }
 
@@ -144,21 +117,58 @@ async function drainSpeech(){
  if(speechWorker)return;
  speechWorker=true;
  try{
-  while(running&&speechQueue.length){
-   const phrase=speechQueue.shift();
+  while(running && pendingPhrase){
+   const phrase=pendingPhrase;
+   pendingPhrase="";
+   const token=++generationToken;
+
    setStatus("Speaking: "+phrase);
-   await tts.generate(phrase,{voice:voiceRef,onChunk:(audio,meta)=>{
-    if(running)ttsPlayer?.play(audio,meta);
-   }});
-   if(running)ttsPlayer?.flush();
+
+   await tts.generate(phrase,{
+    voice:voiceRef,
+    onChunk:(audio,meta)=>{
+     // If newer speech arrived while this phrase was generating, don't
+     // add late audio from the stale phrase to the playback queue.
+     if(running && token===generationToken) ttsPlayer?.play(audio,meta);
+    }
+   });
+
+   // Only flush audio that belongs to the newest generation.
+   if(running && token===generationToken) ttsPlayer?.flush();
   }
  }catch(e){
   if(running)setStatus("PocketTTS error: "+(e.message||e));
  }finally{
   speechWorker=false;
-  if(running&&speechQueue.length)void drainSpeech();
+  if(running && pendingPhrase)void drainSpeech();
   else if(running)setStatus("Listening — speak now.");
  }
+}
+
+function commitInterim(raw){
+ const current=normalize(raw);
+ if(!current)return;
+ text.value=current;
+
+ const W=words(current);
+ // Commit only the oldest stable word(s), leaving the newest 2 words
+ // available for Chrome to revise.
+ const safeCount=Math.max(0,W.length-2);
+ if(safeCount<=spokenWords)return;
+
+ const piece=W.slice(spokenWords,safeCount).join(" ");
+ if(piece)queueLatest(piece);
+ spokenWords=safeCount;
+}
+
+function commitFinal(raw){
+ const current=normalize(raw);
+ if(!current)return;
+ text.value=current;
+ const W=words(current);
+ const remaining=W.slice(Math.min(spokenWords,W.length)).join(" ");
+ if(remaining)queueLatest(remaining);
+ spokenWords=W.length;
 }
 
 function startRecognition(){
@@ -171,16 +181,13 @@ function startRecognition(){
  recognition.interimResults=true;
  recognition.maxAlternatives=1;
 
- recognition.onstart=()=>{
-  recognitionStarted=true;
-  setStatus("Listening — speak now.");
- };
+ recognition.onstart=()=>setStatus("Listening — speak now.");
  recognition.onresult=e=>{
   for(let i=e.resultIndex;i<e.results.length;i++){
    const result=e.results[i],phrase=result[0]?.transcript?.trim();
    if(!phrase)continue;
-   if(result.isFinal)handleFinal(phrase);
-   else handleInterim(phrase);
+   if(result.isFinal)commitFinal(phrase);
+   else commitInterim(phrase);
   }
  };
  recognition.onerror=e=>{
@@ -192,14 +199,11 @@ function startRecognition(){
   if(running)setStatus("Reconnecting microphone recognition…");
  };
  recognition.onend=()=>{
-  recognitionStarted=false;
   if(!running)return;
   clearTimeout(restartTimer);
   restartTimer=setTimeout(()=>{
-   if(running){
-    try{recognition.start();}catch{}
-   }
-  },60);
+   if(running){try{recognition.start();}catch{}}
+  },40);
  };
  recognition.start();
 }
@@ -207,7 +211,7 @@ function startRecognition(){
 function stopRecognition(){
  clearTimeout(restartTimer);restartTimer=null;
  try{recognition?.stop();}catch{}
- recognition=null;recognitionStarted=false;
+ recognition=null;
 }
 
 async function startAll(){
@@ -215,7 +219,7 @@ async function startAll(){
  try{
   if(!reference.files?.[0])throw new Error("Choose your WAV voice reference first.");
   start.disabled=true;running=true;stop.disabled=false;
-  text.value="";spokenWords=0;lastInterim="";pendingText="";speechQueue=[];
+  text.value="";spokenWords=0;pendingPhrase="";generationToken++;
   setStatus("Loading your WAV voice…");
   await initTTS();
   if(!running)return;
@@ -226,7 +230,7 @@ async function startAll(){
   setStatus("Listening — speak now.");
  }catch(e){
   console.error(e);
-  running=false;stopRecognition();speechQueue=[];
+  running=false;stopRecognition();pendingPhrase="";generationToken++;
   try{ttsPlayer?.stop?.();}catch{}
   setStatus("Start error: "+(e.message||e));
   stop.disabled=true;updateStartButton();
@@ -234,7 +238,7 @@ async function startAll(){
 }
 
 async function stopAll(){
- running=false;stopRecognition();speechQueue=[];spokenWords=0;
+ running=false;stopRecognition();pendingPhrase="";spokenWords=0;generationToken++;
  try{await tts?.stop();}catch{}
  try{ttsPlayer?.stop?.();}catch{}
  stop.disabled=true;updateStartButton();
