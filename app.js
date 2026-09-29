@@ -195,18 +195,19 @@ async function drainSpeech(){
    if(running&&token===generationToken&&latestResultChunks.length){
     const generatedSamples=latestResultChunks.reduce((n,x)=>n+x.length,0);
     const generatedDuration=generatedSamples/tts.sampleRate;
-    const rate=clampRate(generatedDuration/targetDuration);
-    ttsPlayer?.setPlaybackRate?.(rate);
-    for(const chunk of latestResultChunks)ttsPlayer?.play(chunk);
+    const stretched=matchDurationPitchSafe(latestResultChunks,tts.sampleRate,targetDuration);
+    // The WAV itself is now the target duration. Playback stays at normal 1× speed.
+    ttsPlayer?.setPlaybackRate?.(1);
+    ttsPlayer?.play(stretched);
     ttsPlayer?.flush();
 
-    const blob=modToWavBlob(latestResultChunks,tts.sampleRate);
+    const blob=modToWavBlob([stretched],tts.sampleRate);
     if(resultUrl)URL.revokeObjectURL(resultUrl);
     resultUrl=URL.createObjectURL(blob);
     resultPlayer.src=resultUrl;
-    resultPlayer.playbackRate=rate;
+    resultPlayer.playbackRate=1;
     resultPlayer.preservesPitch=true;
-    resultInfo.textContent="Matched mic timing • mic "+targetDuration.toFixed(2)+"s → TTS "+generatedDuration.toFixed(2)+"s • "+Math.round(rate*100)+"% playback";
+    resultInfo.textContent="WAV duration matched • mic "+targetDuration.toFixed(2)+"s → file "+(stretched.length/tts.sampleRate).toFixed(2)+"s • normal pitch / 1× speed";
     setStatus("Listening — matched to your speaking time.");
    }
   }
@@ -217,6 +218,53 @@ async function drainSpeech(){
   if(running&&pendingPhrases.length)void drainSpeech();
   else if(running)setStatus("Listening — speak now.");
  }
+}
+
+function matchDurationPitchSafe(chunks,sampleRate,targetSeconds){
+ const list=(chunks||[]).filter(x=>x?.length);
+ const total=list.reduce((n,x)=>n+x.length,0);
+ if(!total)return new Float32Array(0);
+ const input=new Float32Array(total);
+ let at=0;
+ for(const x of list){input.set(x,at);at+=x.length;}
+ const target=Math.max(0.18,Number(targetSeconds)||input.length/sampleRate);
+ const targetLength=Math.max(1,Math.round(target*sampleRate));
+ if(targetLength===input.length)return input;
+
+ // Pitch-preserving granular time stretch. The waveform is rebuilt at the
+ // requested duration while keeping playback at 1×, so speeding it up does
+ // not turn the cloned voice into a chipmunk.
+ const grain=Math.max(256,Math.min(Math.round(sampleRate*.045),Math.floor(input.length/2)));
+ const overlap=Math.floor(grain*.5);
+ const analysisStep=Math.max(64,grain-overlap);
+ const synthesisStep=Math.max(64,Math.round(analysisStep*targetLength/input.length));
+ const output=new Float32Array(targetLength+grain);
+ const weights=new Float32Array(targetLength+grain);
+ let outPos=0,srcPos=0;
+ while(outPos<targetLength){
+  const center=Math.min(Math.max(0,Math.round(srcPos)),Math.max(0,input.length-grain));
+  for(let i=0;i<grain;i++){
+   const idx=center+i;
+   if(idx>=input.length)break;
+   const w=.5-.5*Math.cos(2*Math.PI*i/(grain-1));
+   output[outPos+i]+=input[idx]*w;
+   weights[outPos+i]+=w;
+  }
+  outPos+=synthesisStep;
+  srcPos+=analysisStep;
+ }
+ const result=new Float32Array(targetLength);
+ for(let i=0;i<targetLength;i++){
+  result[i]=weights[i]>.00001?Math.max(-1,Math.min(1,output[i]/weights[i])):0;
+ }
+ // Fade only the tiny boundary regions to avoid clicks.
+ const fade=Math.min(Math.floor(sampleRate*.008),Math.floor(result.length/2));
+ for(let i=0;i<fade;i++){
+  const w=i/fade;
+  result[i]*=w;
+  result[result.length-1-i]*=w;
+ }
+ return result;
 }
 
 function modToWavBlob(chunks,sampleRate){
