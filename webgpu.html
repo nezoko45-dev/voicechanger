@@ -2,42 +2,43 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>WebGPU Voice Converter</title>
+<title>WebGPU WAV Voice Converter</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#080a0f;color:#eee;font:15px system-ui,Segoe UI,sans-serif}
 .card{width:min(760px,94vw);padding:26px;border:1px solid #293142;border-radius:20px;background:#12151c;box-shadow:0 20px 70px #0009}
 h1{margin:0 0 6px}.sub{color:#9aa4b4;margin:0 0 18px}.badge{display:inline-block;padding:5px 9px;border-radius:999px;background:#14263a;color:#8ed0ff;font-size:12px;font-weight:800;margin-bottom:12px}
-.panel{padding:14px;border:1px solid #293142;border-radius:13px;background:#0d1016;margin-top:12px}
-label{display:block;color:#aeb8c7;font-size:13px;margin:10px 0 7px}
+.panel{padding:14px;border:1px solid #293142;border-radius:13px;background:#0d1016;margin-top:12px}label{display:block;color:#aeb8c7;font-size:13px;margin:10px 0 7px}
 input,select,button,audio{width:100%;padding:11px;border:1px solid #343d4d;border-radius:10px;background:#090c11;color:#fff;font:inherit}
 button{margin-top:10px;font-weight:800;cursor:pointer}.primary{background:#246bff;border-color:#3980ff}button:disabled{opacity:.45;cursor:not-allowed}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.status{margin-top:14px;padding:12px;border-radius:10px;background:#090c11;color:#b9c2cf;min-height:44px}
-.ok{color:#8ff0ad}.bad{color:#ff9c9c}.small{color:#788395;font-size:11px;line-height:1.5;margin-top:8px}
-pre{white-space:pre-wrap;word-break:break-word;font:11px ui-monospace,Consolas,monospace;color:#9eabc0;margin:8px 0 0}
+.small{color:#788395;font-size:11px;line-height:1.5;margin-top:8px}pre{white-space:pre-wrap;word-break:break-word;font:11px ui-monospace,Consolas,monospace;color:#9eabc0;margin:8px 0 0}
+a.download{display:block;text-align:center;text-decoration:none;margin-top:10px;padding:11px;border:1px solid #343d4d;border-radius:10px;background:#090c11;color:#8ed0ff;font-weight:800}
 </style>
 </head>
 <body><main class="card">
-<div class="badge">CHROME • WEBGPU • NO WASM FALLBACK</div>
-<h1>⚡ WebGPU Voice Converter</h1>
-<p class="sub">Experimental browser voice conversion. GPU inference is mandatory; this build never silently falls back to WASM.</p>
+<div class="badge">WAV • CHROME • WEBGPU • NO WASM FALLBACK</div>
+<h1>⚡ WebGPU WAV Voice Converter</h1>
+<p class="sub">Load a WAV file, run an ONNX audio model on your GPU, then play or save the converted WAV.</p>
 <div class="panel">
+<label>Input WAV</label>
+<input id="inputWav" type="file" accept=".wav,audio/wav,audio/x-wav">
 <label>ONNX voice-conversion model</label>
 <input id="model" type="file" accept=".onnx,application/octet-stream">
-<div class="small">Use an ONNX audio-to-audio voice model whose graph supports ONNX Runtime WebGPU. RVC models may expose multiple inputs and may require the full RVC pipeline.</div>
+<div class="small">This page expects a model with one audio input and one audio output. It runs WebGPU only; WASM is not registered.</div>
 </div>
 <div class="panel">
-<label>Microphone</label><select id="mic"><option value="">Default microphone</option></select>
 <label>Chrome output</label><select id="output"><option value="">Default Windows output</option></select>
-</div>
 <button id="chooseOutput">CHOOSE CHROME SPEAKER</button>
-<div class="row"><button id="start" class="primary">START WEBGPU</button><button id="micBtn" disabled>START MIC</button></div>
-<button id="stop" disabled>STOP</button>
+</div>
+<div class="row"><button id="start" class="primary">CONVERT WAV</button><button id="stop" disabled>STOP</button></div>
 <div class="panel">
-<label>Converted audio</label><audio id="player" controls></audio>
+<label>Converted WAV</label>
+<audio id="player" controls></audio>
+<a id="download" class="download" hidden>DOWNLOAD CONVERTED WAV</a>
 <pre id="diagnostic">WebGPU has not been tested yet.</pre>
 </div>
-<div class="status" id="status">Choose an ONNX model, then press START WEBGPU.</div>
-<div class="small">Architecture: microphone → WebGPU ONNX inference → Chrome audio player → selected Chrome output. Raw microphone audio is never played.</div>
+<div class="status" id="status">Choose an input WAV and ONNX model, then press CONVERT WAV.</div>
+<div class="small">Pipeline: WAV file → WebGPU ONNX inference → WAV file → Chrome audio player. No microphone audio is used or played.</div>
 </main>
-<script type="module" src="webgpu.js?v=1"></script>
+<script type="module" src="webgpu.js?v=wav-20260929-1"></script>
 </body></html>
