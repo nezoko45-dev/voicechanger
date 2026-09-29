@@ -5,7 +5,7 @@ const AGENT_URL="wss://agent.deepgram.com/v1/agent/converse";
 const TTS_URL="./pocket-tts/index.js";
 const TARGET_RATE=16000;
 
-let socket=null,micStream=null,micContext=null,micSource=null,processor=null;
+let socket=null,micStream=null,micContext=null,micSource=null,processor=null,muteGain=null;
 let tts=null,voiceRef=null,ttsPlayer=null,running=false,ttsBusy=false,ttsQueue=[];
 let reconnectTimer=null,reconnectDelay=500,reconnectGeneration=0,keepAliveTimer=null;
 
@@ -88,17 +88,20 @@ async function startMic(){
  await micContext.resume();
  micSource=micContext.createMediaStreamSource(micStream);
  processor=micContext.createScriptProcessor(4096,1,1);
+ muteGain=micContext.createGain();
+ muteGain.gain.value=0;
  processor.onaudioprocess=e=>{
   if(!running||!socket||socket.readyState!==WebSocket.OPEN)return;
   const pcm=downsampleFloat32To16(e.inputBuffer.getChannelData(0),micContext.sampleRate);
   socket.send(pcm.buffer);
  };
  micSource.connect(processor);
- processor.connect(micContext.destination);
+ processor.connect(muteGain);
+ muteGain.connect(micContext.destination);
 }
 function stopMic(){
- try{processor?.disconnect();}catch{}try{micSource?.disconnect();}catch{}
- processor=null;micSource=null;
+ try{processor?.disconnect();}catch{}try{muteGain?.disconnect();}catch{}try{micSource?.disconnect();}catch{}
+ processor=null;muteGain=null;micSource=null;
  micStream?.getTracks().forEach(t=>t.stop());micStream=null;
  if(micContext){try{micContext.close();}catch{}micContext=null;}
 }
