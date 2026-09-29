@@ -1,13 +1,13 @@
 const $=id=>document.getElementById(id);
 const mic=$("mic"),output=$("output"),chooseOutput=$("chooseOutput"),start=$("start"),stop=$("stop"),test=$("test"),status=$("status"),gpu=$("gpu");
-const modelInput=$("model"),contentVecInput=$("contentVec"),rmvpeInput=$("rmvpe");
+const modelInput=$("model");
 const pitch=$("pitch"),chunk=$("chunk"),pitchValue=$("pitchValue"),chunkValue=$("chunkValue");
 let rvc=null,mediaStream=null,captureContext=null,sourceNode=null,processorNode=null;
 let running=false,processing=false,queue=[],captureBuffer=[],lastOutputAt=0;
 
 const CONTENTVEC_URL="https://huggingface.co/NaruseMioShirakana/MoeSS-SUBModel/resolve/main/vec-768-layer-12.onnx";
 const RMVPE_URL="https://huggingface.co/NaruseMioShirakana/MoeSS-SUBModel/resolve/main/RMVPE.onnx";
-let autoContentVec=null,autoRMVPE=null;
+let autoContentVec=null,autoRMVPE=null,supportModelsReady=false;
 
 function setStatus(v){status.textContent=v;}
 function setGpu(v){gpu.textContent=v;}
@@ -36,33 +36,19 @@ async function loadModel(url,label){
 }
 
 async function ensureSupportModels(){
- if(!autoContentVec){
-  setStatus("Loading ContentVec model… first time only.");
-  autoContentVec=await loadModel(CONTENTVEC_URL,"vec-768-layer-12.onnx");
- }
- if(!autoRMVPE){
-  setStatus("Loading RMVPE model… first time only.");
-  autoRMVPE=await loadModel(RMVPE_URL,"RMVPE.onnx");
- }
- if(!autoContentVec||!autoRMVPE)throw new Error("Could not auto-load ContentVec/RMVPE. Upload both ONNX files manually.");
+ if(supportModelsReady&&autoContentVec&&autoRMVPE)return;
+ setStatus("Downloading ContentVec…");
+ const [contentVec,rmvpe]=await Promise.all([
+  autoContentVec||loadModel(CONTENTVEC_URL,"vec-768-layer-12.onnx"),
+  autoRMVPE||loadModel(RMVPE_URL,"RMVPE.onnx")
+ ]);
+ autoContentVec=contentVec;
+ autoRMVPE=rmvpe;
+ if(!autoContentVec||!autoRMVPE)throw new Error("Automatic support-model download failed. Check your internet connection.");
+ supportModelsReady=true;
+ setStatus("Support models ready. Choose your RVC voice model.");
 }
-
-function selectedFile(input,autoFile){return input.files?.[0]||autoFile;}
-
-async function loadDevices(){
- try{
-  const ds=await navigator.mediaDevices.enumerateDevices();
-  const oldMic=mic.value,oldOut=output.value;
-  mic.innerHTML="";
-  const ins=ds.filter(d=>d.kind==="audioinput");
-  ins.forEach((d,i)=>{const o=document.createElement("option");o.value=d.deviceId;o.textContent=d.label||("Microphone "+(i+1));mic.appendChild(o);});
-  if(!mic.options.length)mic.innerHTML='<option value="">Default microphone</option>';
-  if(oldMic&&[...mic.options].some(o=>o.value===oldMic))mic.value=oldMic;
-  output.innerHTML='<option value="">Default Windows output</option>';
-  ds.filter(d=>d.kind==="audiooutput").forEach((d,i)=>{const o=document.createElement("option");o.value=d.deviceId;o.textContent=d.label||("Output "+(i+1));output.appendChild(o);});
-  if(oldOut&&[...output.options].some(o=>o.value===oldOut))output.value=oldOut;
- }catch(e){console.warn(e);}
-}
+function selectedFile(input){return input.files?.[0]||null;}
 
 async function chooseWindowsOutput(){
  if(!navigator.mediaDevices?.selectAudioOutput){setStatus("Chrome speaker picker is unavailable here. The default Windows output will be used.");return;}
@@ -239,6 +225,4 @@ start.onclick=startRVC;stop.onclick=stopRVC;test.onclick=testChromeAudio;
 chooseOutput.onclick=chooseWindowsOutput;
 output.addEventListener("change",setOutputDevice);
 navigator.mediaDevices?.addEventListener?.("devicechange",loadDevices);
-contentVecInput.addEventListener("change",()=>{$("contentVecStatus").textContent=contentVecInput.files?.[0]?"Using uploaded ContentVec: "+contentVecInput.files[0].name:"Auto-download enabled.";});
-rmvpeInput.addEventListener("change",()=>{$("rmvpeStatus").textContent=rmvpeInput.files?.[0]?"Using uploaded RMVPE: "+rmvpeInput.files[0].name:"Auto-download enabled.";});
-void loadDevices();void checkWebGPU();
+void loadDevices();void checkWebGPU();void ensureSupportModels().catch(e=>setStatus("Support model download failed: "+(e.message||e)));
