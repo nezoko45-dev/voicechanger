@@ -50,6 +50,51 @@ async function ensureSupportModels(){
 }
 function selectedFile(input){return input.files?.[0]||null;}
 
+async function loadDevices(){
+  if(!navigator.mediaDevices?.enumerateDevices){
+    setStatus("Chrome device access is unavailable in this page.");
+    return;
+  }
+  try{
+    const devices=await navigator.mediaDevices.enumerateDevices();
+    const currentMic=mic.value;
+    const currentOutput=output.value;
+    const inputs=devices.filter(d=>d.kind==="audioinput");
+    const outputs=devices.filter(d=>d.kind==="audiooutput");
+
+    mic.innerHTML="";
+    const micDefault=document.createElement("option");
+    micDefault.value="";
+    micDefault.textContent="Default microphone";
+    mic.appendChild(micDefault);
+    for(const d of inputs){
+      const o=document.createElement("option");
+      o.value=d.deviceId;
+      o.textContent=d.label||("Microphone "+(inputs.indexOf(d)+1));
+      mic.appendChild(o);
+    }
+    if(currentMic && [...mic.options].some(o=>o.value===currentMic)) mic.value=currentMic;
+
+    output.innerHTML="";
+    const outDefault=document.createElement("option");
+    outDefault.value="";
+    outDefault.textContent="Default Windows output";
+    output.appendChild(outDefault);
+    for(const d of outputs){
+      const o=document.createElement("option");
+      o.value=d.deviceId;
+      o.textContent=d.label||("Speaker / output "+(outputs.indexOf(d)+1));
+      output.appendChild(o);
+    }
+    if(currentOutput && [...output.options].some(o=>o.value===currentOutput)) output.value=currentOutput;
+
+    setStatus("Audio devices ready. Choose your microphone and speaker.");
+  }catch(e){
+    console.warn("Device enumeration failed",e);
+    setStatus("Could not load Chrome audio devices: "+(e.message||e));
+  }
+}
+
 async function chooseWindowsOutput(){
  if(!navigator.mediaDevices?.selectAudioOutput){setStatus("Chrome speaker picker is unavailable here. The default Windows output will be used.");return;}
  try{
