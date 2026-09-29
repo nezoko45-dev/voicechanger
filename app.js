@@ -4,13 +4,12 @@ const TTS_URL="./pocket-tts/index.js";
 
 let tts=null,voiceRef=null,ttsPlayer=null,running=false;
 let recognition=null,restartTimer=null;
-let spokenWords=0;
 let latestResultChunks=[],latestResultToken=0,resultUrl="";
 
-// Real microphone timing. This measures the actual incoming mic waveform rather
-// than assuming a fixed TTS speed.
+// Chrome mic tone/speech activity detection. This is used only to detect
+// when the user is actually speaking; it never changes the generated WAV speed.
 let micStream=null,micContext=null,micAnalyser=null,micTimer=null;
-let micSpeechStart=0,micLastVoice=0,micSpeechActive=false,micLastQueuedElapsed=0;
+let micSpeechStart=0,micLastVoice=0,micSpeechActive=false;
 const MIC_THRESHOLD=.022;
 const MIC_SILENCE_MS=280;
 
@@ -54,9 +53,7 @@ async function chooseChromeSpeaker(){
 async function startMicTiming(){
  if(!navigator.mediaDevices?.getUserMedia)throw new Error("Chrome microphone access is unavailable.");
  await stopMicTiming();
- micStream=await navigator.mediaDevices.getUserMedia({
-  audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}
- });
+ micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
  micContext=new AudioContext({latencyHint:"interactive"});
  micAnalyser=micContext.createAnalyser();
  micAnalyser.fftSize=1024;
@@ -64,7 +61,7 @@ async function startMicTiming(){
  const source=micContext.createMediaStreamSource(micStream);
  source.connect(micAnalyser);
  const data=new Float32Array(micAnalyser.fftSize);
- micSpeechStart=0;micLastVoice=0;micSpeechActive=false;micLastQueuedElapsed=0;
+ micSpeechStart=0;micLastVoice=0;micSpeechActive=false;
  const tick=()=>{
   if(!micAnalyser)return;
   micAnalyser.getFloatTimeDomainData(data);
@@ -73,11 +70,7 @@ async function startMicTiming(){
   const rms=Math.sqrt(sum/data.length);
   const now=performance.now();
   if(rms>=MIC_THRESHOLD){
-   if(!micSpeechActive){
-    micSpeechActive=true;
-    micSpeechStart=now;
-    micLastQueuedElapsed=0;
-   }
+   if(!micSpeechActive){micSpeechActive=true;micSpeechStart=now;}
    micLastVoice=now;
   }else if(micSpeechActive&&now-micLastVoice>=MIC_SILENCE_MS){
    micSpeechActive=false;
@@ -87,29 +80,13 @@ async function startMicTiming(){
  tick();
 }
 
-function currentMicSpeechElapsed(){
- if(!micSpeechStart)return 0;
- const end=micSpeechActive?Math.max(micLastVoice,performance.now()):micLastVoice;
- return Math.max(0,(end-micSpeechStart)/1000);
-}
-
 async function stopMicTiming(){
  if(micTimer){cancelAnimationFrame(micTimer);micTimer=null;}
  try{micStream?.getTracks().forEach(t=>t.stop());}catch{}
  micStream=null;
  try{await micContext?.close();}catch{}
  micContext=null;micAnalyser=null;
- micSpeechActive=false;micSpeechStart=0;micLastVoice=0;micLastQueuedElapsed=0;
-}
-
-function takeChunkDuration(final=false){
- let total=currentMicSpeechElapsed();
- if(total<=0)return .75;
- let duration=final?total-micLastQueuedElapsed:total-micLastQueuedElapsed;
- if(final)duration+=.12;
- duration=Math.max(.22,duration);
- micLastQueuedElapsed=total;
- return duration;
+ micSpeechActive=false;micSpeechStart=0;micLastVoice=0;
 }
 
 async function initTTS(){
@@ -160,10 +137,10 @@ let pendingPhrases=[];
 let speechWorker=false;
 let generationToken=0;
 
-function queueLatest(s,targetDuration){
+function queueLatest(s){
  s=normalize(s);
  if(!s)return;
- pendingPhrases.push({text:s,duration:Math.max(.22,Number(targetDuration)||.75)});
+ pendingPhrases.push({text:s});
  if(pendingPhrases.length>3)pendingPhrases.splice(0,pendingPhrases.length-3);
  void drainSpeech();
 }
@@ -179,7 +156,6 @@ async function drainSpeech(){
   while(running&&pendingPhrases.length){
    const item=pendingPhrases.shift();
    const phrase=item.text;
-   const targetDuration=item.duration;
    const token=++generationToken;
    latestResultChunks=[];
    latestResultToken=token;
@@ -193,22 +169,22 @@ async function drainSpeech(){
     }
    });
    if(running&&token===generationToken&&latestResultChunks.length){
-    const generatedSamples=latestResultChunks.reduce((n,x)=>n+x.length,0);
-    const generatedDuration=generatedSamples/tts.sampleRate;
-    const stretched=matchDurationPitchSafe(latestResultChunks,tts.sampleRate,targetDuration);
-    // The WAV itself is now the target duration. Playback stays at normal 1× speed.
+    // Keep PocketTTS at its natural generated duration. There is NO mic-duration
+    // matching or time-stretching, so the cloned voice cannot be rushed by timing.
+    const naturalAudio=latestResultChunks.slice();
     ttsPlayer?.setPlaybackRate?.(1);
-    ttsPlayer?.play(stretched);
+    ttsPlayer?.play(naturalAudio);
     ttsPlayer?.flush();
 
-    const blob=modToWavBlob([stretched],tts.sampleRate);
+    const blob=modToWavBlob(naturalAudio,tts.sampleRate);
     if(resultUrl)URL.revokeObjectURL(resultUrl);
     resultUrl=URL.createObjectURL(blob);
     resultPlayer.src=resultUrl;
     resultPlayer.playbackRate=1;
     resultPlayer.preservesPitch=true;
-    resultInfo.textContent="WAV duration matched • mic "+targetDuration.toFixed(2)+"s → file "+(stretched.length/tts.sampleRate).toFixed(2)+"s • normal pitch / 1× speed";
-    setStatus("Listening — matched to your speaking time.");
+    const generatedSeconds=latestResultChunks.reduce((n,x)=>n+x.length,0)/tts.sampleRate;
+    resultInfo.textContent="Natural PocketTTS duration • "+generatedSeconds.toFixed(2)+"s • normal pitch / 1× speed";
+    setStatus("Listening — natural PocketTTS timing.");
    }
   }
  }catch(e){
@@ -218,59 +194,6 @@ async function drainSpeech(){
   if(running&&pendingPhrases.length)void drainSpeech();
   else if(running)setStatus("Listening — speak now.");
  }
-}
-
-function matchDurationPitchSafe(chunks,sampleRate,targetSeconds){
- const list=(chunks||[]).filter(x=>x?.length);
- const total=list.reduce((n,x)=>n+x.length,0);
- if(!total)return new Float32Array(0);
- const input=new Float32Array(total);
- let at=0;
- for(const x of list){input.set(x,at);at+=x.length;}
- const requestedTarget=Math.max(0.18,Number(targetSeconds)||input.length/sampleRate);
- // Do not force a generated sentence to race unnaturally fast. The WAV still
- // follows the user's timing, but we keep the compression within a natural
- // range so full sentences remain intelligible.
- const generatedSeconds=input.length/sampleRate;
- const minimumNaturalSeconds=generatedSeconds*.90;
- const target=Math.max(requestedTarget,minimumNaturalSeconds);
- const targetLength=Math.max(1,Math.round(target*sampleRate));
- if(targetLength===input.length)return input;
-
- // Pitch-preserving granular time stretch. The waveform is rebuilt at the
- // requested duration while keeping playback at 1×, so speeding it up does
- // not turn the cloned voice into a chipmunk.
- const grain=Math.max(256,Math.min(Math.round(sampleRate*.045),Math.floor(input.length/2)));
- const overlap=Math.floor(grain*.5);
- const analysisStep=Math.max(64,grain-overlap);
- const synthesisStep=Math.max(64,Math.round(analysisStep*targetLength/input.length));
- const output=new Float32Array(targetLength+grain);
- const weights=new Float32Array(targetLength+grain);
- let outPos=0,srcPos=0;
- while(outPos<targetLength){
-  const center=Math.min(Math.max(0,Math.round(srcPos)),Math.max(0,input.length-grain));
-  for(let i=0;i<grain;i++){
-   const idx=center+i;
-   if(idx>=input.length)break;
-   const w=.5-.5*Math.cos(2*Math.PI*i/(grain-1));
-   output[outPos+i]+=input[idx]*w;
-   weights[outPos+i]+=w;
-  }
-  outPos+=synthesisStep;
-  srcPos+=analysisStep;
- }
- const result=new Float32Array(targetLength);
- for(let i=0;i<targetLength;i++){
-  result[i]=weights[i]>.00001?Math.max(-1,Math.min(1,output[i]/weights[i])):0;
- }
- // Fade only the tiny boundary regions to avoid clicks.
- const fade=Math.min(Math.floor(sampleRate*.008),Math.floor(result.length/2));
- for(let i=0;i<fade;i++){
-  const w=i/fade;
-  result[i]*=w;
-  result[result.length-1-i]*=w;
- }
- return result;
 }
 
 function modToWavBlob(chunks,sampleRate){
@@ -308,11 +231,9 @@ function commitFinal(raw){
  if(!current)return;
  text.value=current;
 
- // Generate the COMPLETE recognized sentence as one unit. Its target WAV
- // duration is the actual amount of time spent speaking since the mic speech
- // segment began, so the resulting file matches the user's sentence timing.
- const duration=takeChunkDuration(true);
- queueLatest(current,duration);
+ // Generate the COMPLETE recognized sentence as one unit. The mic tone detector
+ // is used only for speech activity; it does NOT control the generated duration.
+ queueLatest(current);
  spokenWords=words(current).length;
 }
 
@@ -395,7 +316,7 @@ async function startAll(){
  try{
   if(!reference.files?.[0])throw new Error("Choose your WAV voice reference first.");
   start.disabled=true;running=true;stop.disabled=false;
-  text.value="";spokenWords=0;pendingPhrases=[];generationToken++;
+  text.value="";pendingPhrases=[];generationToken++;
   latestResultChunks=[];
   setStatus("Opening your microphone…");
   await startMicTiming();
@@ -405,7 +326,7 @@ async function startAll(){
   if(!running)return;
   await loadOutputs();await setOutput();
   startRecognition();
-  setStatus("Listening — your mic timing is now tracked automatically.");
+  setStatus("Listening — natural voice timing.");
  }catch(e){
   console.error(e);
   running=false;stopRecognition();pendingPhrases=[];generationToken++;
@@ -417,7 +338,7 @@ async function startAll(){
 }
 
 async function stopAll(){
- running=false;stopRecognition();pendingPhrases=[];spokenWords=0;generationToken++;
+ running=false;stopRecognition();pendingPhrases=[];generationToken++;
  try{await tts?.stop();}catch{}
  try{ttsPlayer?.stop?.();}catch{}
  await stopMicTiming();
