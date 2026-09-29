@@ -2,7 +2,7 @@ const $=id=>document.getElementById(id);
 const mic=$("mic"),start=$("start"),stop=$("stop"),status=$("status"),transcript=$("transcript");
 
 let tts=null,voice=null,player=null,recognition=null,mediaStream=null,captureContext=null,captureNode=null;
-let listening=false,generating=false,lastText="",restartTimer=null;
+let listening=false,generating=false,lastText="",restartTimer=null,ttsChunks=0;
 
 function setStatus(v){status.textContent=v;}
 
@@ -155,9 +155,9 @@ function stopListening(){
  if(captureContext){try{captureContext.close();}catch{}captureContext=null;}
  if(mediaStream){mediaStream.getTracks().forEach(t=>t.stop());mediaStream=null;}
  if(player)player.stop();
- generating=false;start.disabled=false;stop.disabled=true;setStatus("Stopped.");
+ generating=false;start.disabled=false;stop.disabled=true;if(test)test.disabled=true;setStatus("Stopped.");
 }
 
-start.onclick=startListening;stop.onclick=stopListening;
+start.onclick=startListening;stop.onclick=stopListening;\nconst test=$("test");\nif(test)test.onclick=()=>speak("Hello! This is your local PocketTTS voice.");
 navigator.mediaDevices.addEventListener?.("devicechange",loadDevices);
 loadDevices();
