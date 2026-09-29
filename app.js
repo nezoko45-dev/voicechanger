@@ -1,7 +1,7 @@
 const $=id=>document.getElementById(id);
 const reference=$("reference"),output=$("output"),chooseOutput=$("chooseOutput"),text=$("text"),start=$("start"),stop=$("stop"),status=$("status"),info=$("info"),meterBar=$("meterBar"),resultPlayer=$("resultPlayer"),resultInfo=$("resultInfo");
 const TTS_URL="./pocket-tts/index.js";
-const BUILD="stream-wav-tts-20260929-2";
+const BUILD="stream-stt-wav-tts-20260929-3";
 
 let tts=null,voiceRef=null,ttsPlayer=null,running=false;
 let recognition=null,restartTimer=null;
@@ -11,6 +11,8 @@ let latestResultChunks=[],latestResultToken=0,resultUrl="";
 // when the user is actually speaking; it never changes the generated WAV speed.
 let micStream=null,micContext=null,micAnalyser=null,micTimer=null;
 let micSpeechStart=0,micLastVoice=0,micSpeechActive=false;
+let latestInterimText="",lastQueuedSpeech="";
+let silenceCommitTimer=null;
 const MIC_THRESHOLD=.022;
 const MIC_SILENCE_MS=280;
 
@@ -75,6 +77,7 @@ async function startMicTiming(){
    micLastVoice=now;
   }else if(micSpeechActive&&now-micLastVoice>=MIC_SILENCE_MS){
    micSpeechActive=false;
+   commitStreamingPhrase();
   }
   micTimer=requestAnimationFrame(tick);
  };
@@ -83,11 +86,13 @@ async function startMicTiming(){
 
 async function stopMicTiming(){
  if(micTimer){cancelAnimationFrame(micTimer);micTimer=null;}
+ clearTimeout(silenceCommitTimer);silenceCommitTimer=null;
  try{micStream?.getTracks().forEach(t=>t.stop());}catch{}
  micStream=null;
  try{await micContext?.close();}catch{}
  micContext=null;micAnalyser=null;
  micSpeechActive=false;micSpeechStart=0;micLastVoice=0;
+ latestInterimText="";lastQueuedSpeech="";
 }
 
 async function unlockAudioOutput(){
@@ -234,20 +239,26 @@ function modToWavBlob(chunks,sampleRate){
 function commitInterim(raw){
  const current=normalize(raw);
  if(!current)return;
- // Show the live sentence, but DO NOT generate partial phrases.
- // This keeps the cloned voice from speaking word-by-word.
+ latestInterimText=current;
  text.value=current;
+}
+
+function commitStreamingPhrase(){
+ const current=normalize(latestInterimText);
+ if(!current||current===lastQueuedSpeech)return;
+ lastQueuedSpeech=current;
+ queueLatest(current);
 }
 
 function commitFinal(raw){
  const current=normalize(raw);
  if(!current)return;
  text.value=current;
-
- // Generate the COMPLETE recognized sentence as one unit. The mic tone detector
- // is used only for speech activity; it does NOT control the generated duration.
- queueLatest(current);
- spokenWords=words(current).length;
+ latestInterimText=current;
+ if(current!==lastQueuedSpeech){
+  lastQueuedSpeech=current;
+  queueLatest(current);
+ }
 }
 
 let recognitionGeneration=0;
@@ -291,8 +302,11 @@ function startRecognition(){
   for(let i=e.resultIndex;i<e.results.length;i++){
    const result=e.results[i],phrase=result[0]?.transcript?.trim();
    if(!phrase)continue;
-   if(result.isFinal)commitFinal(phrase);
-   else commitInterim(phrase);
+   if(result.isFinal){
+    commitFinal(phrase);
+   }else{
+    commitInterim(phrase);
+   }
   }
  };
 
@@ -344,6 +358,7 @@ async function startAll(){
   if(!reference.files?.[0])throw new Error("Choose your WAV voice reference first.");
   start.disabled=true;running=true;stop.disabled=false;
   text.value="";pendingPhrases=[];generationToken++;
+  latestInterimText="";lastQueuedSpeech="";
   latestResultChunks=[];
   setStatus("Unlocking Chrome audio…");
   // Do this immediately from the START click so Chrome keeps the output context
