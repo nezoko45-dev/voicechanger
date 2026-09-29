@@ -1,6 +1,7 @@
 const $=id=>document.getElementById(id);
 const reference=$("reference"),output=$("output"),chooseOutput=$("chooseOutput"),text=$("text"),start=$("start"),stop=$("stop"),status=$("status"),info=$("info"),meterBar=$("meterBar"),resultPlayer=$("resultPlayer"),resultInfo=$("resultInfo");
 const TTS_URL="./pocket-tts/index.js";
+const BUILD="auto-wav-tts-20260929-1";
 
 let tts=null,voiceRef=null,ttsPlayer=null,running=false;
 let recognition=null,restartTimer=null;
@@ -87,6 +88,12 @@ async function stopMicTiming(){
  try{await micContext?.close();}catch{}
  micContext=null;micAnalyser=null;
  micSpeechActive=false;micSpeechStart=0;micLastVoice=0;
+}
+
+async function unlockAudioOutput(){
+ if(!ttsPlayer)return;
+ await ttsPlayer.resume();
+ await setOutput();
 }
 
 async function initTTS(){
@@ -178,16 +185,20 @@ async function drainSpeech(){
     ttsPlayer?.play(naturalAudio);
     // Do not flush here: flush can move the scheduling clock while a sentence is
     // being queued. Let the player keep the audio clock naturally.
-    try{await resultPlayer.play();}catch(e){console.warn("MediaPlayer autoplay:",e);}
 
+    // Put the freshly generated WAV on the MediaPlayer BEFORE asking Chrome to play.
+    // This also gives the user a second, independently verifiable playback path.
     const blob=modToWavBlob(naturalAudio,tts.sampleRate);
     if(resultUrl)URL.revokeObjectURL(resultUrl);
     resultUrl=URL.createObjectURL(blob);
     resultPlayer.src=resultUrl;
+    resultPlayer.load();
     resultPlayer.playbackRate=1;
     resultPlayer.preservesPitch=true;
-    const generatedSeconds=latestResultChunks.reduce((n,x)=>n+x.length,0)/tts.sampleRate;
-    resultInfo.textContent="Natural PocketTTS duration • "+generatedSeconds.toFixed(2)+"s • normal pitch / 1× speed";
+    try{await resultPlayer.play();}catch(e){console.warn("MediaPlayer autoplay:",e);}
+    const generatedSamples=latestResultChunks.reduce((n,x)=>n+x.length,0);
+    const generatedSeconds=generatedSamples/tts.sampleRate;
+    resultInfo.textContent="Generated "+generatedSamples.toLocaleString()+" samples • "+generatedSeconds.toFixed(2)+"s • YOUR WAV voice • 1× speed";
     setStatus("Listening — natural PocketTTS timing.");
    }
   }
@@ -336,6 +347,12 @@ async function startAll(){
   start.disabled=true;running=true;stop.disabled=false;
   text.value="";pendingPhrases=[];generationToken++;
   latestResultChunks=[];
+  setStatus("Unlocking Chrome audio…");
+  // Do this immediately from the START click so Chrome keeps the output context
+  // in the user-activated state while PocketTTS downloads/initializes.
+  const unlockContext=new AudioContext({latencyHint:"interactive"});
+  if(unlockContext.state!=="running")await unlockContext.resume();
+  await unlockContext.close();
   setStatus("Opening your microphone…");
   await startMicTiming();
   await initTTS();
@@ -343,6 +360,7 @@ async function startAll(){
   await prepareVoice();
   if(!running)return;
   await loadOutputs();await setOutput();
+  await unlockAudioOutput();
   startRecognition();
   setStatus("Listening — natural voice timing.");
  }catch(e){
