@@ -1,7 +1,8 @@
 const $=id=>document.getElementById(id);
-const textInput=$("text"),playRef=$("playRef"),start=$("start"),stop=$("stop"),status=$("status");
+const mic=$("mic"),start=$("start"),stop=$("stop"),status=$("status"),transcript=$("transcript");
 
-let tts=null,voice=null,player=null,busy=false;
+let tts=null,voice=null,player=null,recognition=null,mediaStream=null,captureContext=null,captureNode=null;
+let listening=false,generating=false,lastText="",restartTimer=null;
 
 function setStatus(v){status.textContent=v;}
 
@@ -10,90 +11,153 @@ async function loadPocketTTS(){
  setStatus("Loading PocketTTS... first load only.");
  const mod=await import("./pocket-tts/index.js");
  tts=new mod.PocketTTS({
-  language:"english_2026-04",
-  quantized:true,
-  voiceCloning:true,
-  cache:true,
-  cacheName:"pocket-tts-safe-v2",
-  maxThreads:2,
-  deferSynthesis:true,
-  maxReferenceSeconds:6,
+  language:"english_2026-04",quantized:true,voiceCloning:true,cache:true,
+  cacheName:"pocket-tts-safe-v2",maxThreads:2,deferSynthesis:true,maxReferenceSeconds:6,
   modelBaseUrl:"https://huggingface.co/akrv/pocket-tts-onnx/resolve/main/onnx",
   ortBaseUrl:"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.0/dist/"
  });
- await tts.load(p=>{
-  if(p.total)setStatus("Loading PocketTTS: "+Math.round(p.loaded/p.total*100)+"%");
- });
+ await tts.load(p=>{if(p.total)setStatus("Loading PocketTTS: "+Math.round(p.loaded/p.total*100)+"%");});
  const r=await fetch("./Recording%20(10).wav");
  if(!r.ok)throw new Error("Recording (10).wav could not be loaded.");
- const ctx=new AudioContext();
- const decoded=await ctx.decodeAudioData(await r.arrayBuffer());
- voice=await tts.cloneVoice(
-  decoded.getChannelData(0).slice(),
-  {inputSampleRate:decoded.sampleRate,name:"recording-10"}
- );
- await ctx.close();
- await tts.finishLoad();
- setStatus("PocketTTS ready.");
+ const ctx=new AudioContext(),decoded=await ctx.decodeAudioData(await r.arrayBuffer());
+ voice=await tts.cloneVoice(decoded.getChannelData(0).slice(),{inputSampleRate:decoded.sampleRate,name:"recording-10"});
+ await ctx.close();await tts.finishLoad();
 }
 
 async function ensurePlayer(){
- if(!player){
-  const mod=await import("./pocket-tts/index.js");
-  player=new mod.StreamingPlayer({sampleRate:tts.sampleRate});
- }
+ if(!player){const mod=await import("./pocket-tts/index.js");player=new mod.StreamingPlayer({sampleRate:tts.sampleRate});}
  await player.resume();
 }
 
-async function playReference(){
- try{
-  const audio=new Audio("./Recording%20(10).wav");
-  audio.preload="auto";
-  await audio.play();
-  setStatus("Playing Recording (10).wav...");
-  audio.onended=()=>setStatus("Ready.");
- }catch(e){
-  setStatus("Reference playback error: "+(e.message||e));
- }
+function captureWorkletSource(){
+ return `class MicCapture extends AudioWorkletProcessor{
+  constructor(){super();this.active=true;}
+  process(inputs,outputs){
+   const input=inputs[0]?.[0],out=outputs[0]?.[0];
+   if(out)out.fill(0);
+   if(input&&this.active){
+    let sum=0;
+    for(let i=0;i<input.length;i++)sum+=input[i]*input[i];
+    this.port.postMessage({rms:Math.sqrt(sum/input.length)});
+   }
+   return true;
+  }
+ }registerProcessor("mic-capture",MicCapture);`;
 }
 
-async function generate(){
- if(busy)return;
- const text=String(textInput.value||"").replace(/\s+/g," ").trim();
- if(!text){setStatus("Type something for the cloned voice to say.");textInput.focus();return;}
- busy=true;start.disabled=true;stop.disabled=false;
+async function startAudioWorklet(){
+ mediaStream=await navigator.mediaDevices.getUserMedia({
+  audio:{deviceId:mic.value?{exact:mic.value}:undefined,channelCount:1,
+   echoCancellation:true,noiseSuppression:true,autoGainControl:true}
+ });
+ captureContext=new AudioContext({latencyHint:"interactive"});
+ await captureContext.resume();
+ const url=URL.createObjectURL(new Blob([captureWorkletSource()],{type:"application/javascript"}));
+ try{await captureContext.audioWorklet.addModule(url);}finally{URL.revokeObjectURL(url);}
+ const source=captureContext.createMediaStreamSource(mediaStream);
+ captureNode=new AudioWorkletNode(captureContext,"mic-capture");
+ captureNode.port.onmessage=()=>{};
+ source.connect(captureNode);
+ captureNode.connect(captureContext.destination);
+}
+
+function setupSpeechRecognition(){
+ const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+ if(!SR)throw new Error("This browser does not provide SpeechRecognition. Chrome is required for the no-Deepgram version.");
+ recognition=new SR();
+ recognition.continuous=true;
+ recognition.interimResults=true;
+ recognition.lang="en-US";
+ recognition.maxAlternatives=1;
+
+ recognition.onresult=e=>{
+  let interim="",finalText="";
+  for(let i=e.resultIndex;i<e.results.length;i++){
+   const text=String(e.results[i][0].transcript||"").trim();
+   if(e.results[i].isFinal)finalText+=" "+text;else interim+=" "+text;
+  }
+  interim=interim.trim();finalText=finalText.trim();
+  if(interim)transcript.textContent="Hearing: "+interim;
+  if(finalText){
+   transcript.textContent="Heard: "+finalText;
+   speak(finalText);
+  }
+ };
+ recognition.onerror=e=>{
+  if(e.error==="not-allowed"||e.error==="service-not-allowed"){
+   setStatus("Microphone/speech permission was denied.");return;
+  }
+  if(listening)restartRecognition();
+ };
+ recognition.onend=()=>{if(listening)restartRecognition();};
+ recognition.start();
+}
+
+function restartRecognition(){
+ clearTimeout(restartTimer);
+ restartTimer=setTimeout(()=>{
+  if(!listening||!recognition)return;
+  try{recognition.start();}catch{}
+ },150);
+}
+
+async function speak(text){
+ const clean=String(text||"").replace(/\s+/g," ").trim();
+ if(!clean||clean.toLowerCase()===lastText.toLowerCase())return;
+ lastText=clean;
+ while(generating&&listening)await new Promise(r=>setTimeout(r,20));
+ if(!listening)return;
+ generating=true;
  try{
-  await loadPocketTTS();
   await ensurePlayer();
-  player.reset();
+  setStatus("PocketTTS speaking...");
   let heard=false;
-  setStatus("Generating PocketTTS...");
-  await tts.generate(text,{voice,onChunk:chunk=>{
+  await tts.generate(clean,{voice,onChunk:chunk=>{
    if(!chunk?.length)return;
    player.play(chunk);
-   if(!heard){heard=true;setStatus("Speaking...");}
+   heard=true;
   }});
   if(!heard)throw new Error("PocketTTS returned no audio.");
   player.flush();
-  setStatus("Ready.");
+  if(listening)setStatus("Listening — you can keep speaking.");
+ }catch(e){console.error(e);if(listening)setStatus("PocketTTS error: "+(e.message||e));}
+ finally{generating=false;}
+}
+
+async function loadDevices(){
+ try{
+  const ds=await navigator.mediaDevices.enumerateDevices(),old=mic.value;mic.innerHTML="";
+  ds.filter(d=>d.kind==="audioinput").forEach((d,n)=>{
+   const o=document.createElement("option");o.value=d.deviceId;o.textContent=d.label||("Microphone "+(n+1));mic.appendChild(o);
+  });
+  if(!mic.options.length)mic.innerHTML="<option value=''>Default microphone</option>";
+  if(old&&[...mic.options].some(o=>o.value===old))mic.value=old;
+ }catch(e){console.warn(e);}
+}
+
+async function startListening(){
+ if(listening)return;
+ try{
+  start.disabled=true;setStatus("Loading local voice...");
+  await loadDevices();await loadPocketTTS();await ensurePlayer();await startAudioWorklet();
+  listening=true;stop.disabled=false;
+  setupSpeechRecognition();
+  setStatus("Listening — speak naturally. PocketTTS will continue speaking while you keep talking.");
  }catch(e){
-  console.error(e);
-  setStatus("PocketTTS error: "+(e.message||e));
- }finally{
-  busy=false;start.disabled=false;stop.disabled=true;
+  console.error(e);stopListening();start.disabled=false;setStatus(e.message||String(e));
  }
 }
 
-function stopPlayback(){
+function stopListening(){
+ listening=false;clearTimeout(restartTimer);
+ if(recognition){try{recognition.onend=null;recognition.stop();}catch{}recognition=null;}
+ if(captureNode){try{captureNode.disconnect();}catch{}captureNode=null;}
+ if(captureContext){try{captureContext.close();}catch{}captureContext=null;}
+ if(mediaStream){mediaStream.getTracks().forEach(t=>t.stop());mediaStream=null;}
  if(player)player.stop();
- if(tts)tts.stop().catch(()=>{});
- busy=false;start.disabled=false;stop.disabled=true;setStatus("Stopped.");
+ generating=false;start.disabled=false;stop.disabled=true;setStatus("Stopped.");
 }
 
-playRef.onclick=playReference;
-start.onclick=generate;
-stop.onclick=stopPlayback;
-
-textInput.addEventListener("keydown",e=>{
- if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();generate();}
-});
+start.onclick=startListening;stop.onclick=stopListening;
+navigator.mediaDevices.addEventListener?.("devicechange",loadDevices);
+loadDevices();
