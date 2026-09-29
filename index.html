@@ -3,57 +3,57 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>PocketTTS Chrome Voice Changer</title>
+<title>WAV Voice Changer — GitHub Pages</title>
 <style>
 :root{color-scheme:dark}
 *{box-sizing:border-box}
-body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090b10;color:#f4f5f7;font:15px system-ui,Segoe UI,sans-serif}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:#080a0f;color:#f4f6fa;font:15px system-ui,Segoe UI,sans-serif}
 .card{width:min(760px,94vw);padding:26px;border:1px solid #292e39;border-radius:20px;background:#151820;box-shadow:0 22px 70px #0009}
 h1{margin:0 0 7px;font-size:28px}.sub{margin:0 0 20px;color:#a3a9b5;line-height:1.5}
 .badge{display:inline-block;margin-bottom:12px;padding:5px 9px;border-radius:999px;background:#192a20;color:#9ff0b8;font-size:12px;font-weight:800}
+.panel{margin-top:15px;padding:16px;border:1px solid #292e39;border-radius:14px;background:#10131a}
 label{display:block;margin:14px 0 7px;color:#b4bac5;font-size:13px}
 input,select,textarea,button{width:100%;padding:11px;border:1px solid #363b48;border-radius:10px;background:#0d1016;color:#fff;font:inherit}
-input[type=file]{padding:9px}textarea{min-height:100px;resize:vertical}
+input[type=file]{padding:9px}textarea{min-height:110px;resize:vertical}
 button{cursor:pointer;font-weight:800;min-height:46px}button:disabled{opacity:.45;cursor:not-allowed}
 .primary{background:#8d5cff;border-color:#9b70ff}.danger{background:#3a1519;border-color:#693039}
-.panel{margin-top:15px;padding:16px;border:1px solid #292e39;border-radius:14px;background:#10131a}
-.note,.small{color:#8f96a3;font-size:12px;line-height:1.5}
-.status{margin-top:15px;padding:12px;border-radius:10px;background:#0d1016;color:#b9c0cc}
-.flow{margin-top:12px;color:#777f8e;font-size:12px}
+.status{margin-top:15px;padding:12px;border-radius:10px;background:#0d1016;color:#b9c0cc;white-space:pre-wrap}
+.note,.small{color:#8f96a3;font-size:12px;line-height:1.5}.flow{margin-top:12px;color:#777f8e;font-size:12px}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.meter{height:7px;background:#090c12;border-radius:9px;overflow:hidden;margin-top:12px}.meter>i{display:block;width:0;height:100%;background:#8d5cff;transition:width .12s}
 </style>
 </head>
 <body>
 <main class="card">
-<div class="badge">CHROME MIC • POCKETTTS • WAV VOICE</div>
-<h1>🎙 PocketTTS Voice Changer</h1>
-<p class="sub">No Deepgram, no API key, no server. Chrome listens to your mic, then PocketTTS generates speech using ONLY your uploaded WAV voice reference.</p>
+<div class="badge">GITHUB PAGES • CHROME MIC • YOUR WAV</div>
+<h1>🎙 WAV Voice Changer</h1>
+<p class="sub">Continuous low-latency browser voice pipeline. Your WAV is used as the voice reference; there is no Deepgram or preset voice.</p>
 
 <div class="panel">
 <label>Voice reference WAV</label>
-<input id="reference" type="file" accept=".wav,audio/wav,audio/x-wav,audio/*">
-<div class="note">Choose a short, clean voice recording. This WAV is the ONLY voice reference used for generated speech.</div>
+<input id="reference" type="file" accept=".wav,audio/wav,audio/x-wav">
+<div class="note">Use the same WAV that already worked. It is loaded by Chrome and used as the PocketTTS voice reference.</div>
 
 <label>Chrome speaker / output</label>
-<select id="output"><option value="">Default Windows output</option></select>
+<select id="output"><option value="">Default Chrome output</option></select>
 <button id="chooseOutput" type="button" style="margin-top:8px">CHOOSE CHROME SPEAKER</button>
 </div>
 
 <div class="panel">
-<label>Live transcription</label>
-<textarea id="text" readonly placeholder="Your recognized speech will appear here..."></textarea>
-
+<label>Live speech</label>
+<textarea id="text" readonly placeholder="Speak after START…"></textarea>
 <div class="row">
-<button id="start" class="primary" type="button" disabled>START POCKETTTS</button>
+<button id="start" class="primary" type="button" disabled>START LOW-LATENCY MODE</button>
 <button id="stop" class="danger" type="button" disabled>STOP</button>
 </div>
-<div class="note" style="margin-top:9px">Choose a WAV, then press START. Chrome handles the mic recognition; PocketTTS supplies the audible voice from your WAV reference.</div>
+<div class="meter"><i id="meterBar"></i></div>
+<div class="note" style="margin-top:9px">The recognizer stays continuous. Short speech segments are committed while you talk instead of waiting for an entire paragraph.</div>
 </div>
 
-<div class="status" id="status">Loading controls…</div>
+<div class="status" id="status">Choose your WAV first.</div>
 <div class="small" id="info"></div>
-<div class="flow">Pipeline: 🎙 mic → Chrome Speech Recognition → PocketTTS voice clone → Chrome speaker.
+<div class="flow">🎙 mic → continuous Chrome recognition → short speech segments → PocketTTS using your WAV → Chrome speaker</div>
 </main>
-<script type="module" src="./app.js?v=pockettts-wav-only-20260929-3"></script>
+<script type="module" src="./app.js?v=low-latency-wav-20260929-4"></script>
 </body>
 </html>
