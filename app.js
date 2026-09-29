@@ -1,7 +1,14 @@
 const $=id=>document.getElementById(id);
-const reference=$("reference"),output=$("output"),chooseOutput=$("chooseOutput"),text=$("text"),start=$("start"),micBtn=$("micBtn"),stop=$("stop"),status=$("status"),info=$("info"),player=$("player");
-let tts=null,voiceRef=null,running=false,recognition=null,recognizing=false,recognitionWanted=false,speaking=false,speechQueue=[];
+const apiKey=$("apiKey"),clearKey=$("clearKey"),reference=$("reference"),output=$("output"),chooseOutput=$("chooseOutput"),player=$("player"),text=$("text"),start=$("start"),stop=$("stop"),status=$("status"),info=$("info");
+
 const TTS_URL="./pocket-tts/index.js";
+const DG_URL="wss://api.deepgram.com/v1/listen?model=nova-3&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&smart_format=true&punctuate=true&endpointing=300&utterance_end_ms=1000&vad_events=true";
+
+let tts=null,voiceRef=null,running=false;
+let dg=null,reconnectTimer=null,keepAliveTimer=null;
+let micStream=null,audioContext=null,sourceNode=null,processor=null,gainNode=null;
+let recognizing=false,utteranceParts=[],speaking=false,speechQueue=[];
+let lastTranscript="";
 
 function setStatus(v){status.textContent=v;}
 
@@ -15,7 +22,7 @@ async function loadOutputs(){
  if(!navigator.mediaDevices?.enumerateDevices)return;
  try{
   const devices=await navigator.mediaDevices.enumerateDevices();
-  const oldOut=output.value;
+  const old=output.value;
   output.innerHTML="<option value=''>Default Windows output</option>";
   for(const d of devices.filter(x=>x.kind==="audiooutput")){
    const o=document.createElement("option");
@@ -23,7 +30,7 @@ async function loadOutputs(){
    o.textContent=d.label||"Speaker / output "+output.options.length;
    output.appendChild(o);
   }
-  if([...output.options].some(x=>x.value===oldOut))output.value=oldOut;
+  if([...output.options].some(x=>x.value===old))output.value=old;
  }catch(e){console.warn(e);}
 }
 
@@ -37,27 +44,32 @@ async function chooseChromeSpeaker(){
   if(d?.deviceId){
    output.innerHTML="";
    const o=document.createElement("option");
-   o.value=d.deviceId;
-   o.textContent=d.label||"Selected Chrome speaker";
+   o.value=d.deviceId;o.textContent=d.label||"Selected Chrome speaker";
    output.appendChild(o);
    await setOutput();
    setStatus("Chrome speaker selected: "+(d.label||"selected output"));
   }
- }catch(e){if(e.name!=="NotAllowedError")setStatus("Speaker picker error: "+e.message);}
+ }catch(e){
+  if(e.name!=="NotAllowedError")setStatus("Speaker picker error: "+e.message);
+ }
 }
 
 async function initTTS(){
  if(tts)return;
  setStatus("Loading PocketTTS browser engine and models…");
  const mod=await import(TTS_URL);
- tts=new mod.PocketTTS({language:"english_2026-04",quantized:true,voiceCloning:true,cache:true,maxThreads:8});
+ tts=new mod.PocketTTS({
+  language:"english_2026-04",
+  quantized:true,
+  voiceCloning:true,
+  cache:true,
+  maxThreads:8,
+  maxReferenceSeconds:6
+ });
  await tts.load(p=>{
   if(p?.label)setStatus("PocketTTS: "+p.label);
   else if(p?.status)setStatus("PocketTTS: "+p.status);
  });
- setStatus("PocketTTS loaded. Preparing synthesis…");
- await tts.finishLoad();
- info.textContent="PocketTTS sample rate: "+tts.sampleRate+" Hz";
 }
 
 async function decodeReference(file){
@@ -71,17 +83,18 @@ async function decodeReference(file){
 
 async function prepareVoice(){
  const file=reference.files?.[0];
- if(!file)throw new Error("Choose a voice reference WAV/audio file first.");
+ if(!file)throw new Error("Choose a WAV voice reference first.");
  const ref=await decodeReference(file);
- setStatus("Cloning reference voice…");
- voiceRef=await tts.cloneVoice(ref.audio,{inputSampleRate:ref.sampleRate,name:"chrome-clone"});
- setStatus("Voice clone ready.");
+ setStatus("Cloning your WAV reference voice…");
+ voiceRef=await tts.cloneVoice(ref.audio,{inputSampleRate:ref.sampleRate,name:"deepgram-chrome-clone"});
+ setStatus("Voice clone ready. Loading PocketTTS synthesis models…");
+ await tts.finishLoad();
+ info.textContent="PocketTTS ready at "+tts.sampleRate+" Hz.";
 }
 
 function floatToWavBlob(samples,sampleRate){
- const buffer=new ArrayBuffer(44+samples.length*2);
- const view=new DataView(buffer);
- const write=(offset,s)=>{for(let i=0;i<s.length;i++)view.setUint8(offset+i,s.charCodeAt(i));};
+ const buffer=new ArrayBuffer(44+samples.length*2),view=new DataView(buffer);
+ const write=(o,s)=>{for(let i=0;i<s.length;i++)view.setUint8(o+i,s.charCodeAt(i));};
  write(0,"RIFF");view.setUint32(4,36+samples.length*2,true);write(8,"WAVE");write(12,"fmt ");
  view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);
  view.setUint32(24,sampleRate,true);view.setUint32(28,sampleRate*2,true);view.setUint16(32,2,true);view.setUint16(34,16,true);
@@ -95,15 +108,15 @@ function floatToWavBlob(samples,sampleRate){
 }
 
 async function playSamples(samples){
- if(!player)throw new Error("Audio player is missing.");
- await setOutput();
  const blob=floatToWavBlob(samples,tts.sampleRate);
  const url=URL.createObjectURL(blob);
  if(player._blobUrl)URL.revokeObjectURL(player._blobUrl);
  player._blobUrl=url;
+ await setOutput();
  player.src=url;
  player.load();
- try{await player.play();}catch(e){throw new Error("Chrome audio playback was blocked. Press play on the audio player once, then try again.");}
+ try{await player.play();}
+ catch(e){throw new Error("Chrome blocked audio playback. Press the play button on the audio player once, then speak again.");}
  await new Promise(resolve=>{
   const done=()=>{player.removeEventListener("ended",done);resolve();};
   player.addEventListener("ended",done);
@@ -112,121 +125,170 @@ async function playSamples(samples){
  player._blobUrl=null;
 }
 
-async function speak(value){
- if(!running)return;
- const phrase=value.trim();
- if(!phrase)return;
+async function speak(phrase){
+ if(!running||!phrase)return;
  speechQueue.push(phrase);
  if(speaking)return;
  speaking=true;
  try{
-  while(speechQueue.length&&running){
+  while(running&&speechQueue.length){
    const current=speechQueue.shift();
    setStatus("PocketTTS generating: "+current);
    const chunks=[];
    await tts.generate(current,{voice:voiceRef,onChunk:audio=>chunks.push(audio)});
    if(!chunks.length)continue;
-   let length=0;
-   for(const c of chunks)length+=c.length;
+   let length=0;for(const c of chunks)length+=c.length;
    const samples=new Float32Array(length);
-   let offset=0;
-   for(const c of chunks){samples.set(c,offset);offset+=c.length;}
-   setStatus("Playing PocketTTS voice…");
+   let offset=0;for(const c of chunks){samples.set(c,offset);offset+=c.length;}
+   setStatus("Playing generated PocketTTS voice…");
    await playSamples(samples);
   }
+ }catch(e){
+  console.error(e);
+  if(running)setStatus("PocketTTS playback error: "+(e.message||e));
  }finally{
   speaking=false;
-  if(running)setStatus(recognizing?"Listening — speak naturally.":"Ready — press START MIC to speak.");
+  if(running)setStatus(recognizing?"Listening — speak naturally.":"Ready.");
  }
 }
 
-function stopRecognition(){
- recognitionWanted=false;
- if(recognition){try{recognition.onend=null;recognition.stop();}catch{}}
- recognition=null;
- recognizing=false;
- micBtn.textContent="START MIC";
+function makePcm16(float32){
+ const pcm=new Int16Array(float32.length);
+ for(let i=0;i<float32.length;i++){
+  const x=Math.max(-1,Math.min(1,float32[i]));
+  pcm[i]=x<0?x*32768:x*32767;
+ }
+ return pcm.buffer;
 }
 
-function startMic(){
- if(!running){setStatus("Start PocketTTS first.");return;}
- const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
- if(!SR){setStatus("Chrome Speech Recognition is unavailable in this browser.");return;}
- if(recognitionWanted)return;
- recognitionWanted=true;
+function closeDeepgram(){
+ if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
+ if(keepAliveTimer){clearInterval(keepAliveTimer);keepAliveTimer=null;}
+ if(dg){try{dg.close();}catch{}dg=null;}
+}
 
- const launch=()=>{
-  if(!recognitionWanted||!running)return;
-  recognition=new SR();
-  recognition.continuous=true;
-  recognition.interimResults=false;
-  recognition.lang="en-US";
-  recognition.onstart=()=>{
-   recognizing=true;
-   micBtn.textContent="MIC LISTENING";
-   setStatus("Listening — speak naturally. Your mic is used for transcription only.");
-  };
-  recognition.onerror=e=>{
-   recognizing=false;
-   if(e.error==="not-allowed"||e.error==="service-not-allowed"){
-    recognitionWanted=false;
-    micBtn.textContent="START MIC";
-    setStatus("Microphone permission was denied. Allow microphone access for this page and press START MIC again.");
-   }else if(e.error!=="aborted"){
-    setStatus("Speech recognition: "+e.error+" — reconnecting…");
-   }
-  };
-  recognition.onend=()=>{
-   recognizing=false;
-   if(recognitionWanted&&running){
-    micBtn.textContent="MIC RECONNECTING";
-    setTimeout(launch,250);
-   }else{
-    micBtn.textContent="START MIC";
-   }
-  };
-  recognition.onresult=e=>{
-   for(let i=e.resultIndex;i<e.results.length;i++){
-    if(!e.results[i].isFinal)continue;
-    const phrase=e.results[i][0]?.transcript?.trim();
-    if(!phrase||!running)continue;
-    text.value=phrase;
-    void speak(phrase);
-   }
-  };
-  try{recognition.start();}
-  catch(e){if(recognitionWanted)setTimeout(launch,500);}
+function connectDeepgram(){
+ if(!running)return;
+ const key=apiKey.value.trim();
+ if(!key)throw new Error("Enter your Deepgram API key first.");
+ closeDeepgram();
+ setStatus("Connecting to Deepgram WebSocket…");
+ const ws=new WebSocket(DG_URL,["token",key]);
+ dg=ws;
+
+ ws.onopen=()=>{
+  if(dg!==ws)return;
+  recognizing=true;
+  setStatus("Deepgram connected — speak naturally.");
+  keepAliveTimer=setInterval(()=>{
+   if(ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({type:"KeepAlive"}));
+  },8000);
  };
- launch();
+
+ ws.onmessage=event=>{
+  if(typeof event.data!=="string")return;
+  let msg;
+  try{msg=JSON.parse(event.data);}catch{return;}
+  if(msg.type==="SpeechStarted"){setStatus("Listening…");return;}
+  if(msg.type!=="Results")return;
+  const alt=msg.channel?.alternatives?.[0];
+  const phrase=alt?.transcript?.trim()||"";
+  if(!phrase)return;
+
+  if(msg.is_final){
+   utteranceParts.push(phrase);
+   lastTranscript=utteranceParts.join(" ");
+   text.value=lastTranscript;
+  }else{
+   text.value=(utteranceParts.length?utteranceParts.join(" ")+" ":"")+phrase;
+  }
+
+  if(msg.speech_final){
+   const finalText=utteranceParts.join(" ").replace(/\s+/g," ").trim();
+   utteranceParts=[];
+   if(finalText)void speak(finalText);
+  }
+ };
+
+ ws.onerror=()=>{
+  if(running)setStatus("Deepgram WebSocket error — reconnecting…");
+ };
+
+ ws.onclose=()=>{
+  if(dg===ws)dg=null;
+  recognizing=false;
+  if(keepAliveTimer){clearInterval(keepAliveTimer);keepAliveTimer=null;}
+  if(running){
+   setStatus("Deepgram disconnected — reconnecting…");
+   reconnectTimer=setTimeout(()=>{try{connectDeepgram();}catch(e){setStatus(e.message);}},700);
+  }
+ };
 }
 
-async function startTTS(){
+async function startMic(){
+ if(micStream)return;
+ micStream=await navigator.mediaDevices.getUserMedia({
+  audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}
+ });
+ await loadOutputs();
+
+ audioContext=new AudioContext({sampleRate:16000});
+ sourceNode=audioContext.createMediaStreamSource(micStream);
+ processor=audioContext.createScriptProcessor(2048,1,1);
+ gainNode=audioContext.createGain();
+ gainNode.gain.value=0;
+ sourceNode.connect(processor);
+ processor.connect(gainNode);
+ gainNode.connect(audioContext.destination);
+
+ processor.onaudioprocess=e=>{
+  if(!running||!dg||dg.readyState!==WebSocket.OPEN)return;
+  const data=e.inputBuffer.getChannelData(0);
+  dg.send(makePcm16(data));
+ };
+ await audioContext.resume();
+}
+
+function stopMic(){
+ if(processor){processor.onaudioprocess=null;try{processor.disconnect();}catch{}}
+ if(sourceNode){try{sourceNode.disconnect();}catch{}}
+ if(gainNode){try{gainNode.disconnect();}catch{}}
+ processor=null;sourceNode=null;gainNode=null;
+ if(audioContext){try{audioContext.close();}catch{}audioContext=null;}
+ if(micStream){for(const track of micStream.getTracks())track.stop();micStream=null;}
+}
+
+async function startAll(){
  try{
+  const key=apiKey.value.trim();
+  if(!key)throw new Error("Enter your Deepgram API key first.");
+  if(!reference.files?.[0])throw new Error("Choose your WAV voice reference first.");
   start.disabled=true;
-  micBtn.disabled=true;
   await initTTS();
   await prepareVoice();
-  if(!player)throw new Error("Audio player is missing.");
   await setOutput();
   running=true;
   stop.disabled=false;
-  micBtn.disabled=false;
-  setStatus("PocketTTS ready — press START MIC and speak.");
-  const value=text.value.trim();
-  if(value)await speak(value);
+  await startMic();
+  connectDeepgram();
  }catch(e){
   console.error(e);
-  setStatus("PocketTTS error: "+(e.message||e));
+  running=false;
+  stop.disabled=true;
   start.disabled=false;
-  micBtn.disabled=false;
+  stopMic();
+  closeDeepgram();
+  setStatus("Start error: "+(e.message||e));
  }
 }
 
 function stopAll(){
  running=false;
  speechQueue=[];
- speaking=false;
- stopRecognition();
+ utteranceParts=[];
+ recognizing=false;
+ closeDeepgram();
+ stopMic();
  if(tts){try{tts.stop();}catch{}}
  if(player){
   player.pause();
@@ -237,16 +299,12 @@ function stopAll(){
  }
  stop.disabled=true;
  start.disabled=false;
- micBtn.disabled=false;
- setStatus("Stopped. No raw microphone audio is played.");
+ setStatus("Stopped. Raw microphone audio is never played.");
 }
 
-text.addEventListener("keydown",e=>{
- if((e.ctrlKey||e.metaKey)&&e.key==="Enter")void speak(text.value);
-});
-start.onclick=()=>void startTTS();
+clearKey.onclick=()=>{apiKey.value="";apiKey.focus();};
+start.onclick=()=>void startAll();
 stop.onclick=stopAll;
-micBtn.onclick=startMic;
 chooseOutput.onclick=chooseChromeSpeaker;
 output.onchange=()=>void setOutput();
 navigator.mediaDevices?.addEventListener?.("devicechange",loadOutputs);
