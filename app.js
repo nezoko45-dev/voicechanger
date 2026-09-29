@@ -1,247 +1,244 @@
 const $=id=>document.getElementById(id);
-const mic=$("mic"),output=$("output"),chooseOutput=$("chooseOutput"),start=$("start"),stop=$("stop"),status=$("status"),transcript=$("transcript");
+const mic=$("mic"),output=$("output"),chooseOutput=$("chooseOutput"),start=$("start"),stop=$("stop"),test=$("test"),status=$("status"),gpu=$("gpu");
+const modelInput=$("model"),contentVecInput=$("contentVec"),rmvpeInput=$("rmvpe");
+const pitch=$("pitch"),chunk=$("chunk"),pitchValue=$("pitchValue"),chunkValue=$("chunkValue");
+let rvc=null,mediaStream=null,captureContext=null,sourceNode=null,processorNode=null;
+let running=false,processing=false,queue=[],captureBuffer=[],lastOutputAt=0;
 
-let tts=null,voice=null,player=null,recognition=null,mediaStream=null,captureContext=null,captureNode=null;
-let listening=false,generating=false,lastText="",restartTimer=null,ttsChunks=0;
+const CONTENTVEC_URL="https://huggingface.co/NaruseMioShirakana/MoeSS-SUBModel/resolve/main/vec-768-layer-12.onnx";
+const RMVPE_URL="https://huggingface.co/NaruseMioShirakana/MoeSS-SUBModel/resolve/main/RMVPE.onnx";
+let autoContentVec=null,autoRMVPE=null;
 
 function setStatus(v){status.textContent=v;}
+function setGpu(v){gpu.textContent=v;}
 
-async function loadPocketTTS(){
- if(tts)return;
- setStatus("Loading PocketTTS... first load only.");
- const mod=await import("./pocket-tts/index.js");
- tts=new mod.PocketTTS({
-  language:"english_2026-04",quantized:true,voiceCloning:true,cache:true,
-  cacheName:"pocket-tts-safe-v2",maxThreads:2,deferSynthesis:true,maxReferenceSeconds:6,
-  modelBaseUrl:"https://huggingface.co/akrv/pocket-tts-onnx/resolve/main/onnx",
-  ortBaseUrl:"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.0/dist/"
- });
- await tts.load(p=>{if(p.total)setStatus("Loading PocketTTS: "+Math.round(p.loaded/p.total*100)+"%");});
- const r=await fetch("./Recording%20(10).wav");
- if(!r.ok)throw new Error("Recording (10).wav could not be loaded.");
- const ctx=new AudioContext(),decoded=await ctx.decodeAudioData(await r.arrayBuffer());
- voice=await tts.cloneVoice(decoded.getChannelData(0).slice(),{inputSampleRate:decoded.sampleRate,name:"recording-10"});
- await ctx.close();await tts.finishLoad();
-}
-
-async function ensurePlayer(){
- if(!player){
-  const mod=await import("./pocket-tts/index.js");
-  player=new mod.StreamingPlayer({sampleRate:tts.sampleRate});
- }
- await player.resume();
- await setOutputDevice();
-}
-
-async function chooseWindowsOutput(){
- if(!player?.audioContext)return;
- if(!navigator.mediaDevices?.selectAudioOutput){
-  setStatus("Chrome does not expose the speaker picker here. Use the Default Windows output.");
-  return;
- }
+async function checkWebGPU(){
+ if(!navigator.gpu){setStatus("WebGPU is not available in this Chrome session.");setGpu("Use current Chrome/Edge with WebGPU enabled.");return false;}
  try{
-  const device=await navigator.mediaDevices.selectAudioOutput();
-  if(device?.deviceId){
-   await player.audioContext.setSinkId(device.deviceId);
-   output.innerHTML="";
-   const o=document.createElement("option");
-   o.value=device.deviceId;
-   o.textContent=device.label||"Selected Windows output";
-   output.appendChild(o);
-   output.value=device.deviceId;
-   setStatus("Output selected: "+(device.label||"Windows audio device"));
-  }
+  const adapter=await navigator.gpu.requestAdapter({powerPreference:"high-performance"});
+  if(!adapter){setStatus("Chrome exposed WebGPU, but no GPU adapter was available.");return false;}
+  setStatus("WebGPU ready. Choose your RVC voice model, then press START RVC.");
+  setGpu("GPU: "+(adapter.info?.device||adapter.info?.description||"available"));
+  return true;
+ }catch(e){setStatus("WebGPU check failed: "+(e.message||e));return false;}
+}
+
+async function loadModel(url,label){
+ try{
+  const response=await fetch(url);
+  if(!response.ok)throw new Error("HTTP "+response.status);
+  const blob=await response.blob();
+  return new File([blob],label,{type:"application/octet-stream"});
  }catch(e){
-  if(e?.name!=="NotAllowedError")setStatus("Output picker failed: "+(e.message||e));
+  console.warn("Model download failed",url,e);
+  return null;
  }
 }
 
-async function setOutputDevice(){
- if(!player?.audioContext||!output)return;
- const deviceId=output.value;
- if(!deviceId){
-  if(typeof player.audioContext.setSinkId==="function"){
-   try{await player.audioContext.setSinkId("");}catch{}
-  }
-  return;
+async function ensureSupportModels(){
+ if(!autoContentVec){
+  setStatus("Loading ContentVec model… first time only.");
+  autoContentVec=await loadModel(CONTENTVEC_URL,"vec-768-layer-12.onnx");
  }
- if(typeof player.audioContext.setSinkId!=="function"){
-  setStatus("Output selection is not supported by this Chrome version; using the default Windows output.");
-  return;
+ if(!autoRMVPE){
+  setStatus("Loading RMVPE model… first time only.");
+  autoRMVPE=await loadModel(RMVPE_URL,"RMVPE.onnx");
  }
- try{
-  await player.audioContext.setSinkId(deviceId);
- }catch(e){
-  console.warn("Output device selection failed",e);
-  setStatus("Could not select that output; using the default Windows output.");
- }
+ if(!autoContentVec||!autoRMVPE)throw new Error("Could not auto-load ContentVec/RMVPE. Upload both ONNX files manually.");
 }
 
-function captureWorkletSource(){
- return `class MicCapture extends AudioWorkletProcessor{
-  constructor(){super();this.active=true;}
-  process(inputs,outputs){
-   const input=inputs[0]?.[0],out=outputs[0]?.[0];
-   if(out)out.fill(0);
-   if(input&&this.active){
-    let sum=0;
-    for(let i=0;i<input.length;i++)sum+=input[i]*input[i];
-    this.port.postMessage({rms:Math.sqrt(sum/input.length)});
-   }
-   return true;
-  }
- }registerProcessor("mic-capture",MicCapture);`;
-}
-
-async function startAudioWorklet(){
- mediaStream=await navigator.mediaDevices.getUserMedia({
-  audio:{deviceId:mic.value?{exact:mic.value}:undefined,channelCount:1,
-   echoCancellation:true,noiseSuppression:true,autoGainControl:true}
- });
- captureContext=new AudioContext({latencyHint:"interactive"});
- await captureContext.resume();
- const url=URL.createObjectURL(new Blob([captureWorkletSource()],{type:"application/javascript"}));
- try{await captureContext.audioWorklet.addModule(url);}finally{URL.revokeObjectURL(url);}
- const source=captureContext.createMediaStreamSource(mediaStream);
- captureNode=new AudioWorkletNode(captureContext,"mic-capture");
- captureNode.port.onmessage=()=>{};
- source.connect(captureNode);
- captureNode.connect(captureContext.destination);
-}
-
-function setupSpeechRecognition(){
- const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
- if(!SR)throw new Error("This browser does not provide SpeechRecognition. Chrome is required for the no-Deepgram version.");
- recognition=new SR();
- recognition.continuous=true;
- recognition.interimResults=true;
- recognition.lang="en-US";
- recognition.maxAlternatives=1;
-
- recognition.onresult=e=>{
-  let interim="",finalText="";
-  for(let i=e.resultIndex;i<e.results.length;i++){
-   const text=String(e.results[i][0].transcript||"").trim();
-   if(e.results[i].isFinal)finalText+=" "+text;else interim+=" "+text;
-  }
-  interim=interim.trim();finalText=finalText.trim();
-  if(interim)transcript.textContent="Hearing: "+interim;
-  if(finalText){
-   transcript.textContent="Heard: "+finalText;
-   speak(finalText);
-  }
- };
- recognition.onerror=e=>{
-  if(e.error==="not-allowed"||e.error==="service-not-allowed"){
-   setStatus("Microphone/speech permission was denied.");return;
-  }
-  if(listening)restartRecognition();
- };
- recognition.onend=()=>{if(listening)restartRecognition();};
- recognition.start();
-}
-
-function restartRecognition(){
- clearTimeout(restartTimer);
- restartTimer=setTimeout(()=>{
-  if(!listening||!recognition)return;
-  try{recognition.start();}catch{}
- },150);
-}
-
-async function speak(text){
- const clean=String(text||"").replace(/\s+/g," ").trim();
- if(!clean||clean.toLowerCase()===lastText.toLowerCase())return;
- lastText=clean;
- while(generating&&listening)await new Promise(r=>setTimeout(r,20));
- if(!listening)return;
- generating=true;
- try{
-  await ensurePlayer();
-  setStatus("PocketTTS speaking...");
-  let heard=false;
-  await tts.generate(clean,{voice,onChunk:chunk=>{
-   if(!chunk?.length)return;
-   player.play(chunk);
-   heard=true;
-  }});
-  if(!heard)throw new Error("PocketTTS returned no audio.");
-  player.flush();
-  if(listening)setStatus("Listening — you can keep speaking.");
- }catch(e){console.error(e);if(listening)setStatus("PocketTTS error: "+(e.message||e));}
- finally{generating=false;}
-}
-
-async function loadOutputDevices(){
- if(!output)return;
- try{
-  const current=output.value;
-  const ds=await navigator.mediaDevices.enumerateDevices();
-  output.innerHTML="<option value=\"\">Default Windows output</option>";
-  ds.filter(d=>d.kind==="audiooutput").forEach((d,n)=>{
-   const o=document.createElement("option");
-   o.value=d.deviceId;
-   o.textContent=d.label||("Output "+(n+1));
-   output.appendChild(o);
-  });
-  if(current&&[...output.options].some(o=>o.value===current))output.value=current;
- }catch(e){console.warn(e);}
-}
+function selectedFile(input,autoFile){return input.files?.[0]||autoFile;}
 
 async function loadDevices(){
  try{
-  const ds=await navigator.mediaDevices.enumerateDevices(),old=mic.value;mic.innerHTML="";
-  ds.filter(d=>d.kind==="audioinput").forEach((d,n)=>{
-   const o=document.createElement("option");o.value=d.deviceId;o.textContent=d.label||("Microphone "+(n+1));mic.appendChild(o);
-  });
-  if(!mic.options.length)mic.innerHTML="<option value=''>Default microphone</option>";
-  if(old&&[...mic.options].some(o=>o.value===old))mic.value=old;
+  const ds=await navigator.mediaDevices.enumerateDevices();
+  const oldMic=mic.value,oldOut=output.value;
+  mic.innerHTML="";
+  const ins=ds.filter(d=>d.kind==="audioinput");
+  ins.forEach((d,i)=>{const o=document.createElement("option");o.value=d.deviceId;o.textContent=d.label||("Microphone "+(i+1));mic.appendChild(o);});
+  if(!mic.options.length)mic.innerHTML='<option value="">Default microphone</option>';
+  if(oldMic&&[...mic.options].some(o=>o.value===oldMic))mic.value=oldMic;
+  output.innerHTML='<option value="">Default Windows output</option>';
+  ds.filter(d=>d.kind==="audiooutput").forEach((d,i)=>{const o=document.createElement("option");o.value=d.deviceId;o.textContent=d.label||("Output "+(i+1));output.appendChild(o);});
+  if(oldOut&&[...output.options].some(o=>o.value===oldOut))output.value=oldOut;
  }catch(e){console.warn(e);}
 }
 
-async function startListening(){
- if(listening)return;
+async function chooseWindowsOutput(){
+ if(!navigator.mediaDevices?.selectAudioOutput){setStatus("Chrome speaker picker is unavailable here. The default Windows output will be used.");return;}
  try{
-  start.disabled=true;setStatus("Loading local voice...");
-  await loadDevices();await loadOutputDevices();await loadPocketTTS();await ensurePlayer();await startAudioWorklet();
-  await loadOutputDevices();
-  listening=true;stop.disabled=false;
-  if(test)test.disabled=false;
-  setupSpeechRecognition();
-  setStatus("Listening — speak naturally. PocketTTS will continue speaking while you keep talking.");
+  const d=await navigator.mediaDevices.selectAudioOutput();
+  if(d?.deviceId){
+   output.innerHTML="";
+   const o=document.createElement("option");o.value=d.deviceId;o.textContent=d.label||"Selected Windows output";output.appendChild(o);
+   output.value=d.deviceId;
+   setStatus("Output selected: "+(d.label||"Windows audio device"));
+  }
+ }catch(e){if(e?.name!=="NotAllowedError")setStatus("Output picker failed: "+(e.message||e));}
+}
+
+function createPlayback(){
+ const ctx=new AudioContext({latencyHint:"interactive"});
+ return ctx;
+}
+let playbackContext=null;
+async function setOutputDevice(){
+ if(!playbackContext||typeof playbackContext.setSinkId!=="function")return;
+ try{await playbackContext.setSinkId(output.value||"");}catch(e){console.warn(e);}
+}
+async function playPCM(samples,sampleRate=48000){
+ if(!playbackContext)playbackContext=createPlayback();
+ await playbackContext.resume();
+ await setOutputDevice();
+ const copy=samples.slice();
+ const buffer=playbackContext.createBuffer(1,copy.length,sampleRate);
+ buffer.copyToChannel(copy,0);
+ const node=playbackContext.createBufferSource();
+ node.buffer=buffer;
+ node.connect(playbackContext.destination);
+ const now=playbackContext.currentTime;
+ const startAt=Math.max(now,lastOutputAt);
+ node.start(startAt);
+ lastOutputAt=startAt+buffer.duration;
+}
+
+function downsample(input,inputRate,targetRate){
+ if(inputRate===targetRate)return input.slice();
+ const ratio=inputRate/targetRate;
+ const length=Math.max(1,Math.round(input.length/ratio));
+ const out=new Float32Array(length);
+ for(let i=0;i<length;i++){
+  const pos=i*ratio,idx=Math.floor(pos),frac=pos-idx;
+  const a=input[idx]||0,b=input[Math.min(idx+1,input.length-1)]||0;
+  out[i]=a+(b-a)*frac;
+ }
+ return out;
+}
+
+function captureProcessor(){
+ return `class RvcCapture extends AudioWorkletProcessor{
+  process(inputs,outputs){
+   const input=inputs[0]?.[0],out=outputs[0]?.[0];
+   if(out)out.fill(0);
+   if(input&&input.length)this.port.postMessage(input.slice(0));
+   return true;
+  }
+}registerProcessor("rvc-capture",RvcCapture);`;
+}
+
+async function startCapture(){
+ mediaStream=await navigator.mediaDevices.getUserMedia({audio:{
+  deviceId:mic.value?{exact:mic.value}:undefined,
+  channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true
+ }});
+ captureContext=new AudioContext({latencyHint:"interactive"});
+ await captureContext.resume();
+ const url=URL.createObjectURL(new Blob([captureProcessor()],{type:"application/javascript"}));
+ try{await captureContext.audioWorklet.addModule(url);}finally{URL.revokeObjectURL(url);}
+ sourceNode=captureContext.createMediaStreamSource(mediaStream);
+ processorNode=new AudioWorkletNode(captureContext,"rvc-capture");
+ processorNode.port.onmessage=e=>{
+  if(!running)return;
+  const part=e.data instanceof Float32Array?e.data:new Float32Array(e.data);
+  captureBuffer.push(part);
+  const needed=Math.floor(captureContext.sampleRate*Number(chunk.value));
+  let total=0;for(const p of captureBuffer)total+=p.length;
+  while(total>=needed){
+   const joined=new Float32Array(needed);
+   let at=0;
+   while(at<needed&&captureBuffer.length){
+    const p=captureBuffer[0],take=Math.min(p.length,needed-at);
+    joined.set(p.subarray(0,take),at);at+=take;
+    if(take===p.length)captureBuffer.shift();else captureBuffer[0]=p.subarray(take);
+   }
+   total-=needed;
+   queue.push(joined);
+   void processQueue();
+  }
+ };
+ sourceNode.connect(processorNode);
+ processorNode.connect(captureContext.destination);
+}
+
+async function processQueue(){
+ if(processing||!running)return;
+ processing=true;
+ try{
+  while(queue.length&&running){
+   const raw=queue.shift();
+   const audio16=downsample(raw,captureContext.sampleRate,16000);
+   setStatus("RVC converting… queue: "+queue.length);
+   const model=selectedFile(modelInput,null);
+   const contentVec=selectedFile(contentVecInput,autoContentVec);
+   const rmvpe=selectedFile(rmvpeInput,autoRMVPE);
+   if(!model)throw new Error("Select your trained RVC .onnx or .pth voice model first.");
+   if(!contentVec||!rmvpe)throw new Error("ContentVec and RMVPE models are required.");
+   if(!rvc)rvc=await import("https://cdn.jsdelivr.net/npm/rvc-web-runtime@1.0.5/dist/index.js");
+   const ctx=rvc.createRVC();
+   const result=await rvc.runPipelineInWorker(ctx,{model,contentVec,rmvpe},audio16,16000,
+    {onEvent:event=>{
+      if(event.type==="stage")setStatus("RVC: "+event.stage);
+      else if(event.type==="chunk")setStatus("RVC: chunk "+event.current+"/"+event.total);
+    }},
+    {timeout:120000,pitchShift:Number(pitch.value)||0,medianFilter:true,medianFilterWindow:3,
+     contentVecBackend:"webgpu",rmvpeBackend:"webgpu",rvcBackend:"wasm",chunkDuration:Number(chunk.value),padDuration:.15});
+   if(result.state!=="success"||!result.outputAudio)throw new Error(result.errorMessage||"RVC conversion failed.");
+   await playPCM(result.outputAudio,48000);
+   setStatus(running?"RVC live — listening.":"Stopped.");
+  }
  }catch(e){
-  console.error(e);stopListening();start.disabled=false;setStatus(e.message||String(e));
+  console.error(e);queue.length=0;setStatus("RVC error: "+(e.message||e));
+ }finally{processing=false;}
+}
+
+async function startRVC(){
+ if(running)return;
+ try{
+  start.disabled=true;
+  if(!await checkWebGPU())throw new Error("WebGPU is required for the accelerated ContentVec/RMVPE path.");
+  const model=selectedFile(modelInput,null);
+  if(!model)throw new Error("Choose your trained RVC .onnx or .pth voice model first.");
+  setStatus("Preparing browser RVC…");
+  await ensureSupportModels();
+  await loadDevices();
+  if(!playbackContext)playbackContext=createPlayback();
+  await setOutputDevice();
+  await startCapture();
+  captureBuffer=[];queue=[];lastOutputAt=playbackContext.currentTime;
+  running=true;stop.disabled=false;test.disabled=true;
+  setStatus("RVC live — speak. Conversion is chunked to keep the browser responsive.");
+ }catch(e){
+  console.error(e);stopRVC();start.disabled=false;setStatus(e.message||String(e));
  }
 }
 
-function stopListening(){
- listening=false;clearTimeout(restartTimer);
- if(recognition){try{recognition.onend=null;recognition.stop();}catch{}recognition=null;}
- if(captureNode){try{captureNode.disconnect();}catch{}captureNode=null;}
+function stopRVC(){
+ running=false;
+ if(processorNode){try{processorNode.disconnect();}catch{}processorNode=null;}
+ if(sourceNode){try{sourceNode.disconnect();}catch{}sourceNode=null;}
  if(captureContext){try{captureContext.close();}catch{}captureContext=null;}
  if(mediaStream){mediaStream.getTracks().forEach(t=>t.stop());mediaStream=null;}
- if(player)player.stop();
- generating=false;start.disabled=false;stop.disabled=true;if(test)test.disabled=true;setStatus("Stopped.");
+ captureBuffer=[];queue=[];
+ if(playbackContext){lastOutputAt=playbackContext.currentTime;}
+ start.disabled=false;stop.disabled=true;test.disabled=false;setStatus("Stopped.");
 }
 
-start.onclick=startListening;stop.onclick=stopListening;
-const test=$("test");
-if(test)test.onclick=async()=>{
+async function testChromeAudio(){
  try{
-  await ensurePlayer();
-  const seconds=0.5;
-  const rate=player.sampleRate||24000;
-  const audio=new Float32Array(Math.floor(rate*seconds));
-  for(let i=0;i<audio.length;i++){
-   const t=i/rate;
-   const fade=Math.min(1,i/(rate*0.03),(audio.length-i)/(rate*0.03));
-   audio[i]=Math.sin(2*Math.PI*440*t)*0.12*Math.max(0,fade);
-  }
-  player.play(audio);
-  setStatus("Local Windows audio test sent to the backend.");
- }catch(e){setStatus("Output test failed: "+(e.message||e));}
-};
-navigator.mediaDevices.addEventListener?.("devicechange",()=>{loadDevices();loadOutputDevices();});
-if(output)output.addEventListener("change",setOutputDevice);
-if(chooseOutput)chooseOutput.addEventListener("click",async()=>{try{await ensurePlayer();await chooseWindowsOutput();}catch(e){setStatus("Output picker failed: "+(e.message||e));}});
-loadDevices();loadOutputDevices();
+  if(!playbackContext)playbackContext=createPlayback();
+  await playbackContext.resume();await setOutputDevice();
+  const rate=48000,dur=.6,a=new Float32Array(rate*dur);
+  for(let i=0;i<a.length;i++){const t=i/rate;const fade=Math.min(1,i/(rate*.04),(a.length-i)/(rate*.04));a[i]=Math.sin(2*Math.PI*440*t)*.12*Math.max(0,fade);}
+  await playPCM(a,rate);setStatus("Chrome audio test played.");
+ }catch(e){setStatus("Audio test failed: "+(e.message||e));}
+}
+
+pitch.addEventListener("input",()=>pitchValue.textContent=pitch.value);
+chunk.addEventListener("input",()=>chunkValue.textContent=Number(chunk.value).toFixed(1));
+start.onclick=startRVC;stop.onclick=stopRVC;test.onclick=testChromeAudio;
+chooseOutput.onclick=chooseWindowsOutput;
+output.addEventListener("change",setOutputDevice);
+navigator.mediaDevices?.addEventListener?.("devicechange",loadDevices);
+contentVecInput.addEventListener("change",()=>{$("contentVecStatus").textContent=contentVecInput.files?.[0]?"Using uploaded ContentVec: "+contentVecInput.files[0].name:"Auto-download enabled.";});
+rmvpeInput.addEventListener("change",()=>{$("rmvpeStatus").textContent=rmvpeInput.files?.[0]?"Using uploaded RMVPE: "+rmvpeInput.files[0].name:"Auto-download enabled.";});
+void loadDevices();void checkWebGPU();
