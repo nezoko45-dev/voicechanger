@@ -17,8 +17,8 @@ button{margin-top:10px;font-weight:800;cursor:pointer}.primary{background:#7040f
 <input id="model" type="file" accept=".onnx,.pth">
 <div class="note">Select your trained RVC voice model. ContentVec and RMVPE are downloaded automatically by the app.</div>
 </div>
-<div class="grid"><div><label>Microphone</label><select id="mic"><option value="">Choose microphone…</option></select></div>
-<div><label>Output</label><select id="output"><option value="">Default Windows output</option></select></div></div>
+<div class="grid"><div><label>Microphone</label><select id="mic"><option value="">Loading microphones…</option></select></div>
+<div><label>Speaker / output</label><select id="output"><option value="">Loading speakers…</option></select></div></div>
 <button id="chooseOutput">CHOOSE WINDOWS OUTPUT</button>
 <div class="panel"><div class="grid">
 <div><label>Pitch shift <span class="value" id="pitchValue">0</span> semitones</label><input id="pitch" class="range" type="range" min="-12" max="12" value="0"></div>
@@ -28,4 +28,4 @@ button{margin-top:10px;font-weight:800;cursor:pointer}.primary{background:#7040f
 <button id="test">TEST CHROME AUDIO</button>
 <div class="status" id="status">Downloading required RVC support models…</div><div class="small" id="gpu"></div>
 <div class="small">Only your trained RVC model is selected manually. No Deepgram, PocketTTS, Node audio backend, or Electron.</div>
-</main><script type="module" src="app.js?v=webgpu-rvc-20260929-3"></script></body></html>
+</main><script type="module" src="app.js?v=webgpu-rvc-devices-20260929-1"></script></body></html>
