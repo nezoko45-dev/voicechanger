@@ -6,6 +6,7 @@ const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition
 
 let tts=null,voiceRef=null,ttsPlayer=null,running=false;
 let recognition=null,speaking=false,speechQueue=[];
+let reconnectTimer=null,reconnectDelay=250,reconnectGeneration=0;
 
 function setStatus(v){status.textContent=v;}
 
@@ -124,21 +125,32 @@ async function speak(phrase){
  }
 }
 
-function setupRecognition(){
- if(!SpeechRecognition)throw new Error("Chrome Speech Recognition is unavailable in this browser. Use Google Chrome on Windows.");
- recognition=new SpeechRecognition();
- recognition.continuous=true;
- recognition.interimResults=true;
- recognition.lang="en-US";
- recognition.maxAlternatives=1;
+function cancelRecognitionReconnect(){
+ if(reconnectTimer){
+  clearTimeout(reconnectTimer);
+  reconnectTimer=null;
+ }
+}
 
- recognition.onstart=()=>{
+function createRecognition(){
+ if(!SpeechRecognition)throw new Error("Chrome Speech Recognition is unavailable in this browser. Use Google Chrome on Windows.");
+
+ const r=new SpeechRecognition();
+ r.continuous=true;
+ r.interimResults=true;
+ r.lang="en-US";
+ r.maxAlternatives=1;
+
+ r.onstart=()=>{
+  if(r!==recognition)return;
+  reconnectDelay=250;
   if(running)setStatus("Listening — speak naturally.");
  };
 
- recognition.onresult=event=>{
+ r.onresult=event=>{
+  if(r!==recognition)return;
   let interim="";
-  let finals=[];
+  const finals=[];
   for(let i=event.resultIndex;i<event.results.length;i++){
    const result=event.results[i];
    const phrase=result[0]?.transcript?.trim()||"";
@@ -149,29 +161,66 @@ function setupRecognition(){
   if(finals.length){
    text.value=(text.value+" "+finals.join(" ")).trim();
    for(const phrase of finals)void speak(phrase);
-  }else if(interim){
-   text.value=(text.value.replace(/\s*\[[^\]]*\]$/,"")+" "+interim.trim()).trim();
+  }
+  if(interim){
+   text.dataset.interim=interim.trim();
+  }else{
+   text.dataset.interim="";
   }
  };
 
- recognition.onerror=event=>{
-  if(!running)return;
+ r.onerror=event=>{
+  if(r!==recognition||!running)return;
+  console.warn("Chrome Speech Recognition error:",event.error);
+
   if(event.error==="not-allowed"||event.error==="service-not-allowed"){
-   setStatus("Microphone permission was denied. Allow microphone access and press START again.");
+   setStatus("Microphone permission/service denied. Allow Chrome microphone access, then it will reconnect.");
+   scheduleRecognitionReconnect();
    return;
   }
-  if(event.error!=="aborted")setStatus("Speech recognition: "+event.error);
- };
 
- recognition.onend=()=>{
-  if(running){
-   setStatus("Speech recognition restarting…");
-   setTimeout(()=>{
-    if(!running)return;
-    try{recognition.start();}catch{}
-   },150);
+  if(event.error==="audio-capture"){
+   setStatus("Microphone capture stopped — reconnecting Chrome speech recognition…");
+  }else if(event.error==="network"){
+   setStatus("Chrome speech service disconnected — reconnecting…");
+  }else if(event.error==="no-speech"){
+   setStatus("No speech detected — keeping Chrome speech recognition connected…");
+  }else if(event.error!=="aborted"){
+   setStatus("Speech recognition: "+event.error+" — reconnecting…");
   }
  };
+
+ r.onend=()=>{
+  if(r!==recognition||!running)return;
+  scheduleRecognitionReconnect();
+ };
+
+ return r;
+}
+
+function scheduleRecognitionReconnect(){
+ if(!running||reconnectTimer)return;
+ const delay=Math.min(reconnectDelay,5000);
+ setStatus("Chrome speech session stopped — reconnecting in "+(delay/1000).toFixed(1)+"s…");
+ const generation=++reconnectGeneration;
+ reconnectTimer=setTimeout(()=>{
+  reconnectTimer=null;
+  if(!running||generation!==reconnectGeneration)return;
+  try{
+   if(recognition){
+    recognition.onend=null;
+    recognition.onerror=null;
+    try{recognition.abort();}catch{}
+   }
+   recognition=createRecognition();
+   recognition.start();
+   reconnectDelay=Math.min(Math.max(reconnectDelay*1.5,500),5000);
+  }catch(e){
+   console.warn("Chrome recognition reconnect failed:",e);
+   reconnectDelay=Math.min(Math.max(reconnectDelay*1.5,500),5000);
+   scheduleRecognitionReconnect();
+  }
+ },delay);
 }
 
 async function startAll(){
@@ -185,14 +234,20 @@ async function startAll(){
   await prepareVoice();
   await loadOutputs();
   await setOutput();
-  setupRecognition();
+
+  cancelRecognitionReconnect();
+  reconnectDelay=250;
+  reconnectGeneration++;
   running=true;
   stop.disabled=false;
+  recognition=createRecognition();
   recognition.start();
  }catch(e){
   console.error(e);
   running=false;
   stop.disabled=true;
+  cancelRecognitionReconnect();
+  if(recognition){try{recognition.abort();}catch{}recognition=null;}
   if(ttsPlayer){try{await ttsPlayer.destroy();}catch{}ttsPlayer=null;}
   setStatus("Start error: "+(e.message||e));
   updateStartButton();
@@ -201,9 +256,11 @@ async function startAll(){
 
 async function stopAll(){
  running=false;
+ reconnectGeneration++;
+ cancelRecognitionReconnect();
  speechQueue=[];
  if(recognition){
-  try{recognition.onend=null;recognition.stop();}catch{}
+  try{recognition.onend=null;recognition.onerror=null;recognition.abort();}catch{}
   recognition=null;
  }
  if(tts){try{await tts.stop();}catch{}}
