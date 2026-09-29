@@ -155,8 +155,8 @@ async function processQueue(){
    const audio16=downsample(raw,captureContext.sampleRate,16000);
    setStatus("RVC converting… queue: "+queue.length);
    const model=selectedFile(modelInput,null);
-   const contentVec=selectedFile(contentVecInput,autoContentVec);
-   const rmvpe=selectedFile(rmvpeInput,autoRMVPE);
+   const contentVec=autoContentVec;
+   const rmvpe=autoRMVPE;
    if(!model)throw new Error("Select your trained RVC .onnx or .pth voice model first.");
    if(!contentVec||!rmvpe)throw new Error("ContentVec and RMVPE models are required.");
    if(!rvc)rvc=await import("https://cdn.jsdelivr.net/npm/rvc-web-runtime@1.0.5/dist/index.js");
