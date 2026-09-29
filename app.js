@@ -7,6 +7,13 @@ let recognition=null,restartTimer=null;
 let spokenWords=0;
 let latestResultChunks=[],latestResultToken=0,resultUrl="";
 
+// Real microphone timing. This measures the actual incoming mic waveform rather
+// than assuming a fixed TTS speed.
+let micStream=null,micContext=null,micAnalyser=null,micTimer=null;
+let micSpeechStart=0,micLastVoice=0,micSpeechActive=false,micLastQueuedElapsed=0;
+const MIC_THRESHOLD=.022;
+const MIC_SILENCE_MS=280;
+
 function setStatus(v){status.textContent=v;}
 function updateStartButton(){start.disabled=!(reference.files?.[0]&&!running);}
 
@@ -44,6 +51,67 @@ async function chooseChromeSpeaker(){
  }catch(e){if(e.name!=="NotAllowedError")setStatus("Speaker picker error: "+e.message);}
 }
 
+async function startMicTiming(){
+ if(!navigator.mediaDevices?.getUserMedia)throw new Error("Chrome microphone access is unavailable.");
+ await stopMicTiming();
+ micStream=await navigator.mediaDevices.getUserMedia({
+  audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}
+ });
+ micContext=new AudioContext({latencyHint:"interactive"});
+ micAnalyser=micContext.createAnalyser();
+ micAnalyser.fftSize=1024;
+ micAnalyser.smoothingTimeConstant=.12;
+ const source=micContext.createMediaStreamSource(micStream);
+ source.connect(micAnalyser);
+ const data=new Float32Array(micAnalyser.fftSize);
+ micSpeechStart=0;micLastVoice=0;micSpeechActive=false;micLastQueuedElapsed=0;
+ const tick=()=>{
+  if(!micAnalyser)return;
+  micAnalyser.getFloatTimeDomainData(data);
+  let sum=0;
+  for(let i=0;i<data.length;i++)sum+=data[i]*data[i];
+  const rms=Math.sqrt(sum/data.length);
+  const now=performance.now();
+  if(rms>=MIC_THRESHOLD){
+   if(!micSpeechActive){
+    micSpeechActive=true;
+    micSpeechStart=now;
+    micLastQueuedElapsed=0;
+   }
+   micLastVoice=now;
+  }else if(micSpeechActive&&now-micLastVoice>=MIC_SILENCE_MS){
+   micSpeechActive=false;
+  }
+  micTimer=requestAnimationFrame(tick);
+ };
+ tick();
+}
+
+function currentMicSpeechElapsed(){
+ if(!micSpeechStart)return 0;
+ const end=micSpeechActive?Math.max(micLastVoice,performance.now()):micLastVoice;
+ return Math.max(0,(end-micSpeechStart)/1000);
+}
+
+async function stopMicTiming(){
+ if(micTimer){cancelAnimationFrame(micTimer);micTimer=null;}
+ try{micStream?.getTracks().forEach(t=>t.stop());}catch{}
+ micStream=null;
+ try{await micContext?.close();}catch{}
+ micContext=null;micAnalyser=null;
+ micSpeechActive=false;micSpeechStart=0;micLastVoice=0;micLastQueuedElapsed=0;
+}
+
+function takeChunkDuration(final=false){
+ let total=currentMicSpeechElapsed();
+ if(total<=0)return .75;
+ let duration=final?total-micLastQueuedElapsed:total-micLastQueuedElapsed;
+ if(final)duration+=.12;
+ duration=Math.max(.22,duration);
+ micLastQueuedElapsed=total;
+ return duration;
+}
+
 async function initTTS(){
  if(tts)return;
  const mod=await import(TTS_URL);
@@ -56,8 +124,7 @@ async function initTTS(){
   maxThreads:8,
   maxReferenceSeconds:6
  });
- ttsPlayer=new mod.StreamingPlayer({sampleRate:tts.sampleRate,primeSeconds:.01,playbackRate:1.2});
- if(ttsPlayer.setPlaybackRate)ttsPlayer.setPlaybackRate(1.2);
+ ttsPlayer=new mod.StreamingPlayer({sampleRate:tts.sampleRate,primeSeconds:.01,playbackRate:1});
  await ttsPlayer.resume();
  setStatus("Loading PocketTTS models…");
  await tts.load(p=>{
@@ -89,54 +156,65 @@ async function prepareVoice(){
 function normalize(s){return s.replace(/\s+/g," ").trim();}
 function words(s){return normalize(s).split(" ").filter(Boolean);}
 
-let pendingPhrase="";
+let pendingPhrases=[];
 let speechWorker=false;
 let generationToken=0;
 
-function queueLatest(s){
+function queueLatest(s,targetDuration){
  s=normalize(s);
  if(!s)return;
- pendingPhrase=pendingPhrase?normalize(pendingPhrase+" "+s):s;
- const w=words(pendingPhrase);
- if(w.length>3)pendingPhrase=w.slice(-3).join(" ");
+ pendingPhrases.push({text:s,duration:Math.max(.22,Number(targetDuration)||.75)});
+ if(pendingPhrases.length>3)pendingPhrases.splice(0,pendingPhrases.length-3);
  void drainSpeech();
+}
+
+function clampRate(rate){
+ return Math.max(.5,Math.min(2.5,Number(rate)||1));
 }
 
 async function drainSpeech(){
  if(speechWorker)return;
  speechWorker=true;
  try{
-  while(running&&pendingPhrase){
-   const phrase=pendingPhrase;
-   pendingPhrase="";
+  while(running&&pendingPhrases.length){
+   const item=pendingPhrases.shift();
+   const phrase=item.text;
+   const targetDuration=item.duration;
    const token=++generationToken;
    latestResultChunks=[];
    latestResultToken=token;
-   setStatus("Speaking: "+phrase);
+   setStatus("Generating: "+phrase);
    await tts.generate(phrase,{
     voice:voiceRef,
     onChunk:(audio,meta)=>{
      if(running&&token===generationToken){
       latestResultChunks.push(audio instanceof Float32Array?audio.slice():new Float32Array(audio));
-      ttsPlayer?.play(audio,meta);
      }
     }
    });
-   if(running&&token===generationToken){
+   if(running&&token===generationToken&&latestResultChunks.length){
+    const generatedSamples=latestResultChunks.reduce((n,x)=>n+x.length,0);
+    const generatedDuration=generatedSamples/tts.sampleRate;
+    const rate=clampRate(generatedDuration/targetDuration);
+    ttsPlayer?.setPlaybackRate?.(rate);
+    for(const chunk of latestResultChunks)ttsPlayer?.play(chunk);
     ttsPlayer?.flush();
+
     const blob=modToWavBlob(latestResultChunks,tts.sampleRate);
     if(resultUrl)URL.revokeObjectURL(resultUrl);
     resultUrl=URL.createObjectURL(blob);
     resultPlayer.src=resultUrl;
-    resultPlayer.playbackRate=1.2;
-    resultInfo.textContent="Generated result • 120% playback timing • "+(blob.size/1024).toFixed(1)+" KB";
+    resultPlayer.playbackRate=rate;
+    resultPlayer.preservesPitch=true;
+    resultInfo.textContent="Matched mic timing • mic "+targetDuration.toFixed(2)+"s → TTS "+generatedDuration.toFixed(2)+"s • "+Math.round(rate*100)+"% playback";
+    setStatus("Listening — matched to your speaking time.");
    }
   }
  }catch(e){
   if(running)setStatus("PocketTTS error: "+(e.message||e));
  }finally{
   speechWorker=false;
-  if(running&&pendingPhrase)void drainSpeech();
+  if(running&&pendingPhrases.length)void drainSpeech();
   else if(running)setStatus("Listening — speak now.");
  }
 }
@@ -168,10 +246,11 @@ function commitInterim(raw){
  if(!current)return;
  text.value=current;
  const W=words(current);
- const safeCount=Math.max(0,W.length-2);
+ // Start producing after a few words, but do not wait for the entire sentence.
+ const safeCount=Math.max(0,W.length-1);
  if(safeCount<=spokenWords)return;
  const piece=W.slice(spokenWords,safeCount).join(" ");
- if(piece)queueLatest(piece);
+ if(piece)queueLatest(piece,takeChunkDuration(false));
  spokenWords=safeCount;
 }
 
@@ -181,7 +260,7 @@ function commitFinal(raw){
  text.value=current;
  const W=words(current);
  const remaining=W.slice(Math.min(spokenWords,W.length)).join(" ");
- if(remaining)queueLatest(remaining);
+ if(remaining)queueLatest(remaining,takeChunkDuration(true));
  spokenWords=W.length;
 }
 
@@ -231,29 +310,32 @@ async function startAll(){
  try{
   if(!reference.files?.[0])throw new Error("Choose your WAV voice reference first.");
   start.disabled=true;running=true;stop.disabled=false;
-  text.value="";spokenWords=0;pendingPhrase="";generationToken++;
+  text.value="";spokenWords=0;pendingPhrases=[];generationToken++;
   latestResultChunks=[];
-  setStatus("Loading your WAV voice…");
+  setStatus("Opening your microphone…");
+  await startMicTiming();
   await initTTS();
   if(!running)return;
   await prepareVoice();
   if(!running)return;
   await loadOutputs();await setOutput();
   startRecognition();
-  setStatus("Listening — speak now.");
+  setStatus("Listening — your mic timing is now tracked automatically.");
  }catch(e){
   console.error(e);
-  running=false;stopRecognition();pendingPhrase="";generationToken++;
+  running=false;stopRecognition();pendingPhrases=[];generationToken++;
   try{ttsPlayer?.stop?.();}catch{}
+  await stopMicTiming();
   setStatus("Start error: "+(e.message||e));
   stop.disabled=true;updateStartButton();
  }
 }
 
 async function stopAll(){
- running=false;stopRecognition();pendingPhrase="";spokenWords=0;generationToken++;
+ running=false;stopRecognition();pendingPhrases=[];spokenWords=0;generationToken++;
  try{await tts?.stop();}catch{}
  try{ttsPlayer?.stop?.();}catch{}
+ await stopMicTiming();
  stop.disabled=true;updateStartButton();
  setStatus("Stopped.");
 }
