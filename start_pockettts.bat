@@ -1,6 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
+
 where node >nul 2>nul
 if errorlevel 1 (
  echo Node.js 18+ is required.
@@ -8,6 +9,13 @@ if errorlevel 1 (
  pause
  exit /b 1
 )
-start "" "http://127.0.0.1:8787"
+
+echo Starting local PocketTTS + Deepgram STT app...
+start "" "chrome.exe" "http://127.0.0.1:8787/"
+if errorlevel 1 (
+ echo Chrome was not found on PATH. Opening the local app with the default browser instead.
+ start "" "http://127.0.0.1:8787/"
+)
+
 node server.js
 pause
