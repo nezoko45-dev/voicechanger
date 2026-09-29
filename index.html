@@ -29,7 +29,7 @@ audio{width:100%;margin-top:8px}
 <main class="card">
 <div class="badge">GITHUB PAGES • CHROME MIC • YOUR WAV</div>
 <h1>🎙 WAV Voice Changer</h1>
-<p class="sub">Automatic browser voice pipeline. Speak into the mic and your WAV-cloned PocketTTS voice is generated and played automatically.</p>
+<p class="sub">Streaming browser voice pipeline. Mic speech is recognized continuously and your WAV-cloned PocketTTS voice starts as soon as a short phrase ends.</p>
 
 <div class="panel">
 <label>Voice reference WAV</label>
@@ -49,7 +49,7 @@ audio{width:100%;margin-top:8px}
 <button id="stop" class="danger" type="button" disabled>STOP</button>
 </div>
 <div class="meter"><i id="meterBar"></i></div>
-<div class="note" style="margin-top:9px">The microphone tone detector only tracks when you are speaking. Your WAV-cloned voice is generated and played at PocketTTS's natural duration — no mic-duration matching or time-stretching.</div>
+<div class="note" style="margin-top:9px">Streaming STT shows interim text while you speak. A short silence commits that phrase to PocketTTS immediately; generated TTS chunks play as they arrive. Your WAV voice stays at natural speed.</div>
 </div>
 
 <div class="panel">
@@ -61,8 +61,8 @@ audio{width:100%;margin-top:8px}
 
 <div class="status" id="status">Choose your WAV first.</div>
 <div class="small" id="info"></div>
-<div class="flow">🎙 speak → automatic Chrome recognition → PocketTTS using YOUR WAV → automatic natural-speed playback → repeat</div>
+<div class="flow">🎙 streaming STT → short phrase boundary → streaming PocketTTS → 🔊 immediate chunks → completed WAV</div>
 </main>
-<script type="module" src="./app.js?v=stream-wav-tts-20260929-2"></script>
+<script type="module" src="./app.js?v=stream-stt-wav-tts-20260929-3"></script>
 </body>
 </html>
