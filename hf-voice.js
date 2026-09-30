@@ -10,9 +10,9 @@ const stopBtn = $('stop');
 const status = $('status');
 const meter = $('meter');
 
-// IMPORTANT: kokoro-js 1.2.1 expects this model ID. The v1.0-ONNX repo's
-// config identifies the architecture as style_text_to_speech_2, which older
-// generic Transformers.js loading can reject. kokoro-js handles Kokoro itself.
+// IMPORTANT: kokoro-js 1.2.1 documents this model ID.
+// The v1.0 model ID can expose style_text_to_speech_2 to an older bundled
+// Transformers.js runtime and produce "Unsupported model type" in the browser.
 const MODEL = 'onnx-community/Kokoro-82M-ONNX';
 let tts = null;
 let recognition = null;
@@ -60,23 +60,22 @@ async function loadVoice(){
     setStatus('Loading Kokoro locally… first load downloads and caches the browser model.');
     meter.style.width='15%';
 
-    const webgpu = !!navigator.gpu;
-    const device = webgpu ? 'webgpu' : 'wasm';
-    const dtype = webgpu ? 'fp32' : 'q8';
-
+    // WASM + q8 is the safest GitHub Pages path. WebGPU can be enabled later
+    // once the model/runtime combination is confirmed working in the browser.
     tts = await KokoroTTS.from_pretrained(MODEL, {
-      dtype,
-      device,
+      dtype: 'q8',
+      device: 'wasm',
       progress_callback: p => {
         if(p?.progress != null) meter.style.width=Math.max(15,Math.min(100,p.progress))+'%';
       }
     });
 
     meter.style.width='100%';
-    setStatus(`Kokoro loaded (${device}/${dtype}). Press START and speak.`);
+    setStatus('Kokoro loaded. Press START and speak.');
   }catch(e){
     console.error(e); tts=null; loadBtn.disabled=false;
-    setStatus('Model load failed: '+(e?.message||e));
+    const msg=e?.message||String(e);
+    setStatus('Model load failed: '+msg);
     throw e;
   }
 }
