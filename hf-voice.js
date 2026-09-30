@@ -10,7 +10,10 @@ const stopBtn = $('stop');
 const status = $('status');
 const meter = $('meter');
 
-const MODEL = 'onnx-community/Kokoro-82M-v1.0-ONNX';
+// IMPORTANT: kokoro-js 1.2.1 expects this model ID. The v1.0-ONNX repo's
+// config identifies the architecture as style_text_to_speech_2, which older
+// generic Transformers.js loading can reject. kokoro-js handles Kokoro itself.
+const MODEL = 'onnx-community/Kokoro-82M-ONNX';
 let tts = null;
 let recognition = null;
 let running = false;
