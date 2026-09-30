@@ -19,7 +19,7 @@ jobs:
       - name: Download ONNX Runtime
         shell: pwsh
         run: |
-          $ortVer = '1.24.5'
+          $ortVer = '1.23.2'
           $zip = "$env:RUNNER_TEMP\onnxruntime.zip"
           $dir = "$env:GITHUB_WORKSPACE\native\third_party\onnxruntime-win-x64-$ortVer"
           New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\native\third_party" | Out-Null
@@ -29,7 +29,7 @@ jobs:
       - name: Configure
         shell: pwsh
         run: |
-          $ortDir = "$env:GITHUB_WORKSPACE\native\third_party\onnxruntime-win-x64-1.24.5"
+          $ortDir = "$env:GITHUB_WORKSPACE\native\third_party\onnxruntime-win-x64-1.23.2"
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DONNXRUNTIME_ROOT="$ortDir"
 
       - name: Build
@@ -41,7 +41,7 @@ jobs:
           New-Item -ItemType Directory -Force package | Out-Null
           Copy-Item build\Release\voicechanger_host.exe package\
           Copy-Item build\Release\voicechanger.dll package\
-          Copy-Item third_party\onnxruntime-win-x64-1.24.5\lib\onnxruntime.dll package\
+          Copy-Item third_party\onnxruntime-win-x64-1.23.2\lib\onnxruntime.dll package\
           Compress-Archive -Path package\* -DestinationPath native-voicechanger-win-x64.zip -Force
 
       - name: Upload artifact
