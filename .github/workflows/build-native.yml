@@ -1,0 +1,51 @@
+name: Build native Windows voice changer
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'native/**'
+      - '.github/workflows/build-native.yml'
+
+jobs:
+  build:
+    runs-on: windows-2022
+    defaults:
+      run:
+        working-directory: native
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download ONNX Runtime
+        shell: pwsh
+        run: |
+          $ortVer = '1.24.5'
+          $zip = "$env:RUNNER_TEMP\onnxruntime.zip"
+          $dir = "$env:GITHUB_WORKSPACE\native\third_party\onnxruntime-win-x64-$ortVer"
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\native\third_party" | Out-Null
+          Invoke-WebRequest -UseBasicParsing "https://github.com/microsoft/onnxruntime/releases/download/v$ortVer/onnxruntime-win-x64-$ortVer.zip" -OutFile $zip
+          Expand-Archive -Force $zip "$env:GITHUB_WORKSPACE\native\third_party"
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          $ortDir = "$env:GITHUB_WORKSPACE\native\third_party\onnxruntime-win-x64-1.24.5"
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DONNXRUNTIME_ROOT="$ortDir"
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force package | Out-Null
+          Copy-Item build\Release\voicechanger_host.exe package\
+          Copy-Item build\Release\voicechanger.dll package\
+          Copy-Item third_party\onnxruntime-win-x64-1.24.5\lib\onnxruntime.dll package\
+          Compress-Archive -Path package\* -DestinationPath native-voicechanger-win-x64.zip -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-voicechanger-win-x64
+          path: native/native-voicechanger-win-x64.zip
