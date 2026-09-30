@@ -14,16 +14,23 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(rvc_cpp)
 
-# rvc-cpp's dvc target is the actual native RVC inference DLL.
+# Existing native host (kept for direct Windows audio use).
 set_target_properties(dvc PROPERTIES OUTPUT_NAME "voicechanger")
-
 add_executable(voicechanger_host src/main.cpp)
 target_include_directories(voicechanger_host PRIVATE ${rvc_cpp_SOURCE_DIR}/include)
 target_link_libraries(voicechanger_host PRIVATE dvc winmm)
 target_compile_definitions(voicechanger_host PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
 
+# GitHub Pages bridge. This executable dynamically loads the existing
+# voicechanger.dll; it does NOT rebuild or replace that DLL at runtime.
+add_executable(voicechanger_web_bridge src/web_bridge.cpp)
+target_include_directories(voicechanger_web_bridge PRIVATE ${rvc_cpp_SOURCE_DIR}/include)
+target_link_libraries(voicechanger_web_bridge PRIVATE ws2_32)
+target_compile_definitions(voicechanger_web_bridge PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+
 if(MSVC)
   target_compile_options(voicechanger_host PRIVATE /W4 /EHsc /utf-8)
+  target_compile_options(voicechanger_web_bridge PRIVATE /W4 /EHsc /utf-8)
 endif()
 
 add_custom_command(TARGET voicechanger_host POST_BUILD
@@ -31,4 +38,4 @@ add_custom_command(TARGET voicechanger_host POST_BUILD
           "$<TARGET_FILE:dvc>"
           "$<TARGET_FILE_DIR:voicechanger_host>/voicechanger.dll")
 
-install(TARGETS voicechanger_host dvc RUNTIME DESTINATION bin LIBRARY DESTINATION bin ARCHIVE DESTINATION lib)
+install(TARGETS voicechanger_host voicechanger_web_bridge dvc RUNTIME DESTINATION bin LIBRARY DESTINATION bin ARCHIVE DESTINATION lib)
