@@ -2,7 +2,7 @@
 setlocal
 if not exist build mkdir build
 if not exist third_party mkdir third_party
-set ORT_VER=1.24.5
+set ORT_VER=1.23.2
 set ORT_DIR=%CD%\third_party\onnxruntime-win-x64-%ORT_VER%
 set ORT_ZIP=%CD%\third_party\onnxruntime-win-x64-%ORT_VER%.zip
 if not exist "%ORT_DIR%\include\onnxruntime_cxx_api.h" (
