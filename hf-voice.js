@@ -1,4 +1,4 @@
-import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2/+esm';
+import { KokoroTTS } from 'https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/+esm';
 
 const $ = id => document.getElementById(id);
 const voiceSel = $('voice');
@@ -54,17 +54,26 @@ async function loadVoice(){
   if(tts) return;
   loadBtn.disabled=true;
   try{
-    setStatus('Loading Kokoro… first load downloads the browser model.');
+    setStatus('Loading Kokoro locally… first load downloads and caches the browser model.');
     meter.style.width='15%';
-    tts = await pipeline('text-to-speech', MODEL, {
-      dtype: 'q8',
-      device: 'wasm'
+
+    const webgpu = !!navigator.gpu;
+    const device = webgpu ? 'webgpu' : 'wasm';
+    const dtype = webgpu ? 'fp32' : 'q8';
+
+    tts = await KokoroTTS.from_pretrained(MODEL, {
+      dtype,
+      device,
+      progress_callback: p => {
+        if(p?.progress != null) meter.style.width=Math.max(15,Math.min(100,p.progress))+'%';
+      }
     });
+
     meter.style.width='100%';
-    setStatus('Kokoro loaded. Press START by clicking LOAD VOICE again, or speak once the microphone is enabled.');
+    setStatus(`Kokoro loaded (${device}/${dtype}). Press START and speak.`);
   }catch(e){
     console.error(e); tts=null; loadBtn.disabled=false;
-    setStatus('Model load failed: '+e.message);
+    setStatus('Model load failed: '+(e?.message||e));
     throw e;
   }
 }
@@ -73,8 +82,9 @@ function playAudio(audio, sampleRate){
   return new Promise(async(resolve,reject)=>{
     try{
       await ensureContext();
-      const buffer=ctx.createBuffer(1,audio.length,sampleRate);
-      buffer.copyToChannel(audio,0);
+      const data = audio instanceof Float32Array ? audio : new Float32Array(audio);
+      const buffer=ctx.createBuffer(1,data.length,sampleRate);
+      buffer.copyToChannel(data,0);
       const src=ctx.createBufferSource();
       src.buffer=buffer;
       src.connect(ctx.destination);
@@ -91,9 +101,14 @@ async function processQueue(){
   const text=queue.shift();
   try{
     setStatus('Speaking: '+text);
-    const result=await tts(text,{voice:voiceSel.value,speed:1.0});
+    const result=await tts.generate(text,{voice:voiceSel.value,speed:1.0});
     await playAudio(result.audio,result.sampling_rate);
-  }catch(e){ console.error(e); speaking=false; setStatus('TTS error: '+e.message); }
+  }catch(e){
+    console.error(e);
+    speaking=false;
+    setStatus('TTS error: '+(e?.message||e));
+    processQueue();
+  }
 }
 
 function startRecognition(){
@@ -134,7 +149,7 @@ async function start(){
     running=true; queue=[]; startRecognition();
     loadBtn.textContent='RUNNING'; loadBtn.disabled=true;
     setStatus('Listening…');
-  }catch(e){ console.error(e); running=false; setStatus('Start error: '+e.message); }
+  }catch(e){ console.error(e); running=false; setStatus('Start error: '+(e?.message||e)); }
 }
 
 function stop(){
