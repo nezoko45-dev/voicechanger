@@ -6,27 +6,24 @@ const TTS_URL='http://127.0.0.1:8100/v1/audio/speech';
 let recognition=null,running=false,ctx=null,currentAudio=null,speaking=false,queue=[];
 function setStatus(s){status.textContent=s;}
 async function devices(){
-  if(!navigator.mediaDevices?.enumerateDevices)return;
-  try{const ds=await navigator.mediaDevices.enumerateDevices(),mi=micSel.value,ou=outSel.value;
-    micSel.innerHTML='<option value="">Default microphone</option>';outSel.innerHTML='<option value="">Default output</option>';
-    ds.filter(d=>d.kind==='audioinput').forEach((d,i)=>micSel.append(new Option(d.label||`Microphone ${i+1}`,d.deviceId)));
-    ds.filter(d=>d.kind==='audiooutput').forEach((d,i)=>outSel.append(new Option(d.label||`Speaker ${i+1}`,d.deviceId)));
-    if([...micSel.options].some(o=>o.value===mi))micSel.value=mi;
-    if([...outSel.options].some(o=>o.value===ou))outSel.value=ou;
-  }catch(e){console.warn(e);}
+ if(!navigator.mediaDevices?.enumerateDevices)return;
+ try{const ds=await navigator.mediaDevices.enumerateDevices(),mi=micSel.value,ou=outSel.value;
+  micSel.innerHTML='<option value="">Default microphone</option>';outSel.innerHTML='<option value="">Default output</option>';
+  ds.filter(d=>d.kind==='audioinput').forEach((d,i)=>micSel.append(new Option(d.label||`Microphone ${i+1}`,d.deviceId)));
+  ds.filter(d=>d.kind==='audiooutput').forEach((d,i)=>outSel.append(new Option(d.label||`Speaker ${i+1}`,d.deviceId)));
+  if([...micSel.options].some(o=>o.value===mi))micSel.value=mi;if([...outSel.options].some(o=>o.value===ou))outSel.value=ou;
+ }catch(e){console.warn(e);}
 }
 async function ensureContext(){if(!ctx)ctx=new AudioContext({latencyHint:'interactive'});await ctx.resume();if(ctx.setSinkId&&outSel.value)try{await ctx.setSinkId(outSel.value);}catch(e){console.warn(e);}}
 async function chooseOutput(){if(!navigator.mediaDevices?.selectAudioOutput){setStatus('Chrome does not expose speaker selection here. Use the system default output.');return;}try{const d=await navigator.mediaDevices.selectAudioOutput();if(d)outSel.value=d.deviceId;await ensureContext();}catch(e){if(e.name!=='NotAllowedError')setStatus('Speaker selection: '+e.message);}}
 async function speak(text){
-  const response=await fetch(TTS_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'qwen3-tts',input:text,voice:'Ono_Anna',language:'English',response_format:'wav'})});
-  if(!response.ok)throw new Error(`Local Qwen TTS HTTP ${response.status}`);
-  const bytes=await response.arrayBuffer();
-  await ensureContext();
-  const buffer=await ctx.decodeAudioData(bytes.slice(0));
-  await new Promise((resolve,reject)=>{const src=ctx.createBufferSource();src.buffer=buffer;src.connect(ctx.destination);currentAudio=src;speaking=true;src.onended=()=>{speaking=false;currentAudio=null;resolve();processQueue();};src.onerror=reject;src.start();});
+ const response=await fetch(TTS_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'Qwen3-TTS-12Hz-0.6B-CustomVoice',input:text,voice:'Ono_Anna',language:'English',response_format:'wav'})});
+ if(!response.ok){let detail='HTTP '+response.status;try{const j=await response.json();detail=j.detail||detail;}catch{}throw new Error(detail);}
+ const bytes=await response.arrayBuffer();await ensureContext();const buffer=await ctx.decodeAudioData(bytes.slice(0));
+ await new Promise((resolve,reject)=>{const src=ctx.createBufferSource();src.buffer=buffer;src.connect(ctx.destination);currentAudio=src;speaking=true;src.onended=()=>{speaking=false;currentAudio=null;resolve();processQueue();};src.onerror=reject;src.start();});
 }
 async function processQueue(){if(speaking||!queue.length||!running)return;const text=queue.shift();try{setStatus('Ono Anna: '+text);meter.style.width='85%';await speak(text);meter.style.width='100%';}catch(e){speaking=false;setStatus('Ono Anna TTS error: '+(e?.message||e));}}
-function startRecognition(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){setStatus('This Chrome build does not provide SpeechRecognition.');return;}recognition=new SR();recognition.continuous=true;recognition.interimResults=true;recognition.lang='en-US';recognition.maxAlternatives=1;recognition.onstart=()=>setStatus('Listening… speak normally.');recognition.onerror=e=>{if(e.error!=='no-speech'&&e.error!=='aborted')setStatus('Speech recognition: '+e.error);};recognition.onend=()=>{if(running)try{recognition.start();}catch{}};recognition.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++){const r=e.results[i];if(r.isFinal){const text=r[0].transcript.trim();if(text){queue.push(text);processQueue();}}}};try{recognition.start();}catch{}}
-async function start(){if(running)return;try{const constraints={audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}};if(micSel.value)constraints.audio.deviceId={exact:micSel.value};const stream=await navigator.mediaDevices.getUserMedia(constraints);stream.getTracks().forEach(t=>t.stop());await devices();await ensureContext();const ping=await fetch(TTS_URL,{method:'OPTIONS'}).catch(()=>null);running=true;queue=[];startRecognition();startBtn.textContent='RUNNING';startBtn.disabled=true;meter.style.width='15%';setStatus('Listening… Ono Anna is ready.');}catch(e){running=false;setStatus('Start error: '+(e?.message||e)+'. Start the local Qwen3-TTS bridge on port 8100.');}}
+function startRecognition(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){setStatus('This Chrome build does not provide SpeechRecognition.');return;}recognition=new SR();recognition.continuous=true;recognition.interimResults=true;recognition.lang='en-US';recognition.maxAlternatives=1;recognition.onstart=()=>setStatus('Listening… Ono Anna ready.');recognition.onerror=e=>{if(e.error!=='no-speech'&&e.error!=='aborted')setStatus('Speech recognition: '+e.error);};recognition.onend=()=>{if(running)try{recognition.start();}catch{}};recognition.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++){const r=e.results[i];if(r.isFinal){const text=r[0].transcript.trim();if(text){queue.push(text);processQueue();}}}};try{recognition.start();}catch{}}
+async function start(){if(running)return;try{const constraints={audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}};if(micSel.value)constraints.audio.deviceId={exact:micSel.value};const stream=await navigator.mediaDevices.getUserMedia(constraints);stream.getTracks().forEach(t=>t.stop());await devices();await ensureContext();const health=await fetch('http://127.0.0.1:8100/health',{cache:'no-store'});if(!health.ok)throw new Error('Local Qwen server is not ready');running=true;queue=[];startRecognition();startBtn.textContent='RUNNING';startBtn.disabled=true;meter.style.width='15%';setStatus('Listening… Ono Anna is ready.');}catch(e){running=false;setStatus('Start error: '+(e?.message||e)+'. Run start_ono_anna.bat first.');}}
 function stop(){running=false;queue=[];try{recognition?.stop();}catch{}recognition=null;try{currentAudio?.stop();}catch{}currentAudio=null;speaking=false;startBtn.disabled=false;startBtn.textContent='START';meter.style.width='0%';setStatus('Stopped.');}
 startBtn.onclick=()=>void start();stopBtn.onclick=stop;choose.onclick=()=>void chooseOutput();outSel.onchange=()=>void ensureContext();navigator.mediaDevices?.addEventListener?.('devicechange',devices);void devices();
