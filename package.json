@@ -1,8 +1,8 @@
 {
-  "name":"deepgram-pockettts-chrome-voicechanger",
-  "private":true,
-  "version":"4.0.0",
-  "description":"Local Chrome voice changer using Deepgram WebSocket STT and PocketTTS browser TTS",
-  "main":"server.js",
-  "scripts":{"start":"node server.js"}
+  "name": "voicechanger-pocket-pages",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "vite build" },
+  "dependencies": { "pocket-tts-js": "^0.1.0" },
+  "devDependencies": { "vite": "^7.0.0" }
 }
