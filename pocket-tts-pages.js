@@ -2,7 +2,7 @@ import { PocketTTS, StreamingPlayer, chunksToWavBlob } from "./pocket-tts/index.
 
 const $ = id => document.getElementById(id);
 const status = $("status"), startBtn = $("load"), stopBtn = $("stop"), micSelect = $("mic"), outputSelect = $("output"), meter = $("meter"), silenceSelect = $("silence"), referenceBtn = $("reference"), outputAudio = $("mp3"), testVoiceBtn = $("testVoice"), replayBtn = $("replay"), chooseBtn = $("choose");
-let tts = null, player = null, voiceRef = null, running = false, recognition = null, silenceTimer = 0, recoveryTimer = 0, pendingText = "", micStream = null, vadContext = null, vadAnalyser = null, vadFrame = 0, referenceFile = null, generating = false, generation = 0, lastBlob = null;
+let tts = null, player = null, voiceRef = null, running = false, recognition = null, silenceTimer = 0, recoveryTimer = 0, pendingText = "", micStream = null, vadContext = null, vadAnalyser = null, vadFrame = 0, referenceFile = null, generating = false, generation = 0, lastBlob = null, lastFinalText = "", lastFinalAt = 0;
 const setStatus = x => status.textContent = x;
 const silenceMs = () => Number(silenceSelect?.value || 220);
 
@@ -20,7 +20,7 @@ async function refreshDevices() {
 }
 
 async function ensurePlayer() {
-  if (!player) player = new StreamingPlayer({ sampleRate: tts.sampleRate, minLead: 0.02, playbackRate: 1.0 });
+  if (!player) player = new StreamingPlayer({ sampleRate: tts.sampleRate, minLead: 0.035, playbackRate: 1.0 });
   await player.resume();
   if (typeof player.audioContext?.setSinkId === "function") await player.setSinkId(outputSelect.value || "default");
 }
@@ -100,16 +100,52 @@ async function startMic() {
   vadFrame=requestAnimationFrame(tick);
 }
 
+function normalizeSpeech(text) {
+  return text.replace(/\s+/g," ").trim().replace(/[\u200B-\u200D\uFEFF]/g,"");
+}
+
+function queueFinalSpeech(text) {
+  text = normalizeSpeech(text);
+  if (!text) return;
+  const now = performance.now();
+  // Chrome can repeat the same finalized result after a recognition restart.
+  if (text === lastFinalText && now - lastFinalAt < 2500) return;
+  lastFinalText = text;
+  lastFinalAt = now;
+  // Do not append interim hypotheses. Only finalized recognition text reaches TTS.
+  pendingText = pendingText ? `${pendingText} ${text}` : text;
+  clearTimeout(silenceTimer);
+  silenceTimer = setTimeout(() => {
+    const phrase = normalizeSpeech(pendingText);
+    pendingText = "";
+    if (phrase) speak(phrase);
+  }, silenceMs());
+}
+
 async function speak(text) {
-  text=text.replace(/\s+/g," ").trim();
+  text=normalizeSpeech(text);
   if(!text||!voiceRef||generating)return;
   const id=++generation; generating=true;
   try {
-    await ensurePlayer(); await tts.stop(); player.reset();
+    await ensurePlayer();
+    await tts.stop();
+    player.reset();
     setStatus(`Speaking with your WAV voice: “${text}”`);
     const chunks=[];
-    await tts.generate(text,{voice:voiceRef,onChunk:(chunk,meta)=>{if(id!==generation)return; const copy=chunk.slice(); chunks.push(copy); player.play(copy,meta);}});
-    if(id===generation&&chunks.length){ player.flush(); lastBlob=chunksToWavBlob(chunks,tts.sampleRate); if(outputAudio.src)URL.revokeObjectURL(outputAudio.src); outputAudio.src=URL.createObjectURL(lastBlob); outputAudio.load(); setStatus("YOUR CUSTOM WAV VOICE IS ON — Listening…"); }
+    await tts.generate(text,{voice:voiceRef,onChunk:(chunk,meta)=>{
+      if(id!==generation)return;
+      const copy=chunk.slice();
+      chunks.push(copy);
+      player.play(copy,meta);
+    }});
+    if(id===generation&&chunks.length){
+      player.flush();
+      lastBlob=chunksToWavBlob(chunks,tts.sampleRate);
+      if(outputAudio.src)URL.revokeObjectURL(outputAudio.src);
+      outputAudio.src=URL.createObjectURL(lastBlob);
+      outputAudio.load();
+      setStatus("YOUR CUSTOM WAV VOICE IS ON — Listening…");
+    }
   } catch(e) { if(id===generation)setStatus(`TTS failed: ${e.message||e}`); }
   finally { if(id===generation)generating=false; }
 }
@@ -117,16 +153,33 @@ async function speak(text) {
 testVoiceBtn?.addEventListener("click",async()=>{try{if(!voiceRef)await cloneReference();await speak("This is a test of my custom cloned voice.")}catch(e){setStatus(`Test failed: ${e.message||e}`)}});
 replayBtn?.addEventListener("click",()=>{if(!outputAudio.src)return setStatus("No generated speech yet.");outputAudio.currentTime=0;outputAudio.play().catch(()=>setStatus("Press PLAY on the audio player."));});
 
-function scheduleSpeech() { clearTimeout(silenceTimer); silenceTimer=setTimeout(()=>{const text=pendingText.trim();pendingText="";if(text)speak(text);},silenceMs()); }
-
 function startRecognition() {
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR) throw new Error("Chrome Speech Recognition is unavailable. Use Chrome.");
-  recognition=new SR(); recognition.lang="en-US"; recognition.continuous=true; recognition.interimResults=true; recognition.maxAlternatives=1;
+  recognition=new SR();
+  recognition.lang="en-US";
+  recognition.continuous=true;
+  recognition.interimResults=true;
+  recognition.maxAlternatives=1;
   recognition.onstart=()=>setStatus("YOUR CUSTOM WAV VOICE IS ON — Listening…");
-  recognition.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++){const r=e.results[i],t=r[0]?.transcript||"";pendingText+=` ${t}`;}pendingText=pendingText.replace(/\s+/g," ").trim();if(pendingText)scheduleSpeech();};
+  recognition.onresult=e=>{
+    // CRITICAL: only consume finalized results. Interim hypotheses constantly change
+    // and appending them was the source of repeated words/phrases.
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const r=e.results[i];
+      if(r.isFinal) queueFinalSpeech(r[0]?.transcript||"");
+    }
+  };
   recognition.onerror=e=>{if(running&&e.error!=="aborted")setStatus(`Speech recognition: ${e.error}`);};
-  recognition.onend=()=>{if(running){clearTimeout(recoveryTimer);recoveryTimer=setTimeout(()=>{try{recognition.start()}catch{}},100);}};
+  recognition.onend=()=>{
+    if(running){
+      clearTimeout(recoveryTimer);
+      recoveryTimer=setTimeout(()=>{
+        if(!running)return;
+        try{recognition.start()}catch{}
+      },150);
+    }
+  };
   recognition.start();
 }
 
@@ -144,7 +197,7 @@ startBtn.addEventListener("click",async()=>{
 });
 
 stopBtn.addEventListener("click",async()=>{
-  running=false; generation++; generating=false; pendingText=""; clearTimeout(silenceTimer); clearTimeout(recoveryTimer);
+  running=false; generation++; generating=false; pendingText=""; lastFinalText=""; lastFinalAt=0; clearTimeout(silenceTimer); clearTimeout(recoveryTimer);
   try{recognition?.abort()}catch{} stopMic(); try{await tts?.stop()}catch{} try{player?.stop()}catch{} meter.style.width="0%"; startBtn.disabled=false; setStatus("Stopped.");
 });
 
