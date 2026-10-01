@@ -18,6 +18,7 @@ const MIME = {
   '.txt': 'text/plain; charset=utf-8',
   '.wav': 'audio/wav',
   '.mp3': 'audio/mpeg',
+  '.tsv': 'text/tab-separated-values; charset=utf-8',
 };
 
 function safePath(urlPath) {
@@ -25,6 +26,21 @@ function safePath(urlPath) {
   const clean = decoded === '/' ? '/index.html' : decoded;
   const resolved = path.resolve(root, '.' + clean);
   return resolved.startsWith(root + path.sep) || resolved === root ? resolved : null;
+}
+
+function moonshineTarget(suffix) {
+  // Moonshine's WASM binding asks for TTS language assets such as:
+  //   /models/en_us/dict_filtered_heteronyms.tsv
+  // but the authoritative CDN stores TTS assets under /tts/.
+  // STT model assets use /model/ instead.
+  const ttsLanguages = new Set([
+    'ar_msa','de','en_gb','en_us','fr','hi','it','ja','ko','nl',
+    'pt_br','pt_pt','ru','tr','uk','vi','zh_hans'
+  ]);
+  const clean = suffix.replace(/^\/+/, '');
+  const first = clean.split('/')[0];
+  if (ttsLanguages.has(first)) return `${MOONSHINE_CDN}/tts/${clean}`;
+  return `${MOONSHINE_CDN}/model/${clean}`;
 }
 
 async function proxyModel(req, res) {
@@ -36,8 +52,9 @@ async function proxyModel(req, res) {
     return;
   }
 
-  const target = MOONSHINE_CDN + suffix;
+  const target = moonshineTarget(suffix);
   try {
+    console.log(`[Moonshine proxy] ${suffix} -> ${target}`);
     // Do not forward Range requests. AssetDownloader needs a normal 200
     // response because it stores the response in the browser Cache API.
     const upstream = await fetch(target, {
@@ -47,7 +64,7 @@ async function proxyModel(req, res) {
     });
 
     if (!upstream.ok) {
-      const message = `Moonshine CDN returned ${upstream.status} ${upstream.statusText} for ${suffix}`;
+      const message = `Moonshine CDN returned ${upstream.status} ${upstream.statusText} for ${target}`;
       console.error(message);
       res.writeHead(upstream.status, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end(message);
@@ -62,10 +79,7 @@ async function proxyModel(req, res) {
     res.statusCode = 200;
     res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/octet-stream');
     res.setHeader('Content-Length', String(bytes.byteLength));
-    // IMPORTANT: don't send `Cache-Control: no-store` here. Moonshine's
-    // AssetDownloader calls Cache.put(), and browsers can reject a response
-    // marked no-store with the exact "Cache.put() encountered a network error"
-    // seen by this app. The browser's Moonshine Cache API is the cache we want.
+    // Cache API compatibility: don't use no-store on model responses.
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
     res.removeHeader('Content-Encoding');
@@ -119,6 +133,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(port, host, () => {
   console.log(`Moonshine full app: http://${host}:${port}/`);
-  console.log('Local Moonshine model proxy: /models/* -> https://download.moonshine.ai/*');
-  console.log('Model proxy returns normal 200 cacheable responses for Cache API compatibility.');
+  console.log('Moonshine model proxy enabled.');
+  console.log('TTS language assets -> https://download.moonshine.ai/tts/');
+  console.log('STT model assets -> https://download.moonshine.ai/model/');
 });
