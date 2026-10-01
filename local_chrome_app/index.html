@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Local Pocket TTS Voice Changer</title>
+<style>body{font-family:system-ui,sans-serif;background:#111;color:#eee;max-width:720px;margin:40px auto;padding:20px}button,input,select{font:inherit;padding:10px;margin:5px 0}button{cursor:pointer}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.card{border:1px solid #444;border-radius:12px;padding:18px;margin:14px 0}#status{padding:10px;border-radius:8px;background:#222}#log{white-space:pre-wrap;font-size:13px;opacity:.8}</style>
+</head>
+<body>
+<h1>Local Pocket TTS</h1>
+<div class="card">
+<div id="status">Loading local app…</div>
+<div class="row"><label>Microphone <select id="mic"></select></label><label>Output <select id="out"></select></label></div>
+<label>Voice WAV <input id="wav" type="file" accept=".wav,audio/wav"></label>
+<div class="row"><button id="start">START</button><button id="stop" disabled>STOP</button></div>
+<p>Speak normally. Chrome speech recognition detects your speech, then Pocket TTS generates the cloned voice locally in the browser.</p>
+</div>
+<div class="card"><b>Transcript</b><div id="text"></div></div>
+<div id="log"></div>
+<script type="module">
+const $=id=>document.getElementById(id);let stream=null,rec=null,running=false,recognizing=false,audioCtx=null,voiceFile=null;
+const log=x=>{$('log').textContent+=x+'\n'};const status=x=>$('status').textContent=x;
+async function devices(){const ds=await navigator.mediaDevices.enumerateDevices();$('mic').innerHTML='';$('out').innerHTML='';for(const d of ds){if(d.kind==='audioinput')$('mic').add(new Option(d.label||'Microphone',d.deviceId));if(d.kind==='audiooutput')$('out').add(new Option(d.label||'Output',d.deviceId));}}
+async function startMic(){const id=$('mic').value;stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:id?{exact:id}:undefined,channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});await devices();}
+function makeRecognition(){const R=window.SpeechRecognition||window.webkitSpeechRecognition;if(!R)throw Error('Chrome SpeechRecognition is unavailable.');const r=new R();r.continuous=true;r.interimResults=false;r.lang='en-US';r.onstart=()=>{recognizing=true;status('🟢 Listening');};r.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal){const t=e.results[i][0].transcript.trim();if(t){$('text').textContent=t;speak(t);}}};r.onerror=e=>log('STT: '+e.error);r.onend=()=>{recognizing=false;if(running)setTimeout(()=>{try{r.start()}catch{}},150)};return r}
+async function speak(text){if(!running)return;status('🔊 Generating: '+text);try{const mod=await import('../pocket-tts/index.js');if(!window.pocket){window.pocket=await mod.PocketTTSConfig?null:null;}status('⚠ Pocket TTS module detected, but this local app needs its model/runtime wired before synthesis.');log('TTS request: '+text);}catch(e){log('TTS error: '+e.message);status('🔴 TTS error');}}
+$('wav').onchange=e=>{voiceFile=e.target.files[0];if(voiceFile)log('Reference WAV: '+voiceFile.name)};
+$('start').onclick=async()=>{try{await startMic();audioCtx=new AudioContext();const out=$('out').value;if(out&&audioCtx.setSinkId)await audioCtx.setSinkId(out);rec=makeRecognition();running=true;rec.start();$('start').disabled=true;$('stop').disabled=false;status('🟢 Listening');}catch(e){status('🔴 '+e.message);log(e.stack||e.message)}};
+$('stop').onclick=()=>{running=false;try{rec&&rec.stop()}catch{};stream?.getTracks().forEach(t=>t.stop());$('start').disabled=false;$('stop').disabled=true;status('Stopped')};
+navigator.mediaDevices?.addEventListener('devicechange',devices);devices();
+</script></body></html>
