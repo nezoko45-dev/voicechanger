@@ -8,7 +8,7 @@
 </style></head>
 <body><main class="card">
 <h1>🎙 Pocket TTS Instant Voice Changer</h1>
-<p class="sub">Raw Chrome microphone → silence detection → speech text → Pocket TTS cloned voice → converted audio player. Your raw microphone is never played back.</p>
+<p class="sub">Raw Chrome microphone → silence detection → speech text → Pocket TTS using your WAV clone → converted voice. Your raw microphone is never played back.</p>
 <div class="panel">
 <label>Microphone</label><select id="mic"><option value="">Default microphone</option></select>
 <label>Output</label><select id="output"><option value="">Default output</option></select>
@@ -18,9 +18,10 @@
 <div class="panel">
 <label>Converted voice player</label>
 <audio id="mp3" controls preload="none"></audio>
-<div class="small" style="margin-top:7px">Each time you speak, the cloned Pocket TTS result is placed here and played. This player contains the converted voice, not your raw microphone.</div>
+<div class="row"><button id="testVoice" type="button">TEST WAV VOICE</button><button id="replay" type="button">REPLAY LAST</button></div>
+<div class="small" style="margin-top:7px">The player contains the generated Pocket TTS voice. TEST WAV VOICE verifies that your reference WAV is actually being used before you speak.</div>
 </div>
 <div class="panel"><button id="reference" type="button">CHOOSE REFERENCE WAV</button><div class="row"><button id="load" class="primary">START</button><button id="stop" class="danger">STOP</button></div><div class="meter"><i id="meter"></i></div></div>
-<div id="status" class="status">Press START, then choose your reference WAV. Speak into the selected microphone; after a short silence, Pocket TTS generates your cloned voice.</div>
-<div class="small" style="margin-top:10px">The Pocket TTS browser implementation uses an INT8 model and streams generated chunks from a Web Worker. The clone/reference voice stays loaded for repeated utterances.</div>
-</main><script type="module" src="./pocket-tts-pages.js?v=3"></script></body></html>
+<div id="status" class="status">Press START, choose your reference WAV, then speak. Pocket TTS will generate the cloned voice after the selected silence.</div>
+<div class="small" style="margin-top:10px">Pocket TTS stays loaded and the WAV clone stays cached for repeated utterances.</div>
+</main><script type="module" src="./pocket-tts-pages.js?v=4"></script></body></html>
