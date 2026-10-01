@@ -1,40 +1,66 @@
 @echo off
-setlocal
+setlocal EnableExtensions
 cd /d "%~dp0"
 title Pocket TTS Local Voice Host
 color 0A
 
 echo ================================================
 echo       POCKET TTS LOCAL VOICE HOST
- echo ================================================
+echo ================================================
 echo.
 
-where python >nul 2>nul
+REM Prefer the Python launcher, then python.exe, then py.exe.
+set "PYEXE="
+where py >nul 2>nul
+if not errorlevel 1 set "PYEXE=py"
+if not defined PYEXE (
+    where python >nul 2>nul
+    if not errorlevel 1 set "PYEXE=python"
+)
+if not defined PYEXE (
+    echo ERROR: Python was not found.
+    echo.
+    echo Install Python 3.10-3.13 from python.org with "Add python.exe to PATH" enabled.
+    echo Do NOT use the Microsoft Store python alias for this setup.
+    echo.
+    pause
+    exit /b 1
+)
+
+echo Using Python launcher: %PYEXE%
+%PYEXE% --version
 if errorlevel 1 (
-    echo ERROR: Python 3.10-3.14 is required for Pocket TTS.
-    echo Install Python and run this file again.
+    echo ERROR: The Python launcher could not start Python.
     pause
     exit /b 1
 )
 
 if not exist pocket_env (
+    echo.
     echo Creating local Pocket TTS environment...
-    python -m venv pocket_env
+    %PYEXE% -m venv pocket_env
     if errorlevel 1 goto :venv_error
 )
 
-call pocket_env\Scripts\activate.bat
-python -m pip install --upgrade pip --disable-pip-version-check
+if not exist pocket_env\Scripts\python.exe goto :venv_error
+
+set "VENV_PY=%~dp0pocket_env\Scripts\python.exe"
+
+echo.
+echo Updating pip...
+"%VENV_PY%" -m pip install --upgrade pip --disable-pip-version-check
 if errorlevel 1 goto :pip_error
 
-python -m pip install -r requirements.txt --disable-pip-version-check
+echo.
+echo Installing Pocket TTS dependencies...
+"%VENV_PY%" -m pip install -r requirements.txt --disable-pip-version-check
 if errorlevel 1 goto :pip_error
 
 echo.
 echo Starting LOCAL Pocket TTS inference engine...
 echo This keeps the expensive model work outside Chrome.
 echo.
-start "Pocket TTS Engine" /min cmd /c "call "%~dp0pocket_env\Scripts\activate.bat" ^&^& python "%~dp0pocket_host.py""
+start "Pocket TTS Engine" /min cmd /c ""%VENV_PY%" "%~dp0pocket_host.py""
 
 timeout /t 5 /nobreak >nul
 
@@ -47,11 +73,17 @@ pause
 exit /b 0
 
 :venv_error
-echo Failed to create the Python environment.
+echo.
+echo ERROR: Failed to create the Python environment.
+echo Make sure Python 3.10-3.13 is installed from python.org.
+echo.
 pause
 exit /b 1
 
 :pip_error
-echo Failed to install Pocket TTS dependencies.
+echo.
+echo ERROR: Failed to install Pocket TTS dependencies.
+echo Check your internet connection and try again.
+echo.
 pause
 exit /b 1
