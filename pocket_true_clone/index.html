@@ -1,0 +1,21 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>True Pocket TTS Voice Clone</title><style>body{font:16px system-ui;background:#111;color:#eee;max-width:760px;margin:30px auto;padding:0 18px}button,input,select{font:inherit;margin:6px;padding:9px}button{cursor:pointer}.box{border:1px solid #444;border-radius:10px;padding:16px;margin:14px 0}.ok{color:#7ee787}.bad{color:#ff7b72}#log{white-space:pre-wrap;background:#181818;padding:12px;border-radius:8px;min-height:80px}</style></head>
+<body><h1>True Pocket TTS — Custom WAV</h1>
+<div class="box"><b>1. Custom voice</b><br><input id="wav" type="file" accept="audio/wav"><button id="clone">Clone my WAV</button><div id="voice">No custom voice loaded.</div></div>
+<div class="box"><b>2. Audio output</b><br><select id="out"><option>Choose output...</option></select><button id="refresh">Refresh outputs</button></div>
+<div class="box"><b>3. Microphone</b><br><select id="mic"><option>Choose microphone...</option></select><button id="start">START MIC</button><button id="stop">STOP</button><p id="heard"></p></div>
+<div class="box"><b>Manual test</b><br><input id="text" size="50" placeholder="Type something to say"><button id="speak">SPEAK</button></div>
+<div id="log">Starting...</div>
+<script>
+const API='http://127.0.0.1:8789';let recognition=null,running=false,audio=new Audio();
+const $=id=>document.getElementById(id), log=m=>$('log').textContent=m;
+async function health(){try{const r=await fetch(API+'/health');const j=await r.json();$('voice').textContent=j.ready?'Custom WAV voice ready.':'No custom voice loaded.';return j}catch(e){log('Backend not reachable: '+e.message)}}
+async function devices(){try{await navigator.mediaDevices.getUserMedia({audio:true});const ds=await navigator.mediaDevices.enumerateDevices();$('mic').innerHTML='';$('out').innerHTML='';for(const d of ds){if(d.kind==='audioinput'){const o=new Option(d.label||'Microphone',d.deviceId);$('mic').add(o)}if(d.kind==='audiooutput'){const o=new Option(d.label||'Output',d.deviceId);$('out').add(o)}}}catch(e){log('Microphone permission failed: '+e.message)}}
+$('refresh').onclick=devices;
+$('clone').onclick=async()=>{const f=$('wav').files[0];if(!f)return log('Choose a WAV first.');log('Creating true voice-cloning embedding...');const r=await fetch(API+'/clone',{method:'POST',body:await f.arrayBuffer()});const j=r.headers.get('content-type')?.includes('json')?await r.json():{};if(!r.ok){log('Clone failed:\n'+(j.error||r.statusText));return}log('TRUE custom WAV voice is ready.');health()};
+async function speak(text){text=text.trim();if(!text)return;const h=await health();if(!h?.ready)return log('Load your custom WAV first.');log('Generating...');const r=await fetch(API+'/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});if(!r.ok){const j=await r.json().catch(()=>({}));return log('TTS failed:\n'+(j.error||r.statusText))}const blob=await r.blob();audio.src=URL.createObjectURL(blob);const out=$('out').value;if(out&&audio.setSinkId)try{await audio.setSinkId(out)}catch{}await audio.play();log('Playing cloned voice.');}
+$('speak').onclick=()=>speak($('text').value);
+$('start').onclick=async()=>{if(running)return;const h=await health();if(!h?.ready)return log('Clone your WAV first.');await devices();const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return log('Chrome Speech Recognition is unavailable.');recognition=new SR();recognition.continuous=true;recognition.interimResults=false;recognition.lang='en-US';recognition.onresult=e=>{const x=e.results[e.results.length-1][0].transcript;$('heard').textContent='Heard: '+x;speak(x)};recognition.onerror=e=>log('Mic STT: '+e.error);recognition.onend=()=>{if(running)try{recognition.start()}catch{}};running=true;recognition.start();log('Listening...');};
+$('stop').onclick=()=>{running=false;if(recognition)recognition.stop();log('Stopped.');};
+health();devices();
+</script></body></html>
