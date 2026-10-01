@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Moonshine → TTS Voice Wizard</title>
+<style>
+body{font-family:system-ui,sans-serif;background:#11141b;color:#eee;max-width:760px;margin:30px auto;padding:20px}h1{margin-bottom:6px}.sub{opacity:.75}.card{background:#191d26;border:1px solid #343b49;border-radius:14px;padding:18px;margin:14px 0}button,input,select{font:inherit;border-radius:9px;border:1px solid #4a5363;background:#10131a;color:#fff;padding:11px}button{cursor:pointer;font-weight:700}.primary{background:#8757ed;border-color:#8757ed}.danger{background:#43171d;border-color:#70303a}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.row>*{flex:1}.status{padding:11px;background:#0d1016;border-radius:9px}.big{font-size:1.15rem;min-height:34px}.log{white-space:pre-wrap;font-family:ui-monospace,monospace;font-size:12px;max-height:240px;overflow:auto;background:#0b0d12;padding:12px;border-radius:9px}.ok{color:#8df0a4}.warn{color:#ffd477}.err{color:#ff8d99}
+</style>
+</head>
+<body>
+<h1>Moonshine → TTS Voice Wizard</h1>
+<div class="sub">Local, streaming STT. Moonshine runs in Chrome; finalized text is sent to TTS Voice Wizard's local WebSocket.</div>
+<div class="card">
+  <div class="row">
+    <label>Voice Wizard WebSocket<br><input id="ws" value="ws://127.0.0.1:9008"></label>
+    <label>Model<br><select id="model"><option value="tiny">Tiny Streaming — lowest latency</option><option value="small">Small Streaming — better recognition</option><option value="medium">Medium Streaming — highest quality</option></select></label>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <button class="primary" id="start">START</button>
+    <button class="danger" id="stop" disabled>STOP</button>
+    <button id="connect">CONNECT VOICE WIZARD</button>
+  </div>
+</div>
+<div class="card">
+  <div class="status" id="status">Ready. Connect TTS Voice Wizard first.</div>
+  <p><b>Live transcript</b></p>
+  <div class="big" id="live">—</div>
+  <p><b>Last finalized line</b></p>
+  <div id="final">—</div>
+</div>
+<div class="card">
+  <b>How this works</b>
+  <ol>
+    <li>Open TTS Voice Wizard and enable its WebSocket-to-TTS listener.</li>
+    <li>Keep its WebSocket port at <code>9008</code> unless you changed it.</li>
+    <li>Click CONNECT, then START.</li>
+    <li>Speak. Moonshine sends finalized lines to Voice Wizard for TTS.</li>
+  </ol>
+</div>
+<div class="log" id="log"></div>
+<script type="module">
+import { MicTranscriber, ModelArch } from 'https://cdn.jsdelivr.net/npm/@moonshine-ai/moonshine-wasm/dist/index.js';
+
+const $=id=>document.getElementById(id);
+let ws=null,mic=null,running=false;
+function log(s){$('log').textContent+=s+'\n';$('log').scrollTop=$('log').scrollHeight;}
+function status(s,cls=''){$('status').textContent=s;$('status').className='status '+cls;}
+function selectedArch(){switch($('model').value){case 'small':return ModelArch.SmallStreaming;case 'medium':return ModelArch.MediumStreaming;default:return ModelArch.TinyStreaming;}}
+function connectWS(){
+  try{if(ws)ws.close();ws=new WebSocket($('ws').value);}
+  catch(e){status('WebSocket error: '+e.message,'err');return;}
+  ws.onopen=()=>{status('🟢 Connected to TTS Voice Wizard','ok');log('WebSocket connected.');};
+  ws.onclose=()=>{if(running)status('🟠 Voice Wizard disconnected','warn');log('WebSocket disconnected.');};
+  ws.onerror=()=>{status('🔴 Cannot connect to TTS Voice Wizard','err');log('WebSocket connection failed. Check Voice Wizard WebSocket server/port.');};
+}
+async function start(){
+  if(running)return;
+  if(!ws||ws.readyState!==WebSocket.OPEN){connectWS();status('Waiting for Voice Wizard WebSocket…','warn');return;}
+  try{
+    status('Loading Moonshine model…','warn');
+    mic=new MicTranscriber()
+      .language('en')
+      .modelArch(selectedArch())
+      .onProgress((fraction,file)=>status(`Loading ${file}: ${(fraction*100).toFixed(0)}%`,'warn'))
+      .onText(text=>{$('live').textContent=text||'—';})
+      .onLine(line=>{
+        const text=(line.text||'').trim();
+        if(!text)return;
+        $('final').textContent=text;
+        if(ws&&ws.readyState===WebSocket.OPEN){ws.send(text);log('→ '+text);}
+      });
+    await mic.load();
+    await mic.start();
+    running=true;$('start').disabled=true;$('stop').disabled=false;
+    status('🟢 Listening with Moonshine','ok');log('Moonshine microphone started.');
+  }catch(e){running=false;$('start').disabled=false;$('stop').disabled=true;status('🔴 Moonshine failed: '+(e?.message||e),'err');log(String(e?.stack||e));}
+}
+async function stop(){running=false;try{await mic?.stop();}catch(e){log('Stop: '+e.message)}try{await mic?.close();}catch{}mic=null;$('start').disabled=false;$('stop').disabled=true;status('Stopped');}
+$('connect').onclick=connectWS;$('start').onclick=start;$('stop').onclick=stop;
+window.addEventListener('beforeunload',()=>{try{mic?.stop();mic?.close();ws?.close();}catch{}});
+</script>
+</body>
+</html>
