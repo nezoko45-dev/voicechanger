@@ -1,10 +1,11 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { URL } from 'node:url';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname));
+const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = 8789;
 const VOICES = path.join(ROOT, 'voices');
 const OUT = path.join(ROOT, 'output');
