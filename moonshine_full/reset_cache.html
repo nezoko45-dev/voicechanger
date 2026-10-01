@@ -1,0 +1,26 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Reset Moonshine model cache</title>
+<style>body{font:16px system-ui;background:#10131b;color:#fff;padding:30px}button{font:inherit;padding:12px 18px;border:0;border-radius:10px;background:#7654e8;color:#fff;cursor:pointer}#s{margin-top:15px}</style>
+<h1>Reset Moonshine Cache</h1>
+<p>This clears browser Cache Storage used by Moonshine model downloads, then opens the voice app.</p>
+<button id="go">CLEAR CACHE + OPEN APP</button><div id="s"></div>
+<script>
+const s=document.getElementById('s');
+document.getElementById('go').onclick=async()=>{
+  s.textContent='Clearing Moonshine caches…';
+  try {
+    if ('serviceWorker' in navigator) {
+      for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister();
+    }
+    if ('caches' in window) {
+      const keys=await caches.keys();
+      await Promise.all(keys.filter(k=>/moonshine|model|wasm/i.test(k)).map(k=>caches.delete(k)));
+    }
+    s.textContent='Cache cleared. Opening the app…';
+    setTimeout(()=>location.href='./index.html?fresh='+Date.now(),500);
+  } catch(e) {
+    s.textContent='Cache reset failed: '+e.message;
+  }
+};
+</script>
