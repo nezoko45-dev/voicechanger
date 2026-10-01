@@ -35,27 +35,45 @@ async function proxyModel(req, res) {
     res.end('Bad model path');
     return;
   }
+
   const target = MOONSHINE_CDN + suffix;
   try {
-    // Fetch the complete asset instead of forwarding Range requests. This gives
-    // Cache.put() a normal 200 response instead of a partial 206 response.
-    const upstream = await fetch(target, { redirect: 'follow' });
+    // Do not forward Range requests. AssetDownloader needs a normal 200
+    // response because it stores the response in the browser Cache API.
+    const upstream = await fetch(target, {
+      method: 'GET',
+      redirect: 'follow',
+      headers: { Accept: '*/*' },
+    });
+
     if (!upstream.ok) {
+      const message = `Moonshine CDN returned ${upstream.status} ${upstream.statusText} for ${suffix}`;
+      console.error(message);
       res.writeHead(upstream.status, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end(`Moonshine CDN returned ${upstream.status}`);
+      res.end(message);
       return;
     }
+
+    // Buffer the asset before replying. Node's fetch may transparently
+    // decompress an upstream response, so forwarding the CDN's original
+    // Content-Length/Content-Encoding can produce a malformed cached Response.
+    const bytes = Buffer.from(await upstream.arrayBuffer());
+
+    res.statusCode = 200;
     res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/octet-stream');
-    const length = upstream.headers.get('content-length');
-    if (length) res.setHeader('Content-Length', length);
-    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Length', String(bytes.byteLength));
+    // IMPORTANT: don't send `Cache-Control: no-store` here. Moonshine's
+    // AssetDownloader calls Cache.put(), and browsers can reject a response
+    // marked no-store with the exact "Cache.put() encountered a network error"
+    // seen by this app. The browser's Moonshine Cache API is the cache we want.
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-    res.writeHead(200);
-    if (upstream.body) {
-      for await (const chunk of upstream.body) res.write(chunk);
-    }
-    res.end();
+    res.removeHeader('Content-Encoding');
+    res.removeHeader('Content-Range');
+    res.removeHeader('Accept-Ranges');
+    res.end(bytes);
   } catch (e) {
+    console.error('Moonshine model proxy failed:', e);
     res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('Moonshine model proxy failed: ' + e.message);
   }
@@ -102,4 +120,5 @@ const server = http.createServer(async (req, res) => {
 server.listen(port, host, () => {
   console.log(`Moonshine full app: http://${host}:${port}/`);
   console.log('Local Moonshine model proxy: /models/* -> https://download.moonshine.ai/*');
+  console.log('Model proxy returns normal 200 cacheable responses for Cache API compatibility.');
 });
