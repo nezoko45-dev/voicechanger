@@ -1,30 +1,153 @@
-import { PocketTTS } from './pocket-tts/index.js';
+import { PocketTTS, StreamingPlayer, chunksToWavBlob } from "./pocket-tts/index.js";
 
-const $=id=>document.getElementById(id);
-const status=$('status'),startBtn=$('load'),stopBtn=$('stop'),micSelect=$('mic'),outputSelect=$('output'),meter=$('meter'),silenceSelect=$('silence'),referenceBtn=$('reference'),outputAudio=$('mp3'),testVoiceBtn=$('testVoice'),replayBtn=$('replay');
-let tts=null,voiceRef=null,running=false,recognition=null,silenceTimer=null,recoveryTimer=null,finalText='',interimText='',micStream=null,vadContext=null,vadSource=null,vadAnalyser=null,vadFrame=null,audioContext=null,gainNode=null,nextAudioTime=0,outputUrl=null,lastChunks=[],referenceFile=null,generating=false;
-const setStatus=x=>status.textContent=x, silenceMs=()=>Number(silenceSelect?.value||150);
+const $ = id => document.getElementById(id);
+const status = $("status"), startBtn = $("load"), stopBtn = $("stop"), micSelect = $("mic"), outputSelect = $("output"), meter = $("meter"), silenceSelect = $("silence"), referenceBtn = $("reference"), outputAudio = $("mp3"), testVoiceBtn = $("testVoice"), replayBtn = $("replay"), chooseBtn = $("choose");
+let tts = null, player = null, voiceRef = null, running = false, recognition = null, silenceTimer = 0, recoveryTimer = 0, pendingText = "", micStream = null, vadContext = null, vadAnalyser = null, vadFrame = 0, referenceFile = null, generating = false, generation = 0, lastBlob = null;
+const setStatus = x => status.textContent = x;
+const silenceMs = () => Number(silenceSelect?.value || 220);
 
-async function refreshDevices(){try{const ds=await navigator.mediaDevices.enumerateDevices(),m=micSelect.value,o=outputSelect.value;micSelect.innerHTML='<option value="">Default microphone</option>';outputSelect.innerHTML='<option value="">Default output</option>';ds.filter(d=>d.kind==='audioinput').forEach((d,i)=>{const x=document.createElement('option');x.value=d.deviceId;x.textContent=d.label||`Microphone ${i+1}`;micSelect.appendChild(x)});ds.filter(d=>d.kind==='audiooutput').forEach((d,i)=>{const x=document.createElement('option');x.value=d.deviceId;x.textContent=d.label||`Speaker ${i+1}`;outputSelect.appendChild(x)});if([...micSelect.options].some(x=>x.value===m))micSelect.value=m;if([...outputSelect.options].some(x=>x.value===o))outputSelect.value=o}catch{}}
-async function initAudio(){if(!audioContext){audioContext=new AudioContext({latencyHint:'interactive'});gainNode=audioContext.createGain();gainNode.gain.value=1.1;gainNode.connect(audioContext.destination)}if(audioContext.state!=='running')await audioContext.resume();if(typeof audioContext.setSinkId==='function')await audioContext.setSinkId(outputSelect.value||'default');nextAudioTime=Math.max(audioContext.currentTime+.002,nextAudioTime)}
-async function chooseOutput(){await initAudio();if(typeof audioContext.setSinkId==='function')await audioContext.setSinkId(outputSelect.value||'default');if(typeof outputAudio.setSinkId==='function')await outputAudio.setSinkId(outputSelect.value||'default')}
-outputSelect.addEventListener('change',()=>chooseOutput().catch(e=>setStatus(`Output error: ${e.message||e}`)));$('choose')?.addEventListener('click',()=>chooseOutput().catch(e=>setStatus(`Output error: ${e.message||e}`)));
-function playPCM(data,sr){if(!audioContext||!data?.length)return;const b=audioContext.createBuffer(1,data.length,sr),s=audioContext.createBufferSource();b.copyToChannel(data,0);s.buffer=b;s.connect(gainNode);const t=Math.max(audioContext.currentTime+.003,nextAudioTime||audioContext.currentTime+.003);s.start(t);nextAudioTime=t+b.duration;s.onended=()=>{try{s.disconnect()}catch{}}}
-function pcmWav(chunks,sr){const total=chunks.reduce((n,c)=>n+c.length,0),data=new Float32Array(total);let p=0;for(const c of chunks){data.set(c,p);p+=c.length}const ab=new ArrayBuffer(44+total*2),v=new DataView(ab),w=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))};w(0,'RIFF');v.setUint32(4,36+total*2,true);w(8,'WAVE');w(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,total*2,true);for(let i=0;i<total;i++){const x=Math.max(-1,Math.min(1,data[i]));v.setInt16(44+i*2,x<0?x*32768:x*32767,true)}return new Blob([ab],{type:'audio/wav'})}
-async function decodeWav(file){const ac=new AudioContext();try{const audio=await ac.decodeAudioData(await file.arrayBuffer());return {data:audio.getChannelData(0).slice(),sampleRate:audio.sampleRate}}finally{await ac.close()}}
-async function loadPocketTTS(){if(tts?.ready)return;setStatus('Loading Pocket TTS locally in the browser…');tts=new PocketTTS({language:'english_2026-04',quantized:true,voiceCloning:true,cache:true,maxThreads:4,maxReferenceSeconds:6});await tts.load(info=>{if(info?.label)setStatus(`Pocket TTS: ${info.label}`);else if(info?.status)setStatus(`Pocket TTS: ${info.status}`)})}
-async function pickReference(){return new Promise(r=>{const p=document.createElement('input');p.type='file';p.accept='.wav,audio/wav';p.onchange=()=>r(p.files?.[0]||null);p.click()})}
-async function loadReference(file){setStatus(`Reading your WAV: ${file.name}…`);const wav=await decodeWav(file);setStatus('Cloning your WAV locally…');voiceRef=await tts.cloneVoice(wav.data,{inputSampleRate:wav.sampleRate,name:'my-wav-voice'});setStatus('Loading local speech generator…');await tts.finishLoad();setStatus('YOUR WAV VOICE IS ON — ready.')}
-referenceBtn.addEventListener('click',async()=>{const f=await pickReference();if(!f)return;referenceFile=f;if(!tts)return setStatus(`WAV selected: ${f.name}. Press START to load it.`);try{await loadReference(f)}catch(e){setStatus(`WAV error: ${e.message||e}`)}});
-async function startMic(){stopMic();const c=micSelect.value?{audio:{deviceId:{exact:micSelect.value},echoCancellation:true,noiseSuppression:true,autoGainControl:true}}:{audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}};micStream=await navigator.mediaDevices.getUserMedia(c);vadContext=new AudioContext({latencyHint:'interactive'});vadSource=vadContext.createMediaStreamSource(micStream);vadAnalyser=vadContext.createAnalyser();vadAnalyser.fftSize=512;vadSource.connect(vadAnalyser);await vadContext.resume();runMeter()}
-function runMeter(){if(!running||!vadAnalyser)return;const d=new Uint8Array(vadAnalyser.fftSize);vadAnalyser.getByteTimeDomainData(d);let s=0;for(const v of d){const x=(v-128)/128;s+=x*x}meter.style.width=`${Math.min(100,Math.max(2,Math.sqrt(s/d.length)*500))}%`;vadFrame=requestAnimationFrame(runMeter)}
-function stopMic(){if(vadFrame)cancelAnimationFrame(vadFrame);try{vadSource?.disconnect();vadAnalyser?.disconnect()}catch{}try{vadContext?.close()}catch{}vadSource=null;vadAnalyser=null;vadContext=null;micStream?.getTracks().forEach(t=>t.stop());micStream=null}
-async function speak(text){text=text.trim();if(!text||!voiceRef||generating)return;generating=true;lastChunks=[];setStatus(`Speaking locally: “${text}”`);try{await initAudio();await tts.generate(text,{voice:voiceRef,onChunk:(audio,meta)=>{lastChunks.push(audio.slice());playPCM(audio,meta?.sampleRate||tts.sampleRate)}});if(lastChunks.length){if(outputUrl)URL.revokeObjectURL(outputUrl);outputUrl=URL.createObjectURL(pcmWav(lastChunks,tts.sampleRate));outputAudio.src=outputUrl;outputAudio.load()}setStatus('YOUR WAV VOICE IS ON — Listening…')}catch(e){setStatus(`TTS error: ${e.message||e}`)}finally{generating=false}}
-testVoiceBtn?.addEventListener('click',()=>speak('This is a test of my cloned voice.'));replayBtn?.addEventListener('click',async()=>{if(!outputAudio.src){setStatus('No converted voice yet.');return}try{await outputAudio.play()}catch{setStatus('Press PLAY on the converted voice player.')}});
-function schedule(){clearTimeout(silenceTimer);silenceTimer=setTimeout(()=>{const t=`${finalText} ${interimText}`.trim();finalText='';interimText='';if(t)speak(t)},silenceMs())}
-function startRecognition(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)throw Error('Chrome SpeechRecognition is unavailable in this browser.');recognition=new SR();recognition.continuous=true;recognition.interimResults=true;recognition.lang='en-US';recognition.onstart=()=>setStatus('YOUR WAV VOICE IS ON — Listening…');recognition.onresult=e=>{interimText='';for(let i=e.resultIndex;i<e.results.length;i++){const r=e.results[i],t=r[0]?.transcript||'';if(r.isFinal)finalText+=t+' ';else interimText+=t}if(finalText.trim()||interimText.trim())schedule()};recognition.onerror=e=>{if(e.error!=='aborted'&&running)setStatus(`Speech recognition: ${e.error}`)};recognition.onend=()=>{if(running){clearTimeout(recoveryTimer);recoveryTimer=setTimeout(()=>{if(running)try{recognition.start()}catch{}},100)}};recognition.start()}
-async function recover(){if(!running)return;try{await initAudio();if(vadContext?.state==='suspended')await vadContext.resume();if(recognition){try{recognition.abort()}catch{}recoveryTimer=setTimeout(()=>{if(running)try{recognition.start()}catch{}},150)}}catch{}}
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')recover()});window.addEventListener('focus',recover);window.addEventListener('pageshow',recover);
-startBtn.addEventListener('click',async()=>{if(running)return;try{running=true;startBtn.disabled=true;await initAudio();await refreshDevices();await chooseOutput().catch(()=>{});await loadPocketTTS();if(!referenceFile)referenceFile=await pickReference();if(!referenceFile)throw Error('Choose a WAV reference.');await loadReference(referenceFile);await startMic();startRecognition()}catch(e){running=false;startBtn.disabled=false;try{recognition?.abort()}catch{}stopMic();setStatus(`Start error: ${e.message||e}`)}});
-stopBtn.addEventListener('click',async()=>{running=false;clearTimeout(silenceTimer);clearTimeout(recoveryTimer);finalText='';interimText='';generating=false;try{recognition?.abort()}catch{}stopMic();try{await tts?.stop()}catch{}if(audioContext)nextAudioTime=audioContext.currentTime+.003;setStatus('Stopped.');startBtn.disabled=false});
-micSelect.addEventListener('change',async()=>{if(running)try{await startMic();setStatus('Microphone changed — Listening…')}catch(e){setStatus(`Microphone error: ${e.message||e}`)}});navigator.mediaDevices?.addEventListener?.('devicechange',refreshDevices);refreshDevices();
+async function refreshDevices() {
+  try {
+    const oldMic = micSelect.value, oldOut = outputSelect.value;
+    const ds = await navigator.mediaDevices.enumerateDevices();
+    micSelect.innerHTML = '<option value="">Default microphone</option>';
+    outputSelect.innerHTML = '<option value="">Default output</option>';
+    ds.filter(d => d.kind === "audioinput").forEach((d,i) => { const o=document.createElement("option"); o.value=d.deviceId; o.textContent=d.label||`Microphone ${i+1}`; micSelect.appendChild(o); });
+    ds.filter(d => d.kind === "audiooutput").forEach((d,i) => { const o=document.createElement("option"); o.value=d.deviceId; o.textContent=d.label||`Speaker ${i+1}`; outputSelect.appendChild(o); });
+    if ([...micSelect.options].some(o=>o.value===oldMic)) micSelect.value=oldMic;
+    if ([...outputSelect.options].some(o=>o.value===oldOut)) outputSelect.value=oldOut;
+  } catch {}
+}
+
+async function ensurePlayer() {
+  if (!player) player = new StreamingPlayer({ sampleRate: tts.sampleRate, minLead: 0.02, playbackRate: 1.0 });
+  await player.resume();
+  if (typeof player.audioContext?.setSinkId === "function") await player.setSinkId(outputSelect.value || "default");
+}
+
+async function chooseOutput() {
+  await ensurePlayer();
+  if (typeof player.audioContext?.setSinkId !== "function") { setStatus("Chrome speaker selection is unavailable here; using the default output."); return; }
+  await player.setSinkId(outputSelect.value || "default");
+  if (typeof outputAudio.setSinkId === "function") await outputAudio.setSinkId(outputSelect.value || "default");
+  setStatus("Output device selected.");
+}
+outputSelect.addEventListener("change", () => chooseOutput().catch(e=>setStatus(`Output error: ${e.message||e}`)));
+chooseBtn?.addEventListener("click", () => chooseOutput().catch(e=>setStatus(`Output error: ${e.message||e}`)));
+
+async function loadPocketTTS() {
+  if (tts?.ready) return;
+  setStatus("Loading Pocket TTS in Chrome… the first load downloads the browser model and caches it.");
+  tts = new PocketTTS({ language:"english_2026-04", quantized:true, voiceCloning:true, cache:true, maxThreads:1, maxReferenceSeconds:6 });
+  await tts.load(info => {
+    if (info?.label) setStatus(`Pocket TTS: ${info.label}${info.fromCache ? " (cached)" : ""}`);
+    if (info?.loaded && info?.total) meter.style.width = `${Math.min(100, info.loaded/info.total*100)}%`;
+  });
+}
+
+function pickReference() {
+  return new Promise(resolve => { const p=document.createElement("input"); p.type="file"; p.accept=".wav,audio/wav"; p.onchange=()=>resolve(p.files?.[0]||null); p.click(); });
+}
+
+async function decodeReference(file) {
+  const ctx = new AudioContext();
+  try {
+    const a = await ctx.decodeAudioData(await file.arrayBuffer());
+    const mono = new Float32Array(a.length);
+    for (let i=0;i<a.length;i++) { let s=0; for(let c=0;c<a.numberOfChannels;c++) s+=a.getChannelData(c)[i]; mono[i]=s/a.numberOfChannels; }
+    return { data:mono, sampleRate:a.sampleRate, duration:a.duration };
+  } finally { await ctx.close().catch(()=>{}); }
+}
+
+async function cloneReference() {
+  if (!referenceFile) throw new Error("Choose a reference WAV first.");
+  await loadPocketTTS();
+  setStatus(`Reading ${referenceFile.name}…`);
+  const wav = await decodeReference(referenceFile);
+  if (wav.duration < 0.5) throw new Error("Reference WAV is too short. Use a clear 1–6 second sample.");
+  setStatus("Cloning your WAV in the browser…");
+  voiceRef = await tts.cloneVoice(wav.data, { inputSampleRate:wav.sampleRate, name:"my-wav-voice" });
+  setStatus("Voice embedding ready. Loading Pocket TTS synthesis…");
+  await tts.finishLoad();
+  setStatus("YOUR CUSTOM WAV VOICE IS READY.");
+}
+
+referenceBtn.addEventListener("click", async()=>{
+  const f=await pickReference();
+  if(!f) return;
+  referenceFile=f; voiceRef=null;
+  try { await cloneReference(); } catch(e) { setStatus(`WAV clone failed: ${e.message||e}`); }
+});
+
+function stopMic() {
+  if(vadFrame) cancelAnimationFrame(vadFrame); vadFrame=0;
+  try{vadAnalyser?.disconnect()}catch{} try{vadContext?.close()}catch{}
+  vadAnalyser=null; vadContext=null;
+  micStream?.getTracks().forEach(t=>t.stop()); micStream=null;
+}
+
+async function startMic() {
+  stopMic();
+  const audio = { echoCancellation:false, noiseSuppression:false, autoGainControl:false, channelCount:1 };
+  if(micSelect.value) audio.deviceId={exact:micSelect.value};
+  micStream=await navigator.mediaDevices.getUserMedia({audio});
+  vadContext=new AudioContext({latencyHint:"interactive"});
+  await vadContext.resume();
+  const source=vadContext.createMediaStreamSource(micStream);
+  vadAnalyser=vadContext.createAnalyser(); vadAnalyser.fftSize=512; vadAnalyser.smoothingTimeConstant=.1; source.connect(vadAnalyser);
+  const data=new Uint8Array(vadAnalyser.fftSize);
+  const tick=()=>{ if(!running)return; vadAnalyser.getByteTimeDomainData(data); let s=0; for(const v of data){const x=(v-128)/128;s+=x*x;} meter.style.width=`${Math.min(100,Math.max(2,Math.sqrt(s/data.length)*500))}%`; vadFrame=requestAnimationFrame(tick); };
+  vadFrame=requestAnimationFrame(tick);
+}
+
+async function speak(text) {
+  text=text.replace(/\s+/g," ").trim();
+  if(!text||!voiceRef||generating)return;
+  const id=++generation; generating=true;
+  try {
+    await ensurePlayer(); await tts.stop(); player.reset();
+    setStatus(`Speaking with your WAV voice: “${text}”`);
+    const chunks=[];
+    await tts.generate(text,{voice:voiceRef,onChunk:(chunk,meta)=>{if(id!==generation)return; const copy=chunk.slice(); chunks.push(copy); player.play(copy,meta);}});
+    if(id===generation&&chunks.length){ player.flush(); lastBlob=chunksToWavBlob(chunks,tts.sampleRate); if(outputAudio.src)URL.revokeObjectURL(outputAudio.src); outputAudio.src=URL.createObjectURL(lastBlob); outputAudio.load(); setStatus("YOUR CUSTOM WAV VOICE IS ON — Listening…"); }
+  } catch(e) { if(id===generation)setStatus(`TTS failed: ${e.message||e}`); }
+  finally { if(id===generation)generating=false; }
+}
+
+testVoiceBtn?.addEventListener("click",async()=>{try{if(!voiceRef)await cloneReference();await speak("This is a test of my custom cloned voice.")}catch(e){setStatus(`Test failed: ${e.message||e}`)}});
+replayBtn?.addEventListener("click",()=>{if(!outputAudio.src)return setStatus("No generated speech yet.");outputAudio.currentTime=0;outputAudio.play().catch(()=>setStatus("Press PLAY on the audio player."));});
+
+function scheduleSpeech() { clearTimeout(silenceTimer); silenceTimer=setTimeout(()=>{const text=pendingText.trim();pendingText="";if(text)speak(text);},silenceMs()); }
+
+function startRecognition() {
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR) throw new Error("Chrome Speech Recognition is unavailable. Use Chrome.");
+  recognition=new SR(); recognition.lang="en-US"; recognition.continuous=true; recognition.interimResults=true; recognition.maxAlternatives=1;
+  recognition.onstart=()=>setStatus("YOUR CUSTOM WAV VOICE IS ON — Listening…");
+  recognition.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++){const r=e.results[i],t=r[0]?.transcript||"";pendingText+=` ${t}`;}pendingText=pendingText.replace(/\s+/g," ").trim();if(pendingText)scheduleSpeech();};
+  recognition.onerror=e=>{if(running&&e.error!=="aborted")setStatus(`Speech recognition: ${e.error}`);};
+  recognition.onend=()=>{if(running){clearTimeout(recoveryTimer);recoveryTimer=setTimeout(()=>{try{recognition.start()}catch{}},100);}};
+  recognition.start();
+}
+
+startBtn.addEventListener("click",async()=>{
+  if(running)return;
+  try {
+    await navigator.mediaDevices.getUserMedia({audio:true});
+    await refreshDevices(); await loadPocketTTS(); await ensurePlayer();
+    if(!referenceFile) referenceFile=await pickReference();
+    if(!referenceFile) throw new Error("Choose a WAV reference.");
+    if(!voiceRef) await cloneReference();
+    running=true; startBtn.disabled=true;
+    await startMic(); startRecognition();
+  } catch(e) { running=false; startBtn.disabled=false; stopMic(); setStatus(`Start failed: ${e.message||e}`); console.error(e); }
+});
+
+stopBtn.addEventListener("click",async()=>{
+  running=false; generation++; generating=false; pendingText=""; clearTimeout(silenceTimer); clearTimeout(recoveryTimer);
+  try{recognition?.abort()}catch{} stopMic(); try{await tts?.stop()}catch{} try{player?.stop()}catch{} meter.style.width="0%"; startBtn.disabled=false; setStatus("Stopped.");
+});
+
+micSelect.addEventListener("change",async()=>{if(running){try{await startMic();setStatus("Microphone changed — Listening…")}catch(e){setStatus(`Microphone error: ${e.message||e}`)}}});
+navigator.mediaDevices?.addEventListener?.("devicechange",refreshDevices);
+refreshDevices();
