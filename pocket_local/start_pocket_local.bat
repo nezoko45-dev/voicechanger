@@ -32,33 +32,58 @@ if not exist "%UV_EXE%" if /I not "%UV_EXE%"=="uv.exe" (
   exit /b 1
 )
 
-set "POCKET_UV=%UV_EXE%"
-echo Starting local Node backend first...
-start "Pocket TTS Backend" /min cmd /c "set POCKET_UV=%POCKET_UV%&&node server.mjs"
+echo.
+echo Checking the local Pocket TTS CLI...
+"%UV_EXE%" tool install --force pocket-tts==3.3.0
+if errorlevel 1 (
+  echo Failed to install/update Pocket TTS.
+  pause
+  exit /b 1
+)
 
-echo Waiting for http://127.0.0.1:3000/health ...
+set "POCKET_EXE=%USERPROFILE%\.local\bin\pocket-tts.exe"
+if not exist "%POCKET_EXE%" (
+  where pocket-tts.exe >nul 2>nul
+  if not errorlevel 1 set "POCKET_EXE=pocket-tts.exe"
+)
+if not exist "%POCKET_EXE%" (
+  echo Could not find pocket-tts.exe after installation.
+  echo Expected: %USERPROFILE%\.local\bin\pocket-tts.exe
+  pause
+  exit /b 1
+)
+
+set "POCKET_TTS_EXE=%POCKET_EXE%"
+echo Pocket TTS CLI is installed.
+echo.
+echo Starting local Node backend...
+start "Pocket TTS Backend" /min cmd /c "set POCKET_TTS_EXE=%POCKET_TTS_EXE%&&node server.mjs"
+
+echo Waiting for local UI...
 set /a tries=0
 :wait_loop
 set /a tries+=1
 powershell -NoProfile -Command "try { $r=Invoke-WebRequest -UseBasicParsing http://127.0.0.1:3000/health -TimeoutSec 1; if($r.StatusCode -eq 200){exit 0}else{exit 1} } catch { exit 1 }" >nul 2>nul
 if not errorlevel 1 goto ready
-if %tries% GEQ 60 goto failed
+if %tries% GEQ 30 goto failed
 timeout /t 1 /nobreak >nul
 goto wait_loop
 
 :ready
-echo Backend is ready.
-echo Opening Chrome UI...
+echo Local UI is ready.
+echo Opening Chrome...
 start "Pocket TTS Chrome UI" http://127.0.0.1:3000/
 echo.
-echo Keep this launcher open while using the app.
+echo IMPORTANT: Pocket TTS model loading starts only after you select your custom WAV.
+echo This prevents the console from sitting on a hidden download before you clone your voice.
+echo Keep this window open while using the app.
 :keepalive
 timeout /t 3600 /nobreak >nul
 goto keepalive
 
 :failed
 echo.
-echo ERROR: Local backend did not start within 60 seconds.
-echo Check the separate Pocket TTS Backend window for the real error.
+echo ERROR: Local UI did not start within 30 seconds.
+echo Check the separate Pocket TTS Backend window.
 pause
 exit /b 1
