@@ -1,0 +1,1 @@
+{"name":"local-pocket-tts-app","version":"1.0.0","private":true,"scripts":{"start":"http-server . -a 127.0.0.1 -p 8787 -c-1"},"dependencies":{"http-server":"^14.1.1"}}
