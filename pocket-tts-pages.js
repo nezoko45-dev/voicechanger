@@ -1,4 +1,4 @@
-import { PocketTTS, StreamingPlayer } from "https://cdn.jsdelivr.net/npm/pocket-tts-js@latest/dist/index.js";
+import { PocketTTS, StreamingPlayer } from "./pocket-tts/index.js";
 
 const status = document.getElementById("status");
 const startBtn = document.getElementById("load");
@@ -6,64 +6,100 @@ const stopBtn = document.getElementById("stop");
 const micSelect = document.getElementById("mic");
 const outputSelect = document.getElementById("output");
 const meter = document.getElementById("meter");
+const silenceSelect = document.getElementById("silence");
+const referenceBtn = document.getElementById("reference");
 
 let tts = null;
 let player = null;
 let clonedVoice = null;
 let running = false;
-let recognizing = false;
 let recognition = null;
 let silenceTimer = null;
-let finalText = "";
+let pendingText = "";
 let generationId = 0;
+let referenceFile = null;
+let audioStream = null;
 
-const SILENCE_MS = 320;
-
-function setStatus(s) { status.textContent = s; }
+function setStatus(text) { status.textContent = text; }
+function silenceMs() { return Number(silenceSelect?.value || 320); }
 
 async function refreshDevices() {
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
+    const oldMic = micSelect.value;
+    const oldOut = outputSelect.value;
     micSelect.innerHTML = '<option value="">Default microphone</option>';
     outputSelect.innerHTML = '<option value="">Default output</option>';
     devices.filter(d => d.kind === "audioinput").forEach((d, i) => {
-      const o = document.createElement("option"); o.value = d.deviceId; o.textContent = d.label || `Microphone ${i + 1}`; micSelect.appendChild(o);
+      const o = document.createElement("option");
+      o.value = d.deviceId;
+      o.textContent = d.label || `Microphone ${i + 1}`;
+      micSelect.appendChild(o);
     });
     devices.filter(d => d.kind === "audiooutput").forEach((d, i) => {
-      const o = document.createElement("option"); o.value = d.deviceId; o.textContent = d.label || `Speaker ${i + 1}`; outputSelect.appendChild(o);
+      const o = document.createElement("option");
+      o.value = d.deviceId;
+      o.textContent = d.label || `Speaker ${i + 1}`;
+      outputSelect.appendChild(o);
     });
-  } catch {}
-}
-
-async function chooseOutput() {
-  if (!outputSelect.value) return;
-  if (player?.audioContext?.setSinkId) {
-    await player.audioContext.setSinkId(outputSelect.value);
-    setStatus("Output selected.");
-  } else {
-    setStatus("Chrome does not expose output selection for this audio path; using the default speaker.");
+    if ([...micSelect.options].some(o => o.value === oldMic)) micSelect.value = oldMic;
+    if ([...outputSelect.options].some(o => o.value === oldOut)) outputSelect.value = oldOut;
+  } catch (e) {
+    setStatus(`Device list unavailable: ${e.message || e}`);
   }
 }
 
-document.getElementById("choose")?.addEventListener("click", chooseOutput);
-outputSelect.addEventListener("change", chooseOutput);
+async function chooseOutput() {
+  if (!outputSelect.value || !player?.audioContext) return;
+  const ctx = player.audioContext;
+  if (typeof ctx.setSinkId === "function") {
+    await ctx.setSinkId(outputSelect.value);
+    setStatus("Output selected. Listening…");
+  } else {
+    setStatus("This Chrome audio path does not expose output selection; using the default speaker.");
+  }
+}
 
-async function cloneReference() {
+outputSelect.addEventListener("change", () => chooseOutput().catch(e => setStatus(`Output error: ${e.message || e}`)));
+
+document.getElementById("choose")?.addEventListener("click", () => chooseOutput().catch(e => setStatus(`Output error: ${e.message || e}`)));
+
+referenceBtn.addEventListener("click", () => {
   const picker = document.createElement("input");
   picker.type = "file";
   picker.accept = "audio/*,.wav";
   picker.onchange = async () => {
-    const file = picker.files?.[0];
-    if (!file || !tts) return;
-    setStatus("Encoding reference voice…");
-    const ctx = new AudioContext();
-    const decoded = await ctx.decodeAudioData(await file.arrayBuffer());
-    const mono = decoded.getChannelData(0).slice();
-    clonedVoice = await tts.cloneVoice(mono, { inputSampleRate: decoded.sampleRate, name: "my-clone" });
-    await ctx.close();
-    setStatus("Reference voice loaded. Start speaking.");
+    referenceFile = picker.files?.[0] || null;
+    if (!referenceFile) return;
+    if (!tts) {
+      setStatus("Reference selected. Press START to load Pocket TTS, then it will be cloned automatically.");
+      return;
+    }
+    await loadReference(referenceFile);
   };
   picker.click();
+});
+
+async function loadReference(file) {
+  setStatus("Encoding your WAV reference…");
+  const ctx = new AudioContext();
+  try {
+    const decoded = await ctx.decodeAudioData(await file.arrayBuffer());
+    if (decoded.duration < 1) throw new Error("The reference is too short. Use at least 1 second of clear speech.");
+    const mono = new Float32Array(decoded.length);
+    for (let ch = 0; ch < decoded.numberOfChannels; ch++) {
+      const data = decoded.getChannelData(ch);
+      for (let i = 0; i < data.length; i++) mono[i] += data[i] / decoded.numberOfChannels;
+    }
+    clonedVoice = await tts.cloneVoice(mono, {
+      inputSampleRate: decoded.sampleRate,
+      name: "github-pages-wav-voice"
+    });
+    await tts.finishLoad();
+    setStatus("Voice cloned. Speak normally; TTS starts after silence.");
+  } finally {
+    await ctx.close();
+  }
 }
 
 async function speak(text) {
@@ -73,7 +109,7 @@ async function speak(text) {
   try {
     await tts.stop();
     player.reset();
-    setStatus(`Generating: ${text}`);
+    setStatus(`Speaking: ${text}`);
     await tts.generate(text, {
       voice: clonedVoice,
       onChunk: (audio, meta) => {
@@ -81,6 +117,7 @@ async function speak(text) {
       }
     });
     if (id === generationId) player.flush();
+    setStatus("Listening…");
   } catch (e) {
     if (id === generationId) setStatus(`TTS error: ${e.message || e}`);
   }
@@ -89,36 +126,39 @@ async function speak(text) {
 function scheduleSpeech() {
   clearTimeout(silenceTimer);
   silenceTimer = setTimeout(() => {
-    const text = finalText.trim();
-    finalText = "";
+    const text = pendingText.trim();
+    pendingText = "";
     if (text) speak(text);
-  }, SILENCE_MS);
+  }, silenceMs());
 }
 
 function startRecognition() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) throw new Error("Chrome SpeechRecognition is unavailable in this browser.");
+  if (!SR) throw new Error("Chrome SpeechRecognition is unavailable.");
   recognition = new SR();
   recognition.continuous = true;
   recognition.interimResults = true;
   recognition.lang = "en-US";
-  recognition.onstart = () => { recognizing = true; setStatus("Listening… stop speaking and TTS starts after 320 ms of silence."); };
+  recognition.onstart = () => setStatus(`Listening… TTS starts after ${silenceMs()} ms of silence.`);
   recognition.onresult = e => {
-    let interim = "";
+    let sawSpeech = false;
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const r = e.results[i];
-      if (r.isFinal) finalText += r[0].transcript + " ";
-      else interim += r[0].transcript;
+      if (r[0]?.transcript) sawSpeech = true;
+      if (r.isFinal) pendingText += r[0].transcript + " ";
     }
-    if (finalText.trim() || interim.trim()) {
+    if (sawSpeech) {
       meter.style.width = "100%";
       scheduleSpeech();
     }
   };
-  recognition.onerror = e => setStatus(`Speech recognition: ${e.error}`);
+  recognition.onerror = e => {
+    if (e.error !== "aborted") setStatus(`Speech recognition: ${e.error}`);
+  };
   recognition.onend = () => {
-    recognizing = false;
-    if (running) setTimeout(() => { try { recognition.start(); } catch {} }, 50);
+    if (running) setTimeout(() => {
+      try { recognition.start(); } catch {}
+    }, 50);
   };
   recognition.start();
 }
@@ -128,20 +168,44 @@ startBtn.addEventListener("click", async () => {
   try {
     running = true;
     startBtn.disabled = true;
-    setStatus("Loading Pocket TTS… first load downloads and caches the INT8 browser model.");
-    tts = new PocketTTS({ language: "english_2026-04", quantized: true, voiceCloning: true, cache: true });
+    setStatus("Loading Pocket TTS… first load downloads and caches the INT8 model.");
+
+    tts = new PocketTTS({
+      language: "english_2026-04",
+      quantized: true,
+      voiceCloning: true,
+      cache: true,
+      maxThreads: 1
+    });
     await tts.load(p => {
       if (p?.total) meter.style.width = `${Math.min(100, p.loaded / p.total * 100)}%`;
+      if (p?.label) setStatus(`${p.label}…`);
     });
-    player = new StreamingPlayer({ sampleRate: tts.sampleRate });
+
+    player = new StreamingPlayer({ sampleRate: tts.sampleRate, primeSeconds: 0.12, leadSeconds: 0.02 });
     await player.resume();
     await refreshDevices();
-    setStatus("Pocket TTS loaded. Choose your reference WAV to clone its voice.");
-    await cloneReference();
+    await chooseOutput().catch(() => {});
+
+    if (!referenceFile) {
+      const picker = document.createElement("input");
+      picker.type = "file";
+      picker.accept = "audio/*,.wav";
+      picker.onchange = async () => {
+        referenceFile = picker.files?.[0] || null;
+        if (referenceFile) await loadReference(referenceFile);
+      };
+      picker.click();
+    } else {
+      await loadReference(referenceFile);
+    }
+
+    if (!clonedVoice) throw new Error("Choose a WAV reference before speaking.");
     startRecognition();
   } catch (e) {
     running = false;
     startBtn.disabled = false;
+    try { recognition?.stop(); } catch {}
     setStatus(`Start error: ${e.message || e}`);
   }
 });
@@ -149,13 +213,20 @@ startBtn.addEventListener("click", async () => {
 stopBtn.addEventListener("click", async () => {
   running = false;
   clearTimeout(silenceTimer);
-  finalText = "";
+  pendingText = "";
   generationId++;
   try { recognition?.stop(); } catch {}
   try { await tts?.stop(); } catch {}
   try { player?.stop(); } catch {}
+  if (audioStream) audioStream.getTracks().forEach(t => t.stop());
   setStatus("Stopped.");
   startBtn.disabled = false;
+});
+
+micSelect.addEventListener("change", () => {
+  // Chrome SpeechRecognition chooses its own input device; the selector is retained
+  // for device visibility/compatibility. getUserMedia is used to unlock device labels.
+  if (micSelect.value) setStatus("Microphone selected. Chrome SpeechRecognition will use its configured input device.");
 });
 
 navigator.mediaDevices?.addEventListener?.("devicechange", refreshDevices);
