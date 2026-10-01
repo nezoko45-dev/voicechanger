@@ -28,11 +28,15 @@ if not exist node_modules\http-server (
   )
 )
 
-echo.
+REM Serve the REPOSITORY ROOT, not local_chrome_app itself.
+REM This makes ../pocket-tts/index.js and ../pocket-tts/player.js resolve correctly.
+for %%I in ("%~dp0..") do set "REPO_ROOT=%%~fI"
+
+ echo.
 echo Starting local Pocket TTS web app...
-echo Open: http://127.0.0.1:8787/
+echo Open: http://127.0.0.1:8787/local_chrome_app/
 echo Keep this window open while using the app.
 echo.
-start "Pocket TTS Browser" "http://127.0.0.1:8787/"
-call npx http-server . -a 127.0.0.1 -p 8787 -c-1
+start "Pocket TTS Browser" "http://127.0.0.1:8787/local_chrome_app/"
+call npx http-server "%REPO_ROOT%" -a 127.0.0.1 -p 8787 -c-1
 pause
