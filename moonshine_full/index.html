@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Moonshine Full Voice Changer</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,system-ui,Segoe UI,sans-serif;background:#0d1017;color:#f5f7fb}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#20233a 0,#0d1017 48%);min-height:100vh}
+main{width:min(900px,94vw);margin:0 auto;padding:28px 0 60px}.card{background:#151924;border:1px solid #2b3040;border-radius:18px;padding:20px;margin:14px 0;box-shadow:0 14px 40px #0004}
+h1{margin:0 0 8px;font-size:30px}.sub{color:#aab2c5;line-height:1.5}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:700px){.grid{grid-template-columns:1fr}}
+label{display:block;color:#aeb6ca;font-size:13px;margin:0 0 7px}select,input[type=file],button{width:100%;font:inherit}select,input[type=file]{background:#0e121b;color:#fff;border:1px solid #353b4d;border-radius:10px;padding:11px}
+button{border:0;border-radius:11px;padding:12px 16px;font-weight:750;cursor:pointer;background:#7b52e8;color:#fff}button.secondary{background:#272d3b}button.danger{background:#55202b}button:disabled{opacity:.45;cursor:not-allowed}
+.row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1}.big{font-size:18px;padding:15px}.status{padding:12px;border-radius:10px;background:#0c1018;color:#b9c2d7;min-height:45px}.live{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;background:#0b0f16;border-radius:10px;padding:14px;min-height:70px;white-space:pre-wrap;word-break:break-word}
+.bar{height:8px;background:#080a0f;border-radius:99px;overflow:hidden;margin-top:10px}.bar>div{height:100%;width:0;background:#8c63f5;transition:width .15s}.check{display:flex;align-items:center;gap:9px;color:#c3cad8}.check input{width:auto}.hint{font-size:12px;color:#8e98ad;line-height:1.45}.ok{color:#7de0a7}.warn{color:#ffca72}.err{color:#ff7f8d}
+#history{max-height:220px;overflow:auto;display:flex;flex-direction:column;gap:7px}.line{padding:9px 11px;border-radius:9px;background:#10141e}.line b{color:#9b7cff;font-size:11px;margin-right:8px}
+</style>
+</head>
+<body>
+<main>
+  <section class="card">
+    <h1>🌙 Moonshine Full Voice Changer</h1>
+    <div class="sub">Mic → Moonshine Tiny Streaming STT → your cloned Moonshine/ZipVoice TTS → browser audio output. No Whisper, no Voice Wizard, and no cloud inference. Moonshine's web package runs on-device and caches its model assets after the first download. </div>
+  </section>
+
+  <section class="card">
+    <div class="grid">
+      <div>
+        <label for="mic">Microphone</label>
+        <select id="mic"><option value="">Default microphone</option></select>
+      </div>
+      <div>
+        <label for="output">TTS output</label>
+        <select id="output"><option value="">Default output</option></select>
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="refresh" class="secondary">Refresh devices</button>
+      <button id="chooseOutput" class="secondary">Choose speaker</button>
+    </div>
+    <div class="hint" style="margin-top:10px">Chrome may require microphone permission before it reveals device names. Speaker selection uses Chrome's audio-output routing when available.</div>
+  </section>
+
+  <section class="card">
+    <h2>🎙 Voice clone</h2>
+    <div class="grid">
+      <div>
+        <label for="wav">Use a reference WAV</label>
+        <input id="wav" type="file" accept="audio/wav,.wav,audio/*">
+        <div class="hint">A short clean recording works best. Moonshine can automatically transcribe the reference when you don't supply its transcript.</div>
+      </div>
+      <div>
+        <label>Or record a clone from this microphone</label>
+        <button id="recordClone" class="secondary">Record voice clone</button>
+        <div id="cloneStatus" class="hint" style="margin-top:8px">No clone loaded.</div>
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="loadClone" class="big">LOAD / CLONE VOICE</button>
+      <button id="clearClone" class="secondary">Clear clone</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="grid">
+      <div>
+        <label>STT model</label>
+        <select id="model"><option value="tiny">Tiny Streaming — lowest latency</option><option value="base">Base Streaming — more accuracy</option></select>
+      </div>
+      <div>
+        <label>Automatic speech</label>
+        <label class="check"><input id="autoSpeak" type="checkbox" checked> Speak every finished phrase</label>
+        <label class="check"><input id="dropQueue" type="checkbox" checked> Drop old TTS when a new phrase arrives</label>
+      </div>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button id="start" class="big">START</button>
+      <button id="stop" class="danger big" disabled>STOP</button>
+    </div>
+    <div class="bar"><div id="progress"></div></div>
+    <div id="status" class="status" style="margin-top:10px">Ready. Load a WAV clone or record one, then press START.</div>
+  </section>
+
+  <section class="card">
+    <h2>Live transcription</h2>
+    <div id="live" class="live">Waiting for microphone…</div>
+    <h3>Finished phrases</h3>
+    <div id="history"></div>
+  </section>
+
+  <section class="card">
+    <h2>🔊 TTS test</h2>
+    <textarea id="testText" rows="3" style="width:100%;background:#0e121b;color:#fff;border:1px solid #353b4d;border-radius:10px;padding:12px;font:inherit">Hello! This is my Moonshine cloned voice.</textarea>
+    <div class="row" style="margin-top:10px">
+      <button id="test">TEST TTS</button>
+      <button id="stopAudio" class="secondary">STOP TTS</button>
+    </div>
+    <div class="hint" style="margin-top:9px">Fast/default-output mode uses Moonshine's worker-backed <code>say()</code>. Selecting a specific output routes synthesized PCM through Chrome's audio sink API; that path uses <code>synthesize()</code>.</div>
+  </section>
+</main>
+
+<script type="module">
+import { MicTranscriber, ModelArch, TextToSpeech } from 'https://cdn.jsdelivr.net/npm/@moonshine-ai/moonshine-wasm@0.1.5/dist/index.js';
+
+const $ = (id) => document.getElementById(id);
+const micEl = $('mic'), outEl = $('output'), statusEl = $('status'), liveEl = $('live'), historyEl = $('history'), progressEl = $('progress');
+let mic = null;
+let tts = null;
+let ttsLoaded = false;
+let cloneReady = false;
+let starting = false;
+let lastLineId = null;
+let currentSpeech = 0;
+let audioEl = null;
+let outputDevices = [];
+
+function status(text, cls=''){ statusEl.className = 'status ' + cls; statusEl.textContent = text; }
+function progress(n){ progressEl.style.width = `${Math.max(0,Math.min(100,n*100))}%`; }
+function esc(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function addHistory(text){
+  const div=document.createElement('div'); div.className='line'; div.innerHTML=`<b>FINAL</b>${esc(text)}`; historyEl.appendChild(div); historyEl.scrollTop=historyEl.scrollHeight;
+}
+
+async function refreshDevices(){
+  try {
+    if (!navigator.mediaDevices?.enumerateDevices) throw new Error('Media device API is unavailable.');
+    // Ask once so Chrome exposes friendly device labels.
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    stream.getTracks().forEach(t=>t.stop());
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const inputs = devices.filter(d=>d.kind==='audioinput');
+    outputDevices = devices.filter(d=>d.kind==='audiooutput');
+    const oldMic = micEl.value, oldOut = outEl.value;
+    micEl.innerHTML = '<option value="">Default microphone</option>';
+    for(const d of inputs){
+      const o=document.createElement('option'); o.value=d.deviceId; o.textContent=d.label||`Microphone ${micEl.length}`; micEl.appendChild(o);
+    }
+    outEl.innerHTML = '<option value="">Default output</option>';
+    for(const d of outputDevices){
+      const o=document.createElement('option'); o.value=d.deviceId; o.textContent=d.label||`Output ${outEl.length}`; outEl.appendChild(o);
+    }
+    if([...micEl.options].some(o=>o.value===oldMic)) micEl.value=oldMic;
+    if([...outEl.options].some(o=>o.value===oldOut)) outEl.value=oldOut;
+    status(`Found ${inputs.length} microphone(s) and ${outputDevices.length} output(s).`,'ok');
+  } catch(e){ status('Device error: '+e.message,'err'); }
+}
+
+async function chooseSpeaker(){
+  try {
+    if(typeof navigator.mediaDevices?.selectAudioOutput === 'function'){
+      const d = await navigator.mediaDevices.selectAudioOutput();
+      if(d?.deviceId){
+        await refreshDevices();
+        outEl.value=d.deviceId;
+        status('Speaker selected: '+(d.label||'selected output'),'ok');
+      }
+    } else {
+      await refreshDevices();
+      status('Chrome does not expose the speaker picker here; choose an output from the list.','warn');
+    }
+  } catch(e){ status('Speaker selection cancelled/failed: '+e.message,'warn'); }
+}
+
+function micConstraints(){
+  const id=micEl.value;
+  return id ? {audio:{deviceId:{exact:id},channelCount:1}} : {audio:{channelCount:1}};
+}
+
+async function buildTts(){
+  if(tts) { try{tts.close();}catch{} }
+  status('Loading Moonshine voice-cloning TTS…'); progress(0);
+  tts = new TextToSpeech().language('en_us').cloning().onProgress((fraction,file)=>{
+    progress(fraction); status(`Loading TTS model: ${file||''} ${Math.round(fraction*100)}%`);
+  });
+  await tts.load();
+  ttsLoaded=true;
+  progress(1);
+  status('Voice-cloning TTS is loaded.','ok');
+}
+
+async function cloneFromWav(file){
+  if(!ttsLoaded) await buildTts();
+  status('Cloning the selected WAV…');
+  await tts.cloneFrom(file);
+  cloneReady=true;
+  $('cloneStatus').textContent='WAV voice clone ready.';
+  $('cloneStatus').className='hint ok';
+  status('WAV voice clone ready.','ok');
+}
+
+async function recordClone(){
+  try{
+    if(!ttsLoaded) await buildTts();
+    status('Recording a short clean voice reference… speak naturally.');
+    const clone=tts.startCloning();
+    clone.onProgress((recorded,speech)=>{
+      $('cloneStatus').textContent=`Recording ${recorded.toFixed(1)}s — usable speech ${speech.toFixed(1)}s`;
+    });
+    clone.onReady(()=>{$('cloneStatus').textContent='Enough speech detected; finishing clone…';});
+    try { await clone.fromMicrophone({audioConstraints:micConstraints().audio}); }
+    catch { await clone.fromMicrophone(); }
+    await tts.cloneFrom(clone);
+    cloneReady=true;
+    $('cloneStatus').textContent='Microphone voice clone ready.';
+    $('cloneStatus').className='hint ok';
+    status('Microphone voice clone ready.','ok');
+  }catch(e){ $('cloneStatus').textContent='Clone failed: '+e.message; $('cloneStatus').className='hint err'; status('Clone failed: '+e.message,'err'); }
+}
+
+async function loadClone(){
+  try{
+    const file=$('wav').files[0];
+    if(file) await cloneFromWav(file);
+    else await recordClone();
+  }catch(e){ $('cloneStatus').textContent='Clone failed: '+e.message; $('cloneStatus').className='hint err'; status('Clone failed: '+e.message,'err'); }
+}
+
+function stopPlayback(){
+  currentSpeech++;
+  if(audioEl){try{audioEl.pause();audioEl.currentTime=0;audioEl.remove();}catch{} audioEl=null;}
+  if(tts?.stop){try{tts.stop();}catch{}}
+}
+
+async function playSelectedOutput(text){
+  const my=currentSpeech;
+  const result=tts.synthesize(text);
+  const ctx=new AudioContext();
+  const selected=outEl.value;
+  if(selected && 'setSinkId' in AudioContext.prototype){
+    try{ await ctx.setSinkId(selected); }catch(e){ console.warn('setSinkId failed',e); }
+  }
+  const buf=ctx.createBuffer(1,result.sampleRate,result.audio.length);
+  buf.copyToChannel(result.audio,0);
+  const src=ctx.createBufferSource(); src.buffer=buf; src.connect(ctx.destination); src.start();
+  await new Promise(resolve=>{src.onended=()=>{ctx.close();resolve();};});
+  return my===currentSpeech;
+}
+
+async function speakText(text){
+  text=(text||'').trim(); if(!text || !ttsLoaded || !cloneReady) return;
+  if($('dropQueue').checked) stopPlayback();
+  const selected=outEl.value;
+  try{
+    if(selected){
+      status('Synthesizing cloned speech…');
+      await playSelectedOutput(text);
+    } else {
+      status('Speaking…');
+      await tts.say(text);
+    }
+    status('Listening…','ok');
+  }catch(e){ status('TTS failed: '+e.message,'err'); }
+}
+
+async function start(){
+  if(starting || mic) return;
+  starting=true;
+  try{
+    if(!ttsLoaded) await buildTts();
+    if(!cloneReady){
+      const file=$('wav').files[0];
+      if(file) await cloneFromWav(file);
+      else { status('Load a WAV clone or press Record voice clone first.','warn'); starting=false; return; }
+    }
+    status('Loading Moonshine Tiny Streaming STT…'); progress(0);
+    const arch=$('model').value==='base' ? ModelArch.BaseStreaming : ModelArch.TinyStreaming;
+    mic=new MicTranscriber()
+      .language('en')
+      .modelArch(arch)
+      .audioConstraints(micConstraints().audio)
+      .onProgress((fraction,file)=>{progress(fraction);status(`Loading STT model: ${file||''} ${Math.round(fraction*100)}%`);})
+      .onText(text=>{liveEl.textContent=text||'…';})
+      .onLine(async line=>{
+        const text=(line.text||'').trim();
+        if(!text || line.id===lastLineId) return;
+        lastLineId=line.id;
+        addHistory(text);
+        liveEl.textContent='';
+        if($('autoSpeak').checked) await speakText(text);
+      });
+    await mic.load();
+    await mic.start();
+    progress(1); status('Listening…','ok'); $('start').disabled=true; $('stop').disabled=false;
+  }catch(e){
+    if(mic){try{await mic.stop();mic.close();}catch{} mic=null;}
+    status('Start failed: '+e.message,'err');
+  }finally{starting=false;}
+}
+
+async function stop(){
+  try{ if(mic){await mic.stop();mic.close();} }catch{}
+  mic=null; stopPlayback(); $('start').disabled=false; $('stop').disabled=true; status('Stopped.','ok'); liveEl.textContent='Waiting for microphone…';
+}
+
+$('refresh').onclick=refreshDevices;
+$('chooseOutput').onclick=chooseSpeaker;
+$('loadClone').onclick=loadClone;
+$('recordClone').onclick=recordClone;
+$('start').onclick=start;
+$('stop').onclick=stop;
+$('test').onclick=()=>speakText($('testText').value);
+$('stopAudio').onclick=stopPlayback;
+$('clearClone').onclick=()=>{ cloneReady=false; $('wav').value=''; $('cloneStatus').textContent='No clone loaded.'; $('cloneStatus').className='hint'; status('Clone cleared.','ok'); };
+
+navigator.mediaDevices?.addEventListener?.('devicechange', refreshDevices);
+await refreshDevices();
+</script>
+</body>
+</html>
