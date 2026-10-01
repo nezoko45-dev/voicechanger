@@ -6,42 +6,52 @@ color 0A
 
 echo ================================================
 echo       POCKET TTS LOCAL VOICE HOST
-echo ================================================
+ echo ================================================
 echo.
 
-where node >nul 2>nul
+where python >nul 2>nul
 if errorlevel 1 (
-    echo ERROR: Node.js is not installed or is not in PATH.
-    echo Install Node.js, then run this file again.
+    echo ERROR: Python 3.10-3.14 is required for Pocket TTS.
+    echo Install Python and run this file again.
     pause
     exit /b 1
 )
 
-if not exist package.json (
-    echo ERROR: package.json was not found.
-    pause
-    exit /b 1
+if not exist pocket_env (
+    echo Creating local Pocket TTS environment...
+    python -m venv pocket_env
+    if errorlevel 1 goto :venv_error
 )
 
-if not exist node_modules\ws (
-    echo Installing the WebSocket dependency...
-    call npm install --no-audit --no-fund
-    if errorlevel 1 (
-        echo ERROR: npm install failed.
-        pause
-        exit /b 1
-    )
-)
+call pocket_env\Scripts\activate.bat
+python -m pip install --upgrade pip --disable-pip-version-check
+if errorlevel 1 goto :pip_error
 
-start "Pocket TTS Local Host" /min cmd /c "node server.js"
-timeout /t 1 /nobreak >nul
+python -m pip install -r requirements.txt --disable-pip-version-check
+if errorlevel 1 goto :pip_error
 
-echo Local host started on ws://127.0.0.1:8765
-echo Opening GitHub Pages voice changer...
 echo.
-start "" "https://nezoko45-dev.github.io/voicechanger/"
+echo Starting LOCAL Pocket TTS inference engine...
+echo This keeps the expensive model work outside Chrome.
+echo.
+start "Pocket TTS Engine" /min cmd /c "call "%~dp0pocket_env\Scripts\activate.bat" ^&^& python "%~dp0pocket_host.py""
 
-echo Keep this launcher window open.
-echo Close the separate Pocket TTS Local Host window to stop the server.
+timeout /t 5 /nobreak >nul
+
+echo Local Pocket TTS host starting on ws://127.0.0.1:8765
+echo Opening GitHub Pages voice changer...
+start "" "https://nezoko45-dev.github.io/voicechanger/"
+echo.
+echo Keep the Pocket TTS Engine window open while using VRChat.
 pause
-endlocal
+exit /b 0
+
+:venv_error
+echo Failed to create the Python environment.
+pause
+exit /b 1
+
+:pip_error
+echo Failed to install Pocket TTS dependencies.
+pause
+exit /b 1
