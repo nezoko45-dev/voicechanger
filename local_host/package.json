@@ -1,1 +1,1 @@
-{"name":"voicechanger-local-host","version":"1.0.0","private":true,"main":"server.js","scripts":{"start":"node server.js"},"dependencies":{"ws":"^8.18.0"}}
+{"name":"pocket-tts-node-host","version":"0.1.0","private":true,"main":"node_pocket_tts_server.js","scripts":{"start":"node node_pocket_tts_server.js"},"dependencies":{"onnxruntime-node":"^1.22.0","ws":"^8.18.0"}}
