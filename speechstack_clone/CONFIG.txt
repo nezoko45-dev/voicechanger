@@ -1,0 +1,1 @@
+SpeechStack is the architecture layer. Use streaming STT, exact transcript pass-through, and a custom WAV-cloning TTS backend. Do not add an LLM. Browser output should route to VB-CABLE CABLE Input, while VRChat uses CABLE Output as its microphone.
