@@ -25,11 +25,12 @@ async def reference_upload(file:UploadFile=File(...)):
   audio,sr=sf.read(p,dtype='float32',always_2d=False)
   if audio.ndim>1: audio=np.mean(audio,axis=1)
   if sr!=TARGET_SR: audio=resample_poly(audio,TARGET_SR,sr)
-  sf.write(p,np.asarray(audio,dtype=np.float32),TARGET_SR,subtype='PCM_16'); sf.read(p,dtype='float32')
- except Exception:
+  sf.write(p,np.asarray(audio,dtype=np.float32),TARGET_SR,subtype='PCM_16')
+  sf.read(p,dtype='float32')
+ except Exception as e:
   try:p.unlink()
   except OSError:pass
-  raise ValueError('Reference audio could not be normalized to PCM WAV')
+  raise ValueError('Reference audio could not be normalized to PCM WAV: '+str(e))
  reference=p; return {'ok':True,'reference':p.name,'sample_rate':TARGET_SR}
 def convert_chunk(pcm16,sample_rate):
  global cloner,reference
@@ -47,8 +48,8 @@ def convert_chunk(pcm16,sample_rate):
   if not data: raise RuntimeError('OpenVoice returned empty audio')
   return data
  finally:
-  for p in (src,out):
-   try:p.unlink()
+  for pth in (src,out):
+   try:pth.unlink()
    except OSError:pass
 async def ensure_engine():
  global cloner
@@ -59,7 +60,7 @@ async def ws(websocket:WebSocket):
  try:
   cfg=json.loads(await asyncio.wait_for(websocket.receive_text(),15)); sr=int(cfg.get('sampleRate',16000)); window=max(MIN_WINDOW,float(cfg.get('windowSeconds',MIN_WINDOW)))
   if sr<8000 or sr>48000: sr=16000
-  await websocket.send_text('Loading OpenVoice V2 ONNX engine…'); await ensure_engine(); await websocket.send_text(f'OpenVoice V2 ready. Persistent WebSocket active. Window: {window:.3f}s')
+  await websocket.send_text('Loading OpenVoice V2 ONNX engine...'); await ensure_engine(); await websocket.send_text(f'OpenVoice V2 ready. Window: {window:.3f}s')
   buf=bytearray(); target_bytes=int(sr*window*2)
   while True:
    try: msg=await asyncio.wait_for(websocket.receive(),30)
@@ -75,7 +76,7 @@ async def ws(websocket:WebSocket):
     async with lock:
      try:
       data=await asyncio.to_thread(convert_chunk,chunk,sr)
-      if data: await websocket.send_text(f'Converted WAV: {len(data)//1024} KB'); await websocket.send_bytes(data)
+      if data: await websocket.send_bytes(data)
      except Exception as e:
       try: await websocket.send_text('Conversion error: '+str(e))
       except Exception: break
