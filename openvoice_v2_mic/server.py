@@ -20,7 +20,7 @@ cloner = None
 reference = None
 lock = asyncio.Lock()
 TARGET_SR = 22050
-STREAM_SECONDS = 0.90
+STREAM_SECONDS = 0.20
 
 @app.get("/")
 def index():
@@ -68,7 +68,7 @@ def convert_chunk(pcm16: bytes, sample_rate: int):
     if reference is None:
         raise RuntimeError("No reference WAV selected")
     audio = np.frombuffer(pcm16, dtype="<i2").astype(np.float32) / 32768.0
-    if audio.size < int(sample_rate * 0.50):
+    if audio.size < int(sample_rate * 0.15):
         return None
     audio = _resample_mono(audio, sample_rate, TARGET_SR)
 
@@ -101,13 +101,15 @@ async def ws(websocket: WebSocket):
         cfg = json.loads(await websocket.receive_text())
         sr = int(cfg.get("sampleRate", 16000))
         if sr < 8000 or sr > 48000: sr = 16000
+        requested = float(cfg.get("windowSeconds", STREAM_SECONDS))
+        window = min(0.20, max(0.20, requested))
         await websocket.send_text("Loading OpenVoice V2 ONNX engine…")
         global cloner
         if cloner is None:
             cloner = VoiceCloner(engine="openvoice", quantized=False)
-        await websocket.send_text("OpenVoice V2 ready. Low-gap audio pipeline active.")
+        await websocket.send_text("OpenVoice V2 ready. 200ms low-latency pipeline active.")
         buf = bytearray()
-        target_bytes = int(sr * STREAM_SECONDS * 2)
+        target_bytes = int(sr * window * 2)
         while True:
             msg = await websocket.receive()
             if "bytes" not in msg or msg["bytes"] is None: continue
