@@ -7,7 +7,8 @@ from fastapi import FastAPI, File, UploadFile, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from voiceclonnx import VoiceCloner
-ROOT=Path(__file__).resolve().parent; VOICE_DIR=ROOT/'voices'; VOICE_DIR.mkdir(parents=True,exist_ok=True)
+ROOT=Path(__file__).resolve().parent
+VOICE_DIR=ROOT/'voices'; VOICE_DIR.mkdir(parents=True,exist_ok=True)
 app=FastAPI(); app.add_middleware(CORSMiddleware,allow_origins=['*'],allow_methods=['*'],allow_headers=['*'])
 cloner=None; reference=None; lock=asyncio.Lock(); TARGET_SR=22050; MIN_WINDOW=.608
 @app.get('/')
@@ -38,11 +39,13 @@ def convert_chunk(pcm16,sample_rate):
  if reference is None: raise RuntimeError('No reference WAV selected')
  audio=np.frombuffer(pcm16,dtype='<i2').astype(np.float32)/32768.0
  if audio.size<int(sample_rate*MIN_WINDOW): return None
+ if audio.ndim>1: audio=np.mean(audio,axis=1)
  if sample_rate!=TARGET_SR: audio=resample_poly(audio,TARGET_SR,sample_rate)
  src_fd,src_name=tempfile.mkstemp(suffix='.wav',dir=VOICE_DIR); out_fd,out_name=tempfile.mkstemp(suffix='.wav',dir=VOICE_DIR); os.close(src_fd); os.close(out_fd)
  src=Path(src_name); out=Path(out_name)
  try:
-  sf.write(src,audio,TARGET_SR,subtype='PCM_16'); result=cloner.clone_voice(str(src),str(reference),str(out)); output_path=Path(result) if result else out
+  sf.write(src,audio,TARGET_SR,subtype='PCM_16')
+  result=cloner.clone_voice(str(src),str(reference),str(out)); output_path=Path(result) if result else out
   if not output_path.exists(): raise RuntimeError('OpenVoice returned no output WAV')
   data=output_path.read_bytes()
   if not data: raise RuntimeError('OpenVoice returned an empty WAV')
@@ -60,7 +63,7 @@ async def ws(websocket:WebSocket):
   await websocket.send_text('Loading OpenVoice V2 ONNX engine…')
   global cloner
   if cloner is None: cloner=VoiceCloner(engine='openvoice',quantized=False)
-  await websocket.send_text(f'OpenVoice V2 ready. Smooth continuous window: {window:.3f}s')
+  await websocket.send_text(f'OpenVoice V2 ready. Stable streaming window: {window:.3f}s')
   buf=bytearray(); target_bytes=int(sr*window*2)
   while True:
    msg=await websocket.receive()
@@ -74,4 +77,5 @@ async def ws(websocket:WebSocket):
       if data:
        await websocket.send_text(f'Converted WAV: {len(data)//1024} KB'); await websocket.send_bytes(data)
      except Exception as e: await websocket.send_text('Conversion error: '+str(e))
- except Exception:return
+ except Exception:
+  return
