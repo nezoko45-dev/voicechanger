@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenVoice V2 Mic Voice Changer</title>
+<style>
+body{margin:0;background:#111;color:#eee;font:15px system-ui,sans-serif}main{max-width:760px;margin:30px auto;padding:24px;background:#1b1b1b;border-radius:16px}h1{margin-top:0}.row{display:grid;gap:7px;margin:14px 0}select,input,button{font:inherit;padding:10px;border-radius:9px;border:1px solid #444;background:#242424;color:#fff}button{cursor:pointer}.buttons{display:flex;gap:10px}.status{margin-top:15px;padding:12px;background:#0d0d0d;border-radius:9px;white-space:pre-wrap}.ok{color:#8cff9a}.warn{color:#ffd36b}.bad{color:#ff7d7d}small{color:#aaa}.meter{height:8px;background:#333;border-radius:99px;overflow:hidden}.meter i{display:block;height:100%;width:0;background:#8b5cf6}
+</style>
+</head>
+<body><main>
+<h1>🎙️ OpenVoice V2 Mic Voice Changer</h1>
+<p>Real speech → OpenVoice V2 tone-color conversion → selected Chrome output.</p>
+<div class="row"><label>Reference WAV</label><input id="ref" type="file" accept="audio/wav,audio/*"><small>Use a clean single-speaker recording. The reference supplies the target voice color.</small></div>
+<div class="row"><label>Microphone</label><select id="mic"><option>Click Refresh Devices</option></select></div>
+<div class="row"><label>Output</label><select id="out"><option>Default output</option></select></div>
+<div class="buttons"><button id="refresh">Refresh devices</button><button id="start">START</button><button id="stop" disabled>STOP</button></div>
+<div class="row"><label>Input level</label><div class="meter"><i id="meter"></i></div></div>
+<div id="status" class="status">Connecting to local OpenVoice server…</div>
+<p><small>First run downloads the ONNX OpenVoice V2 engine. This is a local backend; GitHub Pages alone cannot run the model.</small></p>
+<script>
+const $=id=>document.getElementById(id); let stream=null,ctx=null,src=null,proc=null,ws=null,queue=[],playing=false,refReady=false;
+function status(t,c=''){ $('status').textContent=t; $('status').className='status '+c; }
+async function refresh(){try{await navigator.mediaDevices.getUserMedia({audio:true});const ds=await navigator.mediaDevices.enumerateDevices();$('mic').innerHTML='';ds.filter(d=>d.kind==='audioinput').forEach(d=>{let o=document.createElement('option');o.value=d.deviceId;o.textContent=d.label||'Microphone';$('mic').appendChild(o)});$('out').innerHTML='<option value="default">Default output</option>';ds.filter(d=>d.kind==='audiooutput').forEach(d=>{let o=document.createElement('option');o.value=d.deviceId;o.textContent=d.label||'Output';$('out').appendChild(o)});status('Devices ready. Choose your mic/output and a reference WAV.','ok')}catch(e){status('Device error: '+e,'bad')}}
+async function uploadRef(){const f=$('ref').files[0];if(!f)throw Error('Choose a reference WAV first');const fd=new FormData();fd.append('file',f);const r=await fetch('/reference',{method:'POST',body:fd});if(!r.ok)throw Error(await r.text());refReady=true;return await r.json()}
+async function setOutput(el){if(el.setSinkId)try{await el.setSinkId($('out').value)}catch(e){} }
+function worklet(){return `class MicProcessor extends AudioWorkletProcessor{process(i){const x=i[0]&&i[0][0];if(x){let b=new ArrayBuffer(x.length*2),v=new DataView(b);for(let n=0;n<x.length;n++){let s=Math.max(-1,Math.min(1,x[n]));v.setInt16(n*2,s<0?s*32768:s*32767,true)}this.port.postMessage(b,[b])}return true}}registerProcessor('mic-processor',MicProcessor)`}
+async function start(){try{if(!refReady)await uploadRef();await fetch('/health');stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:$('mic').value?{exact:$('mic').value}:undefined,channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});ctx=new AudioContext({sampleRate:16000});await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([worklet()],{type:'application/javascript'})));src=ctx.createMediaStreamSource(stream);proc=new AudioWorkletNode(ctx,'mic-processor');src.connect(proc);proc.connect(ctx.destination);ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws');ws.binaryType='arraybuffer';ws.onopen=()=>{ws.send(JSON.stringify({sampleRate:16000}));status('Converting microphone audio…','ok')};ws.onmessage=async e=>{if(typeof e.data==='string'){status(e.data);return}const blob=new Blob([e.data],{type:'audio/wav'});const a=new Audio(URL.createObjectURL(blob));a.autoplay=true;await setOutput(a);a.onended=()=>URL.revokeObjectURL(a.src)};ws.onerror=()=>status('OpenVoice WebSocket error. Check that the local server is running.','bad');ws.onclose=()=>{if($('start').disabled)status('Converter stopped.','warn')};proc.port.onmessage=e=>{if(ws&&ws.readyState===1)ws.send(e.data);};$('start').disabled=true;$('stop').disabled=false}catch(e){status('Start failed: '+e,'bad');stop()}}
+function stop(){if(proc)proc.disconnect();if(src)src.disconnect();if(stream)stream.getTracks().forEach(t=>t.stop());if(ctx)ctx.close();if(ws)ws.close();proc=src=stream=ctx=ws=null;$('start').disabled=false;$('stop').disabled=true}
+$('refresh').onclick=refresh;$('start').onclick=start;$('stop').onclick=stop;$('ref').onchange=()=>{refReady=false;status('Reference selected. It will be uploaded when START is pressed.','ok')};refresh();
+</script></main></body></html>
