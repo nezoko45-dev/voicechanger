@@ -1,4 +1,4 @@
-import asyncio, json, os, tempfile, uuid
+import asyncio, json, tempfile, uuid
 from pathlib import Path
 import numpy as np
 import soundfile as sf
@@ -45,18 +45,15 @@ def convert_chunk(pcm16: bytes, sample_rate: int):
     out = Path(tempfile.mkstemp(suffix='.wav', dir=VOICE_DIR)[1])
     try:
         sf.write(src, audio, sample_rate, subtype='PCM_16')
-        # voiceclonnx's OpenVoice engine performs audio-to-audio tone-color conversion.
-        result = cloner.clone_voice(str(src), str(reference), str(out))
-        # clone_voice may return a path or None depending on version.
-        out_path = Path(result) if result else out
-        if not out_path.exists():
+        cloner.clone_voice(str(src), str(reference), str(out))
+        if not out.exists():
             raise RuntimeError('OpenVoice returned no output WAV')
-        return out_path.read_bytes()
+        return out.read_bytes()
     finally:
         try: src.unlink()
-        except: pass
-        if out.exists() and out != Path(result) if 'result' in locals() and result else True:
-            pass
+        except OSError: pass
+        try: out.unlink()
+        except OSError: pass
 
 @app.websocket('/ws')
 async def ws(websocket: WebSocket):
@@ -81,9 +78,9 @@ async def ws(websocket: WebSocket):
                 async with lock:
                     try:
                         data = await asyncio.to_thread(convert_chunk, chunk, sr)
-                        if data: await websocket.send_bytes(data)
+                        if data:
+                            await websocket.send_bytes(data)
                     except Exception as e:
                         await websocket.send_text('Conversion error: ' + str(e))
-    except Exception as e:
-        try: await websocket.send_text('Server error: ' + str(e))
-        except: pass
+    except Exception:
+        return
