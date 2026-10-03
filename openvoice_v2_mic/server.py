@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from voiceclonnx import VoiceCloner
 ROOT=Path(__file__).resolve().parent; VOICE_DIR=ROOT/'voices'; VOICE_DIR.mkdir(parents=True,exist_ok=True)
 app=FastAPI(); app.add_middleware(CORSMiddleware,allow_origins=['*'],allow_methods=['*'],allow_headers=['*'])
-cloner=None; reference=None; lock=asyncio.Lock(); TARGET_SR=22050; MIN_WINDOW=.5
+cloner=None; reference=None; lock=asyncio.Lock(); TARGET_SR=22050; MIN_WINDOW=.608
 @app.get('/')
 def index(): return FileResponse(ROOT/'index.html')
 @app.get('/health')
@@ -55,12 +55,12 @@ def convert_chunk(pcm16,sample_rate):
 async def ws(websocket:WebSocket):
  await websocket.accept()
  try:
-  cfg=json.loads(await websocket.receive_text()); sr=int(cfg.get('sampleRate',16000)); requested=float(cfg.get('windowSeconds',.5)); window=max(MIN_WINDOW,requested)
+  cfg=json.loads(await websocket.receive_text()); sr=int(cfg.get('sampleRate',16000)); requested=float(cfg.get('windowSeconds',MIN_WINDOW)); window=max(MIN_WINDOW,requested)
   if sr<8000 or sr>48000: sr=16000
   await websocket.send_text('Loading OpenVoice V2 ONNX engine…')
   global cloner
   if cloner is None: cloner=VoiceCloner(engine='openvoice',quantized=False)
-  await websocket.send_text(f'OpenVoice V2 ready. Conversion window: {window:.2f}s')
+  await websocket.send_text(f'OpenVoice V2 ready. Smooth continuous window: {window:.3f}s')
   buf=bytearray(); target_bytes=int(sr*window*2)
   while True:
    msg=await websocket.receive()
