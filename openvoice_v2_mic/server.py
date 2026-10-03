@@ -20,6 +20,7 @@ cloner = None
 reference = None
 lock = asyncio.Lock()
 TARGET_SR = 22050
+STREAM_SECONDS = 0.50
 
 @app.get("/")
 def index():
@@ -27,7 +28,7 @@ def index():
 
 @app.get("/health")
 def health():
-    return {"ok": True, "engine": "openvoice-v2", "sample_rate": TARGET_SR}
+    return {"ok": True, "engine": "openvoice-v2", "sample_rate": TARGET_SR, "stream_seconds": STREAM_SECONDS}
 
 @app.post("/reference")
 async def reference_upload(file: UploadFile = File(...)):
@@ -67,12 +68,10 @@ def convert_chunk(pcm16: bytes, sample_rate: int):
     if reference is None:
         raise RuntimeError("No reference WAV selected")
     audio = np.frombuffer(pcm16, dtype="<i2").astype(np.float32) / 32768.0
-    if audio.size < int(sample_rate * 0.8):
+    if audio.size < int(sample_rate * 0.25):
         return None
     audio = _resample_mono(audio, sample_rate, TARGET_SR)
 
-    # mkstemp opens the file. Closing the descriptors before handing the paths
-    # to voiceclonnx fixes Windows WinError 32 file-lock failures.
     src_fd, src_name = tempfile.mkstemp(suffix=".wav", dir=VOICE_DIR)
     out_fd, out_name = tempfile.mkstemp(suffix=".wav", dir=VOICE_DIR)
     import os
@@ -106,9 +105,9 @@ async def ws(websocket: WebSocket):
         global cloner
         if cloner is None:
             cloner = VoiceCloner(engine="openvoice", quantized=False)
-        await websocket.send_text("OpenVoice V2 ready. Speak into the microphone.")
+        await websocket.send_text("OpenVoice V2 ready. Continuous audio pipeline active.")
         buf = bytearray()
-        target_bytes = int(sr * 1.5 * 2)
+        target_bytes = int(sr * STREAM_SECONDS * 2)
         while True:
             msg = await websocket.receive()
             if "bytes" not in msg or msg["bytes"] is None: continue
