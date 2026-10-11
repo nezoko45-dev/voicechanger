@@ -1,13 +1,23 @@
-# VoiceChanger
+# Fish Audio Call Again
 
-Chrome extension + local Python API for capturing active-tab audio and converting speech toward a WAV reference using OpenVoice ToneColorConverter.
+A lightweight Chrome extension that clicks Fish Audio's **Call again** button for you. No Python, local server, or voice-conversion model required.
 
-## Setup
-1. Install Python 3.10/3.11 and FFmpeg.
-2. Run start.bat to create a virtual environment and start the API at http://127.0.0.1:8765.
-3. Install the official OpenVoice V2 package/dependencies and checkpoints from https://github.com/myshell-ai/OpenVoice. Put converter/config.json and converter/checkpoint.pth under checkpoints_v2. Checkpoints are not bundled; the reference WAV alone is not a model.
-4. Visit chrome://extensions, enable Developer mode, choose Load unpacked, and select the extension folder.
-5. Choose the preserved Recording (10).wav in the popup, click Start capture while speech plays in the active tab, then Stop & convert.
-6. Listen to or download the converted WAV.
+## Install
+1. Open [chrome://extensions](chrome://extensions).
+2. Enable **Developer mode**.
+3. Click **Load unpacked** and choose this repository's `extension` folder.
+4. Open Fish Audio in a tab and refresh it once after installing.
 
-Audio is processed on localhost. Use only voices you own or have permission to use. OpenVoice setup can require dependency/checkpoint steps; conversion will report a clear error until those are installed.
+## Use
+- Click the extension icon on a Fish Audio tab.
+- Turn on **Auto-click** to click the next available **Call again** button and repeat as new results finish.
+- Set a delay if you want the page to settle before the click.
+- Use **Click once** for a single manual click.
+- Turn Auto-click off to stop the loop.
+
+The extension only runs on Fish Audio pages. It does not access your Fish Audio account, call private APIs, or store page content. It automates the site's visible button. The original `Recording (10).wav` reference file is preserved in the repository but is not needed for this extension.
+
+## Troubleshooting
+- Make sure the button is visibly labeled **Call again** and the page is fully loaded.
+- After loading the extension, refresh the Fish Audio tab.
+- If Fish Audio changes the button label or layout, update the text matcher in `extension/content.js`.

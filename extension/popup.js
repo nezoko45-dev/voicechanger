@@ -1,4 +1,41 @@
-const API='http://127.0.0.1:8765';const ref=document.getElementById('reference'),start=document.getElementById('start'),stop=document.getElementById('stop'),state=document.getElementById('state'),msg=document.getElementById('message'),player=document.getElementById('player'),download=document.getElementById('download');let recording=false;const say=t=>msg.textContent=t;
-async function check(){try{const r=await fetch(API+'/health'),h=await r.json();state.textContent=h.converter_ready?'Model ready':'API online · model setup needed';state.style.color=h.converter_ready?'#86efac':'#fbbf24';say(h.message)}catch{state.textContent='Server offline';say('Start the Python backend with start.bat, then reopen this popup.')}}check();
-start.addEventListener('click',async()=>{if(!ref.files?.[0])return say('Choose a WAV reference before recording.');if(!ref.files[0].name.toLowerCase().endsWith('.wav'))return say('Reference must be WAV.');try{const tabs=await chrome.tabs.query({active:true,lastFocusedWindow:true}),tab=tabs[0];if(!tab?.id)throw Error('Could not find active tab.');const streamId=await chrome.tabCapture.getMediaStreamId({targetTabId:tab.id});const result=await chrome.runtime.sendMessage({type:'START_CAPTURE',streamId});if(!result?.ok)throw Error(result?.error||'Could not start capture.');recording=true;start.disabled=true;stop.disabled=false;say('Recording tab audio. Play speech, then click Stop & convert.')}catch(e){say(e.message||'Capture failed. Try a normal webpage, not a Chrome system page.')}});
-stop.addEventListener('click',async()=>{if(!recording)return;recording=false;stop.disabled=true;say('Stopping capture and converting locally…');try{const r=await chrome.runtime.sendMessage({type:'STOP_CAPTURE'});if(!r?.ok||!r.audio)throw Error(r?.error||'No audio captured.');const bytes=Uint8Array.from(atob(r.audio),c=>c.charCodeAt(0)),form=new FormData();form.append('audio',new Blob([bytes],{type:'audio/webm'}),'capture.webm');form.append('reference',ref.files[0],ref.files[0].name);const response=await fetch(API+'/convert',{method:'POST',body:form}),data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.detail||'Conversion failed.');player.src=API+data.output+'?t='+Date.now();download.href=player.src;download.hidden=false;say('Conversion complete! Play or download your WAV.')}catch(e){say(e.message||'Conversion failed. Check server and model setup.')}finally{start.disabled=false;stop.disabled=true;check()}});
+const enabledInput=document.getElementById('enabled');
+const delayInput=document.getElementById('delay');
+const delayValue=document.getElementById('delayValue');
+const onceButton=document.getElementById('once');
+const statusEl=document.getElementById('status');
+let activeTabId=null;
+function say(text){statusEl.textContent=text}
+async function getTab(){const tabs=await chrome.tabs.query({active:true,lastFocusedWindow:true});return tabs[0]}
+async function sendSettings(){if(activeTabId==null)return;try{await chrome.tabs.sendMessage(activeTabId,{type:'SETTINGS',enabled:enabledInput.checked,delayMs:Number(delayInput.value)*1000})}catch{say('Refresh your Fish Audio tab, then reopen this popup.')}}
+async function init(){
+  const saved=await chrome.storage.local.get({autoClick:false,delaySeconds:1});
+  enabledInput.checked=saved.autoClick;
+  delayInput.value=String(saved.delaySeconds);
+  delayValue.textContent=Number(saved.delaySeconds).toFixed(1)+' s';
+  const tab=await getTab();
+  if(!tab?.id||!tab.url||!/^https:\/\/(?:[^/]+\.)?fish\.audio\//i.test(tab.url)){
+    onceButton.disabled=true;enabledInput.disabled=true;delayInput.disabled=true;
+    say('Open a Fish Audio page to use this extension.');return;
+  }
+  activeTabId=tab.id;
+  await sendSettings();
+  say(saved.autoClick?'Auto-click is enabled on this tab.':'Ready. Turn on Auto-click or click once.');
+}
+enabledInput.addEventListener('change',async()=>{
+  await chrome.storage.local.set({autoClick:enabledInput.checked});
+  await sendSettings();
+  say(enabledInput.checked?'Auto-click enabled. Waiting for Call again…':'Auto-click paused.');
+});
+delayInput.addEventListener('input',()=>{
+  delayValue.textContent=Number(delayInput.value).toFixed(1)+' s';
+});
+delayInput.addEventListener('change',async()=>{
+  await chrome.storage.local.set({delaySeconds:Number(delayInput.value)});
+  await sendSettings();
+});
+onceButton.addEventListener('click',async()=>{
+  if(activeTabId==null)return;
+  try{const result=await chrome.tabs.sendMessage(activeTabId,{type:'CLICK_ONCE',delayMs:Number(delayInput.value)*1000});say(result?.ok?'Clicked Call again.':(result?.error||'Could not find an enabled Call again button.'))}
+  catch{say('Refresh the Fish Audio tab and try again.')}
+});
+init().catch(()=>say('Could not connect to the active tab.'));
