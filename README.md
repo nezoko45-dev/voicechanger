@@ -1,25 +1,13 @@
-# ElevenLabs Scribe + PocketTTS Voice Changer
+# VoiceChanger
 
-This app uses **ElevenLabs Scribe Realtime** for live speech-to-text and **PocketTTS** for the cloned voice output.
+Chrome extension + local Python API for capturing active-tab audio and converting speech toward a WAV reference using OpenVoice ToneColorConverter.
 
-Pipeline:
+## Setup
+1. Install Python 3.10/3.11 and FFmpeg.
+2. Run start.bat to create a virtual environment and start the API at http://127.0.0.1:8765.
+3. Install the official OpenVoice V2 package/dependencies and checkpoints from https://github.com/myshell-ai/OpenVoice. Put converter/config.json and converter/checkpoint.pth under checkpoints_v2. Checkpoints are not bundled; the reference WAV alone is not a model.
+4. Visit chrome://extensions, enable Developer mode, choose Load unpacked, and select the extension folder.
+5. Choose the preserved Recording (10).wav in the popup, click Start capture while speech plays in the active tab, then Stop & convert.
+6. Listen to or download the converted WAV.
 
-**Microphone → ElevenLabs Scribe Realtime STT → PocketTTS voice clone → selected output**
-
-The browser requests a short-lived ElevenLabs realtime Scribe token and then connects to Scribe over WebSocket. PocketTTS remains local in the browser and uses `Recording (10).wav` as the reference voice.
-
-## Run
-
-Open the GitHub Pages app, enter an ElevenLabs API key, choose the microphone and output, then press **START VOICE CHANGER**.
-
-For a production/public deployment, token creation should be moved to a server so the permanent ElevenLabs API key is never exposed to the browser.
-
-## PocketTTS
-
-PocketTTS is loaded from the repository's `pocket-tts/` implementation and uses the ONNX model hosted on Hugging Face.
-
-Reference voice:
-
-`Recording (10).wav`
-
-For VRChat, route the selected browser output through Voicemeeter or a virtual cable and choose the matching virtual microphone in VRChat.
+Audio is processed on localhost. Use only voices you own or have permission to use. OpenVoice setup can require dependency/checkpoint steps; conversion will report a clear error until those are installed.

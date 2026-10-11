@@ -1,3 +1,0 @@
-pocket-tts
-websockets>=15,<16
-numpy>=2.0

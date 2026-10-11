@@ -1,7 +1,0 @@
-target/
-*.rs.bk
-.vscode/
-.idea/
-models/*.onnx
-models/*.pth
-models/*.index
