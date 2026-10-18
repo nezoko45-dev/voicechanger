@@ -2,25 +2,25 @@
 
 This repository contains two separate unpacked Chrome extensions.
 
-## Natural Girl Voice (Signalsmith Stretch)
+## VoiceChanger — VoiceClonNX
 
-A live microphone voice-effect extension using the official Signalsmith Stretch Web Audio/WASM release. Audio processing stays local.
+The `girl-voice` folder now provides an audio-to-audio voice conversion UI backed by the local [VoiceClonNX](https://github.com/TigreGotico/voiceclonnx) ONNX library.
 
-1. Download the repository using **Code → Download ZIP**, then extract it.
+1. Download this repository using **Code → Download ZIP**, then extract it.
 2. Open `chrome://extensions` and enable **Developer mode**.
 3. Click **Load unpacked** and select the `girl-voice` folder.
-4. Click the extension icon, choose the pitch and formant settings, then click **Start voice** and allow microphone access.
+4. Click the extension icon and open the voice controls.
+5. Download and run `start-voiceclonnx.bat` from the controls page. Keep the terminal open.
+6. Select source speech and reference voice audio, choose an engine, and convert.
 
-The default preset starts at +4 semitones pitch and +2 semitones formant shift. Tune it to your own voice; results vary. Use headphones.
+The first run installs Python dependencies; the first conversion downloads model files. See [girl-voice/README.md](girl-voice/README.md) for setup and limitations.
 
-**Important limitation:** This previews the processed microphone through browser audio output. Chrome extensions cannot create a system-wide virtual microphone by themselves, so routing to Discord or other desktop apps requires a virtual audio cable/device.
-
-See [girl-voice/README.md](girl-voice/README.md) for details.
+**Important:** VoiceClonNX converts existing audio files; it is not a real-time microphone changer and cannot create a system-wide virtual microphone by itself.
 
 ## Fish Audio Call Again
 
-The original helper extension is in the `extension` folder. Load that folder in `chrome://extensions` to use the Fish Audio **Call again** automation.
+The helper extension is in the `extension` folder. Load that folder in `chrome://extensions` to use the Fish Audio **Call again** automation.
 
 ## Privacy
 
-The Natural Girl Voice extension does not upload or record microphone audio. It only requests microphone access after you click **Start voice** and stops the microphone when you click **Stop** or close the popup.
+Voice conversion uses a local backend at `127.0.0.1`. Uploaded audio is processed locally and stored temporarily for conversion. VoiceClonNX downloads model files from Hugging Face as needed. The extension does not intentionally send your audio to a remote conversion service.
