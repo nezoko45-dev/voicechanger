@@ -34,14 +34,14 @@
         <button id="liveStart" class="primary" disabled>Start live conversion</button>
         <button id="liveStop" class="secondary" disabled>Stop live</button>
       </div>
-      <p class="hint live-note">Experimental: chunk-based conversion can have several seconds of delay, pauses, or skipped chunks if inference is slower than real time. Use headphones to prevent feedback.</p>
+      <p class="hint live-note">Experimental: uses 2-second chunks to reduce capture delay. FACodec is the recommended starting point for live mode; slower engines may still lag or skip audio. Use headphones.</p>
     </section>
     <section class="panel">
       <label class="section-label" for="engine">04 / CONVERSION ENGINE</label>
       <select id="engine">
-        <option value="facodec">FACodec — clear, accurate speech</option>
+        <option value="facodec" selected>FACodec — best starting point for live mode</option>
         <option value="openvoice">OpenVoice</option>
-        <option value="chatterbox" selected>Chatterbox — more natural, expressive (slower)</option>
+        <option value="chatterbox">Chatterbox — expressive, but may add latency</option>
         <option value="knnvc">kNN-VC</option>
         <option value="triaan">TriAAN</option>
       </select>
