@@ -44,6 +44,10 @@ jobs:
           --collect-all onnxruntime
           --collect-all fastapi
           --collect-all uvicorn
+          --collect-all starlette
+          --collect-all multipart
+          --collect-all websockets
+          --collect-all anyio
           --add-data "popup.html;."
           --add-data "styles.css;."
           --add-data "popup.js;."
