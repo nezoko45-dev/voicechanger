@@ -6,62 +6,121 @@ const quantized = $("quantized");
 const convertButton = $("convert");
 const status = $("status");
 const connection = $("connection");
-const download = $("download");
+const fileCount = $("file-count");
+const outputs = $("outputs");
 const result = $("result");
-let outputUrl = null;
+let backendReady = false;
+let isConverting = false;
+const outputUrls = [];
 
+function setStatus(message) { status.textContent = message; }
+function updateReady() {
+  convertButton.disabled = isConverting || !backendReady || !source.files.length || !reference.files.length;
+}
+function updateFileCount() {
+  const count = source.files.length;
+  fileCount.textContent = count ? count + " WAV file" + (count === 1 ? "" : "s") + " selected." : "No source files selected.";
+  updateReady();
+}
 async function checkBackend() {
   try {
     const response = await fetch("http://127.0.0.1:8765/health", {cache:"no-store"});
     if (!response.ok) throw new Error("Backend returned HTTP " + response.status);
     const data = await response.json();
-    connection.textContent = data.ok ? "● Backend connected at 127.0.0.1:8765" : "Backend responded unexpectedly.";
-    connection.style.color = data.ok ? "#86efac" : "#fca5a5";
+    backendReady = Boolean(data.ok);
+    connection.textContent = backendReady ? "● Backend connected at 127.0.0.1:8765" : "Backend responded unexpectedly.";
+    connection.style.color = backendReady ? "#86efac" : "#fca5a5";
   } catch {
+    backendReady = false;
     connection.textContent = "● Backend offline. Run start-voiceclonnx.bat and keep its window open.";
     connection.style.color = "#fca5a5";
   }
   updateReady();
 }
-function updateReady() {
-  convertButton.disabled = !(source.files.length && reference.files.length);
-}
-function setStatus(message) { status.textContent = message; }
-source.addEventListener("change", updateReady);
+source.addEventListener("change", updateFileCount);
 reference.addEventListener("change", updateReady);
 
-convertButton.addEventListener("click", async () => {
-  if (!source.files[0] || !reference.files[0]) return;
-  convertButton.disabled = true;
-  download.hidden = true;
-  result.hidden = true;
-  setStatus("Converting audio. The first run may take longer while VoiceClonNX downloads model files…");
+function addOutputRow(file, stateText) {
+  const row = document.createElement("div");
+  row.className = "file-item";
+  const name = document.createElement("div");
+  name.className = "file-name";
+  name.textContent = file.name;
+  const state = document.createElement("div");
+  state.className = "file-state";
+  state.textContent = stateText;
+  row.append(name, state);
+  outputs.append(row);
+  return {row, state};
+}
+function safeBaseName(name) {
+  return name.replace(/\\.[^.]+$/, "").replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").trim() || "converted";
+}
+async function convertOne(file, referenceFile, index, total) {
+  const row = addOutputRow(file, "Waiting…");
+  row.state.textContent = "Converting " + index + " of " + total + "…";
   const form = new FormData();
-  form.append("source_audio", source.files[0]);
-  form.append("reference_audio", reference.files[0]);
+  form.append("source_audio", file, file.name);
+  form.append("reference_audio", referenceFile, referenceFile.name);
   form.append("engine", engine.value);
   form.append("quantized", String(quantized.checked));
+  const response = await fetch("http://127.0.0.1:8765/convert", {method:"POST", body:form});
+  if (!response.ok) {
+    let detail = "HTTP " + response.status;
+    try { const data = await response.json(); detail = data.detail || detail; } catch {}
+    throw new Error(detail);
+  }
+  const blob = await response.blob();
+  if (!blob.size) throw new Error("The server returned an empty audio file.");
+  const url = URL.createObjectURL(blob);
+  outputUrls.push(url);
+  const link = document.createElement("a");
+  link.className = "download";
+  link.href = url;
+  link.download = safeBaseName(file.name) + "_converted.wav";
+  link.textContent = "Download WAV";
+  row.state.textContent = "Complete";
+  row.row.append(link);
+  result.src = url;
+  result.hidden = false;
+}
+convertButton.addEventListener("click", async () => {
+  const files = Array.from(source.files);
+  const referenceFile = reference.files[0];
+  if (!files.length || !referenceFile || isConverting) return;
+  isConverting = true;
+  updateReady();
+  outputs.replaceChildren();
+  result.hidden = true;
+  const failures = [];
   try {
-    const response = await fetch("http://127.0.0.1:8765/convert", {method:"POST", body:form});
-    if (!response.ok) {
-      let detail = "HTTP " + response.status;
-      try { const data = await response.json(); detail = data.detail || detail; } catch {}
-      throw new Error(detail);
+    for (let i = 0; i < files.length; i++) {
+      setStatus("Converting file " + (i + 1) + " of " + files.length + ": " + files[i].name + "\nLeave this page open. The first conversion may download model files.");
+      try {
+        await convertOne(files[i], referenceFile, i + 1, files.length);
+      } catch (error) {
+        failures.push(files[i].name + ": " + error.message);
+        const row = addOutputRow(files[i], "Failed");
+        row.state.style.color = "#fca5a5";
+        row.state.title = error.message;
+        const detail = document.createElement("div");
+        detail.className = "hint";
+        detail.textContent = error.message;
+        row.row.append(detail);
+      }
     }
-    const blob = await response.blob();
-    if (outputUrl) URL.revokeObjectURL(outputUrl);
-    outputUrl = URL.createObjectURL(blob);
-    download.href = outputUrl;
-    download.hidden = false;
-    result.src = outputUrl;
-    result.hidden = false;
-    setStatus("Conversion complete. Preview the result or download the converted WAV.");
+    const succeeded = files.length - failures.length;
+    setStatus("Finished: " + succeeded + " of " + files.length + " file(s) converted." +
+      (failures.length ? "\nFailed files:\n" + failures.join("\n") : "") +
+      "\nUse each Download WAV link below to save the converted files.");
   } catch (error) {
-    setStatus("Conversion failed: " + error.message + "\nCheck that the backend window is running. The first model download also requires an internet connection.");
+    setStatus("Batch conversion stopped: " + error.message);
   } finally {
-    convertButton.disabled = false;
+    isConverting = false;
+    updateReady();
+    checkBackend();
   }
 });
-window.addEventListener("pagehide", () => { if (outputUrl) URL.revokeObjectURL(outputUrl); });
+window.addEventListener("pagehide", () => outputUrls.forEach(URL.revokeObjectURL));
 checkBackend();
 setInterval(checkBackend, 8000);
