@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "VoiceChanger — VoiceClonNX",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Convert speech audio to a reference voice with the local VoiceClonNX ONNX engine.",
   "permissions": [
     "storage"
