@@ -41,6 +41,10 @@ The desktop web UI is served at `http://127.0.0.1:8765/`; the backend binds to l
 3. Select **Load unpacked** and choose the repository root folder (the folder containing `manifest.json`).
 4. Keep the local backend running at `http://127.0.0.1:8765`.
 
+## Improve naturalness
+
+The UI now defaults to **Chatterbox**, which is designed to transfer speaking style and prosody for a more natural result, although it can run slower and may make a few transcription errors. If clarity is more important than expressive voice similarity, choose **FACodec** or **OpenVoice** instead. Use a clean reference recording (one speaker, little background noise, no music, and several seconds of natural speech) and record your source in a quiet room. Live mode remains experimental and can sound choppy because it converts separate chunks; use recorded conversion when voice quality matters most.
+
 ## Use recorded conversion
 1. Pick a reference audio file (WAV, MP3, M4A, OGG, or another browser-decodable audio format).
 2. Press **Record source**, speak, then press **Stop recording**. The source WAV is created automatically in memory; there is no second file picker.
