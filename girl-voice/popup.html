@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Natural Girl Voice</title>
+<style>
+:root{color-scheme:dark;font:14px/1.45 system-ui,sans-serif;background:#12131a;color:#f5f4fb}
+*{box-sizing:border-box}body{margin:0;width:340px;padding:18px;background:radial-gradient(ellipse at top,#292044,#12131a 65%)}
+header{display:flex;align-items:center;gap:12px;margin-bottom:16px}.orb{width:42px;height:42px;display:grid;place-items:center;border-radius:14px;background:linear-gradient(135deg,#e879f9,#8b5cf6);font-size:22px}h1{font-size:18px;margin:0}header p{margin:2px 0 0;color:#b7b2c8;font-size:12px}
+.panel{background:#201e2b;border:1px solid #393448;border-radius:15px;padding:14px;margin:10px 0}.row{display:flex;justify-content:space-between;align-items:center;gap:10px}.label{font-weight:650}.value{font-variant-numeric:tabular-nums;color:#e9a8ff;font-weight:700}input[type=range]{width:100%;accent-color:#d879f4;margin:12px 0 4px}.ticks{display:flex;justify-content:space-between;color:#928ba8;font-size:11px}.hint{font-size:12px;color:#b7b2c8;margin:6px 0 0}.buttons{display:flex;gap:8px;margin-top:12px}button{font:inherit;font-weight:700;border:0;border-radius:11px;padding:11px 12px;cursor:pointer;flex:1;background:#383346;color:#f5f4fb}button.primary{background:linear-gradient(100deg,#d946ef,#8b5cf6);color:white}button:disabled{opacity:.5;cursor:not-allowed}#status{font-size:12px;color:#c9c2d8;padding:6px 2px;min-height:32px}footer{font-size:11px;color:#928ba8;line-height:1.5} .pill{font-size:10px;padding:3px 7px;border-radius:99px;background:#33263e;color:#f0abfc}
+</style>
+</head>
+<body>
+<header><div class="orb">♫</div><div><h1>Natural Girl Voice</h1><p>Signalsmith Stretch · local processing</p></div></header>
+<section class="panel">
+<div class="row"><span class="label">Voice pitch</span><span class="value" id="pitchValue">+4 semitones</span></div>
+<input id="pitch" type="range" min="0" max="8" step="1" value="4" aria-label="Voice pitch">
+<div class="ticks"><span>Natural</span><span>Higher</span></div>
+<div class="row" style="margin-top:14px"><span class="label">Formant shift</span><span class="value" id="formantValue">+2 semitones</span></div>
+<input id="formant" type="range" min="-1" max="5" step="1" value="2" aria-label="Formant shift">
+<div class="ticks"><span>Deeper</span><span>Brighter</span></div>
+<p class="hint">A gentle pitch and formant lift usually sounds more natural than pitch alone. Adjust to taste.</p>
+</section>
+<section class="panel">
+<div class="row"><span class="label">Microphone</span><span class="pill">ON-DEVICE</span></div>
+<div class="buttons"><button class="primary" id="start">Start voice</button><button id="stop" disabled>Stop</button></div>
+<div id="status" role="status" aria-live="polite">Ready. Start voice and allow microphone access.</div>
+</section>
+<footer>Audio stays in this browser. Use headphones to avoid feedback. This previews the processed voice through your speakers; it does not create a system-wide virtual microphone for Discord or other apps.</footer>
+<script type="module" src="popup.js"></script>
+</body>
+</html>
