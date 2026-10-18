@@ -1,0 +1,58 @@
+name: Build Windows VoiceChanger EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "popup.html"
+      - "popup.js"
+      - "styles.css"
+      - "launcher.py"
+      - ".github/workflows/build-windows-exe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend and packager
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements.txt pyinstaller
+
+      - name: Build executable
+        shell: cmd
+        run: >-
+          pyinstaller --noconfirm --clean --onefile --console
+          --name VoiceChanger
+          --collect-all voiceclonnx
+          --collect-all onnxruntime
+          --collect-all fastapi
+          --collect-all uvicorn
+          --add-data "popup.html;."
+          --add-data "styles.css;."
+          --add-data "popup.js;."
+          launcher.py
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceChanger-Windows-x64
+          path: dist/VoiceChanger.exe
+          if-no-files-found: error
+          retention-days: 14
