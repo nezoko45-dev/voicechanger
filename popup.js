@@ -88,7 +88,8 @@ recordButton.addEventListener("click", async () => {
     status("Recording. Speak naturally, then stop.");
     clock = setInterval(() => { $("duration").textContent = formatTime((Date.now() - startedAt) / 1000); }, 250);
   } catch (err) {
-    status("Microphone access failed. Check Chrome's microphone permission.", true);
+    const reason = err?.name ? `${err.name}: ${err.message || "No details provided."}` : String(err);
+    status(`Microphone access failed — ${reason}. Check Chrome microphone settings and your operating-system microphone privacy settings.`, true);
   }
 });
 stopButton.addEventListener("click", () => {
