@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Natural Girl Voice — Signalsmith",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Locally pitch- and formant-shift microphone audio using Signalsmith Stretch.",
   "permissions": [
     "storage"
@@ -11,6 +11,6 @@
     "default_popup": "popup.html"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval' blob:; object-src 'self'"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   }
 }
