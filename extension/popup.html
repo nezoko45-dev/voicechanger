@@ -26,8 +26,18 @@
       <audio id="sourcePreview" controls hidden></audio>
       <div id="sourceName" class="file-status">No source recording yet</div>
     </section>
+    <section class="panel live-panel">
+      <div class="section-label">03 / LIVE MICROPHONE CONVERSION</div>
+      <p class="hint">Capture your mic continuously, convert short audio chunks using the selected reference voice, and play the result through your speakers or headphones.</p>
+      <div class="record-row"><span id="liveDot" class="dot"></span><span id="liveState">Live conversion stopped</span></div>
+      <div class="actions">
+        <button id="liveStart" class="primary" disabled>Start live conversion</button>
+        <button id="liveStop" class="secondary" disabled>Stop live</button>
+      </div>
+      <p class="hint live-note">Experimental: chunk-based conversion can have several seconds of delay, pauses, or skipped chunks if inference is slower than real time. Use headphones to prevent feedback.</p>
+    </section>
     <section class="panel">
-      <label class="section-label" for="engine">03 / CONVERSION ENGINE</label>
+      <label class="section-label" for="engine">04 / CONVERSION ENGINE</label>
       <select id="engine">
         <option value="facodec">FACodec — recommended</option>
         <option value="openvoice">OpenVoice</option>
