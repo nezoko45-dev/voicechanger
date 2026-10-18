@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "VoiceChanger — voiceclonnx",
+  "version": "1.0.0",
+  "description": "Convert a source recording using a selected reference voice with a local voiceclonnx service.",
+  "action": {
+    "default_title": "VoiceChanger",
+    "default_popup": "popup.html"
+  },
+  "permissions": [],
+  "host_permissions": [
+    "http://127.0.0.1:8765/*"
+  ]
+}
