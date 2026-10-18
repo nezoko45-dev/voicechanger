@@ -2,27 +2,45 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Fish Audio Call Again</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VoiceChanger</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <main>
-    <header><div class="mark">↻</div><div><h1>Call Again</h1><p>Fish Audio helper</p></div></header>
+  <main class="app">
+    <header><div class="mark">VC</div><div><h1>VoiceChanger</h1><p>Local voice conversion · voiceclonnx</p></div></header>
     <section class="panel">
-      <div class="toggle-row">
-        <div><strong>Auto-click</strong><p>Click Call again as each result becomes ready.</p></div>
-        <label class="switch"><input id="enabled" type="checkbox"><span></span></label>
+      <label class="section-label" for="reference">01 / REFERENCE VOICE</label>
+      <p class="hint">Choose the voice you have permission to use.</p>
+      <input id="reference" type="file" accept="audio/*">
+      <div id="referenceName" class="file-status">No reference selected</div>
+    </section>
+    <section class="panel">
+      <div class="section-label">02 / SOURCE AUDIO</div>
+      <p class="hint">Record your source audio. A WAV source file is created automatically.</p>
+      <div class="record-row"><span id="recordDot" class="dot"></span><span id="recordStatus">Ready to record</span><span id="duration">00:00</span></div>
+      <div class="actions">
+        <button id="record" class="secondary">Record source</button>
+        <button id="stop" class="secondary" disabled>Stop recording</button>
       </div>
+      <audio id="sourcePreview" controls hidden></audio>
+      <div id="sourceName" class="file-status">No source recording yet</div>
     </section>
     <section class="panel">
-      <label for="delay">Click delay <span id="delayValue">1.0 s</span></label>
-      <input id="delay" type="range" min="0" max="5" step="0.5" value="1">
-      <div class="range-labels"><span>Instant</span><span>5 seconds</span></div>
-      <button id="once">Click once</button>
+      <label class="section-label" for="engine">03 / CONVERSION ENGINE</label>
+      <select id="engine">
+        <option value="facodec">FACodec — recommended</option>
+        <option value="openvoice">OpenVoice</option>
+        <option value="chatterbox">Chatterbox</option>
+        <option value="knnvc">kNN-VC</option>
+        <option value="triaan">TriAAN</option>
+      </select>
+      <label class="consent"><input id="consent" type="checkbox"> I have permission to use the reference voice.</label>
+      <button id="convert" class="primary" disabled>Convert voice <span>↗</span></button>
+      <div id="message" role="status" aria-live="polite"></div>
+      <a id="download" hidden>Download converted WAV</a>
     </section>
-    <div id="status" role="status" aria-live="polite">Checking active tab…</div>
-    <footer>Only automates the visible Fish Audio button.</footer>
+    <footer>Audio stays on this device and is sent to your local conversion service.</footer>
   </main>
   <script src="popup.js"></script>
 </body>

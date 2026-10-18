@@ -1,19 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "Fish Audio Call Again",
-  "version": "1.0.2",
-  "description": "Automatically click Fish Audio's visible Call again button.",
-  "permissions": ["storage", "activeTab"],
-  "host_permissions": ["https://fish.audio/*", "https://*.fish.audio/*"],
+  "name": "VoiceChanger — voiceclonnx",
+  "version": "1.0.0",
+  "description": "Convert a source recording using a selected reference voice with a local voiceclonnx service.",
   "action": {
-    "default_title": "Fish Audio Call Again",
+    "default_title": "VoiceChanger",
     "default_popup": "popup.html"
   },
-  "content_scripts": [
-    {
-      "matches": ["https://fish.audio/*", "https://*.fish.audio/*"],
-      "js": ["content.js"],
-      "run_at": "document_idle"
-    }
+  "permissions": [],
+  "host_permissions": [
+    "http://127.0.0.1:8765/*"
   ]
 }
