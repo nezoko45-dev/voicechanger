@@ -68,3 +68,83 @@ async def convert(
         media_type="audio/wav",
         headers={"Content-Disposition": 'attachment; filename="voicechanger-output.wav"'},
     )
+
+
+@app.websocket("/live")
+async def live_convert(websocket: WebSocket):
+    """Experimental chunk-based live conversion over a local WebSocket.
+
+    The browser sends a JSON start message with an engine and base64 WAV reference,
+    then sends short mono/stereo PCM WAV chunks as binary messages. Conversion is
+    sequential; this is not a zero-latency streaming model API.
+    """
+    import asyncio
+    import base64
+    import json
+    from fastapi import WebSocketDisconnect
+
+    await websocket.accept()
+    try:
+        config = json.loads(await websocket.receive_text())
+        engine = config.get("engine", "facodec")
+        if engine not in ALLOWED_ENGINES:
+            await websocket.send_text(json.dumps({"error": "Unsupported voiceclonnx engine."}))
+            await websocket.close(code=1008)
+            return
+        reference_b64 = config.get("reference_wav_base64", "")
+        if not reference_b64:
+            await websocket.send_text(json.dumps({"error": "Select a reference voice first."}))
+            await websocket.close(code=1008)
+            return
+        try:
+            reference_bytes = base64.b64decode(reference_b64, validate=True)
+        except Exception:
+            await websocket.send_text(json.dumps({"error": "Reference WAV data was invalid."}))
+            await websocket.close(code=1008)
+            return
+
+        with TemporaryDirectory(prefix="voicechanger-live-") as temp:
+            root = Path(temp)
+            reference_path = root / "reference.wav"
+            source_path = root / "live-chunk.wav"
+            output_path = root / "live-output.wav"
+            reference_path.write_bytes(reference_bytes)
+
+            try:
+                # Initialize once per session rather than reloading the model per chunk.
+                cloner = await asyncio.to_thread(VoiceCloner, engine=engine)
+            except Exception as exc:
+                await websocket.send_text(json.dumps({
+                    "error": f"Could not initialize {engine}: {type(exc).__name__}: {exc}"
+                }))
+                await websocket.close(code=1011)
+                return
+
+            await websocket.send_text(json.dumps({"status": "ready", "message": "Live conversion model ready."}))
+            while True:
+                chunk = await websocket.receive_bytes()
+                if not chunk or not chunk.startswith(b"RIFF") or b"WAVE" not in chunk[:16]:
+                    await websocket.send_text(json.dumps({"error": "Received an invalid WAV chunk."}))
+                    continue
+                source_path.write_bytes(chunk)
+                if output_path.exists():
+                    output_path.unlink()
+                try:
+                    await asyncio.to_thread(
+                        cloner.clone_voice, str(source_path), str(reference_path), str(output_path)
+                    )
+                    if not output_path.exists():
+                        raise RuntimeError("voiceclonnx returned without creating output audio")
+                    await websocket.send_bytes(output_path.read_bytes())
+                except Exception as exc:
+                    await websocket.send_text(json.dumps({
+                        "error": f"Live chunk conversion failed: {type(exc).__name__}: {exc}"
+                    }))
+    except WebSocketDisconnect:
+        return
+    except Exception as exc:
+        try:
+            await websocket.send_text(json.dumps({"error": f"Live session failed: {type(exc).__name__}: {exc}"}))
+            await websocket.close(code=1011)
+        except Exception:
+            pass
