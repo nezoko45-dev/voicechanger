@@ -7,6 +7,7 @@ const convertButton = $("convert");
 const status = $("status");
 const connection = $("connection");
 const fileCount = $("file-count");
+const referenceCount = $("reference-count");
 const outputs = $("outputs");
 const result = $("result");
 let backendReady = false;
@@ -15,11 +16,19 @@ const outputUrls = [];
 
 function setStatus(message) { status.textContent = message; }
 function updateReady() {
-  convertButton.disabled = isConverting || !backendReady || !source.files.length || !reference.files.length;
+  convertButton.disabled = isConverting || !backendReady || !source.files.length || reference.files.length !== 2;
 }
 function updateFileCount() {
   const count = source.files.length;
-  fileCount.textContent = count ? count + " WAV file" + (count === 1 ? "" : "s") + " selected." : "No source files selected.";
+  fileCount.textContent = count ? count + " source WAV file" + (count === 1 ? "" : "s") + " selected." : "No source files selected.";
+  updateReady();
+}
+function updateReferenceCount() {
+  const count = reference.files.length;
+  referenceCount.textContent = count === 2
+    ? "2 reference WAV files selected. They will be combined before conversion."
+    : "Select exactly 2 reference WAV files (" + count + " selected).";
+  referenceCount.style.color = count === 2 ? "#86efac" : "#b7b2c8";
   updateReady();
 }
 async function checkBackend() {
@@ -38,7 +47,7 @@ async function checkBackend() {
   updateReady();
 }
 source.addEventListener("change", updateFileCount);
-reference.addEventListener("change", updateReady);
+reference.addEventListener("change", updateReferenceCount);
 
 function addOutputRow(file, stateText) {
   const row = document.createElement("div");
@@ -56,12 +65,13 @@ function addOutputRow(file, stateText) {
 function safeBaseName(name) {
   return name.replace(/\.[^.]+$/, "").replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").trim() || "converted";
 }
-async function convertOne(file, referenceFile, index, total) {
+async function convertOne(file, referenceFiles, index, total) {
   const row = addOutputRow(file, "Converting " + index + " of " + total + "…");
   try {
     const form = new FormData();
     form.append("source_audio", file, file.name);
-    form.append("reference_audio", referenceFile, referenceFile.name);
+    form.append("reference_audio_1", referenceFiles[0], referenceFiles[0].name);
+    form.append("reference_audio_2", referenceFiles[1], referenceFiles[1].name);
     form.append("engine", engine.value);
     form.append("quantized", String(quantized.checked));
     const response = await fetch("http://127.0.0.1:8765/convert", {method:"POST", body:form});
@@ -97,8 +107,8 @@ async function convertOne(file, referenceFile, index, total) {
 }
 convertButton.addEventListener("click", async () => {
   const files = Array.from(source.files);
-  const referenceFile = reference.files[0];
-  if (!files.length || !referenceFile || isConverting) return;
+  const referenceFiles = Array.from(reference.files);
+  if (!files.length || referenceFiles.length !== 2 || isConverting) return;
   isConverting = true;
   updateReady();
   outputs.replaceChildren();
@@ -106,12 +116,12 @@ convertButton.addEventListener("click", async () => {
   const failures = [];
   try {
     for (let i = 0; i < files.length; i++) {
-      setStatus("Converting file " + (i + 1) + " of " + files.length + ": " + files[i].name + "\nLeave this page open. The first conversion may download model files.");
-      const failure = await convertOne(files[i], referenceFile, i + 1, files.length);
+      setStatus("Combining the two reference WAVs on the local server, then converting file " + (i + 1) + " of " + files.length + ": " + files[i].name + "\nLeave this page open. The first conversion may download model files.");
+      const failure = await convertOne(files[i], referenceFiles, i + 1, files.length);
       if (failure) failures.push(failure);
     }
     const succeeded = files.length - failures.length;
-    setStatus("Finished: " + succeeded + " of " + files.length + " file(s) converted." +
+    setStatus("Finished: " + succeeded + " of " + files.length + " source file(s) converted using both reference WAVs." +
       (failures.length ? "\nFailed files:\n" + failures.join("\n") : "") +
       "\nUse each Download WAV link below to save the converted files.");
   } catch (error) {
