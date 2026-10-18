@@ -12,8 +12,8 @@ The extension defaults to VoiceClonNX’s `openvoice` engine, which packages Ope
 2. Click the extension icon, then **Open voice controls**.
 3. In the controls page, click **Download Windows .bat launcher**.
 4. Run `start-voiceclonnx.bat`. The launcher creates a local Python virtual environment and installs the backend requirements. Keep its terminal window open.
-5. Return to the controls page. When the backend shows as connected, select a source speech file and a reference voice audio file.
-6. OpenVoice V2 is selected by default; choose another VoiceClonNX engine if desired, then click **Convert voice**. Preview or download the resulting WAV file.
+5. Return to the controls page. When the backend shows as connected, select one or more source WAV files and a reference voice audio file.
+6. OpenVoice V2 is selected by default; choose another VoiceClonNX engine if desired, then click **Convert selected WAV files**. Files are converted sequentially; preview the last result and use each result's **Download WAV** link to save the converted files.
 
 The first startup may take a few minutes while packages install. The first conversion downloads the selected model files from Hugging Face and requires an internet connection. Later conversions can reuse cached models. Use Python 3.10+ on Windows.
 
