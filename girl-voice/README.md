@@ -8,7 +8,7 @@ A Manifest V3 Chrome extension that processes microphone audio locally using the
 2. Open `chrome://extensions`.
 3. Enable **Developer mode**.
 4. Click **Load unpacked** and select the `girl-voice` folder.
-5. Open the extension popup, click **Start voice**, and allow microphone access.
+5. Click the extension icon, choose **Open voice controls**, then click **Start voice** in the new tab and allow microphone access.
 
 ## Controls
 
@@ -24,7 +24,7 @@ This extension monitors the processed microphone audio through the browser's aud
 
 ## Privacy
 
-Microphone audio is processed locally and is not uploaded or recorded. The microphone is only active after **Start voice** and stops when you press **Stop** or close the popup.
+Microphone audio is processed locally and is not uploaded or recorded. The microphone is only active after **Start voice** and stops when you press **Stop** or close the voice-controls tab.
 
 ## Third-party library
 
