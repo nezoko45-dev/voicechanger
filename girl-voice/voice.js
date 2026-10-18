@@ -36,6 +36,9 @@ async function startVoice() {
     context = new AudioContext({ latencyHint: "interactive" });
     await context.resume();
     source = context.createMediaStreamSource(stream);
+    // Preload the bundled worklet as a static extension resource. The library's default fallback
+    // creates a Blob URL, which Chrome Manifest V3 blocks under extension-page CSP.
+    await context.audioWorklet.addModule(chrome.runtime.getURL("SignalsmithStretch.mjs"));
     stretch = await SignalsmithStretch(context, {numberOfInputs:1, numberOfOutputs:1, outputChannelCount:[1]});
     gain = context.createGain();
     gain.gain.value = 0.85;
