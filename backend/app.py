@@ -1,5 +1,6 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
+import sys
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,6 +8,28 @@ from fastapi.responses import FileResponse
 from voiceclonnx import VoiceCloner
 
 app = FastAPI(title="VoiceChanger local voiceclonnx service")
+
+def _asset_path(name: str) -> Path:
+    """Find UI assets both in the source checkout and a PyInstaller bundle."""
+    bundle_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+    return bundle_root / name
+
+
+@app.get("/", include_in_schema=False)
+def web_ui():
+    return FileResponse(_asset_path("popup.html"), media_type="text/html")
+
+
+@app.get("/styles.css", include_in_schema=False)
+def web_styles():
+    return FileResponse(_asset_path("styles.css"), media_type="text/css")
+
+
+@app.get("/popup.js", include_in_schema=False)
+def web_script():
+    return FileResponse(_asset_path("popup.js"), media_type="text/javascript")
+
+
 # Local development only. The service binds to loopback in the README instructions.
 app.add_middleware(
     CORSMiddleware,
