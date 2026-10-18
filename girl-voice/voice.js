@@ -16,7 +16,9 @@ const outputUrls = [];
 
 function setStatus(message) { status.textContent = message; }
 function updateReady() {
-  convertButton.disabled = isConverting || !backendReady || !source.files.length || reference.files.length !== 2;
+  // Keep the button available once the required files are selected. If the backend
+  // is offline, clicking reports that clearly instead of leaving the button greyed out.
+  convertButton.disabled = isConverting || !source.files.length || reference.files.length !== 2;
 }
 function updateFileCount() {
   const count = source.files.length;
@@ -108,7 +110,15 @@ async function convertOne(file, referenceFiles, index, total) {
 convertButton.addEventListener("click", async () => {
   const files = Array.from(source.files);
   const referenceFiles = Array.from(reference.files);
-  if (!files.length || referenceFiles.length !== 2 || isConverting) return;
+  if (!files.length || referenceFiles.length !== 2 || isConverting) {
+    setStatus("Select at least one source WAV and exactly two reference WAV files first.");
+    return;
+  }
+  if (!backendReady) {
+    setStatus("The local backend is not connected yet. Run start-voiceclonnx.bat and keep its terminal window open, then try again.");
+    await checkBackend();
+    if (!backendReady) return;
+  }
   isConverting = true;
   updateReady();
   outputs.replaceChildren();
