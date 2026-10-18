@@ -7,7 +7,7 @@ A lightweight Chrome extension that clicks Fish Audio's **Call again** button fo
 1. Download the repository using **Code → Download ZIP**, then extract the ZIP. Do not select the ZIP file itself.
 2. Open `chrome://extensions` in Chrome and enable **Developer mode**.
 3. Click **Load unpacked**. Select either:
-   - the main extracted `voicechanger` folder (the one containing `manifest.json`, `README.md`, and `Recording (10).wav`), or
+   - the main extracted `voicechanger` folder (the one containing `manifest.json` and `README.md`), or
    - the `extension` folder inside it.
 4. If Chrome already has an older broken copy installed, remove that entry first, then load the folder again.
 5. Open Fish Audio in a tab and refresh it once after installing.
@@ -22,7 +22,7 @@ A lightweight Chrome extension that clicks Fish Audio's **Call again** button fo
 - Use **Click once** for a single manual click.
 - Turn Auto-click off to stop the loop.
 
-The extension only runs on Fish Audio pages. It does not access your Fish Audio account, call private APIs, or store page content. It automates the site's visible button. The original `Recording (10).wav` reference file is preserved in the repository but is not needed for this extension.
+The extension only runs on Fish Audio pages. It does not access your Fish Audio account, call private APIs, or store page content. It automates the site's visible button. No recording file is required.
 
 ## Troubleshooting
 
