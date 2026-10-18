@@ -131,8 +131,8 @@ convertButton.addEventListener("click", async () => {
 });
 
 
-// Experimental live microphone conversion. The backend converts one 4-second WAV
-// chunk at a time; model inference may be slower than real time.
+// Experimental live microphone conversion. Shorter chunks reduce capture delay,
+// but the selected engine must still process them quickly enough for smooth playback.
 const liveStartButton = $("liveStart");
 const liveStopButton = $("liveStop");
 let liveActive = false;
@@ -221,7 +221,7 @@ function startLiveCapture() {
   if (!liveActive || !liveReady || !liveStream || !liveAudioContext) return;
   liveSamples = [];
   liveSampleCount = 0;
-  liveChunkTarget = Math.floor(liveAudioContext.sampleRate * 4);
+  liveChunkTarget = Math.floor(liveAudioContext.sampleRate * 2);
   liveSourceNode = liveAudioContext.createMediaStreamSource(liveStream);
   liveProcessorNode = liveAudioContext.createScriptProcessor(4096, 1, 1);
   liveProcessorNode.onaudioprocess = (event) => {
@@ -246,7 +246,7 @@ function startLiveCapture() {
   liveSourceNode.connect(liveProcessorNode);
   liveProcessorNode.connect(liveAudioContext.destination);
   $("liveDot").classList.add("live");
-  $("liveState").textContent = "Listening · converting 4-second chunks";
+  $("liveState").textContent = "Listening · converting 2-second chunks";
   status("Live conversion is running. Headphones are recommended.");
 }
 
@@ -302,7 +302,13 @@ liveStartButton.addEventListener("click", async () => {
         const playback = liveAudioContext.createBufferSource();
         playback.buffer = buffer;
         playback.connect(liveAudioContext.destination);
-        const startAt = Math.max(liveAudioContext.currentTime + 0.04, liveNextPlayTime);
+        // Never let delayed chunks build an ever-growing playback queue. If we
+        // have fallen more than 750 ms behind, resume near real time instead.
+        const now = liveAudioContext.currentTime;
+        const queuedDelay = liveNextPlayTime - now;
+        const startAt = queuedDelay > 0.75
+          ? now + 0.04
+          : Math.max(now + 0.04, liveNextPlayTime);
         playback.start(startAt);
         liveNextPlayTime = startAt + buffer.duration;
       } catch (err) {
