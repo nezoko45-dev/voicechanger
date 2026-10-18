@@ -21,6 +21,20 @@ pip install -r backend/requirements.txt
 python -m uvicorn backend.app:app --host 127.0.0.1 --port 8765
 ```
 
+## Windows desktop EXE (no separate Python install)
+
+A Windows build is generated automatically by GitHub Actions whenever the launcher/backend/UI changes on `main`, and can also be started manually:
+
+1. Open the repository's **Actions** tab: https://github.com/nezoko45-dev/voicechanger/actions/workflows/build-windows-exe.yml
+2. Open the latest successful **Build Windows VoiceChanger EXE** run.
+3. In **Artifacts**, download `VoiceChanger-Windows-x64` and extract `VoiceChanger.exe`.
+4. Double-click `VoiceChanger.exe`. It starts the local backend and opens the web interface in Chrome (or your default browser if Chrome is not found).
+5. Keep the console window open while using VoiceChanger; press Ctrl+C in that window to stop it.
+
+The executable bundles the Python runtime and application dependencies. **Voice conversion model files are not bundled** and may download on first use, so internet access and extra disk space may be needed. The first packaged build has not been runtime-tested on this machine; if Windows SmartScreen warns about an unsigned executable, only run it if you trust the source and have built/downloaded it from this repository.
+
+The desktop web UI is served at `http://127.0.0.1:8765/`; the backend binds to loopback only. If port 8765 is already occupied, close the other VoiceChanger/backend instance before launching the EXE.
+
 ## Load the extension
 1. Open `chrome://extensions`.
 2. Turn on **Developer mode**.
