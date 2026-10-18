@@ -27,12 +27,20 @@ python -m uvicorn backend.app:app --host 127.0.0.1 --port 8765
 3. Select **Load unpacked** and choose the repository root folder (the folder containing `manifest.json`).
 4. Keep the local backend running at `http://127.0.0.1:8765`.
 
-## Use
+## Use recorded conversion
 1. Pick a reference audio file (WAV, MP3, M4A, OGG, or another browser-decodable audio format).
 2. Press **Record source**, speak, then press **Stop recording**. The source WAV is created automatically in memory; there is no second file picker.
 3. Press **Convert voice** and save the resulting WAV.
 
-Audio is sent only to the local service at 127.0.0.1. This starter does not record browser-tab audio; it records microphone input. Use only reference recordings you have permission to use.
+## Experimental live microphone conversion
+1. Select a reference audio file and choose an engine.
+2. Check the permission checkbox confirming you have permission to use the reference voice.
+3. Press **Start live conversion** and allow microphone access. Converted audio plays through your default headphones/speakers. Press **Stop live** to end capture.
+4. Use headphones to avoid acoustic feedback.
+
+Live mode sends 4-second WAV chunks to the local backend over a WebSocket. This is a **chunk-based prototype, not true low-latency streaming**: conversion can take longer than real time, produce noticeable delay, skip chunks when processing falls behind, or sound discontinuous at chunk boundaries. Some engines may fail on short chunks. The existing recorded-file conversion remains available.
+
+Audio is sent only to the local service at 127.0.0.1. The app captures microphone input only; it does not capture browser-tab or system audio. Use only reference recordings you have permission to use.
 
 ## Notes
 - Browser support for decoding input reference formats varies. WAV is the most reliable.
