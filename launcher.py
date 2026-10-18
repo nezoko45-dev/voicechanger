@@ -11,6 +11,8 @@ from pathlib import Path
 
 import uvicorn
 
+from backend.app import app
+
 HOST = "127.0.0.1"
 PORT = 8765
 URL = f"http://{HOST}:{PORT}/"
@@ -53,7 +55,7 @@ def main() -> int:
     print("VoiceChanger desktop launcher")
     print(f"Local interface: {URL}")
     print("Starting voiceclonnx backend. First startup may take a while.")
-    config = uvicorn.Config("backend.app:app", host=HOST, port=PORT, log_level="info")
+    config = uvicorn.Config(app, host=HOST, port=PORT, log_level="info")
     server = uvicorn.Server(config)
     server_thread = threading.Thread(target=server.run, name="voicechanger-backend", daemon=True)
     server_thread.start()
