@@ -2,6 +2,10 @@
 
 A Manifest V3 Chrome extension for local audio-to-audio voice conversion using the [VoiceClonNX](https://github.com/TigreGotico/voiceclonnx) ONNX library. It converts source speech to a reference speaker's voice; it is not a live microphone pitch shifter.
 
+## Default engine: OpenVoice V2
+
+The extension defaults to VoiceClonNX’s `openvoice` engine, which packages OpenVoice V2 tone-color conversion as ONNX models. It converts source speech toward the voice in your reference recording. The model files download on first conversion; the OpenVoice V2 ONNX artifacts are around 174 MB before caching. You can still choose another engine from the selector.
+
 ## Start on Windows
 
 1. Open `chrome://extensions`, enable **Developer mode**, and load this `girl-voice` folder as an unpacked extension.
@@ -9,7 +13,7 @@ A Manifest V3 Chrome extension for local audio-to-audio voice conversion using t
 3. In the controls page, click **Download Windows .bat launcher**.
 4. Run `start-voiceclonnx.bat`. The launcher creates a local Python virtual environment and installs the backend requirements. Keep its terminal window open.
 5. Return to the controls page. When the backend shows as connected, select a source speech file and a reference voice audio file.
-6. Choose a VoiceClonNX engine and click **Convert voice**. Preview or download the resulting WAV file.
+6. OpenVoice V2 is selected by default; choose another VoiceClonNX engine if desired, then click **Convert voice**. Preview or download the resulting WAV file.
 
 The first startup may take a few minutes while packages install. The first conversion downloads the selected model files from Hugging Face and requires an internet connection. Later conversions can reuse cached models. Use Python 3.10+ on Windows.
 
