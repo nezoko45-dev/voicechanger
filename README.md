@@ -21,7 +21,7 @@ The first conversion may download ONNX model files. Choose an engine supported b
 ## Load the extension
 1. Open `chrome://extensions`.
 2. Turn on **Developer mode**.
-3. Select **Load unpacked** and choose the `extension` folder.
+3. Select **Load unpacked** and choose the repository root folder (the folder containing `manifest.json`).
 4. Keep the local backend running at `http://127.0.0.1:8765`.
 
 ## Use
