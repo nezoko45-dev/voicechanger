@@ -8,15 +8,18 @@ A minimal Chrome extension with one manually selected **reference voice** and an
 - A microphone
 - Permission to use the reference speaker's voice
 
-## Run the local conversion service
+## Start the local conversion service (easy setup)
+- **Windows:** double-click `start_backend.bat`.
+- **macOS/Linux:** run `./start_backend.sh` from the repository folder. If needed, first run `chmod +x start_backend.sh`.
+
+The launcher creates a `.venv` virtual environment, installs/updates `backend/requirements.txt`, then starts the service on `http://127.0.0.1:8765`. Keep its terminal window open while using the extension. Python 3.10+ must be installed first. The first conversion may download ONNX model files.
+
+Manual alternative:
 ```bash
 python -m venv .venv
-# Windows: .venv\Scripts\activate
-# macOS/Linux: source .venv/bin/activate
 pip install -r backend/requirements.txt
-uvicorn backend.app:app --host 127.0.0.1 --port 8765
+python -m uvicorn backend.app:app --host 127.0.0.1 --port 8765
 ```
-The first conversion may download ONNX model files. Choose an engine supported by voiceclonnx (default: `facodec`).
 
 ## Load the extension
 1. Open `chrome://extensions`.
