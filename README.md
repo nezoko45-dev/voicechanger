@@ -31,7 +31,7 @@ A Windows build is generated automatically by GitHub Actions whenever the launch
 4. Double-click `VoiceChanger.exe`. It starts the local backend and opens the web interface in Chrome (or your default browser if Chrome is not found).
 5. Keep the console window open while using VoiceChanger; press Ctrl+C in that window to stop it.
 
-The executable bundles the Python runtime and application dependencies. **Voice conversion model files are not bundled** and may download on first use, so internet access and extra disk space may be needed. The first packaged build has not been runtime-tested on this machine; if Windows SmartScreen warns about an unsigned executable, only run it if you trust the source and have built/downloaded it from this repository.
+The executable is intended to bundle the **backend itself** (FastAPI app, Uvicorn server, `/convert` endpoint, `/live` WebSocket endpoint, voiceclonnx, ONNX Runtime, WebSocket dependencies), the Python runtime, and the web UI into one file. You do not need to start a separate backend executable or install Python. **Voice conversion model files are not bundled** and may download on first use, so internet access and extra disk space may be needed. The first packaged build has not been runtime-tested on this machine; if Windows SmartScreen warns about an unsigned executable, only run it if you trust the source and have built/downloaded it from this repository.
 
 The desktop web UI is served at `http://127.0.0.1:8765/`; the backend binds to loopback only. If port 8765 is already occupied, close the other VoiceChanger/backend instance before launching the EXE.
 
