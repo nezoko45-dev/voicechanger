@@ -99,11 +99,15 @@ convertButton.addEventListener("click", async () => {
   convertButton.disabled = true;
   $("download").hidden = true;
   status("Converting locally… first use may download ONNX models.");
-  const form = new FormData();
-  form.append("source", sourceBlob, "source-recording.wav");
-  form.append("reference", referenceFile, referenceFile.name);
-  form.append("engine", $("engine").value);
   try {
+    const audioContext = new AudioContext();
+    const referenceBuffer = await audioContext.decodeAudioData(await referenceFile.arrayBuffer());
+    const referenceWav = wavBlob(referenceBuffer);
+    await audioContext.close();
+    const form = new FormData();
+    form.append("source", sourceBlob, "source-recording.wav");
+    form.append("reference", referenceWav, "reference.wav");
+    form.append("engine", $("engine").value);
     const response = await fetch("http://127.0.0.1:8765/convert", { method: "POST", body: form });
     if (!response.ok) {
       let detail = "Conversion failed.";
