@@ -1,32 +1,26 @@
-# Fish Audio Call Again
+# VoiceChanger tools
 
-A lightweight Chrome extension that clicks Fish Audio's **Call again** button for you. No Python, local server, or voice-conversion model required.
+This repository contains two separate unpacked Chrome extensions.
 
-## Install
+## Natural Girl Voice (Signalsmith Stretch)
 
-1. Download the repository using **Code → Download ZIP**, then extract the ZIP. Do not select the ZIP file itself.
-2. Open `chrome://extensions` in Chrome and enable **Developer mode**.
-3. Click **Load unpacked**. Select either:
-   - the main extracted `voicechanger` folder (the one containing `manifest.json` and `README.md`), or
-   - the `extension` folder inside it.
-4. If Chrome already has an older broken copy installed, remove that entry first, then load the folder again.
-5. Open Fish Audio in a tab and refresh it once after installing.
+A live microphone voice-effect extension using the official Signalsmith Stretch Web Audio/WASM release. Audio processing stays local.
 
-**Important:** Select a folder, not an individual file. Both supported folders now contain their own valid `manifest.json`.
+1. Download the repository using **Code → Download ZIP**, then extract it.
+2. Open `chrome://extensions` and enable **Developer mode**.
+3. Click **Load unpacked** and select the `girl-voice` folder.
+4. Click the extension icon, choose the pitch and formant settings, then click **Start voice** and allow microphone access.
 
-## Use
+The default preset starts at +4 semitones pitch and +2 semitones formant shift. Tune it to your own voice; results vary. Use headphones.
 
-- Click the extension icon on a Fish Audio tab.
-- Turn on **Auto-click** to click the next available **Call again** button and repeat as new results finish.
-- Set a delay if you want the page to settle before the click.
-- Use **Click once** for a single manual click.
-- Turn Auto-click off to stop the loop.
+**Important limitation:** This previews the processed microphone through browser audio output. Chrome extensions cannot create a system-wide virtual microphone by themselves, so routing to Discord or other desktop apps requires a virtual audio cable/device.
 
-The extension only runs on Fish Audio pages. It does not access your Fish Audio account, call private APIs, or store page content. It automates the site's visible button. No recording file is required.
+See [girl-voice/README.md](girl-voice/README.md) for details.
 
-## Troubleshooting
+## Fish Audio Call Again
 
-- If Chrome says the manifest is missing or unreadable, extract the ZIP fully and choose the main `voicechanger` folder or its `extension` subfolder—not the ZIP, `README.md`, or another nested folder.
-- After loading the extension, refresh the Fish Audio tab.
-- Make sure the button is visibly labeled **Call again** and the page is fully loaded.
-- If Fish Audio changes the button label or layout, update the text matcher in `content.js` (main folder version: `extension/content.js`).
+The original helper extension is in the `extension` folder. Load that folder in `chrome://extensions` to use the Fish Audio **Call again** automation.
+
+## Privacy
+
+The Natural Girl Voice extension does not upload or record microphone audio. It only requests microphone access after you click **Start voice** and stops the microphone when you click **Stop** or close the popup.
