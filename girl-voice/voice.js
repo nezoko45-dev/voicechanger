@@ -54,35 +54,46 @@ function addOutputRow(file, stateText) {
   return {row, state};
 }
 function safeBaseName(name) {
-  return name.replace(/\\.[^.]+$/, "").replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").trim() || "converted";
+  return name.replace(/\.[^.]+$/, "").replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").trim() || "converted";
 }
 async function convertOne(file, referenceFile, index, total) {
-  const row = addOutputRow(file, "Waiting…");
-  row.state.textContent = "Converting " + index + " of " + total + "…";
-  const form = new FormData();
-  form.append("source_audio", file, file.name);
-  form.append("reference_audio", referenceFile, referenceFile.name);
-  form.append("engine", engine.value);
-  form.append("quantized", String(quantized.checked));
-  const response = await fetch("http://127.0.0.1:8765/convert", {method:"POST", body:form});
-  if (!response.ok) {
-    let detail = "HTTP " + response.status;
-    try { const data = await response.json(); detail = data.detail || detail; } catch {}
-    throw new Error(detail);
+  const row = addOutputRow(file, "Converting " + index + " of " + total + "…");
+  try {
+    const form = new FormData();
+    form.append("source_audio", file, file.name);
+    form.append("reference_audio", referenceFile, referenceFile.name);
+    form.append("engine", engine.value);
+    form.append("quantized", String(quantized.checked));
+    const response = await fetch("http://127.0.0.1:8765/convert", {method:"POST", body:form});
+    if (!response.ok) {
+      let detail = "HTTP " + response.status;
+      try { const data = await response.json(); detail = data.detail || detail; } catch {}
+      throw new Error(detail);
+    }
+    const blob = await response.blob();
+    if (!blob.size) throw new Error("The server returned an empty audio file.");
+    const url = URL.createObjectURL(blob);
+    outputUrls.push(url);
+    const link = document.createElement("a");
+    link.className = "download";
+    link.href = url;
+    link.download = safeBaseName(file.name) + "_converted.wav";
+    link.textContent = "Download WAV";
+    row.state.textContent = "Complete";
+    row.row.append(link);
+    result.src = url;
+    result.hidden = false;
+    return null;
+  } catch (error) {
+    row.state.textContent = "Failed";
+    row.state.style.color = "#fca5a5";
+    row.state.title = error.message;
+    const detail = document.createElement("div");
+    detail.className = "hint";
+    detail.textContent = error.message;
+    row.row.append(detail);
+    return file.name + ": " + error.message;
   }
-  const blob = await response.blob();
-  if (!blob.size) throw new Error("The server returned an empty audio file.");
-  const url = URL.createObjectURL(blob);
-  outputUrls.push(url);
-  const link = document.createElement("a");
-  link.className = "download";
-  link.href = url;
-  link.download = safeBaseName(file.name) + "_converted.wav";
-  link.textContent = "Download WAV";
-  row.state.textContent = "Complete";
-  row.row.append(link);
-  result.src = url;
-  result.hidden = false;
 }
 convertButton.addEventListener("click", async () => {
   const files = Array.from(source.files);
@@ -96,18 +107,8 @@ convertButton.addEventListener("click", async () => {
   try {
     for (let i = 0; i < files.length; i++) {
       setStatus("Converting file " + (i + 1) + " of " + files.length + ": " + files[i].name + "\nLeave this page open. The first conversion may download model files.");
-      try {
-        await convertOne(files[i], referenceFile, i + 1, files.length);
-      } catch (error) {
-        failures.push(files[i].name + ": " + error.message);
-        const row = addOutputRow(files[i], "Failed");
-        row.state.style.color = "#fca5a5";
-        row.state.title = error.message;
-        const detail = document.createElement("div");
-        detail.className = "hint";
-        detail.textContent = error.message;
-        row.row.append(detail);
-      }
+      const failure = await convertOne(files[i], referenceFile, i + 1, files.length);
+      if (failure) failures.push(failure);
     }
     const succeeded = files.length - failures.length;
     setStatus("Finished: " + succeeded + " of " + files.length + " file(s) converted." +
@@ -121,6 +122,6 @@ convertButton.addEventListener("click", async () => {
     checkBackend();
   }
 });
-window.addEventListener("pagehide", () => outputUrls.forEach(URL.revokeObjectURL));
+window.addEventListener("pagehide", () => outputUrls.forEach(url => URL.revokeObjectURL(url)));
 checkBackend();
 setInterval(checkBackend, 8000);
