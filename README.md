@@ -43,7 +43,7 @@ The desktop web UI is served at `http://127.0.0.1:8765/`; the backend binds to l
 
 ## Improve naturalness
 
-The UI now defaults to **Chatterbox**, which is designed to transfer speaking style and prosody for a more natural result, although it can run slower and may make a few transcription errors. If clarity is more important than expressive voice similarity, choose **FACodec** or **OpenVoice** instead. Use a clean reference recording (one speaker, little background noise, no music, and several seconds of natural speech) and record your source in a quiet room. Live mode remains experimental and can sound choppy because it converts separate chunks; use recorded conversion when voice quality matters most.
+**FACodec** is now the default for live mode because it is a good quality/latency starting point. **Chatterbox** can transfer more expressive speaking style, but may add latency and is better tested in recorded conversion first. **OpenVoice** is another option to compare. Use a clean reference recording (one speaker, little background noise, no music, and several seconds of natural speech) and record your source in a quiet room. Live mode remains experimental and can sound choppy because it converts separate chunks; use recorded conversion when voice quality matters most.
 
 ## Use recorded conversion
 1. Pick a reference audio file (WAV, MP3, M4A, OGG, or another browser-decodable audio format).
@@ -56,7 +56,7 @@ The UI now defaults to **Chatterbox**, which is designed to transfer speaking st
 3. Press **Start live conversion** and allow microphone access. Converted audio plays through your default headphones/speakers. Press **Stop live** to end capture.
 4. Use headphones to avoid acoustic feedback.
 
-Live mode sends 4-second WAV chunks to the local backend over a WebSocket. This is a **chunk-based prototype, not true low-latency streaming**: conversion can take longer than real time, produce noticeable delay, skip chunks when processing falls behind, or sound discontinuous at chunk boundaries. Some engines may fail on short chunks. The existing recorded-file conversion remains available.
+Live mode sends 2-second WAV chunks to the local backend over a WebSocket. This is a **chunk-based prototype, not true low-latency streaming**: conversion can take longer than real time, produce noticeable delay, skip chunks when processing falls behind, or sound discontinuous at chunk boundaries. Some engines may fail on short chunks. The existing recorded-file conversion remains available.
 
 Audio is sent only to the local service at 127.0.0.1. The app captures microphone input only; it does not capture browser-tab or system audio. Use only reference recordings you have permission to use.
 
