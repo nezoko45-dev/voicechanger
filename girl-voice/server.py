@@ -48,7 +48,7 @@ async def save_upload(upload: UploadFile, destination: Path) -> None:
 async def convert(
     source_audio: UploadFile = File(...),
     reference_audio: UploadFile = File(...),
-    engine: str = Form("facodec"),
+    engine: str = Form("openvoice"),
     quantized: bool = Form(False),
 ):
     if engine not in ENGINES:
