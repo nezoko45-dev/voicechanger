@@ -1,92 +1,67 @@
-import SignalsmithStretch from "./SignalsmithStretch.mjs";
-
 const $ = id => document.getElementById(id);
-const pitch = $("pitch"), formant = $("formant");
-const startButton = $("start"), stopButton = $("stop"), status = $("status");
-let context = null, stream = null, source = null, stretch = null, gain = null;
+const source = $("source");
+const reference = $("reference");
+const engine = $("engine");
+const quantized = $("quantized");
+const convertButton = $("convert");
+const status = $("status");
+const connection = $("connection");
+const download = $("download");
+const result = $("result");
+let outputUrl = null;
 
-function updateLabels() {
-  $("pitchValue").textContent = `${Number(pitch.value) >= 0 ? "+" : ""}${pitch.value} semitones`;
-  $("formantValue").textContent = `${Number(formant.value) >= 0 ? "+" : ""}${formant.value} semitones`;
+async function checkBackend() {
+  try {
+    const response = await fetch("http://127.0.0.1:8765/health", {cache:"no-store"});
+    if (!response.ok) throw new Error("Backend returned HTTP " + response.status);
+    const data = await response.json();
+    connection.textContent = data.ok ? "● Backend connected at 127.0.0.1:8765" : "Backend responded unexpectedly.";
+    connection.style.color = data.ok ? "#86efac" : "#fca5a5";
+  } catch {
+    connection.textContent = "● Backend offline. Run start-voiceclonnx.bat and keep its window open.";
+    connection.style.color = "#fca5a5";
+  }
+  updateReady();
+}
+function updateReady() {
+  convertButton.disabled = !(source.files.length && reference.files.length);
 }
 function setStatus(message) { status.textContent = message; }
-async function applySettings() {
-  if (!stretch || !context) return;
-  await stretch.schedule({
-    output: context.currentTime + Math.max(0.08, await stretch.latency()),
-    active: true,
-    semitones: Number(pitch.value),
-    tonalityHz: 6500,
-    formantSemitones: Number(formant.value),
-    formantCompensation: true,
-    formantBaseHz: 180
-  });
-}
-async function startVoice() {
-  startButton.disabled = true;
-  setStatus("Requesting microphone access…");
+source.addEventListener("change", updateReady);
+reference.addEventListener("change", updateReady);
+
+convertButton.addEventListener("click", async () => {
+  if (!source.files[0] || !reference.files[0]) return;
+  convertButton.disabled = true;
+  download.hidden = true;
+  result.hidden = true;
+  setStatus("Converting audio. The first run may take longer while VoiceClonNX downloads model files…");
+  const form = new FormData();
+  form.append("source_audio", source.files[0]);
+  form.append("reference_audio", reference.files[0]);
+  form.append("engine", engine.value);
+  form.append("quantized", String(quantized.checked));
   try {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      throw new Error("Microphone access is unavailable in this page. Open this extension's voice.html page in Chrome.");
+    const response = await fetch("http://127.0.0.1:8765/convert", {method:"POST", body:form});
+    if (!response.ok) {
+      let detail = "HTTP " + response.status;
+      try { const data = await response.json(); detail = data.detail || detail; } catch {}
+      throw new Error(detail);
     }
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      video: false
-    });
-    context = new AudioContext({ latencyHint: "interactive" });
-    await context.resume();
-    source = context.createMediaStreamSource(stream);
-    // Preload the bundled worklet as a static extension resource. The library's default fallback
-    // creates a Blob URL, which Chrome Manifest V3 blocks under extension-page CSP.
-    await context.audioWorklet.addModule(chrome.runtime.getURL("SignalsmithStretch.mjs"));
-    stretch = await SignalsmithStretch(context, {numberOfInputs:1, numberOfOutputs:1, outputChannelCount:[1]});
-    gain = context.createGain();
-    gain.gain.value = 0.85;
-    source.connect(stretch);
-    stretch.connect(gain);
-    gain.connect(context.destination);
-    await stretch.schedule({
-      output: context.currentTime + Math.max(0.08, await stretch.latency()),
-      active: true,
-      semitones: Number(pitch.value),
-      tonalityHz: 6500,
-      formantSemitones: Number(formant.value),
-      formantCompensation: true,
-      formantBaseHz: 180
-    });
-    startButton.textContent = "Voice is on";
-    stopButton.disabled = false;
-    pitch.disabled = false;
-    formant.disabled = false;
-    setStatus("Live voice processing is on. Speak and listen with headphones.");
+    const blob = await response.blob();
+    if (outputUrl) URL.revokeObjectURL(outputUrl);
+    outputUrl = URL.createObjectURL(blob);
+    download.href = outputUrl;
+    download.hidden = false;
+    result.src = outputUrl;
+    result.hidden = false;
+    setStatus("Conversion complete. Preview the result or download the converted WAV.");
   } catch (error) {
-    await stopVoice(false);
-    const name = error?.name || "Error";
-    const detail = error?.message || String(error);
-    if (name === "NotAllowedError" || name === "PermissionDeniedError") {
-      setStatus(`Chrome blocked microphone access (${name}: ${detail}). In this tab, click the site/settings icon by the address bar, set Microphone to Allow, then reload and try again. Also check Windows microphone privacy settings.`);
-    } else if (name === "NotFoundError" || name === "DevicesNotFoundError") {
-      setStatus("No microphone was found. Connect or select a microphone in Chrome settings, then try again.");
-    } else {
-      setStatus(`Could not start audio (${name}): ${detail}`);
-    }
-    startButton.disabled = false;
+    setStatus("Conversion failed: " + error.message + "\nCheck that the backend window is running. The first model download also requires an internet connection.");
+  } finally {
+    convertButton.disabled = false;
   }
-}
-async function stopVoice(update = true) {
-  if (stream) stream.getTracks().forEach(track => track.stop());
-  try { if (context && context.state !== "closed") await context.close(); } catch {}
-  stream = null; source = null; stretch = null; gain = null; context = null;
-  startButton.disabled = false;
-  startButton.textContent = "Start voice";
-  stopButton.disabled = true;
-  if (update) setStatus("Stopped. Microphone is no longer active.");
-}
-pitch.addEventListener("input", updateLabels);
-formant.addEventListener("input", updateLabels);
-pitch.addEventListener("change", () => applySettings().catch(e => setStatus(`Could not update pitch: ${e.message}`)));
-formant.addEventListener("change", () => applySettings().catch(e => setStatus(`Could not update formants: ${e.message}`)));
-startButton.addEventListener("click", startVoice);
-stopButton.addEventListener("click", () => stopVoice());
-window.addEventListener("pagehide", () => { if (stream) stream.getTracks().forEach(track => track.stop()); });
-updateLabels();
+});
+window.addEventListener("pagehide", () => { if (outputUrl) URL.revokeObjectURL(outputUrl); });
+checkBackend();
+setInterval(checkBackend, 8000);
