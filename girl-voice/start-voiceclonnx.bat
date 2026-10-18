@@ -32,7 +32,7 @@ if not exist ".venv\Scripts\python.exe" (
 echo Installing or checking required packages...
 ".venv\Scripts\python.exe" -m pip install --upgrade pip
 if errorlevel 1 goto failed
-".venv\Scripts\python.exe" -m pip install voiceclonnx fastapi "uvicorn[standard]" python-multipart
+".venv\Scripts\python.exe" -m pip install voiceclonnx fastapi "uvicorn[standard]" python-multipart numpy soundfile
 if errorlevel 1 goto failed
 
 echo.
