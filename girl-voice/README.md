@@ -1,31 +1,30 @@
-# Natural Girl Voice (Signalsmith Stretch)
+# VoiceChanger — VoiceClonNX
 
-A Manifest V3 Chrome extension that processes microphone audio locally using the official Signalsmith Stretch Web Audio/WASM release.
+A Manifest V3 Chrome extension for local audio-to-audio voice conversion using the [VoiceClonNX](https://github.com/TigreGotico/voiceclonnx) ONNX library. It converts source speech to a reference speaker's voice; it is not a live microphone pitch shifter.
 
-## Install
+## Start on Windows
 
-1. Download this repository as a ZIP and extract it.
-2. Open `chrome://extensions`.
-3. Enable **Developer mode**.
-4. Click **Load unpacked** and select the `girl-voice` folder.
-5. Click the extension icon, choose **Open voice controls**, then click **Start voice** in the new tab and allow microphone access.
+1. Open `chrome://extensions`, enable **Developer mode**, and load this `girl-voice` folder as an unpacked extension.
+2. Click the extension icon, then **Open voice controls**.
+3. In the controls page, click **Download Windows .bat launcher**.
+4. Run `start-voiceclonnx.bat`. The launcher creates a local Python virtual environment and installs the backend requirements. Keep its terminal window open.
+5. Return to the controls page. When the backend shows as connected, select a source speech file and a reference voice audio file.
+6. Choose a VoiceClonNX engine and click **Convert voice**. Preview or download the resulting WAV file.
 
-## Controls
+The first startup may take a few minutes while packages install. The first conversion downloads the selected model files from Hugging Face and requires an internet connection. Later conversions can reuse cached models. Use Python 3.10+ on Windows.
 
-- **Voice pitch:** starts at +4 semitones.
-- **Formant shift:** starts at +2 semitones to brighten the vocal resonance as well as raise pitch.
-- **Stop:** shuts down the microphone and audio context.
+## Local backend
 
-This is a starting preset, not a guarantee of a specific gender perception. Voices differ; try pitch +3 to +5 and formant +1 to +3 for a subtler result.
+The extension calls `http://127.0.0.1:8765`. The local FastAPI service is defined in `server.py`; requirements are in `requirements-voiceclonnx.txt`. The service binds only to loopback, accepts source and reference audio uploads, and returns a converted WAV.
 
-## Important limitation
+## Limitations
 
-This extension monitors the processed microphone audio through the browser's audio output. A regular Chrome extension cannot expose its processed stream as a system-wide microphone device. To use it in desktop apps such as Discord, a virtual audio cable/device and routing configuration are needed. Use headphones to avoid feedback.
+- This workflow converts recorded audio files; it is **not real-time** and does not create a system-wide virtual microphone for Discord or other desktop apps.
+- Conversion time and quality vary by engine and hardware.
+- Source and reference files are processed by the local backend. Model downloads are fetched from Hugging Face.
+- Use voices you own or have permission to use. Check model and voice-weight licenses for your intended use.
+- Do not expose the local backend port to the public internet.
 
 ## Privacy
 
-Microphone audio is processed locally and is not uploaded or recorded. The microphone is only active after **Start voice** and stops when you press **Stop** or close the voice-controls tab.
-
-## Third-party library
-
-The bundled `SignalsmithStretch.mjs` is from the official Signalsmith-Audio/signalsmith-stretch Web Audio release and is licensed under the upstream MIT license. See `SIGNALSMITH-LICENSE.txt`.
+Uploaded audio is written to temporary files on your computer for conversion and removed after the response is sent. The extension does not intentionally upload audio to a remote service.
