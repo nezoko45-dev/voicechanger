@@ -21,12 +21,13 @@ header{display:flex;align-items:center;gap:12px;margin-bottom:18px}.orb{width:48
 </section>
 <section class="panel">
 <strong>2. Choose your audio</strong>
-<label class="label" for="source">Source WAV files — select one or multiple files</label>
+<label class="label" for="source">Source WAV files — select one or multiple files to convert</label>
 <input id="source" type="file" accept=".wav,audio/wav,audio/x-wav" multiple required>
 <p id="file-count" class="hint">No source files selected.</p>
-<label class="label" for="reference" style="margin-top:16px">Reference voice — whose voice to transfer</label>
-<input id="reference" type="file" accept="audio/*,.wav,.flac,.mp3,.ogg" required>
-<p class="hint">Each source WAV is converted separately using the same reference voice. Conversion runs locally; it is not real-time microphone processing.</p>
+<label class="label" for="reference" style="margin-top:16px">Reference voice WAVs — select exactly two clips from the same target speaker</label>
+<input id="reference" type="file" accept=".wav,audio/wav,audio/x-wav" multiple required>
+<p id="reference-count" class="hint">Select exactly 2 reference WAV files.</p>
+<p class="hint">The two reference clips are combined into one audio file (with a short silent gap) and used together as the target voice for every source conversion. Use clips from the same speaker for best results.</p>
 </section>
 <section class="panel">
 <label class="label" for="engine">Voice conversion engine</label>
@@ -42,8 +43,8 @@ header{display:flex;align-items:center;gap:12px;margin-bottom:18px}.orb{width:48
 <option value="bicodec">BiCodec (check model license)</option>
 </select>
 <label><input id="quantized" type="checkbox" checked> Prefer smaller/faster INT8 models when supported</label>
-<div style="margin-top:16px"><button id="convert" disabled>Convert selected WAV files</button></div>
-<div id="status" role="status" aria-live="polite">Start the backend, then select one or more source WAV files and a reference voice.</div>
+<div style="margin-top:16px"><button id="convert" disabled>Combine references and convert WAV files</button></div>
+<div id="status" role="status" aria-live="polite">Start the backend, select source WAV files, then select exactly two reference WAVs from the target speaker.</div>
 <div id="outputs" class="file-list" aria-live="polite"></div>
 <audio id="result" controls hidden></audio>
 </section>
