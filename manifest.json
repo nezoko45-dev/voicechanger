@@ -7,7 +7,7 @@
     "default_title": "VoiceChanger",
     "default_popup": "popup.html"
   },
-  "permissions": [],
+  "permissions": ["audioCapture"],
   "host_permissions": [
     "http://127.0.0.1:8765/*"
   ]
