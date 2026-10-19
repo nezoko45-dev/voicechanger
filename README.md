@@ -1,6 +1,6 @@
 # ElevenLabs Voice Dictation for VRChat
 
-Chrome extension for live speech transcription into ElevenLabs Text to Speech. The side panel runs speech recognition; the floating button on ElevenLabs toggles listening.
+Chrome extension for live speech transcription into ElevenLabs Text to Speech. A persistent offscreen extension document runs speech recognition independently of the visible side panel, intended to keep dictation running while VRChat is foreground. The floating button on ElevenLabs toggles listening.
 
 Branch: https://github.com/nezoko45-dev/voicechanger/tree/rebuild/uberduck-voice-dictation
 
@@ -13,7 +13,7 @@ Branch: https://github.com/nezoko45-dev/voicechanger/tree/rebuild/uberduck-voice
 5. Open ElevenLabs Text to Speech and refresh the tab after installing/updating: https://elevenlabs.io/app/speech-synthesis/text-to-speech
 6. Open the extension side panel and click **Start dictation**. Allow microphone access.
 7. Speak a phrase. The live transcript should appear both in the side panel's Latest transcript area and in the ElevenLabs text field as you speak. After a 3-second pause, auto-send submits the phrase for generation.
-8. Keep the side panel open while switching to VRChat. Your existing audio routing still needs to send ElevenLabs playback to the VRChat microphone input.
+8. Start dictation, then switch to VRChat; recognition now runs in a persistent offscreen document instead of the visible side panel. Your existing audio routing still needs to send ElevenLabs playback to the VRChat microphone input.
 
 ## Troubleshooting
 
@@ -25,6 +25,6 @@ Branch: https://github.com/nezoko45-dev/voicechanger/tree/rebuild/uberduck-voice
 
 ## Limitations
 
-Speech recognition uses the browser Web Speech API and depends on browser support, microphone permissions, and network availability. ElevenLabs can change its page UI, requiring updates to text-field or Generate-button detection. Audio routing is not controlled by this extension. Generated speech consumes the normal quota/credits for your ElevenLabs account.
+Speech recognition uses the browser Web Speech API in a persistent offscreen document and depends on Chrome support, microphone permissions, and network availability. Offscreen recognition has not been verified in the user’s live Chrome/VRChat setup. ElevenLabs can change its page UI, requiring updates to text-field or Generate-button detection. Audio routing is not controlled by this extension. Generated speech consumes the normal quota/credits for your ElevenLabs account.
 
 This branch update adds live transcript preview in the ElevenLabs text field and clearer error reporting. It has not been live-tested in your Chrome session.
