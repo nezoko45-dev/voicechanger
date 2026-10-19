@@ -118,13 +118,8 @@
         setStatus("Transcript inserted, but Generate is disabled");
         return;
       }
-      // Don't launch a TTS job from a background/unfocused tab while the user
-      // is in another app such as VRChat.
-      if (document.visibilityState !== "visible" || !document.hasFocus()) {
-        setStatus("Transcript inserted; auto-generate paused because Inworld isn't focused");
-        return;
-      }
-      // Avoid rapid back-to-back TTS jobs that can compete for system resources.
+      // Allow generation while Inworld is in a background tab, so the user can
+      // keep VRChat focused. The cooldown below prevents rapid repeated jobs.
       const remainingCooldown = GENERATE_COOLDOWN_MS - (Date.now() - lastGenerateAt);
       if (remainingCooldown > 0) {
         setStatus("Transcript inserted; waiting " + Math.ceil(remainingCooldown / 1000) + "s before next Generate");
