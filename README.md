@@ -8,8 +8,8 @@ Branch: https://github.com/nezoko45-dev/voicechanger/tree/rebuild/uberduck-voice
 
 1. Download ZIP from **Code → Download ZIP** on the branch page and extract it.
 2. Open `chrome://extensions`, enable Developer mode, remove the old installed copy if necessary, then click **Load unpacked**.
-3. Select the extracted folder that directly contains `manifest.json`, `sidepanel.html`, `sidepanel.js`, and `content.js`.
-4. Confirm version **1.6.3**.
+3. Select the extracted folder that directly contains `manifest.json`, `sidepanel.html`, `sidepanel.js`, `content.js`, `offscreen.html`, `offscreen.js`, and `service-worker.js`.
+4. Confirm version **1.7.0**.
 5. Open ElevenLabs Text to Speech and refresh the tab after installing/updating: https://elevenlabs.io/app/speech-synthesis/text-to-speech
 6. Open the extension side panel and click **Start dictation**. Allow microphone access.
 7. Speak a phrase. The live transcript should appear both in the side panel's Latest transcript area and in the ElevenLabs text field as you speak. After a 3-second pause, auto-send submits the phrase for generation.
