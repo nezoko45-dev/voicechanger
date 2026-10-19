@@ -246,7 +246,8 @@
   }
 
   installFloatingDictation();
-\n  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type !== "IVD_GENERATE" || typeof message.text !== "string") return;
     messageQueue.push({ text: message.text, sendResponse });
     void processQueue();
