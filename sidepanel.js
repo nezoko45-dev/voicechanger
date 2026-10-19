@@ -19,7 +19,7 @@
     if (!toggle || !auto || !status || !preview) throw new Error("Panel HTML is missing a required control.");
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognition = null, listening = false, finalText = "", interimText = "", silenceTimer = null, restartTimer = null;
-    let lastPreviewAt = 0, previewRequest = 0;
+    let lastPreviewAt = 0, previewRequest = 0, restartAttempts = 0;
     const sendQueue = [];
     let processingQueue = false;
     const SILENCE_MS = 3000;
@@ -108,9 +108,10 @@
       r.interimResults = true;
       r.lang = "en-US";
       r.onstart = () => {
+        restartAttempts = 0;
         if (listening) {
           toggle.textContent = "■ Stop dictation";
-          setStatus("Listening… speak now. Your live transcript should appear in ElevenLabs.");
+          setStatus("Listening… speak naturally. If Chrome pauses recognition, it will restart automatically.");
           chrome.runtime.sendMessage({type:"IVD_DICTATION_STATUS",listening:true,message:"Listening…"});
         }
       };
@@ -134,19 +135,44 @@
         }
       };
       r.onerror = event => {
-        setStatus("Speech recognition error: " + event.error + ". Check Chrome microphone permission and the selected input device.");
-        chrome.runtime.sendMessage({type:"IVD_DICTATION_STATUS",listening:false,message:"Speech recognition error: "+event.error});
-        if (["not-allowed","service-not-allowed","audio-capture"].includes(event.error)) {
+        const fatal = ["not-allowed","service-not-allowed","audio-capture"].includes(event.error);
+        if (fatal) {
           listening = false;
+          clearTimeout(restartTimer);
           toggle.textContent = "🎙 Start dictation";
+          const explanation = event.error === "audio-capture"
+            ? "Chrome can't access a microphone. Check Windows input device and microphone permissions."
+            : "Microphone permission was denied. Allow microphone access for Chrome and try again.";
+          setStatus("Dictation paused: " + explanation);
+          chrome.runtime.sendMessage({type:"IVD_DICTATION_STATUS",listening:false,message:"Dictation paused: "+explanation});
+        } else if (listening) {
+          // Chrome commonly emits no-speech/aborted when its recognition session times out.
+          // Keep the user-facing state active; onend below will restart the session.
+          setStatus("Keeping dictation active… Chrome ended a recognition session (" + event.error + "); reconnecting.");
         }
       };
       r.onend = () => {
         if (recognition === r) recognition = null;
         if (listening) {
-          flush();
+          // Only flush completed speech when Chrome rotates its recognition session.
+          // Discard interim words so a routine reconnect doesn't submit partial phrases.
+          clearTimeout(silenceTimer);
+          const completed = finalText.trim();
+          finalText = "";
+          interimText = "";
+          if (completed) {
+            preview.textContent = completed;
+            void showTranscriptOnPage(completed);
+            if (auto.checked) sendTranscript(completed);
+          }
           clearTimeout(restartTimer);
-          restartTimer = setTimeout(() => { if (listening && !recognition) startRecognition(); }, 300);
+          restartAttempts += 1;
+          const delay = Math.min(3000, 250 * restartAttempts);
+          setStatus("Reconnecting microphone recognition… dictation remains ON.");
+          chrome.runtime.sendMessage({type:"IVD_DICTATION_STATUS",listening:true,message:"Reconnecting… dictation remains ON."});
+          restartTimer = setTimeout(() => {
+            if (listening && !recognition) startRecognition();
+          }, delay);
         } else {
           flush();
           toggle.textContent = "🎙 Start dictation";
