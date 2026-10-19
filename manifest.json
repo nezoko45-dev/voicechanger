@@ -1,20 +1,20 @@
 {
   "manifest_version": 3,
-  "name": "Uberduck Voice Dictation",
-  "version": "1.0.0",
-  "description": "Dictate into Uberduck's text-to-speech box and optionally generate speech when you finish talking.",
+  "name": "ChatGPT Voice Dictation",
+  "version": "1.1.0",
+  "description": "Continuously dictate into ChatGPT, send after a pause, and automatically start Read Aloud for the reply.",
   "permissions": [
     "storage"
   ],
   "host_permissions": [
-    "https://uberduck.ai/*",
-    "https://www.uberduck.ai/*"
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*"
   ],
   "content_scripts": [
     {
       "matches": [
-        "https://uberduck.ai/*",
-        "https://www.uberduck.ai/*"
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
       ],
       "js": [
         "content.js"
@@ -23,7 +23,7 @@
     }
   ],
   "action": {
-    "default_title": "Uberduck Voice Dictation",
+    "default_title": "ChatGPT Voice Dictation",
     "default_popup": "popup.html"
   }
 }
