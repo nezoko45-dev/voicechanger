@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Inworld Dictation</title>
+<style>
+:root{color-scheme:light dark}body{font:14px/1.5 system-ui,sans-serif;margin:0;padding:16px;background:Canvas;color:CanvasText}
+h2{font-size:18px;margin:0 0 8px}.muted{opacity:.75;font-size:12px}
+button{border:0;border-radius:9px;padding:11px 13px;background:#0b8f6a;color:white;font-weight:650;cursor:pointer}
+button.secondary{background:#555}button:disabled{opacity:.55;cursor:default}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0}
+label{display:flex;gap:7px;align-items:center}
+#status{padding:10px;border-radius:8px;background:color-mix(in srgb, CanvasText 8%, Canvas);overflow-wrap:anywhere}
+#preview{white-space:pre-wrap;min-height:40px;padding:10px;border:1px solid color-mix(in srgb, CanvasText 20%, transparent);border-radius:8px}
+</style>
+</head>
+<body>
+<h2>Inworld AI Voice Dictation</h2>
+<p class="muted">Keep this side panel open while you play VRChat. Dictation runs here instead of inside the Inworld page.</p>
+<div class="row">
+<button id="toggle">🎙 Start dictation</button>
+</div>
+<div class="row">
+<label><input id="auto" type="checkbox" checked> Generate after 3 seconds of silence</label>
+</div>
+<p class="muted">Latest transcript</p>
+<div id="preview">Nothing transcribed yet.</div>
+<p id="status" role="status">Ready. Open an Inworld TTS tab first.</p>
+<script src="sidepanel.js"></script>
+</body>
+</html>
