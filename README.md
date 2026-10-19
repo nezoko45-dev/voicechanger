@@ -1,6 +1,6 @@
-# Uberduck Voice Dictation
+# ChatGPT Voice Dictation
 
-A minimal Chrome/Chromium Manifest V3 extension that continuously listens to your speech, enters each sentence into Uberduck's text-to-speech input after a short pause, and optionally clicks Generate Speech. Dictation stays on until you click Stop.
+A minimal Chrome/Chromium Manifest V3 extension that continuously listens to your speech, sends recognized words to ChatGPT after a short pause, then clicks **Read Aloud** on ChatGPT's reply when the response has finished.
 
 ## Install
 
@@ -8,15 +8,16 @@ A minimal Chrome/Chromium Manifest V3 extension that continuously listens to you
 2. Open `chrome://extensions` in Chrome or a Chromium-based browser.
 3. Enable **Developer mode**.
 4. Choose **Load unpacked** and select this repository folder.
-5. Open [uberduck.ai](https://uberduck.ai/) and reload the page.
-6. Click the floating **Start continuous dictation** button and allow microphone access if prompted.
-7. Speak naturally. After each pause of about 1.3 seconds, the recognized sentence is inserted and auto-generation runs if enabled. Continue speaking; click **Stop continuous dictation** when finished.
+5. Open [ChatGPT](https://chatgpt.com/) and reload the page.
+6. Click **Start continuous dictation** on the floating panel and allow microphone access if prompted.
+7. Speak naturally. After about 1.5 seconds of silence, the extension sends the recognized text as a ChatGPT message. When ChatGPT finishes responding, it tries to click **Read Aloud** on the new reply. Click **Stop continuous dictation** when finished.
 
 ## Notes
 
-- Uses the browser's Web Speech API; it inserts recognized **text**, not a recorded audio file.
+- Uses the browser's Web Speech API to transcribe speech into text.
 - Speech recognition availability depends on browser support and microphone permissions.
-- The recognition session automatically restarts if the browser ends it, so dictation can continue across multiple sentences.
-- Uberduck may change its page markup. If its text field or Generate button can't be found, the status label explains that.
-- The extension only runs on uberduck.ai pages. It does not include or transmit an audio recording to a third-party transcription endpoint.
-- Use the checkbox on the floating panel or extension popup to turn automatic generation on/off.
+- Recognition restarts if the browser ends the session, so dictation can continue across multiple sentences.
+- The floating checkbox and extension popup toggle automatic sending and Read Aloud. When disabled, dictated text is added to the composer without automatically sending.
+- ChatGPT may change its page markup. If the message box, Send button, or Read Aloud control cannot be detected, the floating status label may explain what happened.
+- Automatic Read Aloud depends on ChatGPT exposing a Read Aloud control for the latest assistant response. The extension has not been live-tested against every current ChatGPT interface.
+- The extension only runs on `chatgpt.com` and `chat.openai.com`.
