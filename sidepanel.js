@@ -102,16 +102,29 @@
     }
   }
 
-  toggle.addEventListener("click", () => {
-    if (!SpeechRecognition) { setStatus("Speech recognition isn't supported in this Chrome version."); return; }
+  function toggleListening() {
+    if (!SpeechRecognition) {
+      setStatus("Speech recognition isn't supported in this Chrome version.");
+      return { listening, message: "Speech recognition isn't supported in this Chrome version." };
+    }
     if (listening) {
       listening = false; clearTimeout(silenceTimer); clearTimeout(restartTimer);
       if (recognition) { try { recognition.stop(); } catch {} } else flush();
       toggle.textContent = "🎙 Start dictation";
       setStatus("Stopping dictation…");
-    } else {
-      listening = true;
-      startRecognition();
+      return { listening, message: "Dictation stopping." };
     }
+    listening = true;
+    startRecognition();
+    return { listening, message: "Dictation started in the extension side panel. You can switch to VRChat." };
+  }
+
+  toggle.addEventListener("click", () => { toggleListening(); });
+
+  // The floating ElevenLabs button can start/stop recognition here. The mic stays
+  // in this extension page rather than relying on the ElevenLabs tab staying active.
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type !== "IVD_TOGGLE_LISTENING") return;
+    sendResponse(toggleListening());
   });
 })();
