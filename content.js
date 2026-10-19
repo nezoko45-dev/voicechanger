@@ -178,7 +178,9 @@
       const preview = (transcript + interim).trim();
       if (preview) setStatus("Listening: " + preview.slice(-85));
       clearTimeout(silenceTimer);
-      if (transcript.trim()) silenceTimer = setTimeout(flushTranscript, 1500);
+      if (preview) silenceTimer = setTimeout(() => {
+        if (listening) setStatus("Still listening. Click Stop when you finish to send everything.");
+      }, 1800);
     };
     current.onerror = event => {
       setStatus("Microphone/recognition: " + event.error);
@@ -190,7 +192,6 @@
     current.onend = () => {
       if (recognition === current) recognition = null;
       if (listening) {
-        flushTranscript();
         clearTimeout(restartTimer);
         restartTimer = setTimeout(() => {
           if (listening && !recognition) createRecognition();
@@ -215,10 +216,14 @@
       listening = false;
       clearTimeout(silenceTimer);
       clearTimeout(restartTimer);
-      try { recognition?.stop(); } catch {}
-      flushTranscript();
+      clearTimeout(silenceTimer);
+      if (recognition) {
+        try { recognition.stop(); } catch {}
+      } else {
+        flushTranscript();
+      }
       toggle.textContent = "🎙 Start continuous dictation";
-      setStatus("Stopping…");
+      setStatus("Finishing dictation and sending your message…");
     } else {
       if (!SpeechRecognition) {
         setStatus("Speech recognition isn't supported here; try Chrome");
