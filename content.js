@@ -107,7 +107,7 @@
 
   function flushTranscript() {
     clearTimeout(silenceTimer);
-    const text = (transcript || interimTranscript).trim();
+    const text = [transcript, interimTranscript].filter(Boolean).join(" ").trim();
     transcript = "";
     interimTranscript = "";
     if (!text) return;
