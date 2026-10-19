@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "ElevenLabs Voice Dictation for VRChat",
-  "version": "1.7.1",
+  "version": "1.8.0",
   "minimum_chrome_version": "116",
-  "description": "Live speech transcription into ElevenLabs Text to Speech with a floating dictation control for VRChat.",
+  "description": "Background speech dictation with a full-size dashboard for ElevenLabs Text to Speech and VRChat.",
   "permissions": [
     "storage",
     "sidePanel",
@@ -27,11 +27,11 @@
     }
   ],
   "action": {
-    "default_title": "ElevenLabs Voice Dictation",
+    "default_title": "VRChat Voice Dictation",
     "default_popup": "popup.html"
   },
   "side_panel": {
-    "default_path": "sidepanel.html"
+    "default_path": "dashboard.html"
   },
   "background": {
     "service_worker": "service-worker.js"
