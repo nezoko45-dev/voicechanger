@@ -62,14 +62,14 @@
       if (!box) throw new Error("Couldn't find Inworld's TTS text box");
       setText(box, text.trim());
       let button = null;
-      for (let attempt = 0; attempt < 12; attempt++) {
-        await new Promise(resolve => setTimeout(resolve, 250));
+      for (let attempt = 0; attempt < 10; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
         button = findGenerateButton(box);
         if (button) break;
       }
       if (!button) throw new Error("Transcript inserted, but no visible Generate button was found");
       for (let attempt = 0; attempt < 8 && (button.disabled || button.getAttribute("aria-disabled") === "true"); attempt++) {
-        await new Promise(resolve => setTimeout(resolve, 250));
+        await new Promise(resolve => setTimeout(resolve, 1000));
         button = findGenerateButton(box) || button;
       }
       if (button.disabled || button.getAttribute("aria-disabled") === "true") {
