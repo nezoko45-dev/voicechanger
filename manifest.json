@@ -1,19 +1,29 @@
 {
   "manifest_version": 3,
-  "name": "VoiceChanger — voiceclonnx",
-  "version": "1.0.2",
-  "description": "Convert a source recording using a selected reference voice with a local voiceclonnx service.",
-  "background": {
-    "service_worker": "background.js"
-  },
-  "action": {
-    "default_title": "Open VoiceChanger in a tab"
-  },
-  "permissions": [],
-  "host_permissions": [
-    "http://127.0.0.1:8765/*"
+  "name": "Uberduck Voice Dictation",
+  "version": "1.0.0",
+  "description": "Dictate into Uberduck's text-to-speech box and optionally generate speech when you finish talking.",
+  "permissions": [
+    "storage"
   ],
-  "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://127.0.0.1:8765 ws://127.0.0.1:8765;"
+  "host_permissions": [
+    "https://uberduck.ai/*",
+    "https://www.uberduck.ai/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://uberduck.ai/*",
+        "https://www.uberduck.ai/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Uberduck Voice Dictation",
+    "default_popup": "popup.html"
   }
 }
