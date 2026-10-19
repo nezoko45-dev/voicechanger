@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#111827">
+<title>VRChat Voice Dictation</title>
+<style>
+:root{color-scheme:dark;--panel:#141c2f;--line:#293650;--muted:#a7b4cb;--green:#18a879;--red:#ef6461}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#182742 0,#0b1020 55%);color:#eef4ff;font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}
+main{width:min(920px,calc(100% - 32px));margin:0 auto;padding:42px 0 60px}header{display:flex;align-items:center;gap:14px;margin-bottom:28px}.logo{display:grid;place-items:center;width:52px;height:52px;border-radius:16px;background:#123c36;font-size:27px}
+h1{font-size:clamp(24px,4vw,34px);line-height:1.15;margin:0}.subtitle{color:var(--muted);margin:5px 0 0}.layout{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(260px,.8fr);gap:18px}
+.card{background:color-mix(in srgb,var(--panel) 94%,transparent);border:1px solid var(--line);border-radius:18px;padding:22px;box-shadow:0 16px 48px #0002}.card h2{font-size:16px;margin:0 0 14px}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}button{border:0;border-radius:11px;padding:12px 16px;min-height:46px;font:inherit;font-weight:750;cursor:pointer}button:focus-visible,input:focus-visible{outline:3px solid #80b8ff;outline-offset:3px}button:disabled{opacity:.55;cursor:wait}
+#toggle{background:var(--green);color:#041b14;min-width:180px}#toggle.stop{background:var(--red);color:#250909}.secondary{background:#273650;color:#f0f5ff}.muted{color:var(--muted);font-size:13px}
+#status{padding:13px 14px;border:1px solid var(--line);border-radius:12px;background:#0d1526;overflow-wrap:anywhere}.indicator{display:inline-block;width:9px;height:9px;border-radius:50%;background:#8b9ab1;margin-right:8px}.indicator.on{background:#35d39b;box-shadow:0 0 12px #35d39b80}
+#preview{min-height:150px;white-space:pre-wrap;overflow-wrap:anywhere;background:#0d1526;border:1px solid var(--line);border-radius:12px;padding:15px}.setting{display:flex;gap:10px;align-items:flex-start;margin-top:16px}.setting input{margin-top:5px;accent-color:var(--green);width:17px;height:17px}
+.step{display:flex;gap:12px;margin:16px 0;align-items:flex-start}.num{display:grid;place-items:center;flex:0 0 28px;height:28px;border-radius:9px;background:#263854;color:#b9d4ff;font-weight:800}footer{margin-top:20px;color:var(--muted);font-size:12px}
+@media(max-width:680px){main{padding-top:24px}.layout{grid-template-columns:1fr}.card{padding:18px}}
+</style>
+</head>
+<body>
+<main>
+<header><div class="logo" aria-hidden="true">🎙️</div><div><h1>VRChat Voice Dictation</h1><p class="subtitle">Your voice controls, without keeping the side panel open.</p></div></header>
+<div class="layout">
+<section class="card">
+<h2>Dictation control</h2><p class="muted">Start listening here, then switch to VRChat. Speech recognition runs in the extension's offscreen document, separate from this tab.</p>
+<div class="actions"><button id="toggle" type="button">🎙 Start dictation</button><button id="open-eleven" class="secondary" type="button">Open ElevenLabs</button></div>
+<div id="status" role="status" aria-live="polite"><span class="indicator" id="indicator"></span><span id="status-text">Ready. Open an ElevenLabs Text to Speech tab first.</span></div>
+<label class="setting"><input id="auto" type="checkbox" checked><span><strong>Auto-send after silence</strong><br><span class="muted">Submit recognized speech after about 3 seconds of silence.</span></span></label>
+<div style="margin-top:22px"><h2>Latest transcript</h2><div id="preview" aria-live="polite">Nothing transcribed yet.</div></div>
+</section>
+<aside class="card"><h2>Quick setup</h2>
+<div class="step"><span class="num">1</span><div><strong>Open ElevenLabs</strong><p class="muted">Sign in and open Text to Speech. Keep that tab open.</p></div></div>
+<div class="step"><span class="num">2</span><div><strong>Start dictation</strong><p class="muted">Allow Chrome microphone access when asked.</p></div></div>
+<div class="step"><span class="num">3</span><div><strong>Switch to VRChat</strong><p class="muted">This dashboard can sit in the background. Your audio routing must still send ElevenLabs playback to the VRChat microphone.</p></div></div>
+<hr style="border:0;border-top:1px solid var(--line);margin:22px 0"><h2>Important</h2>
+<p class="muted">This tab is a control dashboard, not a replacement for the ElevenLabs generator. Chrome may still throttle the ElevenLabs webpage, and its interface can change. If text stops reaching ElevenLabs, refresh that tab.</p>
+</aside>
+</div>
+<footer>VRChat Voice Dictation · Use <code>chrome://extensions</code> to reload the extension after updating it.</footer>
+</main><script src="dashboard.js"></script>
+</body></html>
