@@ -36,8 +36,29 @@
       </div>
       <p class="hint live-note">Experimental: uses 2-second chunks to reduce capture delay. FACodec is the recommended starting point for live mode; slower engines may still lag or skip audio. Use headphones.</p>
     </section>
+    <section class="panel echo-panel">
+      <div class="section-label">04 / SPEECH RECOGNITION ECHO</div>
+      <p class="hint">Speak into your microphone. VoiceChanger transcribes your words and repeats them aloud using a Voicebox voice when available.</p>
+      <label class="field-label" for="voiceboxUrl">Voicebox URL</label>
+      <input id="voiceboxUrl" class="text-input" type="url" value="http://127.0.0.1:17493" spellcheck="false">
+      <div class="profile-row">
+        <label class="field-label" for="echoProfile">Reply voice profile</label>
+        <button id="echoRefresh" class="secondary refresh-button" type="button">Reload voices</button>
+      </div>
+      <select id="echoProfile"><option value="">Loading Voicebox profiles…</option></select>
+      <div class="echo-transcript">
+        <div class="field-label">Recognized speech</div>
+        <div id="echoTranscript" aria-live="polite">Your words will appear here.</div>
+      </div>
+      <div class="actions">
+        <button id="echoStart" class="primary">🎙 Start listening</button>
+        <button id="echoStop" class="secondary" disabled>Stop</button>
+      </div>
+      <div id="echoStatus" role="status" aria-live="polite">Connect Voicebox to use a cloned voice. Browser speech playback is used as a fallback.</div>
+      <p class="hint echo-note">Speech recognition requires a supported browser and may use the browser’s online recognition service. Microphone access is requested only when you start listening.</p>
+    </section>
     <section class="panel">
-      <label class="section-label" for="engine">04 / CONVERSION ENGINE</label>
+      <label class="section-label" for="engine">05 / CONVERSION ENGINE</label>
       <select id="engine">
         <option value="facodec" selected>FACodec — best starting point for live mode</option>
         <option value="openvoice">OpenVoice</option>
@@ -50,8 +71,9 @@
       <div id="message" role="status" aria-live="polite"></div>
       <a id="download" hidden>Download converted WAV</a>
     </section>
-    <footer>Audio stays on this device and is sent to your local conversion service.</footer>
+    <footer>Voice conversion stays on this device. Speech recognition may use your browser’s speech service; Voicebox runs separately on your device.</footer>
   </main>
   <script src="popup.js"></script>
+  <script src="speech-echo.js"></script>
 </body>
 </html>
