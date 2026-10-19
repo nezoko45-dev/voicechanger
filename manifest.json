@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "VoiceChanger — voiceclonnx",
-  "version": "1.0.2",
-  "description": "Convert a source recording using a selected reference voice with a local voiceclonnx service.",
+  "version": "1.1.0",
+  "description": "Convert voices and echo microphone speech with speech recognition and optional Voicebox voice profiles.",
   "background": {
     "service_worker": "background.js"
   },
@@ -11,9 +11,13 @@
   },
   "permissions": [],
   "host_permissions": [
-    "http://127.0.0.1:8765/*"
+    "http://127.0.0.1:8765/*",
+    "http://localhost:17493/*",
+    "http://127.0.0.1:17493/*",
+    "http://localhost:8000/*",
+    "http://127.0.0.1:8000/*"
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://127.0.0.1:8765 ws://127.0.0.1:8765;"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://127.0.0.1:8765 ws://127.0.0.1:8765 http://127.0.0.1:17493 http://localhost:17493 http://127.0.0.1:8000 http://localhost:8000;"
   }
 }

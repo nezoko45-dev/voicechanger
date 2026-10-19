@@ -1,12 +1,13 @@
 # VoiceChanger — voiceclonnx Chrome extension
 
-A minimal Chrome extension with one manually selected **reference voice** and an automatically created **source recording**. Audio conversion runs in a local Python service powered by [voiceclonnx](https://github.com/TigreGotico/voiceclonnx).
+A minimal Chrome extension with a manually selected **reference voice**, an automatically created **source recording**, local voice conversion, and a speech-recognition echo mode. Audio conversion runs in a local Python service powered by [voiceclonnx](https://github.com/TigreGotico/voiceclonnx).
 
 ## Requirements
 - Chrome or Chromium
 - Python 3.10+
 - A microphone
 - Permission to use the reference speaker's voice
+- Optional: [Voicebox](https://github.com/jamiepine/voicebox) running locally for cloned-voice echo playback
 
 ## Start the local conversion service (easy setup)
 - **Windows:** double-click `start_backend.bat`.
@@ -20,6 +21,15 @@ python -m venv .venv
 pip install -r backend/requirements.txt
 python -m uvicorn backend.app:app --host 127.0.0.1 --port 8765
 ```
+
+## Speech recognition echo mode
+1. Open VoiceChanger in a Chrome tab or extension popup and find **Speech Recognition Echo**.
+2. Start Voicebox locally if you want the echo to use a cloned voice. The default API URL is `http://127.0.0.1:17493`; change it if your Voicebox API uses another local port.
+3. Click **Reload voices** and select a Voicebox profile.
+4. Click **Start listening** and allow microphone access. Speak a short phrase; VoiceChanger transcribes it and speaks the same words back using the selected Voicebox profile.
+5. If Voicebox is unavailable or speech generation fails, VoiceChanger attempts to repeat the phrase with the browser's built-in speech synthesis voice. Click **Stop** to stop listening.
+
+Speech recognition uses the browser's Web Speech API and may rely on the browser's online recognition service; this feature is not guaranteed to be fully offline. Voicebox is optional for transcription, but needed for cloned-voice playback. Use headphones if you plan to leave the mic open for repeated tests to reduce speaker feedback.
 
 ## Windows desktop EXE (no separate Python install)
 
@@ -58,7 +68,7 @@ The desktop web UI is served at `http://127.0.0.1:8765/`; the backend binds to l
 
 Live mode sends 2-second WAV chunks to the local backend over a WebSocket. This is a **chunk-based prototype, not true low-latency streaming**: conversion can take longer than real time, produce noticeable delay, skip chunks when processing falls behind, or sound discontinuous at chunk boundaries. Some engines may fail on short chunks. The existing recorded-file conversion remains available.
 
-Audio is sent only to the local service at 127.0.0.1. The app captures microphone input only; it does not capture browser-tab or system audio. Use only reference recordings you have permission to use.
+Audio conversion is sent only to the local service at 127.0.0.1. The app captures microphone input only; it does not capture browser-tab or system audio. Use only reference recordings you have permission to use.
 
 ## Notes
 - Browser support for decoding input reference formats varies. WAV is the most reliable.
