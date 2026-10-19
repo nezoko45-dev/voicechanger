@@ -137,7 +137,8 @@
   }
 
 
-  // Floating on-page dictation controls, matching the old Inworld-style workflow.
+  // Floating page control sends microphone commands to the extension side panel.
+  // SpeechRecognition deliberately runs in the side panel, not this backgroundable page.
   function installFloatingDictation() {
     if (document.getElementById("ivd-floating-root")) return;
     const root = document.createElement("div");
@@ -145,102 +146,35 @@
     root.style.cssText = "position:fixed;z-index:2147483647;bottom:18px;left:50%;transform:translateX(-50%);font:14px/1.4 system-ui,sans-serif;color:#fff;width:min(420px,calc(100vw - 24px));";
     const panel = document.createElement("div");
     panel.style.cssText = "display:none;margin-bottom:8px;padding:12px;background:#171923;border:1px solid #4b5563;border-radius:12px;box-shadow:0 8px 30px #0007;";
-    const preview = document.createElement("div");
-    preview.textContent = "Nothing transcribed yet.";
-    preview.style.cssText = "white-space:pre-wrap;overflow-wrap:anywhere;max-height:90px;overflow:auto;margin-bottom:8px;color:#e5e7eb;";
     const status = document.createElement("div");
-    status.textContent = "Ready to dictate.";
-    status.style.cssText = "font-size:12px;color:#cbd5e1;";
-    const actions = document.createElement("div");
-    actions.style.cssText = "display:flex;gap:8px;align-items:center;margin-top:8px;";
-    const autoLabel = document.createElement("label");
-    autoLabel.style.cssText = "display:flex;align-items:center;gap:6px;font-size:12px;color:#e5e7eb;";
-    const auto = document.createElement("input");
-    auto.type = "checkbox"; auto.checked = true;
-    autoLabel.append(auto, document.createTextNode("Auto-send after 3s pause"));
-    const hide = document.createElement("button");
-    hide.textContent = "Hide";
-    hide.style.cssText = "margin-left:auto;border:0;border-radius:7px;padding:6px 10px;background:#374151;color:white;cursor:pointer;";
-    actions.append(autoLabel, hide);
-    panel.append(preview, status, actions);
+    status.textContent = "Open the extension side panel first. Dictation runs there so it can continue while you play VRChat.";
+    status.style.cssText = "font-size:12px;color:#e5e7eb;";
+    const close = document.createElement("button");
+    close.textContent = "Hide";
+    close.style.cssText = "margin-top:8px;border:0;border-radius:7px;padding:6px 10px;background:#374151;color:white;cursor:pointer;";
+    panel.append(status, close);
     const toggle = document.createElement("button");
     toggle.type = "button";
     toggle.textContent = "🎙 Start dictation";
     toggle.style.cssText = "display:block;margin:0 auto;border:0;border-radius:999px;padding:12px 20px;background:#0b8f6a;color:white;font:600 14px system-ui,sans-serif;box-shadow:0 5px 22px #0007;cursor:pointer;";
     root.append(panel, toggle);
     (document.body || document.documentElement).appendChild(root);
-    hide.addEventListener("click", () => { panel.style.display = "none"; });
-    toggle.addEventListener("click", () => { panel.style.display = panel.style.display === "none" ? "block" : "block"; });
-    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    let listening = false, recognition = null, finalText = "", interimText = "", silenceTimer = null, restartTimer = null;
-    const setStatus = text => { status.textContent = text; };
-    function sendPhrase(text) {
-      const phrase = String(text || "").trim();
-      if (!phrase) return;
-      messageQueue.push({text: phrase, sendResponse: response => {
-        setStatus(response?.ok ? "Generated on ElevenLabs." : (response?.message || "Generation failed; please check the page."));
-      }});
-      setStatus("Queued phrase. Waiting for ElevenLabs to finish in order…");
-      void processQueue();
-    }
-    function flush() {
-      clearTimeout(silenceTimer);
-      const text = [finalText, interimText].filter(Boolean).join(" ").trim();
-      finalText = ""; interimText = "";
-      if (!text) return;
-      preview.textContent = text;
-      if (auto.checked) sendPhrase(text);
-      else setStatus("Transcript captured. Enable auto-send to generate it.");
-    }
-    function startRecognition() {
-      if (!listening || !Recognition) return;
-      const r = new Recognition();
-      recognition = r;
-      r.continuous = true; r.interimResults = true; r.lang = "en-US";
-      r.onstart = () => { if (listening) { toggle.textContent = "■ Stop dictation"; setStatus("Listening… pause for 3 seconds to send."); } };
-      r.onresult = event => {
-        let interim = "";
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) finalText += transcript + " ";
-          else interim += transcript;
-        }
-        interimText = interim;
-        const text = [finalText, interimText].filter(Boolean).join(" ").trim();
-        if (text) preview.textContent = text;
-        clearTimeout(silenceTimer);
-        if (text && auto.checked) silenceTimer = setTimeout(flush, 3000);
-      };
-      r.onerror = event => {
-        setStatus("Speech recognition: " + event.error);
-        if (["not-allowed","service-not-allowed","audio-capture"].includes(event.error)) {
-          listening = false; toggle.textContent = "🎙 Start dictation";
-        }
-      };
-      r.onend = () => {
-        if (recognition === r) recognition = null;
-        if (listening) {
-          flush();
-          clearTimeout(restartTimer);
-          restartTimer = setTimeout(() => { if (listening && !recognition) startRecognition(); }, 350);
-        } else {
-          flush(); toggle.textContent = "🎙 Start dictation"; setStatus("Dictation stopped.");
-        }
-      };
-      try { r.start(); } catch (error) {
-        recognition = null; listening = false; toggle.textContent = "🎙 Start dictation";
-        setStatus("Couldn't start microphone: " + error.message);
-      }
-    }
+    close.addEventListener("click", () => { panel.style.display = "none"; });
     toggle.addEventListener("click", () => {
       panel.style.display = "block";
-      if (!Recognition) { setStatus("Speech recognition isn't supported in this Chrome version."); return; }
-      if (listening) {
-        listening = false; clearTimeout(silenceTimer); clearTimeout(restartTimer);
-        if (recognition) { try { recognition.stop(); } catch {} } else flush();
-        toggle.textContent = "🎙 Start dictation"; setStatus("Stopping dictation…");
-      } else {
-        listening = true; startRecognition();
+      chrome.runtime.sendMessage({ type: "IVD_TOGGLE_LISTENING" }, response => {
+        if (chrome.runtime.lastError || !response) {
+          status.textContent = "Open the extension's dictation side panel first, then click this button again.";
+          return;
+        }
+        status.textContent = response.message || "Dictation command sent to the side panel.";
+        toggle.textContent = response.listening ? "■ Stop dictation" : "🎙 Start dictation";
+      });
+    });
+    chrome.runtime.onMessage.addListener(message => {
+      if (message?.type === "IVD_DICTATION_STATUS") {
+        status.textContent = message.message || "Dictation status updated.";
+        toggle.textContent = message.listening ? "■ Stop dictation" : "🎙 Start dictation";
       }
     });
   }
