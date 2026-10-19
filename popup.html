@@ -1,27 +1,4 @@
 <!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ElevenLabs Voice Dictation</title>
-<style>
-*{box-sizing:border-box}
-body{font:14px/1.5 system-ui,sans-serif;width:300px;padding:14px;margin:0;color:#222;background:#fff}
-h1{font-size:17px;margin:0 0 8px}
-p{line-height:1.5;margin:8px 0}
-button{border:0;border-radius:8px;padding:11px 12px;background:#087f5b;color:white;font-weight:700;cursor:pointer;min-height:42px}
-button:focus-visible{outline:3px solid #65a9ff;outline-offset:2px}
-#status{padding:9px;border-radius:8px;background:#f3f4f6;color:#222;overflow-wrap:anywhere}
-#fallback{display:none}
-</style>
-</head>
-<body>
-<h1>ElevenLabs Voice Dictation</h1>
-<p>Open the dictation panel. If Chrome cannot open it, you can open the panel page in a normal tab to diagnose it.</p>
-<button id="open-panel" type="button">Open dictation panel</button>
-<p id="status" role="status" aria-live="polite">Ready.</p>
-<p id="fallback"><button id="open-tab" type="button">Open panel in a tab</button></p>
-<p>After the panel opens, click <b>Start dictation</b> and allow microphone access. Keep the panel open while switching to VRChat. Leave the ElevenLabs Text to Speech tab open.</p>
-<script src="popup.js"></script>
-</body>
-</html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VRChat Voice Dictation</title>
+<style>*{box-sizing:border-box}body{font:14px/1.5 system-ui,sans-serif;width:300px;padding:14px;margin:0;color:#eef4ff;background:#111827}h1{font-size:17px;margin:0 0 8px}p{margin:8px 0;color:#c5cee0}button{border:0;border-radius:8px;padding:11px 12px;background:#18a879;color:#041b14;font-weight:700;cursor:pointer;min-height:42px;width:100%}#status{padding:9px;border-radius:8px;background:#202b3e;overflow-wrap:anywhere}</style></head>
+<body><h1>VRChat Voice Dictation</h1><p>Open the full dashboard in a normal tab. Dictation can continue while you play VRChat.</p><button id="open-dashboard" type="button">Open voice dashboard</button><p id="status" role="status" aria-live="polite">Ready.</p><script src="popup.js"></script></body></html>
