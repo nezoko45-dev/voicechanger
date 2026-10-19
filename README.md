@@ -1,6 +1,6 @@
 # ElevenLabs Voice Dictation for VRChat
 
-A Chrome/Chromium Manifest V3 extension that transcribes speech in a separate extension side panel and queues phrases for the ElevenLabs Text to Speech website. It is designed so you can switch to VRChat while the ElevenLabs tab remains open.
+A Chrome/Chromium Manifest V3 extension that adds a floating dictation control at the bottom of the ElevenLabs webpage and queues phrases for Text to Speech. It is designed so you can switch to VRChat while the ElevenLabs tab remains open.
 
 ## Install / update
 
@@ -9,9 +9,9 @@ A Chrome/Chromium Manifest V3 extension that transcribes speech in a separate ex
 3. Enable **Developer mode**.
 4. If the extension is already loaded, click **Reload**. For a first install, choose **Load unpacked** and select the repository folder.
 5. Open and sign in to the [ElevenLabs Text to Speech page](https://elevenlabs.io/app/speech-synthesis/text-to-speech), then refresh it.
-6. Click the extension icon and choose **Open dictation panel**.
-7. Click **Start dictation** and allow microphone access.
-8. Keep the side panel open and switch to VRChat. After about 3 seconds of silence, the extension queues the phrase, fills the ElevenLabs text field, and clicks Generate when the page indicates it is ready.
+6. Look for the floating **🎙 Start dictation** button centered near the bottom of the ElevenLabs webpage. If it does not appear, reload the extension in `chrome://extensions` and refresh the ElevenLabs tab.
+7. Click the floating button and allow microphone access. The small panel shows the transcript and status; after about 3 seconds of silence, it queues the phrase and clicks Generate when ElevenLabs is ready.
+8. Switch to VRChat and test. The ElevenLabs tab must remain open.
 
 ## Background tab
 
@@ -19,7 +19,7 @@ Chrome can throttle background tabs. In Chrome Settings → Performance, add `el
 
 ## How phrase handling works
 
-- Speech recognition runs in the side panel using the browser Web Speech API.
+- Speech recognition runs from the floating on-page control using the browser Web Speech API.
 - Phrases are queued and submitted in order; the extension no longer applies its old fixed 12-second cooldown.
 - The content script waits for a visible text field and Generate button, checks whether the button is enabled, and clicks once per phrase.
 - The extension waits for the generator UI to indicate completion where possible before processing the next queued phrase.
