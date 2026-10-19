@@ -1,5 +1,11 @@
-const checkbox = document.querySelector("#auto");
-chrome.storage.local.get(["autoGenerate"], data => {
-  if (typeof data.autoGenerate === "boolean") checkbox.checked = data.autoGenerate;
+document.querySelector("#open-panel").addEventListener("click", async () => {
+  const tabs = await chrome.tabs.query({active:true,lastFocusedWindow:true});
+  const tab = tabs[0];
+  if (!tab || typeof tab.windowId !== "number") return;
+  try {
+    await chrome.sidePanel.open({windowId:tab.windowId});
+    window.close();
+  } catch (error) {
+    console.error("Could not open dictation side panel", error);
+  }
 });
-checkbox.addEventListener("change", () => chrome.storage.local.set({autoGenerate: checkbox.checked}));
