@@ -162,7 +162,7 @@
       });
     });
     chrome.runtime.onMessage.addListener(message => {
-      if (message?.type === "IVD_DICTATION_STATUS") {
+      if (message?.type === "IVD_DICTATION_STATUS" || message?.type === "IVD_OFFSCREEN_STATUS") {
         status.textContent = message.message || "Dictation status updated.";
         toggle.textContent = message.listening ? "■ Stop dictation" : "🎙 Start dictation";
       }
