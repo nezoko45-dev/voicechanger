@@ -19,7 +19,7 @@
     if (!toggle || !auto || !status || !preview) throw new Error("Panel HTML is missing a required control.");
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognition = null, listening = false, finalText = "", interimText = "", silenceTimer = null, restartTimer = null;
-    let lastPreviewAt = 0, previewRequest = 0, restartAttempts = 0;
+    let lastPreviewAt = 0, previewRequest = 0, restartAttempts = 0, starting = false;
     const sendQueue = [];
     let processingQueue = false;
     const SILENCE_MS = 3000;
@@ -189,9 +189,9 @@
       }
     }
 
-    function toggleListening() {
+    async function toggleListening() {
       if (!SpeechRecognition) {
-        setStatus("Speech recognition isn't supported here. Use current Chrome.");
+        setStatus("Speech recognition isn't supported here. Use current Google Chrome.");
         return {listening:false,message:"Speech recognition isn't supported here."};
       }
       if (listening) {
@@ -203,16 +203,46 @@
         setStatus("Stopping dictation…");
         return {listening:false,message:"Dictation stopping."};
       }
-      listening = true;
-      startRecognition();
-      return {listening:true,message:"Dictation started. Speak a short phrase to test it."};
+      if (starting) return {listening:false,message:"Microphone check is already in progress."};
+      starting = true;
+      toggle.disabled = true;
+      setStatus("Checking your selected Chrome/Windows microphone…");
+      let stream;
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) throw new Error("Microphone access is unavailable in this Chrome context.");
+        // Explicitly request the browser/OS default input device first so Chrome can
+        // prompt for microphone permission and report which input is selected.
+        stream = await navigator.mediaDevices.getUserMedia({audio:true});
+        const track = stream.getAudioTracks()[0];
+        const deviceLabel = track?.label || "Chrome/Windows default microphone";
+        stream.getTracks().forEach(t => t.stop());
+        stream = null;
+        listening = true;
+        setStatus("Microphone ready: " + deviceLabel + ". Starting speech recognition…");
+        startRecognition();
+        return {listening:true,message:"Using " + deviceLabel};
+      } catch (error) {
+        if (stream) stream.getTracks().forEach(t => t.stop());
+        listening = false;
+        toggle.textContent = "🎙 Start dictation";
+        const detail = error?.name === "NotAllowedError" || error?.name === "PermissionDeniedError"
+          ? "Allow microphone access for Chrome in Windows Settings and Chrome site/app permissions, then retry."
+          : (error?.message || "Check that your selected microphone is connected and enabled.");
+        setStatus("Couldn't access your selected microphone: " + detail);
+        chrome.runtime.sendMessage({type:"IVD_DICTATION_STATUS",listening:false,message:"Microphone access failed: " + detail});
+        return {listening:false,message:"Microphone access failed: " + detail};
+      } finally {
+        starting = false;
+        toggle.disabled = false;
+      }
     }
 
-    toggle.addEventListener("click", () => toggleListening());
+    toggle.addEventListener("click", () => { void toggleListening(); });
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message?.type !== "IVD_TOGGLE_LISTENING") return;
-      sendResponse(toggleListening());
+      toggleListening().then(sendResponse);
+      return true;
     });
-    setStatus("Ready. Open ElevenLabs Text to Speech, then click Start dictation.");
+    setStatus("Ready. Dictation uses your selected Chrome/Windows default microphone. Open ElevenLabs Text to Speech, then click Start dictation.");
   } catch (error) { showFatalError(error); }
 })();
