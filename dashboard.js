@@ -1,0 +1,12 @@
+(() => {
+ const statusText=document.querySelector("#status-text"),indicator=document.querySelector("#indicator"),preview=document.querySelector("#preview"),toggle=document.querySelector("#toggle"),auto=document.querySelector("#auto"),openEleven=document.querySelector("#open-eleven");
+ let listening=false;
+ const status=message=>{statusText.textContent=message||"Ready.";};
+ const renderListening=()=>{toggle.textContent=listening?"■ Stop dictation":"🎙 Start dictation";toggle.classList.toggle("stop",listening);indicator.classList.toggle("on",listening);};
+ toggle.addEventListener("click",()=>{toggle.disabled=true;status("Starting background dictation engine…");chrome.runtime.sendMessage({type:"IVD_TOGGLE_LISTENING"},response=>{toggle.disabled=false;if(chrome.runtime.lastError){status("Extension messaging error: "+chrome.runtime.lastError.message);return;}if(!response){status("No response from dictation engine. Reload the extension.");return;}listening=!!response.listening;renderListening();status(response.message||(listening?"Background dictation active.":"Dictation stopped."));});});
+ chrome.runtime.onMessage.addListener(message=>{if(message?.type==="IVD_OFFSCREEN_STATUS"){listening=!!message.listening;renderListening();status(message.message||(listening?"Listening…":"Dictation stopped."));}if(message?.type==="IVD_OFFSCREEN_TRANSCRIPT"&&message.text)preview.textContent=message.text;});
+ chrome.storage.local.get(["autoGenerate"],data=>{if(!chrome.runtime.lastError&&typeof data?.autoGenerate==="boolean")auto.checked=data.autoGenerate;});
+ auto.addEventListener("change",()=>chrome.storage.local.set({autoGenerate:auto.checked}));
+ openEleven.addEventListener("click",async()=>{try{const tabs=await chrome.tabs.query({url:["https://elevenlabs.io/*","https://*.elevenlabs.io/*"]});const tab=tabs.find(t=>t.url&&t.url.includes("/app/speech-synthesis/"))||tabs[0];if(tab?.id){await chrome.tabs.update(tab.id,{active:true});if(typeof tab.windowId==="number")await chrome.windows.update(tab.windowId,{focused:true});status("Switched to your ElevenLabs tab.");}else{await chrome.tabs.create({url:"https://elevenlabs.io/app/speech-synthesis/text-to-speech"});status("Opened ElevenLabs Text to Speech in a new tab.");}}catch(error){status("Couldn't open ElevenLabs: "+(error?.message||String(error)));}});
+ status("Ready. Open ElevenLabs Text to Speech, then start dictation.");
+})();
