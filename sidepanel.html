@@ -3,30 +3,45 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ElevenLabs Dictation</title>
+<title>ElevenLabs Voice Dictation</title>
 <style>
-:root{color-scheme:light dark}body{font:14px/1.5 system-ui,sans-serif;margin:0;padding:16px;background:Canvas;color:CanvasText}
-h2{font-size:18px;margin:0 0 8px}.muted{opacity:.75;font-size:12px}
-button{border:0;border-radius:9px;padding:11px 13px;background:#0b8f6a;color:white;font-weight:650;cursor:pointer}
-button.secondary{background:#555}button:disabled{opacity:.55;cursor:default}
-.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0}
-label{display:flex;gap:7px;align-items:center}
-#status{padding:10px;border-radius:8px;background:color-mix(in srgb, CanvasText 8%, Canvas);overflow-wrap:anywhere}
-#preview{white-space:pre-wrap;min-height:40px;padding:10px;border:1px solid color-mix(in srgb, CanvasText 20%, transparent);border-radius:8px}
+:root{color-scheme:light dark}
+*{box-sizing:border-box}
+body{font:14px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;padding:16px;background:Canvas;color:CanvasText}
+h1{font-size:19px;line-height:1.25;margin:0 0 8px}
+p{margin:8px 0}
+.muted{opacity:.78;font-size:12px}
+button{border:0;border-radius:10px;padding:12px 14px;background:#087f5b;color:#fff;font:inherit;font-weight:700;cursor:pointer;min-height:44px}
+button:focus-visible,input:focus-visible{outline:3px solid #65a9ff;outline-offset:2px}
+button:disabled{opacity:.55;cursor:default}
+button.secondary{background:#555}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:14px 0}
+label{display:flex;gap:8px;align-items:center}
+#status{padding:10px 12px;border-radius:9px;background:color-mix(in srgb, CanvasText 8%, Canvas);overflow-wrap:anywhere}
+#preview{white-space:pre-wrap;min-height:56px;padding:10px;border:1px solid color-mix(in srgb, CanvasText 20%, transparent);border-radius:9px;overflow-wrap:anywhere}
+.section{margin-top:16px}
+#diagnostic{display:none;margin-top:12px;padding:10px;border:1px solid #b45309;border-radius:8px;overflow-wrap:anywhere}
 </style>
 </head>
 <body>
-<h2>ElevenLabs Voice Dictation</h2>
-<p class="muted">Keep this side panel open while you play VRChat. Speak a phrase, pause, and it will be queued for your open ElevenLabs Text to Speech tab.</p>
+<h1>ElevenLabs Voice Dictation</h1>
+<p class="muted">Speak here, then switch to VRChat. Keep this panel open so Chrome can keep speech recognition running.</p>
 <div class="row">
-<button id="toggle">🎙 Start dictation</button>
+<button id="toggle" type="button">🎙 Start dictation</button>
 </div>
 <div class="row">
 <label><input id="auto" type="checkbox" checked> Send after 3 seconds of silence</label>
 </div>
+<div class="section">
 <p class="muted">Latest transcript</p>
-<div id="preview">Nothing transcribed yet.</div>
-<p id="status" role="status">Ready. Open and sign in to ElevenLabs Text to Speech first.</p>
-<script src="sidepanel.js"></script>
+<div id="preview" aria-live="polite">Nothing transcribed yet.</div>
+</div>
+<div class="section">
+<p class="muted">Status</p>
+<p id="status" role="status" aria-live="polite">Ready. Open an ElevenLabs Text to Speech tab first.</p>
+</div>
+<div id="diagnostic" role="alert"></div>
+<p class="muted section">If this page appears broken, reload the extension at <code>chrome://extensions</code>. Confirm you loaded the folder containing this file and <code>manifest.json</code>.</p>
+<script src="sidepanel.js" onerror="document.getElementById('diagnostic').style.display='block';document.getElementById('diagnostic').textContent='Could not load sidepanel.js. Reload the extension or reinstall the correct branch folder.'"></script>
 </body>
 </html>
