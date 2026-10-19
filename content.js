@@ -10,7 +10,7 @@
   let silenceTimer = null;
   let restartTimer = null;
   let generating = false;
-  const SILENCE_MS = 1800;
+  const SILENCE_MS = 2200;
 
   const panel = document.createElement("section");
   panel.id = "ivd-panel";
@@ -35,11 +35,16 @@
   function findTextBox() {
     const candidates = [...document.querySelectorAll('textarea,input:not([type]),input[type="text"],[contenteditable="true"],[role="textbox"]')]
       .filter(el => !panel.contains(el) && visible(el) && !el.disabled && el.getAttribute("aria-disabled") !== "true");
-    const preferred = candidates.find(el => /text|speech|speak|script|voice|tts|enter/i.test([
-      el.getAttribute("placeholder"), el.getAttribute("aria-label"),
-      el.getAttribute("data-placeholder"), el.getAttribute("name")
-    ].join(" ")));
-    return preferred || candidates.find(el => el.tagName === "TEXTAREA" || el.isContentEditable) || null;
+    const score = el => {
+      const attrs = [el.getAttribute("placeholder"), el.getAttribute("aria-label"), el.getAttribute("data-placeholder"), el.getAttribute("name"), el.getAttribute("data-testid")].join(" ").toLowerCase();
+      let n = 0;
+      if (el.tagName === "TEXTAREA") n += 5;
+      if (el.isContentEditable || el.getAttribute("role") === "textbox") n += 4;
+      if (/text|speech|speak|script|voice|tts|prompt|type here|enter text/.test(attrs)) n += 8;
+      if (/search|filter|email|password/.test(attrs)) n -= 10;
+      return n;
+    };
+    return candidates.sort((a, b) => score(b) - score(a))[0] || null;
   }
 
   function setText(box, text) {
@@ -59,47 +64,62 @@
 
   function findGenerateButton(box) {
     const buttons = [...document.querySelectorAll("button,[role='button'],input[type='submit']")]
-      .filter(b => visible(b) && !panel.contains(b) && !b.disabled && b.getAttribute("aria-disabled") !== "true");
-    const label = b => [b.getAttribute("aria-label"), b.title, b.innerText, b.value, b.getAttribute("data-testid")].join(" ").trim();
-    const generateButtons = buttons.filter(b => /^generate(?:\s+(?:speech|audio|voice))?\s*$/i.test(label(b)));
+      .filter(b => visible(b) && !panel.contains(b));
+    const labels = b => [
+      b.getAttribute("aria-label"), b.title, b.innerText, b.textContent,
+      b.value, b.getAttribute("data-testid")
+    ].filter(Boolean).map(s => s.trim());
+    const generateButtons = buttons.filter(b => labels(b).some(s => /generate/i.test(s)));
     if (!generateButtons.length) return null;
 
-    // Prefer a Generate button near the selected text field, avoiding unrelated page controls.
+    // Prefer the Generate control sharing a form/card/section with the selected TTS box.
     let ancestor = box;
-    for (let depth = 0; ancestor && depth < 7; depth++, ancestor = ancestor.parentElement) {
+    for (let depth = 0; ancestor && depth < 9; depth++, ancestor = ancestor.parentElement) {
       const nearby = generateButtons.find(b => ancestor.contains(b));
       if (nearby) return nearby;
     }
+    // On layouts where the editor and action button are in separate containers,
+    // use the first visible Generate-labeled control.
     return generateButtons[0];
   }
 
   async function generateSpeech(text) {
     if (!text.trim() || generating) return;
-    const box = findTextBox();
-    if (!box) {
-      setStatus("Couldn't find Inworld's TTS text box");
-      return;
-    }
-    const button = findGenerateButton(box);
-    if (!button) {
-      setStatus("Text entered, but Generate button wasn't found");
-      setText(box, text.trim());
-      return;
-    }
     generating = true;
     try {
+      const box = findTextBox();
+      if (!box) {
+        setStatus("Speech transcribed, but no text box found on this page");
+        return;
+      }
       setText(box, text.trim());
-      await new Promise(resolve => setTimeout(resolve, 250));
+      setStatus("Transcript inserted; locating Generate…");
+
+      // Inworld's UI may enable/render the button only after the framework handles input.
+      let button = null;
+      for (let attempt = 0; attempt < 12; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 250));
+        button = findGenerateButton(box);
+        if (button) break;
+      }
+      if (!button) {
+        setStatus("Transcript inserted, but no visible Generate button found");
+        return;
+      }
+
+      // Wait briefly for disabled state to clear after the text change.
+      for (let attempt = 0; attempt < 8 && (button.disabled || button.getAttribute("aria-disabled") === "true"); attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 250));
+        button = findGenerateButton(box) || button;
+      }
       if (button.disabled || button.getAttribute("aria-disabled") === "true") {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        setStatus("Transcript inserted, but Generate is disabled");
+        return;
       }
-      const refreshedButton = findGenerateButton(box) || button;
-      if (!refreshedButton.disabled && refreshedButton.getAttribute("aria-disabled") !== "true") {
-        refreshedButton.click();
-        setStatus("Generate clicked — speak again when ready");
-      } else {
-        setStatus("Text entered; Generate is still disabled");
-      }
+      button.click();
+      setStatus("Generate button clicked automatically");
+    } catch (error) {
+      setStatus("Auto-generate error: " + (error?.message || "unknown error"));
     } finally {
       generating = false;
     }
