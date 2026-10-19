@@ -1,10 +1,7 @@
 (() => {
-  if (window.__inworldVoiceDictationInstalled) return;
-  window.__inworldVoiceDictationInstalled = true;
+  if (window.__elevenLabsVoiceDictationInstalled) return;
+  window.__elevenLabsVoiceDictationInstalled = true;
 
-  let generating = false;
-  let lastGenerateAt = 0;
-  const GENERATE_COOLDOWN_MS = 12000;
   const messageQueue = [];
   let processingQueue = false;
   const visible = el => !!el && el.getClientRects().length > 0;
@@ -19,7 +16,7 @@
       if (el.tagName === "TEXTAREA") n += 5;
       if (el.isContentEditable || el.getAttribute("role") === "textbox") n += 4;
       if (/text|speech|speak|script|voice|tts|prompt|type here|enter text/.test(attrs)) n += 8;
-      if (/search|filter|email|password/.test(attrs)) n -= 10;
+      if (/search|filter|email|password|voice name/.test(attrs)) n -= 12;
       return n;
     };
     return candidates.sort((a, b) => score(b) - score(a))[0] || null;
@@ -40,50 +37,82 @@
     box.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
+  function buttonLabels(button) {
+    return [button.getAttribute("aria-label"), button.title, button.innerText, button.textContent, button.value, button.getAttribute("data-testid")]
+      .filter(Boolean).map(s => s.trim());
+  }
+
   function findGenerateButton(box) {
     const buttons = [...document.querySelectorAll("button,[role='button'],input[type='submit']")].filter(visible);
-    const labels = b => [b.getAttribute("aria-label"), b.title, b.innerText, b.textContent, b.value, b.getAttribute("data-testid")]
-      .filter(Boolean).map(s => s.trim());
-    const matches = buttons.filter(b => labels(b).some(s => /generate/i.test(s)));
+    const matches = buttons.filter(button => buttonLabels(button).some(label => /generate|synthesize|create speech/i.test(label)));
     if (!matches.length) return null;
     let ancestor = box;
-    for (let depth = 0; ancestor && depth < 9; depth++, ancestor = ancestor.parentElement) {
-      const nearby = matches.find(b => ancestor.contains(b));
+    for (let depth = 0; ancestor && depth < 10; depth++, ancestor = ancestor.parentElement) {
+      const nearby = matches.find(button => ancestor.contains(button));
       if (nearby) return nearby;
     }
-    return matches[0];
+    return matches.find(button => /generate speech|generate|synthesize|create speech/i.test(buttonLabels(button).join(" "))) || matches[0];
+  }
+
+  function isBusy(button) {
+    if (!button) return true;
+    const labels = buttonLabels(button).join(" ").toLowerCase();
+    return button.disabled ||
+      button.getAttribute("aria-disabled") === "true" ||
+      button.getAttribute("aria-busy") === "true" ||
+      /generating|processing|loading|synthesizing/.test(labels);
+  }
+
+  async function waitForReady(box, timeoutMs = 60000) {
+    const end = Date.now() + timeoutMs;
+    while (Date.now() < end) {
+      const currentBox = box?.isConnected ? box : findTextBox();
+      const button = currentBox ? findGenerateButton(currentBox) : null;
+      if (currentBox && button && !isBusy(button)) return { box: currentBox, button };
+      await sleep(1000);
+    }
+    throw new Error("Timed out waiting for ElevenLabs' text field and enabled Generate button. Check that the Text to Speech page is open and signed in.");
+  }
+
+  async function waitForGeneration(button, box) {
+    // Some UI versions expose a busy state; wait for it to clear before replacing the text.
+    const detectionDeadline = Date.now() + 12000;
+    let sawBusy = false;
+    while (Date.now() < detectionDeadline) {
+      const currentButton = findGenerateButton(box) || button;
+      if (isBusy(currentButton)) {
+        sawBusy = true;
+        break;
+      }
+      await sleep(300);
+    }
+    if (!sawBusy) {
+      // Fallback for UI variants that don't disable or relabel the button.
+      await sleep(4000);
+      return;
+    }
+    const completionDeadline = Date.now() + 120000;
+    while (Date.now() < completionDeadline) {
+      const currentBox = box?.isConnected ? box : findTextBox();
+      const currentButton = currentBox ? findGenerateButton(currentBox) : null;
+      if (currentButton && !isBusy(currentButton)) return;
+      await sleep(1000);
+    }
+    throw new Error("ElevenLabs still appears to be generating after 2 minutes. The phrase remains queued; check the page before continuing.");
   }
 
   async function generateSpeech(text) {
-    if (!text.trim()) throw new Error("No transcript received");
-    if (generating) throw new Error("A generation is already being prepared");
-    generating = true;
-    try {
-      const remaining = GENERATE_COOLDOWN_MS - (Date.now() - lastGenerateAt);
-      if (remaining > 0) await sleep(remaining);
-      const box = findTextBox();
-      if (!box) throw new Error("Couldn't find Inworld's TTS text box");
-      setText(box, text.trim());
-      let button = null;
-      for (let attempt = 0; attempt < 10; attempt++) {
-        await sleep(1000);
-        button = findGenerateButton(box);
-        if (button) break;
-      }
-      if (!button) throw new Error("Transcript inserted, but no visible Generate button was found");
-      for (let attempt = 0; attempt < 8 && (button.disabled || button.getAttribute("aria-disabled") === "true"); attempt++) {
-        await sleep(1000);
-        button = findGenerateButton(box) || button;
-      }
-      if (button.disabled || button.getAttribute("aria-disabled") === "true") {
-        throw new Error("Transcript inserted, but Generate is disabled");
-      }
-      button.click();
-      lastGenerateAt = Date.now();
-      return "Generate clicked";
-    } finally {
-      generating = false;
-    }
+    const phrase = String(text || "").trim();
+    if (!phrase) throw new Error("No transcript received");
+    let { box, button } = await waitForReady(null);
+    setText(box, phrase);
+
+    // Allow the website's UI framework to update its state after text insertion.
+    await sleep(300);
+    ({ box, button } = await waitForReady(box, 30000));
+    button.click();
+    await waitForGeneration(button, box);
+    return "Generated phrase on ElevenLabs";
   }
 
   async function processQueue() {
@@ -95,10 +124,12 @@
         try {
           const result = await generateSpeech(item.text);
           item.sendResponse({ ok: true, message: result });
+          messageQueue.shift();
         } catch (error) {
           item.sendResponse({ ok: false, message: error?.message || "Unknown error" });
+          // Remove this failed item after reporting the error. The side panel retains and retries it.
+          messageQueue.shift();
         }
-        messageQueue.shift();
       }
     } finally {
       processingQueue = false;
