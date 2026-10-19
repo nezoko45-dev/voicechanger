@@ -8,10 +8,11 @@
   let autoGenerate = true;
   let transcript = "";
   let silenceTimer = null;
+  let restartTimer = null;
 
   const panel = document.createElement("section");
   panel.id = "uberduck-dictation-panel";
-  panel.innerHTML = '<button id="udd-toggle" type="button">🎙 Start dictation</button><label><input id="udd-auto" type="checkbox" checked> Generate when I finish</label><span id="udd-status" role="status">Ready</span>';
+  panel.innerHTML = '<button id="udd-toggle" type="button">🎙 Start continuous dictation</button><label><input id="udd-auto" type="checkbox" checked> Generate after each sentence</label><span id="udd-status" role="status">Ready</span>';
   Object.assign(panel.style, {
     position: "fixed", right: "18px", bottom: "18px", zIndex: "2147483647",
     display: "flex", flexWrap: "wrap", alignItems: "center", gap: "10px",
@@ -26,11 +27,11 @@
   const toggle = panel.querySelector("#udd-toggle");
   const auto = panel.querySelector("#udd-auto");
   const status = panel.querySelector("#udd-status");
-  const setStatus = (s) => { status.textContent = s; };
+  const setStatus = s => { status.textContent = s; };
 
   function findTextBox() {
     const candidates = [...document.querySelectorAll('textarea, input[type="text"], [contenteditable="true"], [role="textbox"]')]
-      .filter(el => el !== panel && !panel.contains(el) && el.getClientRects().length && !el.disabled && !el.readOnly);
+      .filter(el => !panel.contains(el) && el.getClientRects().length && !el.disabled && !el.readOnly);
     return candidates.find(el => /text|speech|say|prompt|enter/i.test(
       [el.placeholder, el.getAttribute("aria-label"), el.getAttribute("data-placeholder"), el.name].join(" ")
     )) || candidates.find(el => el.tagName === "TEXTAREA") || candidates[0] || null;
@@ -61,58 +62,105 @@
     ));
     if (!button) { setStatus("Text entered; Generate button not found"); return; }
     button.click();
-    setStatus("Generating speech…");
+    setStatus(listening ? "Generated. Keep speaking…" : "Generating speech…");
   }
 
-  function finishUtterance() {
+  function flushTranscript() {
     clearTimeout(silenceTimer);
-    listening = false;
-    toggle.textContent = "🎙 Start dictation";
-    if (!transcript.trim()) { setStatus("No speech detected"); return; }
-    if (!setBoxText(transcript.trim())) return;
-    setStatus("Dictation entered");
+    const text = transcript.trim();
+    transcript = "";
+    if (!text) return;
+    if (!setBoxText(text)) return;
+    setStatus(listening ? "Sentence entered. Keep speaking…" : "Dictation entered");
     if (autoGenerate) setTimeout(generateSpeech, 350);
   }
 
-  function start() {
-    if (!SpeechRecognition) {
-      setStatus("Speech recognition isn't supported here; try Chrome");
-      return;
-    }
-    transcript = "";
-    recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-    recognition.onstart = () => { listening = true; toggle.textContent = "■ Stop dictation"; setStatus("Listening…"); };
-    recognition.onresult = event => {
+  function createRecognition() {
+    if (!listening || !SpeechRecognition) return;
+    const current = new SpeechRecognition();
+    recognition = current;
+    current.continuous = true;
+    current.interimResults = true;
+    current.lang = "en-US";
+
+    current.onstart = () => {
+      if (listening) {
+        toggle.textContent = "■ Stop continuous dictation";
+        setStatus("Listening… speak naturally; pause between sentences");
+      }
+    };
+    current.onresult = event => {
       let interim = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const phrase = event.results[i][0].transcript;
         if (event.results[i].isFinal) transcript += phrase + " ";
         else interim += phrase;
       }
-      setStatus((transcript + interim).trim().slice(-90) || "Listening…");
+      const preview = (transcript + interim).trim();
+      if (preview) setStatus("Listening: " + preview.slice(-90));
       clearTimeout(silenceTimer);
-      if (transcript.trim()) silenceTimer = setTimeout(() => recognition?.stop(), 1300);
+      if (transcript.trim()) silenceTimer = setTimeout(flushTranscript, 1300);
     };
-    recognition.onerror = event => setStatus("Mic/recognition: " + event.error);
-    recognition.onend = () => {
-      if (listening) finishUtterance();
-      recognition = null;
+    current.onerror = event => {
+      setStatus("Mic/recognition: " + event.error);
+      if (["not-allowed", "service-not-allowed", "audio-capture"].includes(event.error)) {
+        listening = false;
+        toggle.textContent = "🎙 Start continuous dictation";
+      }
     };
-    try { recognition.start(); } catch (e) { setStatus("Couldn't start: " + e.message); }
+    current.onend = () => {
+      if (recognition === current) recognition = null;
+      if (listening) {
+        // Some browsers end a recognition session after a pause. Restart it so dictation stays continuous.
+        flushTranscript();
+        clearTimeout(restartTimer);
+        restartTimer = setTimeout(() => {
+          if (listening && !recognition) createRecognition();
+        }, 250);
+      } else {
+        flushTranscript();
+        toggle.textContent = "🎙 Start continuous dictation";
+        setStatus("Stopped");
+      }
+    };
+    try { current.start(); }
+    catch (e) {
+      if (recognition === current) recognition = null;
+      setStatus("Couldn't start: " + e.message);
+      listening = false;
+      toggle.textContent = "🎙 Start continuous dictation";
+    }
   }
 
   toggle.addEventListener("click", () => {
     if (listening) {
+      listening = false;
       clearTimeout(silenceTimer);
-      recognition?.stop();
-    } else start();
+      clearTimeout(restartTimer);
+      try { recognition?.stop(); } catch {}
+      flushTranscript();
+      toggle.textContent = "🎙 Start continuous dictation";
+      setStatus("Stopped");
+    } else {
+      if (!SpeechRecognition) {
+        setStatus("Speech recognition isn't supported here; try Chrome");
+        return;
+      }
+      transcript = "";
+      listening = true;
+      toggle.textContent = "■ Stop continuous dictation";
+      createRecognition();
+    }
   });
-  auto.addEventListener("change", () => { autoGenerate = auto.checked; });
+
+  auto.addEventListener("change", () => {
+    autoGenerate = auto.checked;
+    chrome.storage?.local?.set({autoGenerate});
+  });
   chrome.storage?.local?.get(["autoGenerate"], data => {
-    if (typeof data?.autoGenerate === "boolean") { autoGenerate = data.autoGenerate; auto.checked = autoGenerate; }
+    if (typeof data?.autoGenerate === "boolean") {
+      autoGenerate = data.autoGenerate;
+      auto.checked = autoGenerate;
+    }
   });
-  auto.addEventListener("change", () => chrome.storage?.local?.set({autoGenerate}));
 })();
