@@ -57,10 +57,8 @@
   function isBusy(button) {
     if (!button) return true;
     const labels = buttonLabels(button).join(" ").toLowerCase();
-    return button.disabled ||
-      button.getAttribute("aria-disabled") === "true" ||
-      button.getAttribute("aria-busy") === "true" ||
-      /generating|processing|loading|synthesizing/.test(labels);
+    return button.disabled || button.getAttribute("aria-disabled") === "true" ||
+      button.getAttribute("aria-busy") === "true" || /generating|processing|loading|synthesizing/.test(labels);
   }
 
   async function waitForReady(box, timeoutMs = 60000) {
@@ -71,26 +69,18 @@
       if (currentBox && button && !isBusy(button)) return { box: currentBox, button };
       await sleep(1000);
     }
-    throw new Error("Timed out waiting for ElevenLabs' text field and enabled Generate button. Check that the Text to Speech page is open and signed in.");
+    throw new Error("Couldn't find an enabled ElevenLabs text field and Generate button. Open the Text to Speech page, sign in, and refresh the tab.");
   }
 
   async function waitForGeneration(button, box) {
-    // Some UI versions expose a busy state; wait for it to clear before replacing the text.
     const detectionDeadline = Date.now() + 12000;
     let sawBusy = false;
     while (Date.now() < detectionDeadline) {
       const currentButton = findGenerateButton(box) || button;
-      if (isBusy(currentButton)) {
-        sawBusy = true;
-        break;
-      }
+      if (isBusy(currentButton)) { sawBusy = true; break; }
       await sleep(300);
     }
-    if (!sawBusy) {
-      // Fallback for UI variants that don't disable or relabel the button.
-      await sleep(4000);
-      return;
-    }
+    if (!sawBusy) { await sleep(2500); return; }
     const completionDeadline = Date.now() + 120000;
     while (Date.now() < completionDeadline) {
       const currentBox = box?.isConnected ? box : findTextBox();
@@ -98,7 +88,15 @@
       if (currentButton && !isBusy(currentButton)) return;
       await sleep(1000);
     }
-    throw new Error("ElevenLabs still appears to be generating after 2 minutes. The phrase remains queued; check the page before continuing.");
+    throw new Error("ElevenLabs still appears to be generating after 2 minutes.");
+  }
+
+  async function previewTranscript(text) {
+    const phrase = String(text || "").trim();
+    if (!phrase) return;
+    const box = findTextBox();
+    if (!box) throw new Error("Transcript heard, but I couldn't find the ElevenLabs text field. Open the Text to Speech page and refresh it.");
+    setText(box, phrase);
   }
 
   async function generateSpeech(text) {
@@ -106,8 +104,6 @@
     if (!phrase) throw new Error("No transcript received");
     let { box, button } = await waitForReady(null);
     setText(box, phrase);
-
-    // Allow the website's UI framework to update its state after text insertion.
     await sleep(300);
     ({ box, button } = await waitForReady(box, 30000));
     button.click();
@@ -127,18 +123,12 @@
           messageQueue.shift();
         } catch (error) {
           item.sendResponse({ ok: false, message: error?.message || "Unknown error" });
-          // Remove this failed item after reporting the error. The side panel retains and retries it.
           messageQueue.shift();
         }
       }
-    } finally {
-      processingQueue = false;
-    }
+    } finally { processingQueue = false; }
   }
 
-
-  // Floating page control sends microphone commands to the extension side panel.
-  // SpeechRecognition deliberately runs in the side panel, not this backgroundable page.
   function installFloatingDictation() {
     if (document.getElementById("ivd-floating-root")) return;
     const root = document.createElement("div");
@@ -148,7 +138,7 @@
     panel.style.cssText = "display:none;margin-bottom:8px;padding:12px;background:#171923;border:1px solid #4b5563;border-radius:12px;box-shadow:0 8px 30px #0007;";
     const status = document.createElement("div");
     status.textContent = "Open the extension side panel first. Dictation runs there so it can continue while you play VRChat.";
-    status.style.cssText = "font-size:12px;color:#e5e7eb;";
+    status.style.cssText = "font-size:12px;color:#e5e7eb;overflow-wrap:anywhere;";
     const close = document.createElement("button");
     close.textContent = "Hide";
     close.style.cssText = "margin-top:8px;border:0;border-radius:7px;padding:6px 10px;background:#374151;color:white;cursor:pointer;";
@@ -164,10 +154,10 @@
       panel.style.display = "block";
       chrome.runtime.sendMessage({ type: "IVD_TOGGLE_LISTENING" }, response => {
         if (chrome.runtime.lastError || !response) {
-          status.textContent = "Open the extension's dictation side panel first, then click this button again.";
+          status.textContent = "Can't reach dictation panel. Open the extension side panel first.";
           return;
         }
-        status.textContent = response.message || "Dictation command sent to the side panel.";
+        status.textContent = response.message || "Dictation command sent.";
         toggle.textContent = response.listening ? "■ Stop dictation" : "🎙 Start dictation";
       });
     });
@@ -182,6 +172,10 @@
   installFloatingDictation();
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type === "IVD_PREVIEW" && typeof message.text === "string") {
+      previewTranscript(message.text).then(() => sendResponse({ok:true})).catch(error => sendResponse({ok:false,message:error.message}));
+      return true;
+    }
     if (message?.type !== "IVD_GENERATE" || typeof message.text !== "string") return;
     messageQueue.push({ text: message.text, sendResponse });
     void processQueue();
