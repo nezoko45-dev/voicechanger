@@ -5,7 +5,9 @@
   const status = document.querySelector("#status");
   const preview = document.querySelector("#preview");
   const setStatus = text => { status.textContent = text; };
-  let recognition = null, listening = false, finalText = "", interimText = "", silenceTimer = null, restartTimer = null, sending = false;
+  let recognition = null, listening = false, finalText = "", interimText = "", silenceTimer = null, restartTimer = null;
+  const sendQueue = [];
+  let processingQueue = false;
   const SILENCE_MS = 3000;
 
   chrome.storage.local.get(["autoGenerate"], data => {
@@ -13,22 +15,35 @@
   });
   auto.addEventListener("change", () => chrome.storage.local.set({autoGenerate:auto.checked}));
 
-  async function sendTranscript(text) {
-    if (!text.trim()) return;
-    if (sending) { setStatus("Still sending the previous phrase; please pause briefly."); return; }
-    sending = true;
+  async function processSendQueue() {
+    if (processingQueue) return;
+    processingQueue = true;
     try {
-      const tabs = await chrome.tabs.query({url:["https://inworld.ai/*","https://*.inworld.ai/*"]});
-      const tab = tabs.find(t => t.active) || tabs[0];
-      if (!tab?.id) throw new Error("Open an Inworld AI TTS tab in Chrome first.");
-      const response = await chrome.tabs.sendMessage(tab.id, {type:"IVD_GENERATE",text:text.trim()});
-      if (!response?.ok) throw new Error(response?.message || "Inworld could not receive the transcript.");
-      setStatus("Transcript sent; Generate clicked.");
-    } catch (e) {
-      setStatus((e?.message || "Couldn't send transcript.") + " If this is a new install, reload the extension and refresh Inworld.");
+      while (sendQueue.length) {
+        const text = sendQueue[0];
+        try {
+          const tabs = await chrome.tabs.query({url:["https://inworld.ai/*","https://*.inworld.ai/*"]});
+          const tab = tabs.find(t => t.active) || tabs[0];
+          if (!tab?.id) throw new Error("Open an Inworld AI TTS tab in Chrome first.");
+          const response = await chrome.tabs.sendMessage(tab.id, {type:"IVD_GENERATE",text});
+          if (!response?.ok) throw new Error(response?.message || "Inworld could not receive the transcript.");
+          sendQueue.shift();
+          setStatus(sendQueue.length ? "Phrase sent. " + sendQueue.length + " phrase(s) queued." : "Phrase sent to Inworld.");
+        } catch (e) {
+          setStatus((e?.message || "Couldn't send transcript.") + " Retrying in 2 seconds; your phrase is saved.");
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
     } finally {
-      sending = false;
+      processingQueue = false;
     }
+  }
+
+  function sendTranscript(text) {
+    if (!text.trim()) return;
+    sendQueue.push(text.trim());
+    setStatus("Phrase queued (" + sendQueue.length + ").");
+    void processSendQueue();
   }
 
   function flush() {
@@ -37,7 +52,7 @@
     finalText = ""; interimText = "";
     if (!text) return;
     preview.textContent = text;
-    if (auto.checked) void sendTranscript(text);
+    if (auto.checked) sendTranscript(text);
     else setStatus("Transcript captured. Turn on auto-generate to send it to Inworld.");
   }
 
@@ -71,8 +86,10 @@
     r.onend = () => {
       if (recognition === r) recognition = null;
       if (listening) {
+        // Flush captured words before Chrome's automatic recognition restart.
+        flush();
         clearTimeout(restartTimer);
-        restartTimer = setTimeout(() => { if (listening && !recognition) startRecognition(); }, 500);
+        restartTimer = setTimeout(() => { if (listening && !recognition) startRecognition(); }, 300);
       } else {
         flush();
         toggle.textContent = "🎙 Start dictation";
