@@ -1,0 +1,55 @@
+name: Validate Chrome extension
+
+on:
+  push:
+    branches:
+      - rebuild/uberduck-voice-dictation
+  pull_request:
+    branches:
+      - rebuild/uberduck-voice-dictation
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Validate manifest and referenced files
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
+          const required = [
+            manifest.action?.default_popup,
+            manifest.side_panel?.default_path,
+            ...(manifest.content_scripts || []).flatMap(script => script.js || [])
+          ].filter(Boolean);
+          for (const path of required) {
+            if (!fs.existsSync(path)) {
+              console.error('Manifest references a missing file:', path);
+              process.exitCode = 1;
+            }
+          }
+          for (const path of ['sidepanel.html', 'sidepanel.js', 'sidepanel-bootstrap.js', 'popup.html', 'popup.js']) {
+            if (!fs.existsSync(path)) {
+              console.error('Required extension file is missing:', path);
+              process.exitCode = 1;
+            }
+          }
+          if (manifest.manifest_version !== 3) {
+            console.error('Expected Manifest V3');
+            process.exitCode = 1;
+          }
+          if (process.exitCode) process.exit(process.exitCode);
+          console.log('Manifest JSON is valid and referenced files exist.');
+          NODE
+      - name: Check JavaScript syntax
+        run: |
+          for file in *.js; do
+            echo "Checking $file"
+            node --check "$file"
+          done
