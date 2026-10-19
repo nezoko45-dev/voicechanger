@@ -5,40 +5,58 @@
   const auto = document.querySelector("#auto");
   const preview = document.querySelector("#preview");
 
-  function setStatus(message) {
-    if (status) status.textContent = message;
-  }
+  const setStatus = message => { if (status) status.textContent = message; };
   function showFatalError(error) {
     if (diagnostic) {
       diagnostic.style.display = "block";
       diagnostic.textContent = "Dictation panel error: " + (error?.message || String(error)) +
-        ". Try reloading the extension at chrome://extensions. If this persists, remove the extension and load the correct branch folder again.";
+        ". Reload the extension at chrome://extensions. If it persists, reinstall the extracted branch folder.";
     }
     setStatus("The dictation panel failed to initialize. See the error below.");
   }
 
   try {
-    if (!toggle || !auto || !status || !preview) {
-      throw new Error("The panel HTML is missing a required control. Reinstall the latest branch.");
-    }
-
+    if (!toggle || !auto || !status || !preview) throw new Error("Panel HTML is missing a required control.");
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognition = null, listening = false, finalText = "", interimText = "", silenceTimer = null, restartTimer = null;
+    let lastPreviewAt = 0, previewRequest = 0;
     const sendQueue = [];
     let processingQueue = false;
     const SILENCE_MS = 3000;
 
+    if (!SpeechRecognition) {
+      setStatus("Speech recognition is unavailable in this browser. Use current Google Chrome and allow microphone access.");
+    }
+
     if (chrome?.storage?.local) {
       chrome.storage.local.get(["autoGenerate"], data => {
-        if (chrome.runtime.lastError) {
-          setStatus("Ready. Settings could not be loaded; default options are active.");
+        if (!chrome.runtime.lastError && typeof data?.autoGenerate === "boolean") auto.checked = data.autoGenerate;
+      });
+      auto.addEventListener("change", () => chrome.storage.local.set({autoGenerate:auto.checked}));
+    }
+
+    async function activeElevenLabsTab() {
+      const tabs = await chrome.tabs.query({url:["https://elevenlabs.io/*","https://*.elevenlabs.io/*"]});
+      return tabs.find(t => t.active) || tabs[0] || null;
+    }
+
+    async function showTranscriptOnPage(text) {
+      const phrase = String(text || "").trim();
+      if (!phrase) return;
+      const requestId = ++previewRequest;
+      try {
+        const tab = await activeElevenLabsTab();
+        if (!tab?.id) {
+          setStatus("Transcript heard: “" + phrase + "” — open the ElevenLabs Text to Speech tab to show it there.");
           return;
         }
-        if (typeof data?.autoGenerate === "boolean") auto.checked = data.autoGenerate;
-      });
-      auto.addEventListener("change", () => {
-        chrome.storage.local.set({autoGenerate:auto.checked});
-      });
+        const result = await chrome.tabs.sendMessage(tab.id, {type:"IVD_PREVIEW",text:phrase});
+        if (requestId === previewRequest && !result?.ok) {
+          setStatus("Transcript heard: “" + phrase + "” — couldn't put it in the ElevenLabs text field. " + (result?.message || "Refresh the ElevenLabs tab."));
+        }
+      } catch (error) {
+        if (requestId === previewRequest) setStatus("Transcript heard: “" + phrase + "” — refresh the ElevenLabs tab, then try again. " + (error?.message || ""));
+      }
     }
 
     async function processSendQueue() {
@@ -48,39 +66,38 @@
         while (sendQueue.length) {
           const text = sendQueue[0];
           try {
-            const tabs = await chrome.tabs.query({url:["https://elevenlabs.io/*","https://*.elevenlabs.io/*"]});
-            const tab = tabs.find(t => t.active) || tabs[0];
+            const tab = await activeElevenLabsTab();
             if (!tab?.id) throw new Error("Open an ElevenLabs Text to Speech tab first.");
             const response = await chrome.tabs.sendMessage(tab.id, {type:"IVD_GENERATE",text});
-            if (!response?.ok) throw new Error(response?.message || "ElevenLabs did not accept the transcript. Refresh the ElevenLabs tab.");
+            if (!response?.ok) throw new Error(response?.message || "Refresh the ElevenLabs tab and try again.");
             sendQueue.shift();
-            setStatus(sendQueue.length ? "Phrase submitted. " + sendQueue.length + " phrase(s) queued." : "Phrase submitted to ElevenLabs.");
+            setStatus("Submitted to ElevenLabs. " + (sendQueue.length ? sendQueue.length + " phrase(s) queued." : "Waiting for your next phrase."));
           } catch (error) {
-            setStatus((error?.message || "Couldn't send transcript.") + " Retrying in 3 seconds; this phrase remains queued.");
+            setStatus("Transcript captured but not sent: " + (error?.message || "unknown error") + " Retrying in 3 seconds.");
             await new Promise(resolve => setTimeout(resolve, 3000));
           }
         }
-      } finally {
-        processingQueue = false;
-      }
+      } finally { processingQueue = false; }
     }
 
     function sendTranscript(text) {
-      if (!text.trim()) return;
-      sendQueue.push(text.trim());
-      setStatus("Phrase queued (" + sendQueue.length + ").");
+      const phrase = String(text || "").trim();
+      if (!phrase) return;
+      sendQueue.push(phrase);
+      setStatus("Transcript captured: “" + phrase + "”. Sending to ElevenLabs…");
       void processSendQueue();
     }
 
     function flush() {
       clearTimeout(silenceTimer);
-      const text = [finalText, interimText].filter(Boolean).join(" ").trim();
+      const text = [finalText, interimText].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
       finalText = "";
       interimText = "";
       if (!text) return;
       preview.textContent = text;
+      void showTranscriptOnPage(text);
       if (auto.checked) sendTranscript(text);
-      else setStatus("Transcript captured. Turn on auto-send to submit it to ElevenLabs.");
+      else setStatus("Transcript captured: “" + text + "”. Auto-send is off; text is shown in ElevenLabs.");
     }
 
     function startRecognition() {
@@ -93,7 +110,8 @@
       r.onstart = () => {
         if (listening) {
           toggle.textContent = "■ Stop dictation";
-          setStatus("Listening… you can switch to VRChat. Keep this panel open.");
+          setStatus("Listening… speak now. Your live transcript should appear in ElevenLabs.");
+          chrome.runtime.sendMessage({type:"IVD_DICTATION_STATUS",listening:true,message:"Listening…"});
         }
       };
       r.onresult = event => {
@@ -104,13 +122,20 @@
           else interim += phrase;
         }
         interimText = interim;
-        const text = [finalText, interimText].filter(Boolean).join(" ").trim();
-        if (text) preview.textContent = text;
-        clearTimeout(silenceTimer);
-        if (text && auto.checked) silenceTimer = setTimeout(flush, SILENCE_MS);
+        const text = [finalText, interimText].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+        if (text) {
+          preview.textContent = text;
+          if (Date.now() - lastPreviewAt > 250) {
+            lastPreviewAt = Date.now();
+            void showTranscriptOnPage(text);
+          }
+          clearTimeout(silenceTimer);
+          if (auto.checked) silenceTimer = setTimeout(flush, SILENCE_MS);
+        }
       };
       r.onerror = event => {
-        setStatus("Speech recognition error: " + event.error + ". Check Chrome microphone permission and your microphone input.");
+        setStatus("Speech recognition error: " + event.error + ". Check Chrome microphone permission and the selected input device.");
+        chrome.runtime.sendMessage({type:"IVD_DICTATION_STATUS",listening:false,message:"Speech recognition error: "+event.error});
         if (["not-allowed","service-not-allowed","audio-capture"].includes(event.error)) {
           listening = false;
           toggle.textContent = "🎙 Start dictation";
@@ -121,18 +146,16 @@
         if (listening) {
           flush();
           clearTimeout(restartTimer);
-          restartTimer = setTimeout(() => {
-            if (listening && !recognition) startRecognition();
-          }, 300);
+          restartTimer = setTimeout(() => { if (listening && !recognition) startRecognition(); }, 300);
         } else {
           flush();
           toggle.textContent = "🎙 Start dictation";
           setStatus("Dictation stopped.");
+          chrome.runtime.sendMessage({type:"IVD_DICTATION_STATUS",listening:false,message:"Dictation stopped."});
         }
       };
-      try {
-        r.start();
-      } catch (error) {
+      try { r.start(); }
+      catch (error) {
         recognition = null;
         listening = false;
         toggle.textContent = "🎙 Start dictation";
@@ -142,36 +165,28 @@
 
     function toggleListening() {
       if (!SpeechRecognition) {
-        setStatus("Speech recognition isn't supported here. Update Chrome and try again.");
+        setStatus("Speech recognition isn't supported here. Use current Chrome.");
         return {listening:false,message:"Speech recognition isn't supported here."};
       }
       if (listening) {
         listening = false;
         clearTimeout(silenceTimer);
         clearTimeout(restartTimer);
-        if (recognition) {
-          try { recognition.stop(); } catch {}
-        } else {
-          flush();
-        }
+        if (recognition) { try { recognition.stop(); } catch {} } else flush();
         toggle.textContent = "🎙 Start dictation";
         setStatus("Stopping dictation…");
         return {listening:false,message:"Dictation stopping."};
       }
       listening = true;
       startRecognition();
-      return {listening:true,message:"Dictation started in the extension side panel."};
+      return {listening:true,message:"Dictation started. Speak a short phrase to test it."};
     }
 
     toggle.addEventListener("click", () => toggleListening());
-    if (chrome?.runtime?.onMessage) {
-      chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-        if (message?.type !== "IVD_TOGGLE_LISTENING") return;
-        sendResponse(toggleListening());
-      });
-    }
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (message?.type !== "IVD_TOGGLE_LISTENING") return;
+      sendResponse(toggleListening());
+    });
     setStatus("Ready. Open ElevenLabs Text to Speech, then click Start dictation.");
-  } catch (error) {
-    showFatalError(error);
-  }
+  } catch (error) { showFatalError(error); }
 })();
