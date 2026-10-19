@@ -9,9 +9,9 @@ A Chrome/Chromium Manifest V3 extension that adds a floating dictation control a
 3. Enable **Developer mode**.
 4. If the extension is already loaded, click **Reload**. For a first install, choose **Load unpacked** and select the repository folder.
 5. Open and sign in to the [ElevenLabs Text to Speech page](https://elevenlabs.io/app/speech-synthesis/text-to-speech), then refresh it.
-6. Look for the floating **🎙 Start dictation** button centered near the bottom of the ElevenLabs webpage. If it does not appear, reload the extension in `chrome://extensions` and refresh the ElevenLabs tab.
-7. Click the floating button and allow microphone access. The small panel shows the transcript and status; after about 3 seconds of silence, it queues the phrase and clicks Generate when ElevenLabs is ready.
-8. Switch to VRChat and test. The ElevenLabs tab must remain open.
+6. Open the extension's dictation side panel using the extension icon, then click **Start dictation** there and allow microphone access.
+7. Keep the side panel open while you play VRChat. Speech recognition runs in that extension panel rather than the ElevenLabs webpage to reduce interruptions when switching apps.
+8. On the ElevenLabs page, use the floating **🎙 Start dictation** button near the bottom to toggle recognition. If it says to open the side panel first, open the extension side panel and try again. The ElevenLabs tab must remain open.
 
 ## Background tab
 
@@ -19,7 +19,7 @@ Chrome can throttle background tabs. In Chrome Settings → Performance, add `el
 
 ## How phrase handling works
 
-- Speech recognition runs from the floating on-page control using the browser Web Speech API.
+- Speech recognition runs in the extension side panel using the browser Web Speech API, not inside the ElevenLabs webpage. Keep the side panel open while playing VRChat; the floating ElevenLabs button sends start/stop commands to the side panel.
 - Phrases are queued and submitted in order; the extension no longer applies its old fixed 12-second cooldown.
 - The content script waits for a visible text field and Generate button, checks whether the button is enabled, and clicks once per phrase.
 - The extension waits for the generator UI to indicate completion where possible before processing the next queued phrase.
