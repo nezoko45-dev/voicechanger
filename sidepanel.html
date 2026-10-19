@@ -14,7 +14,6 @@ p{margin:8px 0}
 button{border:0;border-radius:10px;padding:12px 14px;background:#087f5b;color:#fff;font:inherit;font-weight:700;cursor:pointer;min-height:44px}
 button:focus-visible,input:focus-visible{outline:3px solid #65a9ff;outline-offset:2px}
 button:disabled{opacity:.55;cursor:default}
-button.secondary{background:#555}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:14px 0}
 label{display:flex;gap:8px;align-items:center}
 #status{padding:10px 12px;border-radius:9px;background:color-mix(in srgb, CanvasText 8%, Canvas);overflow-wrap:anywhere}
@@ -42,6 +41,7 @@ label{display:flex;gap:8px;align-items:center}
 </div>
 <div id="diagnostic" role="alert"></div>
 <p class="muted section">If this page appears broken, reload the extension at <code>chrome://extensions</code>. Confirm you loaded the folder containing this file and <code>manifest.json</code>.</p>
-<script src="sidepanel.js" onerror="document.getElementById('diagnostic').style.display='block';document.getElementById('diagnostic').textContent='Could not load sidepanel.js. Reload the extension or reinstall the correct branch folder.'"></script>
+<script src="sidepanel-bootstrap.js"></script>
+<script src="sidepanel.js" data-panel-app></script>
 </body>
 </html>
