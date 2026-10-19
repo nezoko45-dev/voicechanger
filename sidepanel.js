@@ -22,16 +22,16 @@
       while (sendQueue.length) {
         const text = sendQueue[0];
         try {
-          const tabs = await chrome.tabs.query({url:["https://inworld.ai/*","https://*.inworld.ai/*"]});
+          const tabs = await chrome.tabs.query({url:["https://elevenlabs.io/*","https://*.elevenlabs.io/*"]});
           const tab = tabs.find(t => t.active) || tabs[0];
-          if (!tab?.id) throw new Error("Open an Inworld AI TTS tab in Chrome first.");
+          if (!tab?.id) throw new Error("Open and sign in to an ElevenLabs Text to Speech tab first.");
           const response = await chrome.tabs.sendMessage(tab.id, {type:"IVD_GENERATE",text});
-          if (!response?.ok) throw new Error(response?.message || "Inworld could not receive the transcript.");
+          if (!response?.ok) throw new Error(response?.message || "ElevenLabs did not accept the transcript.");
           sendQueue.shift();
-          setStatus(sendQueue.length ? "Phrase sent. " + sendQueue.length + " phrase(s) queued." : "Phrase sent to Inworld.");
+          setStatus(sendQueue.length ? "Phrase submitted. " + sendQueue.length + " phrase(s) queued." : "Phrase submitted to ElevenLabs.");
         } catch (e) {
-          setStatus((e?.message || "Couldn't send transcript.") + " Retrying in 2 seconds; your phrase is saved.");
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          setStatus((e?.message || "Couldn't send transcript.") + " Retrying in 3 seconds; this phrase is saved in the queue.");
+          await new Promise(resolve => setTimeout(resolve, 3000));
         }
       }
     } finally {
@@ -53,7 +53,7 @@
     if (!text) return;
     preview.textContent = text;
     if (auto.checked) sendTranscript(text);
-    else setStatus("Transcript captured. Turn on auto-generate to send it to Inworld.");
+    else setStatus("Transcript captured. Turn on auto-send to submit it to ElevenLabs.");
   }
 
   function startRecognition() {
@@ -86,7 +86,6 @@
     r.onend = () => {
       if (recognition === r) recognition = null;
       if (listening) {
-        // Flush captured words before Chrome's automatic recognition restart.
         flush();
         clearTimeout(restartTimer);
         restartTimer = setTimeout(() => { if (listening && !recognition) startRecognition(); }, 300);
