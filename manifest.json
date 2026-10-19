@@ -1,20 +1,22 @@
 {
   "manifest_version": 3,
-  "name": "ChatGPT Voice Dictation",
-  "version": "1.1.0",
-  "description": "Continuously dictate into ChatGPT, send after a pause, and automatically start Read Aloud for the reply.",
+  "name": "Inworld AI Voice Dictation",
+  "version": "1.2.0",
+  "description": "Dictate into Inworld AI's text-to-speech box and automatically generate speech after a pause.",
   "permissions": [
     "storage"
   ],
   "host_permissions": [
-    "https://chatgpt.com/*",
-    "https://chat.openai.com/*"
+    "https://inworld.ai/*",
+    "https://platform.inworld.ai/*",
+    "https://studio.inworld.ai/*"
   ],
   "content_scripts": [
     {
       "matches": [
-        "https://chatgpt.com/*",
-        "https://chat.openai.com/*"
+        "https://inworld.ai/*",
+        "https://platform.inworld.ai/*",
+        "https://studio.inworld.ai/*"
       ],
       "js": [
         "content.js"
@@ -23,7 +25,7 @@
     }
   ],
   "action": {
-    "default_title": "ChatGPT Voice Dictation",
+    "default_title": "Inworld AI Voice Dictation",
     "default_popup": "popup.html"
   }
 }
