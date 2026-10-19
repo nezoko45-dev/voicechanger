@@ -41,6 +41,10 @@ The desktop web UI is served at `http://127.0.0.1:8765/`; the backend binds to l
 3. Select **Load unpacked** and choose the repository root folder (the folder containing `manifest.json`).
 4. Keep the local backend running at `http://127.0.0.1:8765`.
 
+## Use Voicebox for the cloned voice
+
+Install and start [Voicebox](https://github.com/jamiepine/voicebox) (API on `http://127.0.0.1:17493`). In VoiceChanger, pick your reference file with the file picker, record a source, choose the **Voicebox** engine, and convert. The backend transcribes both recordings via Voicebox, creates a temporary cloned profile from the reference file, generates the source transcript in that voice, and deletes the profile. Voicebox is text-to-speech, so this re-speaks the words (not your intonation) and is recorded-only (no live mode). Not tested against a real Voicebox install.
+
 ## Improve naturalness
 
 **FACodec** is now the default for live mode because it is a good quality/latency starting point. **Chatterbox** can transfer more expressive speaking style, but may add latency and is better tested in recorded conversion first. **OpenVoice** is another option to compare. Use a clean reference recording (one speaker, little background noise, no music, and several seconds of natural speech) and record your source in a quiet room. Live mode remains experimental and can sound choppy because it converts separate chunks; use recorded conversion when voice quality matters most.

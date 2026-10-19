@@ -93,6 +93,103 @@ async def convert(
     )
 
 
+VOICEBOX_DEFAULT_URL = "http://127.0.0.1:17493"
+
+
+def _voicebox_base(url: str) -> str:
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url or VOICEBOX_DEFAULT_URL)
+    # Only talk to a Voicebox running on this machine.
+    if parsed.scheme not in ("http", "https") or parsed.hostname not in ("127.0.0.1", "localhost", "::1"):
+        raise HTTPException(status_code=400, detail="Voicebox URL must point to localhost.")
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+@app.post("/voicebox/convert")
+async def voicebox_convert(
+    source: UploadFile = File(...),
+    reference: UploadFile = File(...),
+    voicebox_url: str = Form(VOICEBOX_DEFAULT_URL),
+    language: str = Form("en"),
+):
+    """Clone the reference voice in Voicebox and re-speak the source recording.
+
+    Voicebox is a TTS studio (no direct voice-to-voice endpoint), so this:
+    transcribes the reference and source, creates a temporary cloned profile from
+    the reference, generates the source transcript in that voice, then deletes the profile.
+    """
+    import uuid
+
+    import httpx
+
+    base = _voicebox_base(voicebox_url)
+    source_bytes = await source.read()
+    reference_bytes = await reference.read()
+    await source.close()
+    await reference.close()
+    profile_id = None
+    timeout = httpx.Timeout(600.0, connect=5.0)
+    async with httpx.AsyncClient(base_url=base, timeout=timeout) as client:
+
+        async def call(method: str, path: str, step: str, **kwargs):
+            try:
+                response = await client.request(method, path, **kwargs)
+            except httpx.ConnectError as exc:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Cannot reach Voicebox at {base}. Start the Voicebox app first.",
+                ) from exc
+            if response.status_code >= 400:
+                try:
+                    detail = response.json().get("detail", response.text)
+                except Exception:
+                    detail = response.text
+                raise HTTPException(status_code=502, detail=f"Voicebox {step} failed: {detail}")
+            return response
+
+        try:
+            ref_text = (await call(
+                "POST", "/transcribe", "reference transcription",
+                files={"file": ("reference.wav", reference_bytes, "audio/wav")},
+            )).json().get("text", "").strip()
+            if not ref_text:
+                raise HTTPException(status_code=400, detail="Could not find speech in the reference voice file.")
+            text = (await call(
+                "POST", "/transcribe", "source transcription",
+                files={"file": ("source.wav", source_bytes, "audio/wav")},
+            )).json().get("text", "").strip()
+            if not text:
+                raise HTTPException(status_code=400, detail="Could not find speech in the source recording.")
+            profile_id = (await call(
+                "POST", "/profiles", "profile creation",
+                json={"name": f"voicechanger-{uuid.uuid4().hex[:8]}", "language": language, "voice_type": "cloned"},
+            )).json()["id"]
+            await call(
+                "POST", f"/profiles/{profile_id}/samples", "sample upload",
+                files={"file": ("reference.wav", reference_bytes, "audio/wav")},
+                data={"reference_text": ref_text},
+            )
+            audio = await call(
+                "POST", "/generate/stream", "generation",
+                json={"profile_id": profile_id, "text": text, "language": language},
+            )
+            wav = audio.content
+        finally:
+            if profile_id:
+                try:
+                    await client.delete(f"/profiles/{profile_id}")
+                except Exception:
+                    pass
+
+    from fastapi.responses import Response
+    return Response(
+        content=wav,
+        media_type="audio/wav",
+        headers={"Content-Disposition": 'attachment; filename="voicechanger-output.wav"'},
+    )
+
+
 @app.websocket("/live")
 async def live_convert(websocket: WebSocket):
     """Experimental chunk-based live conversion over a local WebSocket.

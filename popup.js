@@ -18,6 +18,7 @@ referenceInput.addEventListener("change", () => {
   updateReady();
 });
 consent.addEventListener("change", updateReady);
+$("engine").addEventListener("change", () => { $("voiceboxOptions").hidden = $("engine").value !== "voicebox"; });
 
 function updateReady() {
   convertButton.disabled = !(referenceFile && sourceBlob && consent.checked);
@@ -108,8 +109,14 @@ convertButton.addEventListener("click", async () => {
     const form = new FormData();
     form.append("source", sourceBlob, "source-recording.wav");
     form.append("reference", referenceWav, "reference.wav");
-    form.append("engine", $("engine").value);
-    const response = await fetch("http://127.0.0.1:8765/convert", { method: "POST", body: form });
+    const useVoicebox = $("engine").value === "voicebox";
+    if (useVoicebox) {
+      form.append("voicebox_url", $("voiceboxUrl").value.trim());
+      form.append("language", $("voiceboxLang").value.trim() || "en");
+    } else {
+      form.append("engine", $("engine").value);
+    }
+    const response = await fetch(useVoicebox ? "http://127.0.0.1:8765/voicebox/convert" : "http://127.0.0.1:8765/convert", { method: "POST", body: form });
     if (!response.ok) {
       let detail = "Conversion failed.";
       try { detail = (await response.json()).detail || detail; } catch {}
@@ -251,6 +258,7 @@ function startLiveCapture() {
 }
 
 liveStartButton.addEventListener("click", async () => {
+  if ($("engine").value === "voicebox") { status("Voicebox works with recorded conversion only. Pick another engine for live mode.", true); return; }
   if (!referenceFile || !consent.checked || liveActive) return;
   liveActive = true;
   liveReady = false;

@@ -39,12 +39,19 @@
     <section class="panel">
       <label class="section-label" for="engine">04 / CONVERSION ENGINE</label>
       <select id="engine">
+        <option value="voicebox">Voicebox — clone from file via Voicebox app (recorded only)</option>
         <option value="facodec" selected>FACodec — best starting point for live mode</option>
         <option value="openvoice">OpenVoice</option>
         <option value="chatterbox">Chatterbox — expressive, but may add latency</option>
         <option value="knnvc">kNN-VC</option>
         <option value="triaan">TriAAN</option>
       </select>
+      <div id="voiceboxOptions" hidden>
+        <label class="hint" for="voiceboxUrl">Voicebox URL (the Voicebox app must be running)</label>
+        <input id="voiceboxUrl" type="text" value="http://127.0.0.1:17493">
+        <label class="hint" for="voiceboxLang">Language</label>
+        <input id="voiceboxLang" type="text" value="en" maxlength="2">
+      </div>
       <label class="consent"><input id="consent" type="checkbox"> I have permission to use the reference voice.</label>
       <button id="convert" class="primary" disabled>Convert voice <span>↗</span></button>
       <div id="message" role="status" aria-live="polite"></div>
