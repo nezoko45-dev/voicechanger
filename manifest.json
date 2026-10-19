@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ElevenLabs Voice Dictation for VRChat",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "minimum_chrome_version": "116",
   "description": "Floating on-page dictation control that queues phrases for ElevenLabs Text to Speech while you play VRChat.",
   "permissions": [
