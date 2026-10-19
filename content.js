@@ -5,7 +5,10 @@
   let generating = false;
   let lastGenerateAt = 0;
   const GENERATE_COOLDOWN_MS = 12000;
+  const messageQueue = [];
+  let processingQueue = false;
   const visible = el => !!el && el.getClientRects().length > 0;
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
   function findTextBox() {
     const candidates = [...document.querySelectorAll('textarea,input:not([type]),input[type="text"],[contenteditable="true"],[role="textbox"]')]
@@ -54,40 +57,58 @@
   async function generateSpeech(text) {
     if (!text.trim()) throw new Error("No transcript received");
     if (generating) throw new Error("A generation is already being prepared");
-    const remaining = GENERATE_COOLDOWN_MS - (Date.now() - lastGenerateAt);
-    if (remaining > 0) throw new Error("Cooldown: wait " + Math.ceil(remaining / 1000) + " seconds");
     generating = true;
     try {
+      const remaining = GENERATE_COOLDOWN_MS - (Date.now() - lastGenerateAt);
+      if (remaining > 0) await sleep(remaining);
       const box = findTextBox();
       if (!box) throw new Error("Couldn't find Inworld's TTS text box");
       setText(box, text.trim());
       let button = null;
       for (let attempt = 0; attempt < 10; attempt++) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await sleep(1000);
         button = findGenerateButton(box);
         if (button) break;
       }
       if (!button) throw new Error("Transcript inserted, but no visible Generate button was found");
       for (let attempt = 0; attempt < 8 && (button.disabled || button.getAttribute("aria-disabled") === "true"); attempt++) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await sleep(1000);
         button = findGenerateButton(box) || button;
       }
       if (button.disabled || button.getAttribute("aria-disabled") === "true") {
         throw new Error("Transcript inserted, but Generate is disabled");
       }
-      lastGenerateAt = Date.now();
       button.click();
+      lastGenerateAt = Date.now();
       return "Generate clicked";
     } finally {
       generating = false;
     }
   }
 
+  async function processQueue() {
+    if (processingQueue) return;
+    processingQueue = true;
+    try {
+      while (messageQueue.length) {
+        const item = messageQueue[0];
+        try {
+          const result = await generateSpeech(item.text);
+          item.sendResponse({ ok: true, message: result });
+        } catch (error) {
+          item.sendResponse({ ok: false, message: error?.message || "Unknown error" });
+        }
+        messageQueue.shift();
+      }
+    } finally {
+      processingQueue = false;
+    }
+  }
+
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type !== "IVD_GENERATE" || typeof message.text !== "string") return;
-    generateSpeech(message.text)
-      .then(result => sendResponse({ ok: true, message: result }))
-      .catch(error => sendResponse({ ok: false, message: error?.message || "Unknown error" }));
+    messageQueue.push({ text: message.text, sendResponse });
+    void processQueue();
     return true;
   });
 })();
