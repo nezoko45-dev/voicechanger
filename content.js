@@ -10,7 +10,9 @@
   let silenceTimer = null;
   let restartTimer = null;
   let generating = false;
-  const SILENCE_MS = 2200;
+  let lastGenerateAt = 0;
+  const SILENCE_MS = 3000;
+  const GENERATE_COOLDOWN_MS = 12000;
 
   const panel = document.createElement("section");
   panel.id = "ivd-panel";
@@ -116,6 +118,19 @@
         setStatus("Transcript inserted, but Generate is disabled");
         return;
       }
+      // Don't launch a TTS job from a background/unfocused tab while the user
+      // is in another app such as VRChat.
+      if (document.visibilityState !== "visible" || !document.hasFocus()) {
+        setStatus("Transcript inserted; auto-generate paused because Inworld isn't focused");
+        return;
+      }
+      // Avoid rapid back-to-back TTS jobs that can compete for system resources.
+      const remainingCooldown = GENERATE_COOLDOWN_MS - (Date.now() - lastGenerateAt);
+      if (remainingCooldown > 0) {
+        setStatus("Transcript inserted; waiting " + Math.ceil(remainingCooldown / 1000) + "s before next Generate");
+        return;
+      }
+      lastGenerateAt = Date.now();
       button.click();
       setStatus("Generate button clicked automatically");
     } catch (error) {
