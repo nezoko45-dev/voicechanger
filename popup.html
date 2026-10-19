@@ -5,17 +5,23 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ElevenLabs Voice Dictation</title>
 <style>
-body{font:14px/1.5 system-ui,sans-serif;width:290px;padding:14px;color:#222}
-h3{margin:0 0 8px}p{line-height:1.5}
-button{border:0;border-radius:8px;padding:10px 12px;background:#087f5b;color:white;font-weight:650;cursor:pointer}
-a{color:#087f5b}
+*{box-sizing:border-box}
+body{font:14px/1.5 system-ui,sans-serif;width:300px;padding:14px;margin:0;color:#222;background:#fff}
+h1{font-size:17px;margin:0 0 8px}
+p{line-height:1.5;margin:8px 0}
+button{border:0;border-radius:8px;padding:11px 12px;background:#087f5b;color:white;font-weight:700;cursor:pointer;min-height:42px}
+button:focus-visible{outline:3px solid #65a9ff;outline-offset:2px}
+#status{padding:9px;border-radius:8px;background:#f3f4f6;color:#222;overflow-wrap:anywhere}
+#fallback{display:none}
 </style>
 </head>
 <body>
-<h3>ElevenLabs Voice Dictation</h3>
-<p>Open and sign in to the ElevenLabs Text to Speech page, then open this extension's dictation side panel. The side panel keeps speech recognition separate from the generator page so you can switch to VRChat.</p>
-<p><button id="open-panel">Open dictation panel</button></p>
-<p>Open the side panel, click Start dictation there once and allow microphone access. Keep the side panel open while playing VRChat. The floating button on ElevenLabs can toggle dictation, but speech recognition runs in the side panel so it is less likely to stop when you switch away from ElevenLabs.</p>
+<h1>ElevenLabs Voice Dictation</h1>
+<p>Open the dictation panel. If Chrome cannot open it, you can open the panel page in a normal tab to diagnose it.</p>
+<button id="open-panel" type="button">Open dictation panel</button>
+<p id="status" role="status" aria-live="polite">Ready.</p>
+<p id="fallback"><button id="open-tab" type="button">Open panel in a tab</button></p>
+<p>After the panel opens, click <b>Start dictation</b> and allow microphone access. Keep the panel open while switching to VRChat. Leave the ElevenLabs Text to Speech tab open.</p>
 <script src="popup.js"></script>
 </body>
 </html>
