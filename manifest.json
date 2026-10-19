@@ -1,10 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Inworld AI Voice Dictation",
-  "version": "1.2.1",
-  "description": "Dictate into Inworld AI's text-to-speech box and automatically click Generate after a pause.",
+  "version": "1.3.0",
+  "description": "Dictation side panel for Inworld AI TTS with background-tab auto-generation.",
   "permissions": [
-    "storage"
+    "storage",
+    "sidePanel"
   ],
   "host_permissions": [
     "https://inworld.ai/*",
@@ -25,5 +26,8 @@
   "action": {
     "default_title": "Inworld AI Voice Dictation",
     "default_popup": "popup.html"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
   }
 }
