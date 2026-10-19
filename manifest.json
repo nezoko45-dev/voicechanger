@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ElevenLabs Voice Dictation for VRChat",
-  "version": "1.4.0",
-  "description": "Speech dictation side panel that queues phrases for ElevenLabs Text to Speech while you play VRChat.",
+  "version": "1.5.0",
+  "description": "Floating on-page dictation button that queues phrases for ElevenLabs Text to Speech while you play VRChat.",
   "permissions": [
     "storage",
     "sidePanel"
