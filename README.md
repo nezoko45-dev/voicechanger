@@ -1,22 +1,27 @@
 # Inworld AI Voice Dictation
 
-A Chrome/Chromium Manifest V3 extension that transcribes speech into Inworld AI's text-to-speech text box and tries to click **Generate** after a short pause.
+A Chrome/Chromium Manifest V3 extension that transcribes speech in a separate extension side panel and sends each phrase to an Inworld AI text-to-speech page. This separation keeps the dictation interface out of the Inworld page, so it is less likely to freeze when that page is backgrounded.
 
-## Install
+## Install / update
 
-1. Download or clone this repository.
+1. Open the [extension branch on GitHub](https://github.com/nezoko45-dev/voicechanger/tree/rebuild/uberduck-voice-dictation) and download the repository ZIP, or update your existing local repository checkout to this branch.
 2. Open `chrome://extensions` in Chrome or a Chromium-based browser.
 3. Enable **Developer mode**.
-4. Click **Reload** on the extension (or remove the old copy and load this repository folder using **Load unpacked**).
+4. If you already loaded this extension, click **Reload**. If you are loading it for the first time, choose **Load unpacked** and select the repository folder.
 5. Open your Inworld AI TTS page and refresh it.
-6. Click **Start dictation** on the floating panel and allow microphone access if prompted.
-7. Speak naturally. After about 2.2 seconds of silence, the extension inserts the latest transcript, waits for the page to update, and tries to click a visible Generate button. Continue speaking for another phrase, or click Stop to finish.
+6. Click the extension icon, then **Open dictation panel**.
+7. In the side panel, click **Start dictation** and allow microphone access.
+8. Keep the side panel open, then switch to VRChat. After about 3 seconds of silence, the side panel sends the phrase to the Inworld tab and asks it to click Generate.
+
+## Important background-tab setting
+
+Chrome can throttle background tabs, and an extension cannot force a page to execute immediately while Chrome is throttling it. In Chrome, open **Settings → Performance** and add your Inworld site to the list of sites that are always kept active, if that option is available in your version. Keep the Inworld tab open while playing.
 
 ## Notes
 
 - Uses the browser's Web Speech API for speech-to-text; browser support and microphone permissions apply.
-- The extension runs on `inworld.ai` and its HTTPS subdomains.
-- The floating status message distinguishes speech recognition, text-box detection, Generate-button detection, and clicking.
-- Turn off **Generate after pause** to transcribe into the text box without automatically generating audio.
-- Inworld may change its page layout. If status says it cannot find the text box or Generate button, the selectors need to be tailored to the exact TTS page.
-- The extension has not been live-tested against every current Inworld interface.
+- The extension runs on `https://inworld.ai` and its HTTPS subdomains.
+- Dictation runs in the extension side panel, not inside the Inworld page. The Inworld content script only inserts the text and clicks Generate.
+- Auto-generation has a 12-second cooldown to reduce accidental rapid repeat generation.
+- Inworld may change its page layout. If the side panel reports that it cannot send a transcript, reload the extension and refresh the Inworld tab. If it reports that the text box or Generate button was not found, the page selectors may need updating.
+- This change has not been live-tested against your exact Inworld page. Background throttling may still delay the actual click, which is why the always-active site setting is recommended.
