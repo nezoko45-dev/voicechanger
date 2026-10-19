@@ -1,38 +1,30 @@
 # ElevenLabs Voice Dictation for VRChat
 
-A Chrome/Chromium Manifest V3 extension that adds a floating dictation control to ElevenLabs Text to Speech and queues phrases for generation. Speech recognition runs in the extension side panel so it can continue while you switch to VRChat.
+Chrome extension for live speech transcription into ElevenLabs Text to Speech. The side panel runs speech recognition; the floating button on ElevenLabs toggles listening.
 
-**Branch:** https://github.com/nezoko45-dev/voicechanger/tree/rebuild/uberduck-voice-dictation
+Branch: https://github.com/nezoko45-dev/voicechanger/tree/rebuild/uberduck-voice-dictation
 
-## Clean install / repair
+## Install or update
 
-1. Download the ZIP from the branch page using **Code → Download ZIP**, then extract it.
-2. Open `chrome://extensions` in Chrome.
-3. Turn on **Developer mode**.
-4. Remove the old installed copy if the side panel is blank. This does not delete the repository folder.
-5. Click **Load unpacked** and choose the extracted folder that directly contains `manifest.json`, `sidepanel.html`, `sidepanel.js`, and `sidepanel-bootstrap.js`. Do not choose the ZIP or a parent folder.
-6. Confirm the extension version is **1.6.2**.
-7. Click the extension icon → **Open dictation panel**. The Start button is part of the panel HTML and should display even if JavaScript fails.
-8. Open and sign in to [ElevenLabs Text to Speech](https://elevenlabs.io/app/speech-synthesis/text-to-speech), then refresh that tab.
-9. Click **🎙 Start dictation** in the extension side panel and allow microphone access.
-10. Speak a short phrase and pause. With auto-send enabled, the extension queues it for the ElevenLabs tab.
-11. Keep the side panel open while switching to VRChat. The ElevenLabs TTS tab must remain open.
+1. Download ZIP from **Code → Download ZIP** on the branch page and extract it.
+2. Open `chrome://extensions`, enable Developer mode, remove the old installed copy if necessary, then click **Load unpacked**.
+3. Select the extracted folder that directly contains `manifest.json`, `sidepanel.html`, `sidepanel.js`, and `content.js`.
+4. Confirm version **1.6.3**.
+5. Open ElevenLabs Text to Speech and refresh the tab after installing/updating: https://elevenlabs.io/app/speech-synthesis/text-to-speech
+6. Open the extension side panel and click **Start dictation**. Allow microphone access.
+7. Speak a phrase. The live transcript should appear both in the side panel's Latest transcript area and in the ElevenLabs text field as you speak. After a 3-second pause, auto-send submits the phrase for generation.
+8. Keep the side panel open while switching to VRChat. Your existing audio routing still needs to send ElevenLabs playback to the VRChat microphone input.
 
 ## Troubleshooting
 
-- **Blank panel:** Confirm version 1.6.2. Remove the stale extension and load the extracted folder again. Since the button is literal HTML, a completely blank panel generally means Chrome is not loading this branch's `sidepanel.html`.
-- **Panel script error:** The panel should display an error if `sidepanel.js` fails to load. On `chrome://extensions`, open the extension's **Errors** details if available.
-- **Can't open side panel:** The popup now displays the failure message and offers **Open panel in a tab** as a diagnostic fallback. Chrome 116 or newer is required.
-- **Microphone denied:** Allow microphone access for the extension page and check your OS input device.
-- **Transcript not submitted:** Refresh the ElevenLabs TTS tab after installing the extension, confirm you're signed in, and check that the site still shows a text field and enabled Generate button.
-- **Background throttling:** If available, add `elevenlabs.io` to Chrome Settings → Performance → always-active sites.
+- **No transcript in either place:** Read the side panel Status line. If it says speech recognition is unsupported or microphone access is denied, use current Chrome and allow microphone access.
+- **Transcript appears in side panel but not ElevenLabs:** Refresh the ElevenLabs tab after updating the extension. The extension's content script must be injected into the current tab.
+- **Transcript appears in ElevenLabs but no audio is generated:** Check the side panel Status line for the send/generation error, ensure you're signed in, and verify the ElevenLabs text field and Generate button are visible.
+- **Blank panel:** Remove the stale extension and use Load unpacked on the extracted folder. The Start button is static HTML and should be visible even if JavaScript fails.
+- **Panel won't open:** Chrome 116 or newer is required; the extension popup provides an error and a fallback to open the panel page in a tab.
 
-## Behavior and limitations
+## Limitations
 
-- Speech recognition uses the browser Web Speech API in the side panel. Chrome/browser speech recognition availability and microphone permissions still apply.
-- Phrases are queued in order and submitted after a pause when auto-send is enabled.
-- ElevenLabs can change its UI, which may require updating text-field and Generate-button detection.
-- Audio playback and routing are not controlled by this extension. Continue using your existing audio-routing setup for VRChat.
-- Generated audio uses your ElevenLabs account's normal quota/credits and is subject to account limits.
+Speech recognition uses the browser Web Speech API and depends on browser support, microphone permissions, and network availability. ElevenLabs can change its page UI, requiring updates to text-field or Generate-button detection. Audio routing is not controlled by this extension. Generated speech consumes the normal quota/credits for your ElevenLabs account.
 
-The branch includes visible panel diagnostics and popup fallback handling. It has not been live-tested against a signed-in ElevenLabs session.
+This branch update adds live transcript preview in the ElevenLabs text field and clearer error reporting. It has not been live-tested in your Chrome session.
