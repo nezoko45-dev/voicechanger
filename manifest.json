@@ -11,12 +11,14 @@
     "offscreen"
   ],
   "host_permissions": [
-    "https://tts.dev/*"
+    "https://tts.dev/*",
+    "https://*.tts.dev/*"
   ],
   "content_scripts": [
     {
       "matches": [
-        "https://tts.dev/*"
+        "https://tts.dev/*",
+        "https://*.tts.dev/*"
       ],
       "js": [
         "content.js"
