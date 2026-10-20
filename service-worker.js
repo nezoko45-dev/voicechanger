@@ -45,6 +45,7 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
     return true;
   }
   if(message?.type==="IVD_BRIDGE_TO_ELEVENLABS"){
+    if(message.action==="preview"){sendResponse({ok:true,message:"Transcript preview updated."});return;}
     (async()=>{try{sendResponse(await generateWithInworld(String(message.text||"")));}
     catch(error){sendResponse({ok:false,message:error?.message||String(error)});}})();
     return true;
