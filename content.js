@@ -20,14 +20,14 @@
  function findGenerate(box){
   const selectors="button,[role='button'],input[type='submit'],input[type='button'],a,[onclick],[tabindex]";
   const clickable=[...document.querySelectorAll(selectors)].filter(visible);
-  const matches=clickable.filter(el=>labels(el).some(label=>/convert\\s*now|convert|generate(?:\\s+speech|\\s+audio)?|synthesi[sz]e|create\\s+speech/i.test(label)));
+  const matches=clickable.filter(el=>labels(el).some(label=>/convert\s*now|convert|generate(?:\s+speech|\s+audio)?|synthesi[sz]e|create\s+speech/i.test(label)));
   let node=box;
   for(let depth=0;node&&depth<14;depth++,node=node.parentElement){
    const nearby=matches.find(el=>node.contains(el));
    if(nearby)return nearby;
   }
   if(matches.length)return matches.sort((a,b)=>{
-   const score=el=>{const text=labels(el).join(" ").toLowerCase();let n=0;if(/convert\\s*now/.test(text))n+=100;if(/generate|synthesi[sz]e|create speech/.test(text))n+=30;if(el.matches("button,[role='button'],input[type='submit'],input[type='button']"))n+=20;if(/background|music|preview|track|youtube|play|download/.test(text))n-=50;return n;};
+   const score=el=>{const text=labels(el).join(" ").toLowerCase();let n=0;if(/convert\s*now/.test(text))n+=100;if(/generate|synthesi[sz]e|create speech/.test(text))n+=30;if(el.matches("button,[role='button'],input[type='submit'],input[type='button']"))n+=20;if(/background|music|preview|track|youtube|play|download/.test(text))n-=50;return n;};
    return score(b)-score(a);
   })[0];
   return null;
