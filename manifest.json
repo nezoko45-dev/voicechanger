@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "ElevenLabs Voice Dictation for VRChat",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "minimum_chrome_version": "116",
-  "description": "Background speech dictation with a full-size dashboard for ElevenLabs Text to Speech and VRChat.",
+  "description": "Background voice dictation with dashboard and optional direct ElevenLabs API audio generation.",
   "permissions": [
     "storage",
     "sidePanel",
@@ -12,7 +12,8 @@
   ],
   "host_permissions": [
     "https://elevenlabs.io/*",
-    "https://*.elevenlabs.io/*"
+    "https://*.elevenlabs.io/*",
+    "https://api.elevenlabs.io/*"
   ],
   "content_scripts": [
     {
