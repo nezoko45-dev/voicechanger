@@ -1,11 +1,16 @@
 {
   "manifest_version": 3,
-  "name": "Inworld Voice Dictation for VRChat",
-  "version": "2.0.0",
+  "name": "Inworld Website Voice Dictation for VRChat",
+  "version": "2.1.0",
   "minimum_chrome_version": "116",
-  "description": "One-button background dictation with Inworld AI text-to-speech playback for VRChat.",
+  "description": "One-button dictation that fills the Inworld TTS Playground and clicks Generate for VRChat.",
   "permissions": ["storage", "sidePanel", "tabs", "offscreen"],
-  "host_permissions": ["https://api.inworld.ai/*", "https://platform.inworld.ai/*"],
+  "host_permissions": ["https://platform.inworld.ai/*", "https://inworld.ai/*"],
+  "content_scripts": [{
+    "matches": ["https://platform.inworld.ai/tts-playground*", "https://inworld.ai/voice-generator*"],
+    "js": ["content.js"],
+    "run_at": "document_idle"
+  }],
   "action": {"default_title": "Inworld VRChat Voice", "default_popup": "popup.html"},
   "side_panel": {"default_path": "dashboard.html"},
   "background": {"service_worker": "service-worker.js"}
