@@ -35,11 +35,15 @@
       el.getAttribute("title"),
       el.getAttribute("data-testid"),
       el.value
-    ].some(value => norm(value) === TARGET);
+    ].some(value => norm(value).includes(TARGET));
   }
   function findButton() {
     const {elements} = rootsAndElements();
-    for (const el of elements) {
+    const candidates = elements.filter(el =>
+      el.matches('button,[role="button"],[role="menuitem"],input[type="button"],input[type="submit"]') ||
+      matchesTarget(el)
+    );
+    for (const el of candidates) {
       if (!matchesTarget(el)) continue;
       const clickable = el.closest('button,[role="button"],[role="menuitem"],input[type="button"],input[type="submit"]') || el;
       if (clickable.disabled || clickable.getAttribute("aria-disabled") === "true") continue;
