@@ -76,7 +76,7 @@
  function generate(text){
   const phrase=String(text||"").trim();if(!phrase)return Promise.reject(new Error("No transcript received."));
   const now=Date.now();
-  if(phrase===lastSubmittedText&&now-lastSubmittedAt<5000)return Promise.resolve({ok:true,message:"Duplicate transcript ignored; this sentence was already submitted."});
+  if(phrase===lastSubmittedText&&now-lastSubmittedAt<10000)return Promise.resolve({ok:true,message:"Duplicate transcript ignored; this sentence was already submitted."});
   lastSubmittedText=phrase;lastSubmittedAt=now;
   const task=generationQueue.then(()=>generateOne(phrase));
   generationQueue=task.catch(()=>{});
