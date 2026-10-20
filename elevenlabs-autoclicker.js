@@ -31,7 +31,12 @@
   async function refresh() {
     try {
       const data = await chrome.storage.local.get(["elevenLabsAutoClickEnabled"]);
-      enabled = !!data.elevenLabsAutoClickEnabled;
+      if (typeof data.elevenLabsAutoClickEnabled === "undefined") {
+        await chrome.storage.local.set({elevenLabsAutoClickEnabled:true});
+        enabled = true;
+      } else {
+        enabled = !!data.elevenLabsAutoClickEnabled;
+      }
       if (enabled) {
         if (!observer) {
           observer = new MutationObserver(scan);
