@@ -18,25 +18,23 @@
  }
  function labels(el){return[el.getAttribute("aria-label"),el.title,el.innerText,el.textContent,el.value,el.getAttribute("data-testid"),el.getAttribute("data-action"),typeof el.className==="string"?el.className:"",el.id].filter(Boolean).map(s=>String(s).trim()).filter(Boolean);}
  function findGenerate(box){
-  const selectors="button,[role='button'],input[type='submit'],input[type='button'],a,[onclick],[tabindex]";
+  const selectors="button,[role='button'],input[type='submit'],input[type='button']";
   const clickable=[...document.querySelectorAll(selectors)].filter(visible);
-  const matches=clickable.filter(el=>labels(el).some(label=>/convert\s*now|convert|generate(?:\s+speech|\s+audio)?|synthesi[sz]e|create\s+speech/i.test(label)));
-  let node=box;
-  for(let depth=0;node&&depth<14;depth++,node=node.parentElement){
-   const nearby=matches.find(el=>node.contains(el));
-   if(nearby)return nearby;
-  }
-  if(matches.length)return matches.sort((a,b)=>{
-   const score=el=>{const text=labels(el).join(" ").toLowerCase();let n=0;if(/convert\s*now/.test(text))n+=100;if(/generate|synthesi[sz]e|create speech/.test(text))n+=30;if(el.matches("button,[role='button'],input[type='submit'],input[type='button']"))n+=20;if(/background|music|preview|track|youtube|play|download/.test(text))n-=50;return n;};
-   return score(b)-score(a);
-  })[0];
-  return null;
+  const textOf=el=>[el.innerText,el.textContent,el.value,el.getAttribute("aria-label"),el.title].filter(Boolean).join(" ").replace(/\\s+/g," ").trim();
+  // Prefer the actual actionable button with an exact Generate Speech label.
+  const exact=clickable.find(el=>/^generate\\s+speech$/i.test(textOf(el)));
+  if(exact)return exact;
+  const matches=clickable.filter(el=>/generate\\s+speech/i.test(textOf(el))&&!/download|play|preview/i.test(textOf(el)));
+  if(matches.length)return matches.sort((a,b)=>textOf(a).length-textOf(b).length)[0];
+  // Fallback for minor label changes, but never click a generic ancestor container.
+  const fallback=clickable.filter(el=>/generate|synthesi[sz]e|create\\s+speech/i.test(textOf(el))&&!/download|play|preview|background|music/i.test(textOf(el)));
+  return fallback.sort((a,b)=>textOf(a).length-textOf(b).length)[0]||null;
  }
  const busy=b=>!b||b.disabled||b.getAttribute("aria-disabled")==="true"||b.getAttribute("aria-busy")==="true"||/generating|processing|loading|synthesizing|converting/.test(labels(b).join(" ").toLowerCase());
  function diagnose(){
   const box=findTextBox(),button=box&&findGenerate(box);
   if(!box)return "The extension reached Zalt Text to Speech but could not identify its text-entry box. Make sure https://zalt.me/tools/text-to-speech is open and fully loaded.";
-  if(!button)return "The extension found a text box but could not find the Generate Speech button. Make sure you are on the Zalt Text to Speech text-to-speech page.";
+  if(!button)return "Could not find the actual Generate Speech button. Wait for Zalt to finish loading, then try again.";
   if(busy(button))return "The Generate Speech button is disabled. Choose a voice and wait until the page is ready.";
   return "Zalt Text to Speech isn't ready yet.";
  }
@@ -47,7 +45,7 @@
   generating=true;
   try{
    let{box,button}=await waitReady(240000);setText(box,phrase);await sleep(250);({box,button}=await waitReady(10000));
-   button.click();
+   button.scrollIntoView({block:"center",behavior:"auto"});\n   button.click();
    const deadline=Date.now()+120000;let sawBusy=false;
    while(Date.now()<deadline){const currentBox=box.isConnected?box:findTextBox(),currentButton=currentBox?findGenerate(currentBox):null;
     if(currentButton&&busy(currentButton))sawBusy=true;
