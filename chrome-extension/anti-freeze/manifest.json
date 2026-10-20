@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Anti-Freeze Tabs",
+  "version": "1.0.0",
+  "description": "Reduce Chrome tab discarding for selected tabs, including VRChat web sessions.",
+  "permissions": [
+    "tabs",
+    "storage"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Anti-Freeze Tabs",
+    "default_popup": "popup.html"
+  },
+  "icons": {}
+}
