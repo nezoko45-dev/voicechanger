@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Anti-Freeze Tabs</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div class="mark">AF</div>
+      <div><h1>Anti-Freeze Tabs</h1><p>Keep important tabs from being discarded</p></div>
+    </header>
+    <form id="add-form">
+      <label for="tab-url">Add a tab to protect</label>
+      <div class="add-row">
+        <input id="tab-url" type="url" placeholder="https://vrchat.com" required>
+        <button type="submit">Add</button>
+      </div>
+      <p class="hint">Use a full https:// or http:// URL.</p>
+    </form>
+    <section>
+      <div class="section-title"><h2>Your tabs</h2><button id="refresh" class="subtle" type="button">Refresh</button></div>
+      <div id="status" role="status"></div>
+      <ul id="tabs-list" aria-live="polite"></ul>
+    </section>
+    <footer>Protection reduces automatic tab discarding. Chrome can still throttle background pages, and this cannot guarantee that VRChat or other apps stay live in the background.</footer>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>
