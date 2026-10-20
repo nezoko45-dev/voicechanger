@@ -1,45 +1,31 @@
 {
   "manifest_version": 3,
-  "name": "ElevenLabs Call Autoclicker for VRChat",
-  "version": "2.3.3",
+  "name": "tts.dev Voice Dictation",
+  "version": "2.4.0",
   "minimum_chrome_version": "116",
-  "description": "Automatically restarts ElevenLabs agent calls by clicking the Start a call button.",
+  "description": "Hands-free voice dictation for tts.dev: transcribe speech and click \"Stream\" after each pause.",
   "permissions": [
     "storage",
     "sidePanel",
     "tabs",
-    "offscreen",
-    "debugger"
+    "offscreen"
   ],
   "host_permissions": [
-    "https://zalt.me/*",
-    "https://elevenlabs.io/*",
-    "https://*.elevenlabs.io/*"
+    "https://tts.dev/*"
   ],
   "content_scripts": [
     {
       "matches": [
-        "https://zalt.me/tools/text-to-speech*"
+        "https://tts.dev/*"
       ],
       "js": [
         "content.js"
       ],
       "run_at": "document_idle"
-    },
-    {
-      "matches": [
-        "https://elevenlabs.io/*",
-        "https://*.elevenlabs.io/*"
-      ],
-      "js": [
-        "elevenlabs-autoclicker.js"
-      ],
-      "run_at": "document_idle",
-      "all_frames": true
     }
   ],
   "action": {
-    "default_title": "ElevenLabs Call Autoclicker",
+    "default_title": "tts.dev Voice Dictation",
     "default_popup": "popup.html"
   },
   "side_panel": {
