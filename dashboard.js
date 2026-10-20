@@ -1,5 +1,5 @@
 (() => {
- const $=s=>document.querySelector(s),statusText=$("#status-text"),indicator=$("#indicator"),preview=$("#preview"),toggle=$("#toggle"),auto=$("#auto"),openInworld=$("#open-inworld");
+ const $=s=>document.querySelector(s),statusText=$("#status-text"),indicator=$("#indicator"),preview=$("#preview"),toggle=$("#toggle"),auto=$("#auto"),openInworld=$("#open-inworld"),elToggle=$("#el-toggle"),elEnabled=$("#el-enabled"),elStatus=$("#el-status-text"),elIndicator=$("#el-indicator");
  let listening=false;
  const status=message=>{statusText.textContent=message||"Ready.";};
  const render=()=>{toggle.textContent=listening?"■ Stop dictation":"🎙 Start dictation + Generate";toggle.classList.toggle("stop",listening);indicator.classList.toggle("on",listening);};
