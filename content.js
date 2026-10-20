@@ -1,5 +1,5 @@
 (() => {
- if(window.__ttsConverterDictationInstalled)return;window.__ttsConverterDictationInstalled=true;
+ if(window.__zaltDictationInstalled)return;window.__zaltDictationInstalled=true;
  const visible=el=>!!el&&el.getClientRects().length>0;
  const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
  let generating=false, generationQueue=Promise.resolve(), lastSubmittedText="", lastSubmittedAt=0;
@@ -35,10 +35,10 @@
  const busy=b=>!b||b.disabled||b.getAttribute("aria-disabled")==="true"||b.getAttribute("aria-busy")==="true"||/generating|processing|loading|synthesizing|converting/.test(labels(b).join(" ").toLowerCase());
  function diagnose(){
   const box=findTextBox(),button=box&&findGenerate(box);
-  if(!box)return "The extension reached TTSConverter.io but could not identify its text-entry box. Make sure https://ttsconverter.io is open and fully loaded.";
-  if(!button)return "The extension found a text box but could not find the Convert Now button. Make sure you are on the TTSConverter.io text-to-speech page.";
-  if(busy(button))return "The Convert Now button is disabled. Choose a voice and wait until the page is ready.";
-  return "TTSConverter.io isn't ready yet.";
+  if(!box)return "The extension reached Zalt Text to Speech but could not identify its text-entry box. Make sure https://zalt.me/tools/text-to-speech is open and fully loaded.";
+  if(!button)return "The extension found a text box but could not find the Generate Speech button. Make sure you are on the Zalt Text to Speech text-to-speech page.";
+  if(busy(button))return "The Generate Speech button is disabled. Choose a voice and wait until the page is ready.";
+  return "Zalt Text to Speech isn't ready yet.";
  }
  async function waitReady(timeout=30000){const end=Date.now()+timeout;while(Date.now()<end){const box=findTextBox(),button=box&&findGenerate(box);if(box&&button&&!busy(button))return{box,button};await sleep(500);}throw new Error(diagnose());}
  async function preview(text){if(generating)return;const {box}=await waitReady(10000);if(generating)return;setText(box,text);}
@@ -46,16 +46,16 @@
   if(!phrase)throw new Error("No transcript received.");
   generating=true;
   try{
-   let{box,button}=await waitReady(120000);setText(box,phrase);await sleep(250);({box,button}=await waitReady(10000));
+   let{box,button}=await waitReady(240000);setText(box,phrase);await sleep(250);({box,button}=await waitReady(10000));
    button.click();
    const deadline=Date.now()+120000;let sawBusy=false;
    while(Date.now()<deadline){const currentBox=box.isConnected?box:findTextBox(),currentButton=currentBox?findGenerate(currentBox):null;
     if(currentButton&&busy(currentButton))sawBusy=true;
-    if(sawBusy&&currentButton&&!busy(currentButton))return{ok:true,message:"TTSConverter.io conversion finished. Dictation is still listening."};
-    if(!sawBusy&&Date.now()>deadline-117000){await sleep(2500);return{ok:true,message:"Clicked Convert Now. Check the page for the generated audio."};}
+    if(sawBusy&&currentButton&&!busy(currentButton))return{ok:true,message:"Zalt Text to Speech conversion finished. Dictation is still listening."};
+    if(!sawBusy&&Date.now()>deadline-117000){await sleep(2500);return{ok:true,message:"Clicked Generate Speech. Check the page for the generated audio."};}
     await sleep(400);
    }
-   return{ok:true,message:"Clicked Convert Now. It may still be processing; check TTSConverter.io."};
+   return{ok:true,message:"Clicked Generate Speech. It may still be processing; check Zalt Text to Speech."};
   }finally{generating=false;}
  }
  function generate(text){
@@ -68,7 +68,7 @@
   return task;
  }
  chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
-  if(message?.type==="IVD_PREVIEW"&&typeof message.text==="string"){preview(message.text).then(()=>sendResponse({ok:true,message:"Transcript filled into TTSConverter.io."})).catch(error=>sendResponse({ok:false,message:error?.message||String(error)}));return true;}
+  if(message?.type==="IVD_PREVIEW"&&typeof message.text==="string"){preview(message.text).then(()=>sendResponse({ok:true,message:"Transcript filled into Zalt Text to Speech."})).catch(error=>sendResponse({ok:false,message:error?.message||String(error)}));return true;}
   if(message?.type==="IVD_GENERATE"&&typeof message.text==="string"){generate(message.text).then(sendResponse).catch(error=>sendResponse({ok:false,message:error?.message||String(error)}));return true;}
  });
 })();

@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "TTSConverter Voice Dictation for VRChat",
-  "version": "2.2.2",
+  "name": "Zalt Voice Dictation for VRChat",
+  "version": "2.3.0",
   "minimum_chrome_version": "116",
-  "description": "One-button dictation that fills TTSConverter.io and clicks Convert Now for VRChat.",
+  "description": "One-button dictation that fills Zalt Text to Speech and clicks Generate Speech for VRChat.",
   "permissions": ["storage", "sidePanel", "tabs", "offscreen"],
-  "host_permissions": ["https://ttsconverter.io/*", "https://www.ttsconverter.io/*"],
+  "host_permissions": ["https://zalt.me/*"],
   "content_scripts": [{
     "matches": ["https://ttsconverter.io/*", "https://www.ttsconverter.io/*"],
     "js": ["content.js"],
