@@ -45,8 +45,9 @@
   generating=true;
   try{
    let{box,button}=await waitReady(240000);setText(box,phrase);await sleep(250);({box,button}=await waitReady(10000));
-   button.scrollIntoView({block:"center",behavior:"auto"});
-   button.click();
+   const liveBox=findTextBox(),liveButton=liveBox&&findGenerate(liveBox);
+   if(!liveButton||!liveButton.isConnected||busy(liveButton))throw new Error(diagnose());
+   liveButton.click();
    const deadline=Date.now()+120000;let sawBusy=false;
    while(Date.now()<deadline){const currentBox=box.isConnected?box:findTextBox(),currentButton=currentBox?findGenerate(currentBox):null;
     if(currentButton&&busy(currentButton))sawBusy=true;
