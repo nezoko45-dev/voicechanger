@@ -17,6 +17,8 @@ Branch: https://github.com/nezoko45-dev/voicechanger/tree/rebuild/uberduck-voice
 ## Important
 
 - This version automates the Zalt Text to Speech website UI and does not call its TTS API or require an API key.
-- The public page currently indicates a the first visit may take longer while the speech model downloads locally; wait until Generate Speech is enabled.
-- Overlapping submissions are queued, and an identical transcript repeated within five seconds is ignored to prevent duplicate conversions.\n- Automatic playback depends on Zalt exposing its result as an audio/video element and Chrome allowing playback. If Chrome blocks it, click Play once on Zalt and retry.\n- Website layout changes may require selector updates.
+- The first visit may take longer while the speech model downloads locally; wait until Generate Speech is enabled.
+- Overlapping submissions are queued, and an identical transcript repeated within five seconds is ignored to prevent duplicate conversions.
+- Automatic playback depends on Zalt exposing its result as an audio/video element and Chrome allowing playback. If Chrome blocks it, click Play once on Zalt and retry.
+- Website layout changes may require selector updates.
 - No live test has been run against a signed-in browser session or VRChat.
