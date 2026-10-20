@@ -22,13 +22,13 @@
   });
   document.querySelector("#open-tts").addEventListener("click", async () => {
     try {
-      const tabs = await chrome.tabs.query({ url: ["https://tts.dev/*"] });
+      const tabs = await chrome.tabs.query({ url: ["https://ttslab.dev/*"] });
       if (tabs.length) {
         await chrome.tabs.update(tabs[0].id, { active: true });
         await chrome.windows.update(tabs[0].windowId, { focused: true });
-      } else await chrome.tabs.create({ url: "https://tts.dev/" });
-      statusText.textContent = "tts.dev opened. Make sure its text box and Stream button are visible.";
-    } catch (error) { statusText.textContent = "Couldn't open tts.dev: " + (error?.message || error); }
+      } else await chrome.tabs.create({ url: "https://TTSLab.dev/" });
+      statusText.textContent = "TTSLab.dev opened. Make sure its text box and Stream button are visible.";
+    } catch (error) { statusText.textContent = "Couldn't open TTSLab.dev: " + (error?.message || error); }
   });
   chrome.runtime.onMessage.addListener(message => {
     if (message?.type === "IVD_OFFSCREEN_STATUS") {
