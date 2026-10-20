@@ -32,17 +32,15 @@
  }
  const busy=b=>!b||b.disabled||b.getAttribute("aria-disabled")==="true"||b.getAttribute("aria-busy")==="true"||/generating|processing|loading|synthesizing|converting/.test(labels(b).join(" ").toLowerCase());
  function diagnose(){
-  const box=findTextBox(),button=box&&findGenerate(box);
+  const box=findTextBox();
   if(!box)return "The extension reached Zalt Text to Speech but could not identify its text-entry box. Make sure https://zalt.me/tools/text-to-speech is open and fully loaded.";
-  if(!button)return "Could not find the actual Generate Speech button. Wait for Zalt to finish loading, then try again.";
-  if(busy(button))return "The Generate Speech button is disabled. Choose a voice and wait until the page is ready.";
-  return "Zalt Text to Speech isn't ready yet.";
+  return "Zalt Text to Speech text-entry box isn't ready yet.";
  }
- async function waitReady(timeout=30000){const end=Date.now()+timeout;while(Date.now()<end){const box=findTextBox(),button=box&&findGenerate(box);if(box&&button&&!busy(button))return{box,button};await sleep(500);}throw new Error(diagnose());}
+ async function waitReady(timeout=30000){const end=Date.now()+timeout;while(Date.now()<end){const box=findTextBox();if(box)return{box};await sleep(500);}throw new Error(diagnose());}
  async function preview(text){if(generating)return;const {box}=await waitReady(10000);if(generating)return;setText(box,text);}
  function mediaSource(el){return el.currentSrc||el.src||el.querySelector?.("source")?.src||"";}
  async function playGeneratedAudio(previousSources){
-  const deadline=Date.now()+15000;let candidate=null;
+  const deadline=Date.now()+120000;let candidate=null;
   while(Date.now()<deadline){
    const media=[...document.querySelectorAll("audio,video")];
    if(media.some(el=>!el.paused&&!el.ended&&mediaSource(el)))return "Generated audio is already playing through Chrome.";
@@ -58,19 +56,11 @@
   if(!phrase)throw new Error("No transcript received.");
   generating=true;
   try{
-   let{box,button}=await waitReady(240000);setText(box,phrase);await sleep(250);({box,button}=await waitReady(10000));
-   const liveBox=findTextBox(),liveButton=liveBox&&findGenerate(liveBox);
-   if(!liveButton||!liveButton.isConnected||busy(liveButton))throw new Error(diagnose());
+   const {box}=await waitReady(240000);
    const previousSources=new Map([...document.querySelectorAll("audio,video")].map(el=>[el,mediaSource(el)]));
-   liveButton.click();
-   const deadline=Date.now()+120000;let sawBusy=false;
-   while(Date.now()<deadline){const currentBox=box.isConnected?box:findTextBox(),currentButton=currentBox?findGenerate(currentBox):null;
-    if(currentButton&&busy(currentButton))sawBusy=true;
-    if(sawBusy&&currentButton&&!busy(currentButton)){const playbackMessage=await playGeneratedAudio(previousSources);return{ok:true,message:playbackMessage+" Dictation is still listening."};}
-    if(!sawBusy&&Date.now()>deadline-117000){await sleep(2500);const playbackMessage=await playGeneratedAudio(previousSources);return{ok:true,message:playbackMessage+" Dictation is still listening."};}
-    await sleep(400);
-   }
-   const playbackMessage=await playGeneratedAudio(previousSources);return{ok:true,message:playbackMessage+" Generation status may still be updating on Zalt."};
+   setText(box,phrase);
+   const playbackMessage=await playGeneratedAudio(previousSources);
+   return{ok:true,message:playbackMessage+" Dictation is still listening."};
   }finally{generating=false;}
  }
  function generate(text){
