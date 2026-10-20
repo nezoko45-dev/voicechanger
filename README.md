@@ -1,22 +1,19 @@
-# TTSLab Voice Dictation
+# Fish Audio Call Again Clicker
 
-Chrome extension for hands-free speech input on [TTSLab.dev](https://ttslab.dev/). It listens through Chrome's speech recognition, previews the transcript in the page's text field, and clicks **Stream** after about 3 seconds of silence.
+A small Chrome extension that clicks the visible **Call again** button on Fish Audio when you press the extension's popup button.
 
 Branch: https://github.com/nezoko45-dev/voicechanger/tree/rebuild/uberduck-voice-dictation
 
 ## Setup
 
 1. Download the ZIP from **Code → Download ZIP** on the branch page and extract it.
-2. Open `chrome://extensions`, enable **Developer mode**, and load the extracted folder using **Load unpacked** (or reload the existing unpacked extension).
-3. Open [TTSLab.dev](https://ttslab.dev/) in a Chrome tab and navigate to the specific tool/model page where the text field and **Stream** button appear.
-4. Open the extension's **TTSLab Voice Dictation** dashboard and click **Start listening**.
-5. Allow microphone access, then speak. The transcript is entered into TTSLab and **Stream** is clicked after roughly 3 seconds of silence.
-6. Keep the TTSLab tab open while using other apps. Click **Stop listening** to stop.
+2. Open `chrome://extensions`, enable **Developer mode**, and load the extracted folder with **Load unpacked** (or reload the existing unpacked extension).
+3. Open [Fish Audio](https://fish.audio/) and navigate to the page where **Call again** is visible.
+4. Click the extension icon, then click **↻ Call again**.
+5. The popup reports whether it found and clicked the button.
 
 ## Notes
 
-- This uses browser speech recognition and page UI automation; it does not call a TTSLab API.
-- The site's live tool page and Stream control still need to be tested in Chrome; the homepage alone may not contain the input/button.
-- Keep the specific TTSLab tool page open. If the text box or button cannot be identified, refresh that page and reload the extension at `chrome://extensions`.
-- Changes are kept on `rebuild/uberduck-voice-dictation`; `main` was not modified.
-- Background speech recognition availability depends on the user's Chrome build and microphone permissions.
+- This is a manual, one-click helper. It does not use the microphone, dictate text, or automatically repeat clicks.
+- The button is detected by its visible text or accessible label. Fish Audio may change its page layout or wording; if detection fails, refresh the page and try again.
+- Changes are kept on `rebuild/uberduck-voice-dictation`. The `main` branch is not modified.
