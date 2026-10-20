@@ -2,9 +2,9 @@
  let recognition=null,listening=false,starting=false,finalText="",interimText="",silenceTimer=null,restartTimer=null,restartCount=0,previewAt=0;
  const SpeechRecognition=self.SpeechRecognition||self.webkitSpeechRecognition;
  const status=message=>chrome.runtime.sendMessage({type:"IVD_OFFSCREEN_STATUS",listening,message}).catch(()=>{});
- async function sendForGeneration(action,text){return await chrome.runtime.sendMessage({type:"IVD_BRIDGE_TO_ELEVENLABS",action,text});}
+ async function sendForGeneration(action,text){return await chrome.runtime.sendMessage({type:"IVD_BRIDGE_TO_TTSCONVERTER",action,text});}
  async function preview(text){const phrase=String(text||"").trim();if(!phrase)return;chrome.runtime.sendMessage({type:"IVD_OFFSCREEN_TRANSCRIPT",text:phrase}).catch(()=>{});const result=await sendForGeneration("preview",phrase);if(!result?.ok&&result?.message)status(result.message);}
- async function submit(text){const phrase=String(text||"").trim();if(!phrase)return;const result=await sendForGeneration("generate",phrase);if(!result?.ok)status("Transcript captured but Inworld did not accept it: "+(result?.message||"Refresh the ElevenLabs tab."));else status("Sent to Inworld. Dictation remains active.");}
+ async function submit(text){const phrase=String(text||"").trim();if(!phrase)return;const result=await sendForGeneration("generate",phrase);if(!result?.ok)status("Transcript captured but TTSConverter.io did not accept it: "+(result?.message||"Refresh the TTSConverter.io tab."));else status("Sent to TTSConverter.io. Dictation remains active.");}
  async function autoGenerateEnabled(){try{const data=await chrome.storage.local.get(["autoGenerate"]);return typeof data.autoGenerate==="boolean"?data.autoGenerate:true;}catch{return true;}}
  function flush(){clearTimeout(silenceTimer);const text=[finalText,interimText].filter(Boolean).join(" ").replace(/\s+/g," ").trim();finalText="";interimText="";if(text){void preview(text);void autoGenerateEnabled().then(enabled=>{if(enabled)void submit(text);else status("Transcript captured. Auto-generate is off.");});}}
  function startRecognition(){if(!listening||!SpeechRecognition||recognition)return;const r=new SpeechRecognition();recognition=r;r.continuous=true;r.interimResults=true;r.lang="en-US";
