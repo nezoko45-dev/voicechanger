@@ -1,4 +1,21 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TTSLab Voice Dictation</title>
-<style>*{box-sizing:border-box}body{font:14px/1.5 system-ui,sans-serif;width:300px;padding:14px;margin:0;color:#eef4ff;background:#111827}h1{font-size:17px;margin:0 0 8px}p{margin:8px 0;color:#c5cee0}button{border:0;border-radius:8px;padding:11px 12px;background:#18a879;color:#041b14;font-weight:700;cursor:pointer;min-height:42px;width:100%}#status{padding:9px;border-radius:8px;background:#202b3e;overflow-wrap:anywhere}</style></head>
-<body><h1>TTSLab Voice Dictation</h1><p>Speak, pause, and let the extension click Stream for you.</p><button id="open-dashboard" type="button">Open dictation dashboard</button><p id="status" role="status" aria-live="polite">Ready.</p><script src="popup.js"></script></body></html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fish Audio Call Again</title>
+<style>
+*{box-sizing:border-box}body{font:14px/1.5 system-ui,sans-serif;width:290px;padding:16px;margin:0;color:#eef4ff;background:#111827}
+h1{font-size:17px;margin:0 0 6px}p{margin:8px 0 14px;color:#c5cee0}
+button{border:0;border-radius:9px;padding:12px;background:#18a879;color:#041b14;font-weight:750;cursor:pointer;width:100%;min-height:44px}
+button:disabled{opacity:.65;cursor:wait}#status{padding:10px;border-radius:8px;background:#202b3e;overflow-wrap:anywhere;margin-top:12px}
+</style>
+</head>
+<body>
+<h1>Fish Audio Call Again</h1>
+<p>Open Fish Audio with the “Call again” button visible, then click below.</p>
+<button id="call-again" type="button">↻ Call again</button>
+<p id="status" role="status" aria-live="polite">Ready.</p>
+<script src="popup.js"></script>
+</body>
+</html>
