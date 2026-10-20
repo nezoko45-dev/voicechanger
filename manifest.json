@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Zalt Voice Dictation for VRChat",
-  "version": "2.3.2",
+  "version": "2.3.3",
   "minimum_chrome_version": "116",
-  "description": "One-button dictation that fills Zalt Text to Speech and clicks Generate Speech for VRChat.",
+  "description": "Automatic speech dictation, Zalt speech generation, and generated-audio playback for VRChat.",
   "permissions": ["storage", "sidePanel", "tabs", "offscreen"],
   "host_permissions": ["https://zalt.me/*"],
   "content_scripts": [{
