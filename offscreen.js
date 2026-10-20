@@ -1,10 +1,20 @@
 (() => {
- let recognition=null,listening=false,starting=false,finalText="",interimText="",silenceTimer=null,restartTimer=null,restartCount=0,previewAt=0;
+ let recognition=null,listening=false,starting=false,finalText="",interimText="",silenceTimer=null,restartTimer=null,restartCount=0,previewAt=0,lastSubmitKey="",lastSubmitAt=0,submitInFlight=false;
  const SpeechRecognition=self.SpeechRecognition||self.webkitSpeechRecognition;
  const status=message=>chrome.runtime.sendMessage({type:"IVD_OFFSCREEN_STATUS",listening,message}).catch(()=>{});
  async function sendForGeneration(action,text){return await chrome.runtime.sendMessage({type:"IVD_BRIDGE_TO_ZALT",action,text});}
  async function preview(text){const phrase=String(text||"").trim();if(!phrase)return;chrome.runtime.sendMessage({type:"IVD_OFFSCREEN_TRANSCRIPT",text:phrase}).catch(()=>{});const result=await sendForGeneration("preview",phrase);if(!result?.ok&&result?.message)status(result.message);}
- async function submit(text){const phrase=String(text||"").trim();if(!phrase)return;const result=await sendForGeneration("generate",phrase);if(!result?.ok)status("Transcript captured but Zalt Text to Speech did not accept it: "+(result?.message||"Refresh the Zalt Text to Speech tab."));else status(result?.message||"Sent to Zalt Text to Speech. Dictation remains active.");}
+ async function submit(text){
+  const phrase=String(text||"").replace(/\\s+/g," ").trim();if(!phrase)return;
+  const key=phrase.toLocaleLowerCase();
+  const now=Date.now();
+  // Silence flush and SpeechRecognition.onend can report the same utterance close together.
+  // Suppress an identical repeat here as a second guard before it reaches the page.
+  if(submitInFlight||(key===lastSubmitKey&&now-lastSubmitAt<10000)){status("Duplicate transcript suppressed; generating this utterance only once.");return;}
+  lastSubmitKey=key;lastSubmitAt=now;submitInFlight=true;
+  try{const result=await sendForGeneration("generate",phrase);if(!result?.ok)status("Transcript captured but Zalt Text to Speech did not accept it: "+(result?.message||"Refresh the Zalt Text to Speech tab."));else status(result?.message||"Sent to Zalt Text to Speech. Dictation remains active.");}
+  finally{submitInFlight=false;}
+ }
  async function autoGenerateEnabled(){try{const data=await chrome.storage.local.get(["autoGenerate"]);return typeof data.autoGenerate==="boolean"?data.autoGenerate:true;}catch{return true;}}
  function flush(){clearTimeout(silenceTimer);const text=[finalText,interimText].filter(Boolean).join(" ").replace(/\s+/g," ").trim();finalText="";interimText="";if(text){void preview(text);void autoGenerateEnabled().then(enabled=>{if(enabled)void submit(text);else status("Transcript captured. Auto-generate is off.");});}}
  function startRecognition(){if(!listening||!SpeechRecognition||recognition)return;const r=new SpeechRecognition();recognition=r;r.continuous=true;r.interimResults=true;r.lang="en-US";
