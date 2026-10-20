@@ -46,14 +46,14 @@
 
   function buttonText(el) {
     return [el.innerText, el.textContent, el.value, el.getAttribute("aria-label"), el.title]
-      .filter(Boolean).join(" ").replace(/\\s+/g, " ").trim();
+      .filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
   }
 
   function findStreamButton() {
     const buttons = [...document.querySelectorAll("button,[role='button'],input[type='submit'],input[type='button']")].filter(visible);
     const exact = buttons.find(el => /^stream$/i.test(buttonText(el)));
     if (exact) return exact;
-    const matches = buttons.filter(el => /\\bstream\\b/i.test(buttonText(el)) && !/streaming settings|stream history|stream key/i.test(buttonText(el)));
+    const matches = buttons.filter(el => /\bstream\b/i.test(buttonText(el)) && !/streaming settings|stream history|stream key/i.test(buttonText(el)));
     return matches.sort((a, b) => buttonText(a).length - buttonText(b).length)[0] || null;
   }
 
