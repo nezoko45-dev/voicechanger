@@ -20,14 +20,14 @@
  function findGenerate(box){
   const selectors="button,[role='button'],input[type='submit'],input[type='button']";
   const clickable=[...document.querySelectorAll(selectors)].filter(visible);
-  const textOf=el=>[el.innerText,el.textContent,el.value,el.getAttribute("aria-label"),el.title].filter(Boolean).join(" ").replace(/\\s+/g," ").trim();
+  const textOf=el=>[el.innerText,el.textContent,el.value,el.getAttribute("aria-label"),el.title].filter(Boolean).join(" ").replace(/\s+/g," ").trim();
   // Prefer the actual actionable button with an exact Generate Speech label.
-  const exact=clickable.find(el=>/^generate\\s+speech$/i.test(textOf(el)));
+  const exact=clickable.find(el=>/^generate\s+speech$/i.test(textOf(el)));
   if(exact)return exact;
-  const matches=clickable.filter(el=>/generate\\s+speech/i.test(textOf(el))&&!/download|play|preview/i.test(textOf(el)));
+  const matches=clickable.filter(el=>/generate\s+speech/i.test(textOf(el))&&!/download|play|preview/i.test(textOf(el)));
   if(matches.length)return matches.sort((a,b)=>textOf(a).length-textOf(b).length)[0];
   // Fallback for minor label changes, but never click a generic ancestor container.
-  const fallback=clickable.filter(el=>/generate|synthesi[sz]e|create\\s+speech/i.test(textOf(el))&&!/download|play|preview|background|music/i.test(textOf(el)));
+  const fallback=clickable.filter(el=>/generate|synthesi[sz]e|create\s+speech/i.test(textOf(el))&&!/download|play|preview|background|music/i.test(textOf(el)));
   return fallback.sort((a,b)=>textOf(a).length-textOf(b).length)[0]||null;
  }
  const busy=b=>!b||b.disabled||b.getAttribute("aria-disabled")==="true"||b.getAttribute("aria-busy")==="true"||/generating|processing|loading|synthesizing|converting/.test(labels(b).join(" ").toLowerCase());
