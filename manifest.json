@@ -1,17 +1,17 @@
 {
   "manifest_version": 3,
-  "name": "Inworld Website Voice Dictation for VRChat",
-  "version": "2.1.1",
+  "name": "TTSConverter Voice Dictation for VRChat",
+  "version": "2.2.0",
   "minimum_chrome_version": "116",
-  "description": "One-button dictation that fills the Inworld TTS Playground and clicks Generate for VRChat.",
+  "description": "One-button dictation that fills TTSConverter.io and clicks Convert Now for VRChat.",
   "permissions": ["storage", "sidePanel", "tabs", "offscreen"],
-  "host_permissions": ["https://platform.inworld.ai/*", "https://inworld.ai/*"],
+  "host_permissions": ["https://ttsconverter.io/*", "https://www.ttsconverter.io/*"],
   "content_scripts": [{
-    "matches": ["https://platform.inworld.ai/tts-playground*", "https://platform.inworld.ai/*/tts-playground*", "https://inworld.ai/voice-generator*"],
+    "matches": ["https://ttsconverter.io/*", "https://www.ttsconverter.io/*"],
     "js": ["content.js"],
     "run_at": "document_idle"
   }],
-  "action": {"default_title": "Inworld VRChat Voice", "default_popup": "popup.html"},
+  "action": {"default_title": "TTSConverter VRChat Voice", "default_popup": "popup.html"},
   "side_panel": {"default_path": "dashboard.html"},
   "background": {"service_worker": "service-worker.js"}
 }
