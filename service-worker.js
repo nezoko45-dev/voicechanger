@@ -18,7 +18,7 @@ async function ensureOffscreen() {
 }
 
 async function sendToTtsPage(action, text) {
-  const tabs = await chrome.tabs.query({ url: [TTS_URL] });
+  const tabs = await chrome.tabs.query({ url: [TTS_URL, "https://*.tts.dev/*"] });
   if (!tabs.length) {
     return { ok: false, message: "Open https://tts.dev/ in a Chrome tab first, then reload that tab and start dictation again." };
   }
