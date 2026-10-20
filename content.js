@@ -37,7 +37,23 @@
   if(!button)return "Could not find the Generate Speech button. Wait for Zalt to finish loading.";
   return "Zalt Text to Speech isn't ready to generate speech yet.";
  }
- async function waitReady(timeout=30000){const end=Date.now()+timeout;while(Date.now()<end){const box=findTextBox(),button=box&&findGenerate(box);if(box&&button&&!busy(button))return{box,button};await sleep(500);}throw new Error(diagnose());}
+ // Monitor Zalt's actual Generate Speech control. MutationObserver reacts to DOM/state
+ // changes; a low-frequency poll is retained as a fallback for frameworks that update
+ // properties without producing an observable attribute mutation.
+ async function waitReady(timeout=30000){
+  const findReady=()=>{const box=findTextBox(),button=box&&findGenerate(box);return box&&button&&!busy(button)?{box,button}:null;};
+  const immediate=findReady();if(immediate)return immediate;
+  return await new Promise((resolve,reject)=>{
+   let settled=false;
+   const finish=(error,value)=>{if(settled)return;settled=true;clearTimeout(deadline);clearInterval(poll);observer.disconnect();error?reject(error):resolve(value);};
+   const check=()=>{const ready=findReady();if(ready)finish(null,ready);};
+   const observer=new MutationObserver(check);
+   observer.observe(document.documentElement,{subtree:true,childList:true,attributes:true,characterData:true,attributeFilter:["disabled","aria-disabled","aria-busy","class","title","aria-label"]});
+   const poll=setInterval(check,1000);
+   const deadline=setTimeout(()=>finish(new Error(diagnose())),timeout);
+   check();
+  });
+ }
  async function preview(text){if(generating)return;const {box}=await waitReady(10000);if(generating)return;setText(box,text);}
  function mediaSource(el){return el.currentSrc||el.src||el.querySelector?.("source")?.src||"";}
  async function playGeneratedAudio(previousSources){
