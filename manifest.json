@@ -12,7 +12,9 @@
     "debugger"
   ],
   "host_permissions": [
-    "https://zalt.me/*"
+    "https://zalt.me/*",
+    "https://elevenlabs.io/*",
+    "https://*.elevenlabs.io/*"
   ],
   "content_scripts": [
     {
@@ -23,6 +25,17 @@
         "content.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://elevenlabs.io/*",
+        "https://*.elevenlabs.io/*"
+      ],
+      "js": [
+        "elevenlabs-autoclicker.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
     }
   ],
   "action": {
