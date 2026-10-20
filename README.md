@@ -1,28 +1,35 @@
 # ElevenLabs Voice Dictation for VRChat
 
-Chrome extension for speech dictation into ElevenLabs Text to Speech. Version 1.8.0 adds a full-size dashboard tab at `dashboard.html`, opened from the extension toolbar popup. The dashboard provides start/stop controls, live transcript, auto-send setting, and a shortcut to ElevenLabs. Speech recognition runs in an extension offscreen document; the service worker bridges messages to the ElevenLabs tab.
+Chrome extension for background speech dictation and voice playback. Version 1.9.0 adds optional direct ElevenLabs API generation from the dashboard so speech generation no longer depends on the ElevenLabs webpage UI.
 
 Branch: https://github.com/nezoko45-dev/voicechanger/tree/rebuild/uberduck-voice-dictation
 
 ## Install or update
 
 1. Download ZIP from **Code → Download ZIP** on the branch page and extract it.
-2. Open `chrome://extensions`, enable Developer mode, remove the old installed copy if necessary, then click **Load unpacked**.
-3. Select the extracted folder that directly contains `manifest.json`, `dashboard.html`, `dashboard.js`, `content.js`, `offscreen.html`, `offscreen.js`, and `service-worker.js`.
-4. Confirm version **1.8.0**.
-5. Open the extension toolbar button and click **Open voice dashboard**.
-6. Open ElevenLabs Text to Speech from the dashboard, sign in, and refresh that tab after installing/updating: https://elevenlabs.io/app/speech-synthesis/text-to-speech
-7. Click **Start dictation** in the dashboard and allow microphone access. Speak a phrase; the transcript should appear in the dashboard and ElevenLabs field. After a pause of about 3 seconds, auto-send submits the phrase if enabled.
-8. Switch to VRChat. Recognition runs in a persistent offscreen extension document rather than relying on the dashboard or side panel remaining focused. Your existing audio routing still needs to send ElevenLabs playback to the VRChat microphone input.
+2. Open `chrome://extensions`, enable Developer mode, then reload the existing unpacked extension or use **Load unpacked** on the extracted folder.
+3. Confirm version **1.9.0**.
+4. Open the extension toolbar button and click **Open voice dashboard**.
+5. Start dictation and allow microphone access.
+6. To bypass the ElevenLabs webpage, enable **Direct API**, enter your ElevenLabs API key and voice ID, select a model, and click **Save API settings**. Your key is stored locally in Chrome extension storage; never share it or commit it to the repository.
+7. Keep the dashboard tab open for audio playback. Configure Windows sound output / your virtual audio cable so the generated speech is routed to the microphone input selected in VRChat.
+
+## Direct API
+
+The extension calls `POST https://api.elevenlabs.io/v1/text-to-speech/{voice_id}` with your key and chosen model. It uses MP3 output, then plays the response from the dashboard. API usage consumes the credits associated with your ElevenLabs account. API docs: https://elevenlabs.io/docs/api-reference/text-to-speech/convert
+
+## Website mode
+
+If Direct API is unchecked, dictation continues to populate and generate speech on the ElevenLabs website as before. The website may still freeze in background tabs.
 
 ## Troubleshooting
 
-- **No transcript:** Check the dashboard Status line. If speech recognition is unsupported or microphone access is denied, use current Chrome and allow microphone access.
-- **Transcript appears in dashboard but not ElevenLabs:** Refresh the ElevenLabs tab after updating the extension so the content script is injected.
-- **Text arrives but audio does not generate:** Check the status line, ensure you're signed in, and verify the ElevenLabs text field and Generate button are visible.
-- **Dashboard does not open:** Reload the extension at `chrome://extensions` and confirm the selected folder contains `manifest.json`.
-- **ElevenLabs still freezes:** The dashboard does not itself replace the ElevenLabs webpage. Chrome may throttle that page in the background; keeping ElevenLabs active or using a direct API integration would avoid relying on its webpage UI.
+- **API key error:** Check key validity and Text to Speech permissions.
+- **HTTP 429:** Check usage/quota and rate limits.
+- **Audio generated but not heard:** Click the dashboard once to allow playback, check Windows volume/output device, and ensure the virtual cable routes to VRChat's selected microphone.
+- **No transcript:** Check microphone permissions and the dashboard status.
+- **Website mode not connecting:** Refresh the ElevenLabs Text to Speech tab after updating the extension.
 
 ## Limitations
 
-Speech recognition uses the browser Web Speech API in an extension offscreen document and depends on Chrome support, microphone permissions, and network availability. Background recognition has not been verified in the user's live Chrome/VRChat setup. ElevenLabs can change its page UI, requiring updates to text-field or Generate-button detection. Audio routing is not controlled by this extension. Generated speech consumes normal ElevenLabs quota/credits. No live Chrome test has been run.
+Speech recognition uses Chrome's Web Speech API in an offscreen extension document. Direct API mode avoids controlling the ElevenLabs webpage but still requires network access, an API key, and available account credits. Voicebox WAV loading is a separate issue and needs its exact error message and a sample file's properties to diagnose. No live Chrome/VRChat test has been run.
