@@ -9,7 +9,7 @@
     el.value,
     el.getAttribute("aria-label"),
     el.getAttribute("title")
-  ].filter(Boolean).join(" ").replace(/\\s+/g, " ").trim();
+  ].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
 
   function findCallAgainButton() {
     const buttons = [...document.querySelectorAll(
@@ -18,7 +18,7 @@
       el.getAttribute("aria-disabled") !== "true");
 
     return buttons.find(el => /^call again[.!]?$/i.test(label(el))) ||
-      buttons.find(el => /\\bcall again\\b/i.test(label(el))) ||
+      buttons.find(el => /\bcall again\b/i.test(label(el))) ||
       null;
   }
 
