@@ -16,5 +16,5 @@
  elEnabled.addEventListener("change",()=>setEl(elEnabled.checked));
  $("#el-open").addEventListener("click",async()=>{try{const tabs=await chrome.tabs.query({url:["https://elevenlabs.io/*","https://*.elevenlabs.io/*"]});if(tabs.length){await chrome.tabs.update(tabs[0].id,{active:true});await chrome.windows.update(tabs[0].windowId,{focused:true});}else await chrome.tabs.create({url:"https://elevenlabs.io/app/agents"});elStatus.textContent="ElevenLabs opened. Open your agent page; then enable the autoclicker.";}catch(e){elStatus.textContent="Couldn't open ElevenLabs: "+(e?.message||e);}});
  chrome.runtime.onMessage.addListener(message=>{if(message?.type==="ELEVENLABS_AUTOCLICK_STATUS")elStatus.textContent=message.message;});
-\n status("Open Zalt Text to Speech and keep that tab open.");
+ status("Open Zalt Text to Speech and keep that tab open.");
 })();
