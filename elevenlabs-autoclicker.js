@@ -9,7 +9,7 @@
     lastStatus = message;
     try { chrome.runtime.sendMessage({type:"ELEVENLABS_AUTOCLICK_STATUS", message}); } catch {}
   };
-  const norm = value => String(value || "").replace(/\\s+/g, " ").trim().toLowerCase();
+  const norm = value => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
   function findButton() {
     const candidates = [...document.querySelectorAll('button,[role="button"],input[type="button"],input[type="submit"]')];
     return candidates.find(el => {
