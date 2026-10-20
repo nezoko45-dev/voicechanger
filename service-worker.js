@@ -1,57 +1,57 @@
-const OFFSCREEN_URL="offscreen.html";
-const ZALT_URL="https://zalt.me/tools/text-to-speech*";
-let creatingOffscreen=null;
-const debuggerAttachedTabs=new Set();
+const OFFSCREEN_URL = "offscreen.html";
+const TTS_URL = "https://tts.dev/*";
+let creatingOffscreen = null;
 
-async function ensureOffscreen(){
- const contexts=await chrome.runtime.getContexts({contextTypes:["OFFSCREEN_DOCUMENT"],documentUrls:[chrome.runtime.getURL(OFFSCREEN_URL)]});
- if(contexts.length)return;if(creatingOffscreen)return creatingOffscreen;
- creatingOffscreen=chrome.offscreen.createDocument({url:OFFSCREEN_URL,reasons:["USER_MEDIA"],justification:"Keep microphone speech recognition running while the user switches from Chrome to a full-screen game."});
- try{await creatingOffscreen;}finally{creatingOffscreen=null;}
+async function ensureOffscreen() {
+  const contexts = await chrome.runtime.getContexts({
+    contextTypes: ["OFFSCREEN_DOCUMENT"],
+    documentUrls: [chrome.runtime.getURL(OFFSCREEN_URL)]
+  });
+  if (contexts.length) return;
+  if (creatingOffscreen) return creatingOffscreen;
+  creatingOffscreen = chrome.offscreen.createDocument({
+    url: OFFSCREEN_URL,
+    reasons: ["USER_MEDIA"],
+    justification: "Keep voice dictation running while the user switches apps; send completed speech to tts.dev."
+  });
+  try { await creatingOffscreen; } finally { creatingOffscreen = null; }
 }
 
-// Option A: use Chrome DevTools Protocol to keep Zalt's page lifecycle active.
-// The debugger must remain attached for the duration of background generation.
-async function keepZaltActive(tabId){
- if(!Number.isInteger(tabId))return;
- if(debuggerAttachedTabs.has(tabId)){
-  try{await chrome.debugger.sendCommand({tabId},"Page.setWebLifecycleState",{state:"active"});}catch{}
-  return;
- }
- try{
-  await chrome.debugger.attach({tabId},"1.3");
-  debuggerAttachedTabs.add(tabId);
-  await chrome.debugger.sendCommand({tabId},"Page.enable");
-  await chrome.debugger.sendCommand({tabId},"Page.setWebLifecycleState",{state:"active"});
-  console.info("[Zalt Dictation] Debugger attached; requested active page lifecycle for tab",tabId);
- }catch(error){
-  console.warn("[Zalt Dictation] Could not keep Zalt active:",error?.message||error);
- }
+async function sendToTtsPage(action, text) {
+  const tabs = await chrome.tabs.query({ url: [TTS_URL] });
+  if (!tabs.length) {
+    return { ok: false, message: "Open https://tts.dev/ in a Chrome tab first, then reload that tab and start dictation again." };
+  }
+  const tab = tabs.find(t => t.active) || tabs[0];
+  try {
+    const response = await chrome.tabs.sendMessage(tab.id, {
+      type: action === "preview" ? "IVD_PREVIEW" : "IVD_GENERATE",
+      text
+    });
+    return response || { ok: true, message: action === "preview" ? "Transcript preview sent to tts.dev." : 'Stream clicked on tts.dev.' };
+  } catch (error) {
+    return { ok: false, message: "Couldn't reach tts.dev. Refresh that tab after reloading the extension, then try again. " + (error?.message || "") };
+  }
 }
-chrome.debugger.onDetach.addListener(source=>{
- if(Number.isInteger(source.tabId))debuggerAttachedTabs.delete(source.tabId);
-});
-chrome.tabs.onUpdated.addListener((tabId,changeInfo,tab)=>{
- if(changeInfo.status==="complete"&&tab.url?.startsWith("https://zalt.me/tools/text-to-speech"))void keepZaltActive(tabId);
-});
-chrome.tabs.onRemoved.addListener(tabId=>debuggerAttachedTabs.delete(tabId));
 
-async function sendToZaltPage(action,text){
- const tabs=await chrome.tabs.query({url:[ZALT_URL]});
- if(!tabs.length)return{ok:false,message:"I could not find a Zalt Text to Speech tab. Open https://zalt.me/tools/text-to-speech, then reload the extension and refresh that tab."};
- const tab=tabs.find(t=>t.active)||tabs[0];
- // Retry lifecycle activation immediately before every generation, in case Chrome detached the debugger.
- await keepZaltActive(tab.id);
- try{
-  const response=await chrome.tabs.sendMessage(tab.id,{type:action==="preview"?"IVD_PREVIEW":"IVD_GENERATE",text});
-  return response||{ok:true,message:action==="preview"?"Transcript preview sent.":"Generate Speech clicked on Zalt."};
- }catch(error){return{ok:false,message:"Couldn't reach Zalt Text to Speech. Refresh that tab after reloading the extension, then try again. "+(error?.message||"")};}
-}
-chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
- if(message?.type==="IVD_TOGGLE_LISTENING"){
-  (async()=>{try{await ensureOffscreen();const result=await chrome.runtime.sendMessage({type:"IVD_OFFSCREEN_TOGGLE"});sendResponse(result||{listening:false,message:"Dictation engine did not respond. Reload the extension."});}catch(error){sendResponse({listening:false,message:"Could not start background dictation: "+(error?.message||error)});}})();return true;
- }
- if(message?.type==="IVD_BRIDGE_TO_ZALT"){
-  (async()=>{try{sendResponse(await sendToZaltPage(message.action,String(message.text||"")));}catch(error){sendResponse({ok:false,message:error?.message||String(error)});}})();return true;
- }
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "IVD_TOGGLE_LISTENING") {
+    (async () => {
+      try {
+        await ensureOffscreen();
+        const result = await chrome.runtime.sendMessage({ type: "IVD_OFFSCREEN_TOGGLE" });
+        sendResponse(result || { listening: false, message: "Dictation engine did not respond. Reload the extension." });
+      } catch (error) {
+        sendResponse({ listening: false, message: "Could not start background dictation: " + (error?.message || error) });
+      }
+    })();
+    return true;
+  }
+  if (message?.type === "IVD_BRIDGE_TO_ZALT") {
+    (async () => {
+      try { sendResponse(await sendToTtsPage(message.action, String(message.text || ""))); }
+      catch (error) { sendResponse({ ok: false, message: error?.message || String(error) }); }
+    })();
+    return true;
+  }
 });
