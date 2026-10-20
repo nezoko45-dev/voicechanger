@@ -1,4 +1,17 @@
 (() => {
- const button=document.querySelector("#open-dashboard"),status=document.querySelector("#status");
- button.addEventListener("click",async()=>{button.disabled=true;status.textContent="Opening voice dashboard…";try{const url=chrome.runtime.getURL("dashboard.html");const tabs=await chrome.tabs.query({url});if(tabs.length){await chrome.tabs.update(tabs[0].id,{active:true});await chrome.windows.update(tabs[0].windowId,{focused:true});}else await chrome.tabs.create({url});window.close();}catch(error){status.textContent="Could not open dashboard: "+(error?.message||String(error));button.disabled=false;}});
+  const button = document.querySelector("#call-again");
+  const status = document.querySelector("#status");
+
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    status.textContent = "Looking for “Call again”…";
+    try {
+      const result = await chrome.runtime.sendMessage({ type: "FISH_AUDIO_CLICK_AGAIN" });
+      status.textContent = result?.message || (result?.ok ? "Clicked “Call again”." : "Could not click the button.");
+    } catch (error) {
+      status.textContent = "Click failed: " + (error?.message || String(error));
+    } finally {
+      button.disabled = false;
+    }
+  });
 })();
