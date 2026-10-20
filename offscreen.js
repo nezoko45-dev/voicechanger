@@ -12,7 +12,7 @@
   // Suppress an identical repeat here as a second guard before it reaches the page.
   if(submitInFlight||(key===lastSubmitKey&&now-lastSubmitAt<10000)){status("Duplicate transcript suppressed; generating this utterance only once.");return;}
   lastSubmitKey=key;lastSubmitAt=now;submitInFlight=true;
-  try{const result=await sendForGeneration("generate",phrase);if(!result?.ok)status("Transcript captured but Zalt Text to Speech did not accept it: "+(result?.message||"Refresh the Zalt Text to Speech tab."));else status(result?.message||"Sent to Zalt Text to Speech. Dictation remains active.");}
+  try{const result=await sendForGeneration("generate",phrase);if(!result?.ok)status("Transcript captured but tts.dev did not accept it: "+(result?.message||"Refresh the tts.dev tab."));else status(result?.message||"Sent to tts.dev. Dictation remains active.");}
   finally{submitInFlight=false;}
  }
  async function autoGenerateEnabled(){try{const data=await chrome.storage.local.get(["autoGenerate"]);return typeof data.autoGenerate==="boolean"?data.autoGenerate:true;}catch{return true;}}
