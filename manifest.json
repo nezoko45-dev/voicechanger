@@ -12,13 +12,17 @@
   ],
   "host_permissions": [
     "https://tts.dev/*",
-    "https://*.tts.dev/*"
+    "https://*.tts.dev/*",
+    "http://tts.dev/*",
+    "http://*.tts.dev/*"
   ],
   "content_scripts": [
     {
       "matches": [
         "https://tts.dev/*",
-        "https://*.tts.dev/*"
+        "https://*.tts.dev/*",
+        "http://tts.dev/*",
+        "http://*.tts.dev/*"
       ],
       "js": [
         "content.js"
