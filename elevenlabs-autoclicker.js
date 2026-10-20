@@ -27,20 +27,20 @@
     }
     return {roots, elements};
   }
-  function labelOf(el) {
-    return norm([
+  function matchesTarget(el) {
+    return [
       el.innerText,
       el.textContent,
       el.getAttribute("aria-label"),
       el.getAttribute("title"),
       el.getAttribute("data-testid"),
       el.value
-    ].filter(Boolean).join(" "));
+    ].some(value => norm(value) === TARGET);
   }
   function findButton() {
     const {elements} = rootsAndElements();
     for (const el of elements) {
-      if (labelOf(el) !== TARGET) continue;
+      if (!matchesTarget(el)) continue;
       const clickable = el.closest('button,[role="button"],[role="menuitem"],input[type="button"],input[type="submit"]') || el;
       if (clickable.disabled || clickable.getAttribute("aria-disabled") === "true") continue;
       if (clickable.getClientRects().length === 0) continue;
