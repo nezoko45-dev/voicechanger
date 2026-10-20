@@ -7,8 +7,8 @@ async function ensureOffscreen(){
  try{await creatingOffscreen;}finally{creatingOffscreen=null;}
 }
 async function sendToInworldPage(action,text){
- const tabs=await chrome.tabs.query({url:["https://platform.inworld.ai/tts-playground*","https://inworld.ai/voice-generator*"]});
- if(!tabs.length)return{ok:false,message:"Open the Inworld TTS Playground in Chrome, sign in, and choose a voice first."};
+ const tabs=await chrome.tabs.query({url:["https://platform.inworld.ai/tts-playground*","https://platform.inworld.ai/*/tts-playground*","https://inworld.ai/voice-generator*"]});
+ if(!tabs.length)return{ok:false,message:"I could not find an Inworld TTS Playground tab. Keep your workspace playground tab open, then reload the extension and refresh that tab."};
  const tab=tabs.find(t=>t.active)||tabs[0];
  try{
   const response=await chrome.tabs.sendMessage(tab.id,{type:action==="preview"?"IVD_PREVIEW":"IVD_GENERATE",text});
