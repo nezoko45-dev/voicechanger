@@ -1,5 +1,5 @@
 (() => {
- if(window.__ttsConverterDictationInstalled)return;window.__inworldDictationInstalled=true;
+ if(window.__ttsConverterDictationInstalled)return;window.__ttsConverterDictationInstalled=true;
  const visible=el=>!!el&&el.getClientRects().length>0;
  const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
  let generating=false;
