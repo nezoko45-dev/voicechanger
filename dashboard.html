@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#111827">
-<title>tts.dev Voice Dictation</title>
+<title>TTSLab Voice Dictation</title>
 <style>
 :root{color-scheme:dark;--panel:#141c2f;--line:#293650;--muted:#a7b4cb;--green:#18a879;--red:#ef6461}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#182742 0,#0b1020 55%);color:#eef4ff;font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}
@@ -10,16 +10,16 @@ button{border:0;border-radius:11px;padding:12px 16px;min-height:46px;font:inheri
 #status{padding:14px;border:1px solid var(--line);border-radius:12px;background:#0d1526;overflow-wrap:anywhere}.indicator{display:inline-block;width:9px;height:9px;border-radius:50%;background:#8b9ab1;margin-right:8px}.indicator.on{background:#35d39b;box-shadow:0 0 12px #35d39b80}
 .step{display:flex;gap:12px;margin:16px 0;align-items:flex-start}.num{display:grid;place-items:center;flex:0 0 28px;height:28px;border-radius:9px;background:#263854;color:#b9d4ff;font-weight:800}footer{margin-top:20px;color:var(--muted);font-size:12px}
 </style></head><body><main>
-<header><div class="logo" aria-hidden="true">🎙️</div><div><h1>tts.dev Voice Dictation</h1><p class="subtitle">Speak naturally; the extension types your words and clicks Stream after you pause.</p></div></header>
+<header><div class="logo" aria-hidden="true">🎙️</div><div><h1>TTSLab Voice Dictation</h1><p class="subtitle">Speak naturally; the extension types your words and clicks Stream after you pause.</p></div></header>
 <section class="card"><h2>Hands-free dictation</h2>
-<p class="muted">Keep tts.dev open in a Chrome tab. Start listening here, then speak. After about 3 seconds of silence, the extension submits the recognized sentence and clicks “Stream”.</p>
-<div class="actions"><button id="open-tts" class="secondary" type="button">Open tts.dev</button><button id="toggle" type="button">▶ Start listening</button></div>
-<div id="status" role="status" aria-live="polite"><span class="indicator" id="indicator"></span><span id="status-text">Ready. Open tts.dev, then start listening.</span></div>
+<p class="muted">Keep TTSLab.dev open in a Chrome tab. Start listening here, then speak. After about 3 seconds of silence, the extension submits the recognized sentence and clicks “Stream”.</p>
+<div class="actions"><button id="open-tts" class="secondary" type="button">Open TTSLab.dev</button><button id="toggle" type="button">▶ Start listening</button></div>
+<div id="status" role="status" aria-live="polite"><span class="indicator" id="indicator"></span><span id="status-text">Ready. Open TTSLab.dev, then start listening.</span></div>
 </section>
 <section class="card" style="margin-top:18px"><h2>How to use</h2>
-<div class="step"><span class="num">1</span><div><strong>Open tts.dev</strong><p class="muted">Sign in if needed and leave the page open with its text box and Stream button visible.</p></div></div>
+<div class="step"><span class="num">1</span><div><strong>Open TTSLab.dev</strong><p class="muted">Sign in if needed and leave the page open with its text box and Stream button visible.</p></div></div>
 <div class="step"><span class="num">2</span><div><strong>Allow microphone access</strong><p class="muted">Click Start listening and allow Chrome to use your microphone when prompted.</p></div></div>
-<div class="step"><span class="num">3</span><div><strong>Speak and pause</strong><p class="muted">Your transcript appears in the text box. A pause of about 3 seconds triggers Stream automatically. Keep the extension and tts.dev open.</p></div></div>
-<p class="muted">Note: tts.dev’s live page structure could not be verified here. If its text field or Stream control differs from the expected labels, the status will report that it could not find the control.</p>
-<footer>tts.dev Voice Dictation · After updating, open chrome://extensions and reload the extension.</footer>
+<div class="step"><span class="num">3</span><div><strong>Speak and pause</strong><p class="muted">Your transcript appears in the text box. A pause of about 3 seconds triggers Stream automatically. Keep the extension and TTSLab.dev open.</p></div></div>
+<p class="muted">Note: TTSLab.dev’s live page structure could not be verified here. If its text field or Stream control differs from the expected labels, the status will report that it could not find the control.</p>
+<footer>TTSLab Voice Dictation · After updating, open chrome://extensions and reload the extension.</footer>
 </section></main><script src="dashboard.js"></script></body></html>
