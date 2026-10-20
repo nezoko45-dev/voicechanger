@@ -38,7 +38,7 @@
   if(!phrase)throw new Error("No transcript received.");
   generating=true;
   try{
-   let{box,button}=await waitReady();setText(box,phrase);await sleep(250);({box,button}=await waitReady(10000));
+   let{box,button}=await waitReady(120000);setText(box,phrase);await sleep(250);({box,button}=await waitReady(10000));
    button.click();
    const deadline=Date.now()+120000;let sawBusy=false;
    while(Date.now()<deadline){const currentBox=box.isConnected?box:findTextBox(),currentButton=currentBox?findGenerate(currentBox):null;
