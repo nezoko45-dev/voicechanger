@@ -18,5 +18,5 @@ Branch: https://github.com/nezoko45-dev/voicechanger/tree/rebuild/uberduck-voice
 
 - This version automates the TTSConverter.io website UI and does not call its TTS API or require an API key.
 - The public page currently indicates a 250-character limit per conversion; longer phrases may be rejected or require shortening.
-- Website layout changes may require selector updates.
+- Overlapping submissions are queued, and an identical transcript repeated within five seconds is ignored to prevent duplicate conversions.\n- Website layout changes may require selector updates.
 - No live test has been run against a signed-in browser session or VRChat.
