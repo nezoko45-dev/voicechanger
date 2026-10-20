@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "tts.dev Voice Dictation",
+  "name": "TTSLab Voice Dictation",
   "version": "2.4.0",
   "minimum_chrome_version": "116",
-  "description": "Hands-free voice dictation for tts.dev: transcribe speech and click \"Stream\" after each pause.",
+  "description": "Hands-free voice dictation for TTSLab: transcribe speech and click \"Stream\" after each pause.",
   "permissions": [
     "storage",
     "sidePanel",
@@ -11,18 +11,18 @@
     "offscreen"
   ],
   "host_permissions": [
-    "https://tts.dev/*",
-    "https://*.tts.dev/*",
-    "http://tts.dev/*",
-    "http://*.tts.dev/*"
+    "https://ttslab.dev/*",
+    "https://*.ttslab.dev/*",
+    "http://ttslab.dev/*",
+    "http://*.ttslab.dev/*"
   ],
   "content_scripts": [
     {
       "matches": [
-        "https://tts.dev/*",
-        "https://*.tts.dev/*",
-        "http://tts.dev/*",
-        "http://*.tts.dev/*"
+        "https://ttslab.dev/*",
+        "https://*.ttslab.dev/*",
+        "http://ttslab.dev/*",
+        "http://*.ttslab.dev/*"
       ],
       "js": [
         "content.js"
