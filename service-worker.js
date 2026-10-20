@@ -1,5 +1,5 @@
 const OFFSCREEN_URL = "offscreen.html";
-const TTS_URL = "https://tts.dev/*";
+const TTS_URL = "tts.dev";
 let creatingOffscreen = null;
 
 async function ensureOffscreen() {
@@ -18,9 +18,18 @@ async function ensureOffscreen() {
 }
 
 async function sendToTtsPage(action, text) {
-  const tabs = await chrome.tabs.query({ url: [TTS_URL, "https://*.tts.dev/*"] });
+  const allTabs = await chrome.tabs.query({});
+  const tabs = allTabs.filter(t => {
+    try {
+      const host = new URL(t.url || "").hostname.toLowerCase();
+      return host === TTS_URL || host.endsWith("." + TTS_URL);
+    } catch { return false; }
+  });
   if (!tabs.length) {
-    return { ok: false, message: "Open https://tts.dev/ in a Chrome tab first, then reload that tab and start dictation again." };
+    const openHosts = allTabs.map(t => {
+      try { return new URL(t.url || "").hostname; } catch { return ""; }
+    }).filter(Boolean).filter((host, i, arr) => arr.indexOf(host) === i).slice(0, 8);
+    return { ok: false, message: "I can't see a tab whose address ends in tts.dev. Open the actual tts.dev page in this same Chrome profile. Open tabs I can see: " + (openHosts.join(", ") || "none") };
   }
   const tab = tabs.find(t => t.active) || tabs[0];
   try {
