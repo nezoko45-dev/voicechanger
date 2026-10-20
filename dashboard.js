@@ -8,5 +8,13 @@
  chrome.storage.local.get(["autoGenerate"],data=>{if(typeof data.autoGenerate==="boolean")auto.checked=data.autoGenerate;});
  auto.addEventListener("change",()=>chrome.storage.local.set({autoGenerate:auto.checked}));
  openInworld.addEventListener("click",async()=>{try{const url="https://zalt.me/tools/text-to-speech";const tabs=await chrome.tabs.query({url:["https://zalt.me/tools/text-to-speech*"]});if(tabs.length){await chrome.tabs.update(tabs[0].id,{active:true});await chrome.windows.update(tabs[0].windowId,{focused:true});}else await chrome.tabs.create({url});status("Zalt Text to Speech opened. Select your preferred voice if needed.");}catch(error){status("Couldn't open Zalt Text to Speech: "+(error?.message||String(error)));}});
- status("Open Zalt Text to Speech and keep that tab open.");
+
+ const renderEl=active=>{elToggle.textContent=active?"■ Stop autoclicker":"▶ Start autoclicker";elToggle.classList.toggle("stop",active);elEnabled.checked=active;elIndicator.classList.toggle("on",active);};
+ const setEl=async active=>{await chrome.storage.local.set({elevenLabsAutoClickEnabled:active});renderEl(active);elStatus.textContent=active?"Monitoring ElevenLabs tabs for “Start a call”…":"Autoclicker stopped.";};
+ chrome.storage.local.get(["elevenLabsAutoClickEnabled"],d=>renderEl(!!d.elevenLabsAutoClickEnabled));
+ elToggle.addEventListener("click",()=>setEl(!elEnabled.checked));
+ elEnabled.addEventListener("change",()=>setEl(elEnabled.checked));
+ $("#el-open").addEventListener("click",async()=>{try{const tabs=await chrome.tabs.query({url:["https://elevenlabs.io/*","https://*.elevenlabs.io/*"]});if(tabs.length){await chrome.tabs.update(tabs[0].id,{active:true});await chrome.windows.update(tabs[0].windowId,{focused:true});}else await chrome.tabs.create({url:"https://elevenlabs.io/app/agents"});elStatus.textContent="ElevenLabs opened. Open your agent page; then enable the autoclicker.";}catch(e){elStatus.textContent="Couldn't open ElevenLabs: "+(e?.message||e);}});
+ chrome.runtime.onMessage.addListener(message=>{if(message?.type==="ELEVENLABS_AUTOCLICK_STATUS")elStatus.textContent=message.message;});
+\n status("Open Zalt Text to Speech and keep that tab open.");
 })();
