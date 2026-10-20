@@ -1,10 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Fish Audio Call Again Clicker",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "minimum_chrome_version": "116",
-  "description": "One-click helper for Fish Audio's Call again button.",
-  "permissions": ["tabs"],
+  "description": "Automatically click Fish Audio's Call again button when it becomes available.",
+  "permissions": [
+    "tabs"
+  ],
   "host_permissions": [
     "https://fish.audio/*",
     "https://*.fish.audio/*"
@@ -15,7 +17,9 @@
         "https://fish.audio/*",
         "https://*.fish.audio/*"
       ],
-      "js": ["content.js"],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
