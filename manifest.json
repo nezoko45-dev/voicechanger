@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TTSConverter Voice Dictation for VRChat",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "minimum_chrome_version": "116",
   "description": "One-button dictation that fills TTSConverter.io and clicks Convert Now for VRChat.",
   "permissions": ["storage", "sidePanel", "tabs", "offscreen"],
