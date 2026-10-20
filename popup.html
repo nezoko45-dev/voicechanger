@@ -3,19 +3,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Fish Audio Call Again</title>
+<title>Fish Audio Auto Clicker</title>
 <style>
-*{box-sizing:border-box}body{font:14px/1.5 system-ui,sans-serif;width:290px;padding:16px;margin:0;color:#eef4ff;background:#111827}
+*{box-sizing:border-box}body{font:14px/1.5 system-ui,sans-serif;width:300px;padding:16px;margin:0;color:#eef4ff;background:#111827}
 h1{font-size:17px;margin:0 0 6px}p{margin:8px 0 14px;color:#c5cee0}
 button{border:0;border-radius:9px;padding:12px;background:#18a879;color:#041b14;font-weight:750;cursor:pointer;width:100%;min-height:44px}
-button:disabled{opacity:.65;cursor:wait}#status{padding:10px;border-radius:8px;background:#202b3e;overflow-wrap:anywhere;margin-top:12px}
+button.stop{background:#ef6461;color:#250909}button:disabled{opacity:.65;cursor:wait}
+#status{padding:10px;border-radius:8px;background:#202b3e;overflow-wrap:anywhere;margin-top:12px}
+.small{font-size:12px;color:#a7b4cb}
 </style>
 </head>
 <body>
-<h1>Fish Audio Call Again</h1>
-<p>Open Fish Audio with the “Call again” button visible, then click below.</p>
-<button id="call-again" type="button">↻ Call again</button>
+<h1>Fish Audio Auto Clicker</h1>
+<p>Start watching the Fish Audio page. It will click “Call again” when available and wait for the next button cycle.</p>
+<button id="toggle" type="button">▶ Start automatic clicking</button>
 <p id="status" role="status" aria-live="polite">Ready.</p>
+<p class="small">Keep the Fish Audio tab open. Stop the clicker before switching to another task.</p>
 <script src="popup.js"></script>
 </body>
 </html>
