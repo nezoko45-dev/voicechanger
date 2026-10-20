@@ -1,5 +1,5 @@
 const OFFSCREEN_URL = "offscreen.html";
-const TTS_URL = "tts.dev";
+const TTS_URL = "ttslab.dev";
 let creatingOffscreen = null;
 
 async function ensureOffscreen() {
@@ -12,7 +12,7 @@ async function ensureOffscreen() {
   creatingOffscreen = chrome.offscreen.createDocument({
     url: OFFSCREEN_URL,
     reasons: ["USER_MEDIA"],
-    justification: "Keep voice dictation running while the user switches apps; send completed speech to tts.dev."
+    justification: "Keep voice dictation running while the user switches apps; send completed speech to TTSLab.dev."
   });
   try { await creatingOffscreen; } finally { creatingOffscreen = null; }
 }
@@ -29,7 +29,7 @@ async function sendToTtsPage(action, text) {
     const openHosts = allTabs.map(t => {
       try { return new URL(t.url || "").hostname; } catch { return ""; }
     }).filter(Boolean).filter((host, i, arr) => arr.indexOf(host) === i).slice(0, 8);
-    return { ok: false, message: "I can't see a tab whose address ends in tts.dev. Open the actual tts.dev page in this same Chrome profile. Open tabs I can see: " + (openHosts.join(", ") || "none") };
+    return { ok: false, message: "I can't see a tab whose address ends in TTSLab.dev. Open the actual TTSLab.dev page in this same Chrome profile. Open tabs I can see: " + (openHosts.join(", ") || "none") };
   }
   const tab = tabs.find(t => t.active) || tabs[0];
   try {
@@ -37,9 +37,9 @@ async function sendToTtsPage(action, text) {
       type: action === "preview" ? "IVD_PREVIEW" : "IVD_GENERATE",
       text
     });
-    return response || { ok: true, message: action === "preview" ? "Transcript preview sent to tts.dev." : 'Stream clicked on tts.dev.' };
+    return response || { ok: true, message: action === "preview" ? "Transcript preview sent to TTSLab.dev." : 'Stream clicked on TTSLab.dev.' };
   } catch (error) {
-    return { ok: false, message: "Couldn't reach tts.dev. Refresh that tab after reloading the extension, then try again. " + (error?.message || "") };
+    return { ok: false, message: "Couldn't reach TTSLab.dev. Refresh that tab after reloading the extension, then try again. " + (error?.message || "") };
   }
 }
 
