@@ -2,7 +2,7 @@
  if(window.__ttsConverterDictationInstalled)return;window.__ttsConverterDictationInstalled=true;
  const visible=el=>!!el&&el.getClientRects().length>0;
  const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
- let generating=false;
+ let generating=false, generationQueue=Promise.resolve(), lastSubmittedText="", lastSubmittedAt=0;
  function attrs(el){return[el.getAttribute("aria-label"),el.getAttribute("placeholder"),el.getAttribute("data-placeholder"),el.getAttribute("name"),el.getAttribute("data-testid"),el.getAttribute("title")].filter(Boolean).join(" ").toLowerCase();}
  function findTextBox(){
   const candidates=[...document.querySelectorAll('textarea,input:not([type]),input[type="text"],[contenteditable="true"],[role="textbox"],[data-slate-editor="true"],[data-lexical-editor="true"]')].filter(el=>!el.disabled&&el.getAttribute("aria-disabled")!=="true"&&visible(el));
@@ -34,9 +34,8 @@
  }
  async function waitReady(timeout=30000){const end=Date.now()+timeout;while(Date.now()<end){const box=findTextBox(),button=box&&findGenerate(box);if(box&&button&&!busy(button))return{box,button};await sleep(500);}throw new Error(diagnose());}
  async function preview(text){if(generating)return;const {box}=await waitReady(10000);if(generating)return;setText(box,text);}
- async function generate(text){
-  const phrase=String(text||"").trim();if(!phrase)throw new Error("No transcript received.");
-  if(generating)throw new Error("TTSConverter.io is already converting speech. Please wait for the current conversion to finish.");
+ async function generateOne(phrase){
+  if(!phrase)throw new Error("No transcript received.");
   generating=true;
   try{
    let{box,button}=await waitReady();setText(box,phrase);await sleep(250);({box,button}=await waitReady(10000));
@@ -50,6 +49,15 @@
    }
    return{ok:true,message:"Clicked Convert Now. It may still be processing; check TTSConverter.io."};
   }finally{generating=false;}
+ }
+ function generate(text){
+  const phrase=String(text||"").trim();if(!phrase)return Promise.reject(new Error("No transcript received."));
+  const now=Date.now();
+  if(phrase===lastSubmittedText&&now-lastSubmittedAt<5000)return Promise.resolve({ok:true,message:"Duplicate transcript ignored; this sentence was already submitted."});
+  lastSubmittedText=phrase;lastSubmittedAt=now;
+  const task=generationQueue.then(()=>generateOne(phrase));
+  generationQueue=task.catch(()=>{});
+  return task;
  }
  chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   if(message?.type==="IVD_PREVIEW"&&typeof message.text==="string"){preview(message.text).then(()=>sendResponse({ok:true,message:"Transcript filled into TTSConverter.io."})).catch(error=>sendResponse({ok:false,message:error?.message||String(error)}));return true;}
