@@ -1,53 +1,46 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#111827">
-<title>VRChat Voice Dictation</title>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#111827">
+<title>Inworld Voice Dictation for VRChat</title>
 <style>
 :root{color-scheme:dark;--panel:#141c2f;--line:#293650;--muted:#a7b4cb;--green:#18a879;--red:#ef6461}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#182742 0,#0b1020 55%);color:#eef4ff;font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}
 main{width:min(920px,calc(100% - 32px));margin:0 auto;padding:42px 0 60px}header{display:flex;align-items:center;gap:14px;margin-bottom:28px}.logo{display:grid;place-items:center;width:52px;height:52px;border-radius:16px;background:#123c36;font-size:27px}
 h1{font-size:clamp(24px,4vw,34px);line-height:1.15;margin:0}.subtitle{color:var(--muted);margin:5px 0 0}.layout{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(260px,.8fr);gap:18px}
 .card{background:color-mix(in srgb,var(--panel) 94%,transparent);border:1px solid var(--line);border-radius:18px;padding:22px;box-shadow:0 16px 48px #0002}.card h2{font-size:16px;margin:0 0 14px}
-.actions{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}button{border:0;border-radius:11px;padding:12px 16px;min-height:46px;font:inherit;font-weight:750;cursor:pointer}button:focus-visible,input:focus-visible{outline:3px solid #80b8ff;outline-offset:3px}button:disabled{opacity:.55;cursor:wait}
-#toggle{background:var(--green);color:#041b14;min-width:180px}#toggle.stop{background:var(--red);color:#250909}.secondary{background:#273650;color:#f0f5ff}.muted{color:var(--muted);font-size:13px}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}button{border:0;border-radius:11px;padding:12px 16px;min-height:46px;font:inherit;font-weight:750;cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #80b8ff;outline-offset:3px}button:disabled{opacity:.55;cursor:wait}
+#toggle{background:var(--green);color:#041b14;min-width:220px}#toggle.stop{background:var(--red);color:#250909}.secondary{background:#273650;color:#f0f5ff}.muted{color:var(--muted);font-size:13px}
 #status{padding:13px 14px;border:1px solid var(--line);border-radius:12px;background:#0d1526;overflow-wrap:anywhere}.indicator{display:inline-block;width:9px;height:9px;border-radius:50%;background:#8b9ab1;margin-right:8px}.indicator.on{background:#35d39b;box-shadow:0 0 12px #35d39b80}
-#preview{min-height:150px;white-space:pre-wrap;overflow-wrap:anywhere;background:#0d1526;border:1px solid var(--line);border-radius:12px;padding:15px}.setting{display:flex;gap:10px;align-items:flex-start;margin-top:16px}.setting input{margin-top:5px;accent-color:var(--green);width:17px;height:17px}
+#preview{min-height:120px;white-space:pre-wrap;overflow-wrap:anywhere;background:#0d1526;border:1px solid var(--line);border-radius:12px;padding:15px}.setting{display:flex;gap:10px;align-items:flex-start;margin-top:16px}.setting input{margin-top:5px;accent-color:var(--green);width:17px;height:17px}
+label.field{display:block;margin-top:12px;font-size:13px}label.field input,label.field select{display:block;width:100%;margin-top:5px;padding:10px;border-radius:8px;border:1px solid var(--line);background:#0b1020;color:#eef4ff}
 .step{display:flex;gap:12px;margin:16px 0;align-items:flex-start}.num{display:grid;place-items:center;flex:0 0 28px;height:28px;border-radius:9px;background:#263854;color:#b9d4ff;font-weight:800}footer{margin-top:20px;color:var(--muted);font-size:12px}
 @media(max-width:680px){main{padding-top:24px}.layout{grid-template-columns:1fr}.card{padding:18px}}
-</style>
-</head>
-<body>
-<main>
-<header><div class="logo" aria-hidden="true">🎙️</div><div><h1>VRChat Voice Dictation</h1><p class="subtitle">Your voice controls, without keeping the side panel open.</p></div></header>
+</style></head>
+<body><main>
+<header><div class="logo" aria-hidden="true">🎙️</div><div><h1>Inworld Voice Dictation</h1><p class="subtitle">One button: listen, detect a pause, generate speech, play it to your virtual microphone.</p></div></header>
 <div class="layout">
 <section class="card">
-<h2>Dictation control</h2><p class="muted">Start listening here, then switch to VRChat. Speech recognition runs in the extension's offscreen document, separate from this tab.</p>
-<div class="actions"><button id="toggle" type="button">🎙 Start dictation</button><button id="open-eleven" class="secondary" type="button">Open ElevenLabs</button></div>
-<div id="status" role="status" aria-live="polite"><span class="indicator" id="indicator"></span><span id="status-text">Ready. Open an ElevenLabs Text to Speech tab first.</span></div>
-<label class="setting"><input id="auto" type="checkbox" checked><span><strong>Auto-send after silence</strong><br><span class="muted">Submit recognized speech after about 3 seconds of silence.</span></span></label>
+<h2>One-button voice control</h2><p class="muted">Click Start once, speak naturally, and the extension sends each phrase to Inworld after about 3 seconds of silence. Click Stop when finished.</p>
+<div class="actions"><button id="toggle" type="button">🎙 Start dictation + generation</button><button id="open-inworld" class="secondary" type="button">Open Inworld Portal</button></div>
+<div id="status" role="status" aria-live="polite"><span class="indicator" id="indicator"></span><span id="status-text">Ready. Add your Inworld credentials below.</span></div>
+<label class="setting"><input id="auto" type="checkbox" checked><span><strong>Auto-generate after silence</strong><br><span class="muted">When off, speech is transcribed but not sent for generation.</span></span></label>
 <div style="margin-top:22px;padding:15px;border:1px solid var(--line);border-radius:12px;background:#10182a">
-<h2>Direct ElevenLabs API</h2>
-<p class="muted">Optional: generate speech directly through ElevenLabs without relying on its webpage. API usage consumes your account credits. Keep your API key private.</p>
-<label class="setting"><input id="direct-api" type="checkbox"><span><strong>Bypass ElevenLabs webpage</strong><br><span class="muted">Generate and play audio from this dashboard instead.</span></span></label>
-<label style="display:block;margin-top:12px;font-size:13px">API key<input id="api-key" type="password" autocomplete="off" placeholder="Paste your ElevenLabs API key" style="display:block;width:100%;margin-top:5px;padding:10px;border-radius:8px;border:1px solid var(--line);background:#0b1020;color:#eef4ff"></label>
-<label style="display:block;margin-top:12px;font-size:13px">Voice ID<input id="voice-id" type="text" autocomplete="off" placeholder="Your ElevenLabs voice ID" style="display:block;width:100%;margin-top:5px;padding:10px;border-radius:8px;border:1px solid var(--line);background:#0b1020;color:#eef4ff"></label>
-<label style="display:block;margin-top:12px;font-size:13px">Model ID<select id="model-id" style="display:block;width:100%;margin-top:5px;padding:10px;border-radius:8px;border:1px solid var(--line);background:#0b1020;color:#eef4ff"><option value="eleven_flash_v2_5">Eleven Flash v2.5 (low latency)</option><option value="eleven_multilingual_v2">Eleven Multilingual v2</option><option value="eleven_v3">Eleven v3</option></select></label>
-<button id="save-api" class="secondary" type="button" style="margin-top:12px">Save API settings</button>
-<p class="muted" style="margin-bottom:0">The API key is stored locally in this extension's Chrome storage. Do not share your installed extension profile or API key.</p>
+<h2>Inworld TTS settings</h2><p class="muted">Use the complete Base64 API credential copied from the Inworld Portal. Do not paste it into chat or commit it to GitHub. This personal extension stores it locally in Chrome storage.</p>
+<label class="field">Inworld API credential (Base64)<input id="api-key" type="password" autocomplete="off" placeholder="Paste the credential copied from Inworld Portal"></label>
+<label class="field">Voice ID<input id="voice-id" type="text" autocomplete="off" placeholder="For example, a voice ID from your Inworld voice list"></label>
+<label class="field">Model<select id="model-id"><option value="inworld-tts-2">Inworld TTS 2</option><option value="inworld-tts-2-flash">Inworld TTS 2 Flash</option></select></label>
+<label class="field">Speaking rate<input id="speaking-rate" type="number" min="0.5" max="1.5" step="0.05" value="1"></label>
+<button id="save-api" class="secondary" type="button" style="margin-top:12px">Save Inworld settings</button>
+<p class="muted" style="margin-bottom:0">This mode generates through Inworld's official TTS API rather than clicking the website's Generate button. It avoids depending on a frozen webpage. API usage may be billed to your Inworld account.</p>
 </div>
 <div style="margin-top:22px"><h2>Latest transcript</h2><div id="preview" aria-live="polite">Nothing transcribed yet.</div></div>
 </section>
-<aside class="card"><h2>Quick setup</h2>
-<div class="step"><span class="num">1</span><div><strong>Open ElevenLabs</strong><p class="muted">In website mode, sign in and open Text to Speech. Direct API mode does not need that tab.</p></div></div>
-<div class="step"><span class="num">2</span><div><strong>Start dictation</strong><p class="muted">Allow Chrome microphone access when asked.</p></div></div>
-<div class="step"><span class="num">3</span><div><strong>Switch to VRChat</strong><p class="muted">This dashboard can sit in the background. Your audio routing must still send ElevenLabs playback to the VRChat microphone.</p></div></div>
-<hr style="border:0;border-top:1px solid var(--line);margin:22px 0"><h2>Important</h2>
-<p class="muted">With Direct API enabled and configured, this dashboard generates speech without controlling the ElevenLabs webpage. Keep this dashboard open for audio playback. Set Windows audio output to your virtual cable/device if that is how VRChat receives the voice.</p>
-</aside>
-</div>
-<footer>VRChat Voice Dictation · Use <code>chrome://extensions</code> to reload the extension after updating it.</footer>
-</main><script src="dashboard.js"></script>
-</body></html>
+<aside class="card"><h2>Setup</h2>
+<div class="step"><span class="num">1</span><div><strong>Configure Inworld</strong><p class="muted">Get the API credential and a voice ID from your Inworld Portal. Paste them above and save.</p></div></div>
+<div class="step"><span class="num">2</span><div><strong>Click Start</strong><p class="muted">Allow Chrome microphone access. Speak; each phrase is generated after a pause.</p></div></div>
+<div class="step"><span class="num">3</span><div><strong>Route audio to VRChat</strong><p class="muted">Set Windows playback output to your virtual cable. In VRChat, choose that cable's corresponding input as the microphone.</p></div></div>
+<div class="step"><span class="num">4</span><div><strong>Keep the dashboard open</strong><p class="muted">Leave this dashboard tab open so it can play the generated audio. Click it once if Chrome blocks initial playback.</p></div></div>
+<hr style="border:0;border-top:1px solid var(--line);margin:22px 0"><h2>What this does</h2><p class="muted">One click starts background dictation. Speech recognition groups words into phrases; after a short silence, the extension asks Inworld to synthesize the phrase and plays the result. This is API-based generation, not automated clicking of a website button.</p></aside>
+</div><footer>Inworld Voice Dictation for VRChat · After updating, open <code>chrome://extensions</code> and reload the unpacked extension.</footer>
+</main><script src="dashboard.js"></script></body></html>
