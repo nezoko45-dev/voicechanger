@@ -66,7 +66,7 @@
       if (box) return box;
       await sleep(250);
     }
-    throw new Error("Couldn't find a visible text-entry box on tts.dev. Make sure the TTS page is fully loaded.");
+    throw new Error("Couldn't find a visible text-entry box on TTSLab.dev. Make sure the TTS page is fully loaded.");
   }
 
   async function preview(text) {
@@ -91,10 +91,10 @@
         await sleep(250);
       }
       if (!button || disabled(button)) {
-        throw new Error('Text was entered, but the enabled "Stream" button was not found on tts.dev. Check the page layout and try again.');
+        throw new Error('Text was entered, but the enabled "Stream" button was not found on TTSLab.dev. Check the page layout and try again.');
       }
       button.click();
-      return { ok: true, message: 'Transcript entered and "Stream" clicked on tts.dev. Still listening for the next sentence.' };
+      return { ok: true, message: 'Transcript entered and "Stream" clicked on TTSLab.dev. Still listening for the next sentence.' };
     } finally {
       generating = false;
     }
@@ -116,7 +116,7 @@
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type === "IVD_PREVIEW" && typeof message.text === "string") {
-      preview(message.text).then(() => sendResponse({ ok: true, message: "Live transcript preview entered into tts.dev." }))
+      preview(message.text).then(() => sendResponse({ ok: true, message: "Live transcript preview entered into TTSLab.dev." }))
         .catch(error => sendResponse({ ok: false, message: error?.message || String(error) }));
       return true;
     }
