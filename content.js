@@ -16,13 +16,21 @@
   const setter=Object.getOwnPropertyDescriptor(proto,"value")?.set;if(setter)setter.call(box,text);else box.value=text;
   box.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:text}));box.dispatchEvent(new Event("change",{bubbles:true}));
  }
- function labels(el){return[el.getAttribute("aria-label"),el.title,el.innerText,el.textContent,el.value,el.getAttribute("data-testid")].filter(Boolean).map(s=>s.trim());}
+ function labels(el){return[el.getAttribute("aria-label"),el.title,el.innerText,el.textContent,el.value,el.getAttribute("data-testid"),el.getAttribute("data-action"),typeof el.className==="string"?el.className:"",el.id].filter(Boolean).map(s=>String(s).trim()).filter(Boolean);}
  function findGenerate(box){
-  const buttons=[...document.querySelectorAll("button,[role='button'],input[type='submit']")].filter(visible);
-  const matches=buttons.filter(b=>labels(b).some(label=>/^(generate|generate speech|synthesize|create speech|generate audio|convert now)$/i.test(label)||/generate|synthesize|create speech|convert now/.test(label.toLowerCase())));
-  if(!matches.length)return null;
-  let node=box;for(let depth=0;node&&depth<12;depth++,node=node.parentElement){const nearby=matches.find(b=>node.contains(b));if(nearby)return nearby;}
-  return matches.find(b=>/generate|synthesize|create speech|convert now/i.test(labels(b).join(" ")))||null;
+  const selectors="button,[role='button'],input[type='submit'],input[type='button'],a,[onclick],[tabindex]";
+  const clickable=[...document.querySelectorAll(selectors)].filter(visible);
+  const matches=clickable.filter(el=>labels(el).some(label=>/convert\\s*now|convert|generate(?:\\s+speech|\\s+audio)?|synthesi[sz]e|create\\s+speech/i.test(label)));
+  let node=box;
+  for(let depth=0;node&&depth<14;depth++,node=node.parentElement){
+   const nearby=matches.find(el=>node.contains(el));
+   if(nearby)return nearby;
+  }
+  if(matches.length)return matches.sort((a,b)=>{
+   const score=el=>{const text=labels(el).join(" ").toLowerCase();let n=0;if(/convert\\s*now/.test(text))n+=100;if(/generate|synthesi[sz]e|create speech/.test(text))n+=30;if(el.matches("button,[role='button'],input[type='submit'],input[type='button']"))n+=20;if(/background|music|preview|track|youtube|play|download/.test(text))n-=50;return n;};
+   return score(b)-score(a);
+  })[0];
+  return null;
  }
  const busy=b=>!b||b.disabled||b.getAttribute("aria-disabled")==="true"||b.getAttribute("aria-busy")==="true"||/generating|processing|loading|synthesizing|converting/.test(labels(b).join(" ").toLowerCase());
  function diagnose(){
