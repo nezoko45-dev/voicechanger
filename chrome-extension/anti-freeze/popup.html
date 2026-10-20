@@ -13,19 +13,22 @@
       <div><h1>Anti-Freeze Tabs</h1><p>Keep important tabs from being discarded</p></div>
     </header>
     <form id="add-form">
-      <label for="tab-url">Add a tab to protect</label>
+      <label for="tab-url">Add a tab to protect (for example, Zolt TTS)</label>
       <div class="add-row">
-        <input id="tab-url" type="url" placeholder="https://vrchat.com" required>
+        <input id="tab-url" type="url" placeholder="Paste your Zolt TTS URL" required>
         <button type="submit">Add</button>
       </div>
-      <p class="hint">Use a full https:// or http:// URL.</p>
+      <p class="hint">Paste the full https:// or http:// URL of the tool you need while playing VRChat.</p>
     </form>
     <section>
       <div class="section-title"><h2>Your tabs</h2><button id="refresh" class="subtle" type="button">Refresh</button></div>
       <div id="status" role="status"></div>
       <ul id="tabs-list" aria-live="polite"></ul>
     </section>
-    <footer>Protection reduces automatic tab discarding. Chrome can still throttle background pages, and this cannot guarantee that VRChat or other apps stay live in the background.</footer>
+    <aside class="tip">
+      <strong>For Zolt TTS:</strong> In Chrome, open Settings → Performance → “Always keep these sites active” and add Zolt TTS's website. This Chrome setting is important because this extension cannot turn off background JavaScript throttling.
+    </aside>
+    <footer>This extension asks Chrome not to automatically discard protected tabs. It cannot guarantee that background pages keep running at full speed or prevent every kind of freeze.</footer>
   </main>
   <script src="popup.js"></script>
 </body>
