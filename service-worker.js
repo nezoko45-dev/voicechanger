@@ -20,6 +20,6 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   (async()=>{try{await ensureOffscreen();const result=await chrome.runtime.sendMessage({type:"IVD_OFFSCREEN_TOGGLE"});sendResponse(result||{listening:false,message:"Dictation engine did not respond. Reload the extension."});}catch(error){sendResponse({listening:false,message:"Could not start background dictation: "+(error?.message||error)});}})();return true;
  }
  if(message?.type==="IVD_BRIDGE_TO_TTSCONVERTER"){
-  (async()=>{try{sendResponse(await sendToInworldPage(message.action,String(message.text||"")));}catch(error){sendResponse({ok:false,message:error?.message||String(error)});}})();return true;
+  (async()=>{try{sendResponse(await sendToTTSConverterPage(message.action,String(message.text||"")));}catch(error){sendResponse({ok:false,message:error?.message||String(error)});}})();return true;
  }
 });
