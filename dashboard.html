@@ -28,6 +28,16 @@ h1{font-size:clamp(24px,4vw,34px);line-height:1.15;margin:0}.subtitle{color:var(
 <div class="actions"><button id="toggle" type="button">🎙 Start dictation</button><button id="open-eleven" class="secondary" type="button">Open ElevenLabs</button></div>
 <div id="status" role="status" aria-live="polite"><span class="indicator" id="indicator"></span><span id="status-text">Ready. Open an ElevenLabs Text to Speech tab first.</span></div>
 <label class="setting"><input id="auto" type="checkbox" checked><span><strong>Auto-send after silence</strong><br><span class="muted">Submit recognized speech after about 3 seconds of silence.</span></span></label>
+<div style="margin-top:22px;padding:15px;border:1px solid var(--line);border-radius:12px;background:#10182a">
+<h2>Direct ElevenLabs API</h2>
+<p class="muted">Optional: generate speech directly through ElevenLabs without relying on its webpage. API usage consumes your account credits. Keep your API key private.</p>
+<label class="setting"><input id="direct-api" type="checkbox"><span><strong>Bypass ElevenLabs webpage</strong><br><span class="muted">Generate and play audio from this dashboard instead.</span></span></label>
+<label style="display:block;margin-top:12px;font-size:13px">API key<input id="api-key" type="password" autocomplete="off" placeholder="Paste your ElevenLabs API key" style="display:block;width:100%;margin-top:5px;padding:10px;border-radius:8px;border:1px solid var(--line);background:#0b1020;color:#eef4ff"></label>
+<label style="display:block;margin-top:12px;font-size:13px">Voice ID<input id="voice-id" type="text" autocomplete="off" placeholder="Your ElevenLabs voice ID" style="display:block;width:100%;margin-top:5px;padding:10px;border-radius:8px;border:1px solid var(--line);background:#0b1020;color:#eef4ff"></label>
+<label style="display:block;margin-top:12px;font-size:13px">Model ID<select id="model-id" style="display:block;width:100%;margin-top:5px;padding:10px;border-radius:8px;border:1px solid var(--line);background:#0b1020;color:#eef4ff"><option value="eleven_flash_v2_5">Eleven Flash v2.5 (low latency)</option><option value="eleven_multilingual_v2">Eleven Multilingual v2</option><option value="eleven_v3">Eleven v3</option></select></label>
+<button id="save-api" class="secondary" type="button" style="margin-top:12px">Save API settings</button>
+<p class="muted" style="margin-bottom:0">The API key is stored locally in this extension's Chrome storage. Do not share your installed extension profile or API key.</p>
+</div>
 <div style="margin-top:22px"><h2>Latest transcript</h2><div id="preview" aria-live="polite">Nothing transcribed yet.</div></div>
 </section>
 <aside class="card"><h2>Quick setup</h2>
