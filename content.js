@@ -32,11 +32,12 @@
  }
  const busy=b=>!b||b.disabled||b.getAttribute("aria-disabled")==="true"||b.getAttribute("aria-busy")==="true"||/generating|processing|loading|synthesizing|converting/.test(labels(b).join(" ").toLowerCase());
  function diagnose(){
-  const box=findTextBox();
+  const box=findTextBox(),button=box&&findGenerate(box);
   if(!box)return "The extension reached Zalt Text to Speech but could not identify its text-entry box. Make sure https://zalt.me/tools/text-to-speech is open and fully loaded.";
-  return "Zalt Text to Speech text-entry box isn't ready yet.";
+  if(!button)return "Could not find the Generate Speech button. Wait for Zalt to finish loading.";
+  return "Zalt Text to Speech isn't ready to generate speech yet.";
  }
- async function waitReady(timeout=30000){const end=Date.now()+timeout;while(Date.now()<end){const box=findTextBox();if(box)return{box};await sleep(500);}throw new Error(diagnose());}
+ async function waitReady(timeout=30000){const end=Date.now()+timeout;while(Date.now()<end){const box=findTextBox(),button=box&&findGenerate(box);if(box&&button&&!busy(button))return{box,button};await sleep(500);}throw new Error(diagnose());}
  async function preview(text){if(generating)return;const {box}=await waitReady(10000);if(generating)return;setText(box,text);}
  function mediaSource(el){return el.currentSrc||el.src||el.querySelector?.("source")?.src||"";}
  async function playGeneratedAudio(previousSources){
@@ -56,9 +57,15 @@
   if(!phrase)throw new Error("No transcript received.");
   generating=true;
   try{
-   const {box}=await waitReady(240000);
-   const previousSources=new Map([...document.querySelectorAll("audio,video")].map(el=>[el,mediaSource(el)]));
+   let{box,button}=await waitReady(240000);
    setText(box,phrase);
+   await sleep(250);
+   ({box,button}=await waitReady(10000));
+   const liveBox=findTextBox(),liveButton=liveBox&&findGenerate(liveBox);
+   if(!liveButton||!liveButton.isConnected||busy(liveButton))throw new Error(diagnose());
+   const previousSources=new Map([...document.querySelectorAll("audio,video")].map(el=>[el,mediaSource(el)]));
+   // Trigger generation exactly once. Playback is handled via the media element, not by clicking a player button.
+   liveButton.click();
    const playbackMessage=await playGeneratedAudio(previousSources);
    return{ok:true,message:playbackMessage+" Dictation is still listening."};
   }finally{generating=false;}
