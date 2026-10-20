@@ -8,11 +8,11 @@ async function ensureOffscreen(){
 }
 async function sendToZaltPage(action,text){
  const tabs=await chrome.tabs.query({url:["https://zalt.me/tools/text-to-speech*"]});
- if(!tabs.length)return{ok:false,message:"I could not find a Zalt Text to Speech tab. Open https://ttsconverter.io, then reload the extension and refresh that tab."};
+ if(!tabs.length)return{ok:false,message:"I could not find a Zalt Text to Speech tab. Open https://zalt.me/tools/text-to-speech, then reload the extension and refresh that tab."};
  const tab=tabs.find(t=>t.active)||tabs[0];
  try{
   const response=await chrome.tabs.sendMessage(tab.id,{type:action==="preview"?"IVD_PREVIEW":"IVD_GENERATE",text});
-  return response||{ok:true,message:action==="preview"?"Transcript preview sent.":"Convert Now clicked on Zalt Text to Speech."};
+  return response||{ok:true,message:action==="preview"?"Transcript preview sent.":"Generate Speech clicked on Zalt."};
  }catch(error){return{ok:false,message:"Couldn't reach Zalt Text to Speech. Refresh that tab after reloading the extension, then try again. "+(error?.message||"")};}
 }
 chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{

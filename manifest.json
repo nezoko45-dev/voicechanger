@@ -7,11 +7,11 @@
   "permissions": ["storage", "sidePanel", "tabs", "offscreen"],
   "host_permissions": ["https://zalt.me/*"],
   "content_scripts": [{
-    "matches": ["https://ttsconverter.io/*", "https://www.ttsconverter.io/*"],
+    "matches": ["https://zalt.me/tools/text-to-speech*"],
     "js": ["content.js"],
     "run_at": "document_idle"
   }],
-  "action": {"default_title": "TTSConverter VRChat Voice", "default_popup": "popup.html"},
+  "action": {"default_title": "Zalt VRChat Voice", "default_popup": "popup.html"},
   "side_panel": {"default_path": "dashboard.html"},
   "background": {"service_worker": "service-worker.js"}
 }
