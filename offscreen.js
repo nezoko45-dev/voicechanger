@@ -5,7 +5,7 @@
  async function sendForGeneration(action,text){return await chrome.runtime.sendMessage({type:"IVD_BRIDGE_TO_ZALT",action,text});}
  async function preview(text){const phrase=String(text||"").trim();if(!phrase)return;chrome.runtime.sendMessage({type:"IVD_OFFSCREEN_TRANSCRIPT",text:phrase}).catch(()=>{});const result=await sendForGeneration("preview",phrase);if(!result?.ok&&result?.message)status(result.message);}
  async function submit(text){
-  const phrase=String(text||"").replace(/\\s+/g," ").trim();if(!phrase)return;
+  const phrase=String(text||"").replace(/\s+/g," ").trim();if(!phrase)return;
   const key=phrase.toLocaleLowerCase();
   const now=Date.now();
   // Silence flush and SpeechRecognition.onend can report the same utterance close together.
