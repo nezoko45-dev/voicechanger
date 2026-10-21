@@ -11,7 +11,7 @@
   catch(error){report("Submission failed: "+(error?.message||String(error)));}
   finally{submitInFlight=false;}
  }
- function flush(){clearTimeout(silenceTimer);silenceTimer=null;const phrase=(finalText||interimText).replace(/\s+/g," ").trim();finalText="";interimText="";if(phrase)void submit(phrase);}
+ function flush(){clearTimeout(silenceTimer);silenceTimer=null;const phrase=(finalText+" "+interimText).replace(/\s+/g," ").trim();finalText="";interimText="";if(phrase)void submit(phrase);}
  function scheduleFlush(){clearTimeout(silenceTimer);silenceTimer=setTimeout(flush,PAUSE_MS);}
  function startRecognition(){
   if(!listening||recognition||!SpeechRecognition)return;
