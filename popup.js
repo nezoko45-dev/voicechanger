@@ -1,4 +1,8 @@
 (() => {
- const button=document.querySelector("#open-dashboard"),status=document.querySelector("#status");
- button.addEventListener("click",async()=>{button.disabled=true;status.textContent="Opening voice dashboard…";try{const url=chrome.runtime.getURL("dashboard.html");const tabs=await chrome.tabs.query({url});if(tabs.length){await chrome.tabs.update(tabs[0].id,{active:true});await chrome.windows.update(tabs[0].windowId,{focused:true});}else await chrome.tabs.create({url});window.close();}catch(error){status.textContent="Could not open dashboard: "+(error?.message||String(error));button.disabled=false;}});
+ const button=document.querySelector("#toggle"),status=document.querySelector("#status");
+ function render(result){const active=!!result?.listening;button.textContent=active?"■ Stop listening":"▶ Start listening";button.classList.toggle("stop",active);status.textContent=result?.message||(active?"Listening.":"Ready.");}
+ async function send(type){button.disabled=true;try{render(await chrome.runtime.sendMessage({type}));}catch(error){status.textContent="Could not contact dictation: "+(error?.message||String(error));}finally{button.disabled=false;}}
+ button.addEventListener("click",()=>send("TT_FAST_TOGGLE"));
+ chrome.runtime.onMessage.addListener(message=>{if(message?.type==="TT_FAST_STATUS")render(message);});
+ send("TT_FAST_STATUS");
 })();
