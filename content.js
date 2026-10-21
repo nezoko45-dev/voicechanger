@@ -1,42 +1,71 @@
 (() => {
   if (window.__ttslabFastDictation) return;
   window.__ttslabFastDictation = true;
-  const visible = el => !!el && el.getClientRects().length > 0;
-  const meta = el => [el.getAttribute("aria-label"),el.getAttribute("placeholder"),el.getAttribute("data-placeholder"),el.getAttribute("name"),el.getAttribute("data-testid"),el.getAttribute("title"),el.getAttribute("role")].filter(Boolean).join(" ").toLowerCase();
+  const visible = el => !!el && el.getClientRects().length > 0 && el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0;
+  const meta = el => [el.getAttribute?.("aria-label"),el.getAttribute?.("placeholder"),el.getAttribute?.("data-placeholder"),el.getAttribute?.("name"),el.getAttribute?.("data-testid"),el.getAttribute?.("title"),el.getAttribute?.("role"),el.getAttribute?.("contenteditable")].filter(Boolean).join(" ").toLowerCase();
   const chatHints = /chat|message|conversation|ask|reply|talk to|voice agent/;
-  function findTextBox() {
-    const list=[...document.querySelectorAll('textarea,input:not([type]),input[type="text"],[contenteditable="true"],[role="textbox"],[data-slate-editor="true"],[data-lexical-editor="true"]')].filter(el=>visible(el)&&!el.disabled&&el.getAttribute("aria-disabled")!=="true");
-    const score=el=>{const m=meta(el);return (el.tagName==="TEXTAREA"?8:0)+(el.isContentEditable||el.getAttribute("role")==="textbox"?4:0)+(/text|speech|script|prompt|type here|enter text|write|say|input/.test(m)?8:0)+(chatHints.test(m)?30:0)-(/search|filter|email|password|voice name/.test(m)?25:0);};
+  const boxSelector = 'textarea,input:not([type]),input[type="text"],input:not([type="hidden"]),[contenteditable="true"],[role="textbox"],[data-slate-editor="true"],[data-lexical-editor="true"],[data-placeholder],[data-testid*="input" i],[class*="textarea" i],[class*="composer" i]';
+  function rootsFor(doc) {
+    const roots=[], seen=new Set();
+    function walk(root) {
+      if(!root||seen.has(root))return;seen.add(root);roots.push(root);
+      let all=[];try{all=root.querySelectorAll("*");}catch{return;}
+      for(const el of all){
+        if(el.shadowRoot)walk(el.shadowRoot);
+        if(el.tagName==="IFRAME"){try{if(el.contentDocument?.documentElement)walk(el.contentDocument);}catch{}}
+      }
+    }
+    walk(doc);return roots;
+  }
+  function allMatches(selector,roots) {
+    const result=[];
+    for(const root of roots){try{result.push(...root.querySelectorAll(selector));}catch{}}
+    return [...new Set(result)];
+  }
+  function findTextBox(roots) {
+    const list=allMatches(boxSelector,roots).filter(el=>visible(el)&&!el.disabled&&el.getAttribute("aria-disabled")!=="true"&&el.getAttribute("type")!=="hidden");
+    const score=el=>{
+      const m=meta(el),rect=el.getBoundingClientRect();
+      return (el.tagName==="TEXTAREA"?18:0)+(el.isContentEditable||el.getAttribute("role")==="textbox"?8:0)
+        +(/text|speech|script|prompt|type here|enter text|write|say|input/.test(m)?8:0)
+        +(chatHints.test(m)?24:0)
+        +(/chat|message|composer|prompt|input|textarea/i.test(String(el.className||""))?8:0)
+        +Math.min(8,Math.round(rect.width/150))
+        -(/search|filter|email|password|voice name|model search/i.test(m)?35:0);
+    };
     return list.sort((a,b)=>score(b)-score(a))[0]||null;
   }
   function setText(box,text) {
+    const win=box.ownerDocument.defaultView||window;
     box.focus();
     if(box.isContentEditable||box.getAttribute("contenteditable")==="true"||box.hasAttribute("data-slate-editor")||box.hasAttribute("data-lexical-editor")) {
-      box.replaceChildren(document.createTextNode(text));
+      box.replaceChildren(box.ownerDocument.createTextNode(text));
     } else {
-      const proto=box.tagName==="TEXTAREA"?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
-      const setter=Object.getOwnPropertyDescriptor(proto,"value")?.set;
+      const proto=box.tagName==="TEXTAREA"?win.HTMLTextAreaElement?.prototype:win.HTMLInputElement?.prototype;
+      const setter=proto&&Object.getOwnPropertyDescriptor(proto,"value")?.set;
       if(setter)setter.call(box,text);else box.value=text;
     }
-    box.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:text}));
-    box.dispatchEvent(new Event("change",{bubbles:true}));
+    const EventInput=win.InputEvent||InputEvent;
+    box.dispatchEvent(new EventInput("input",{bubbles:true,composed:true,inputType:"insertText",data:text}));
+    box.dispatchEvent(new win.Event("change",{bubbles:true,composed:true}));
   }
-  function label(el){return [el.innerText,el.textContent,el.value,el.getAttribute("aria-label"),el.getAttribute("title"),el.getAttribute("data-testid")].filter(Boolean).join(" ").replace(/\s+/g," ").trim();}
-  function findActionButton(box) {
-    const buttons=[...document.querySelectorAll("button,[role='button'],input[type='submit'],input[type='button']")].filter(visible);
-    const boxMeta=meta(box);
-    const chatMode=chatHints.test(boxMeta);
+  function label(el){return [el.innerText,el.textContent,el.value,el.getAttribute("aria-label"),el.getAttribute("title"),el.getAttribute("data-testid"),el.getAttribute("data-icon")].filter(Boolean).join(" ").replace(/\s+/g," ").trim();}
+  function findActionButton(box,roots) {
+    const buttons=allMatches("button,[role='button'],input[type='submit'],input[type='button']",roots).filter(visible);
+    const boxMeta=meta(box),chatMode=chatHints.test(boxMeta)||chatHints.test(String(box.className||""))||!!box.closest?.("form");
     const enabled=el=>!el.disabled&&el.getAttribute("aria-disabled")!=="true"&&el.getAttribute("aria-busy")!=="true";
+    const sameDoc=buttons.filter(el=>el.ownerDocument===box.ownerDocument);
+    const pool=sameDoc.length?sameDoc:buttons;
     if(chatMode) {
-      const send=buttons.filter(el=>enabled(el)&&(/^(send|send message|submit|reply)$/i.test(label(el))||/send message|send-button|chat-send|submit-message/i.test(meta(el))));
+      const send=pool.filter(el=>enabled(el)&&(/^(send|send message|submit|reply|go)$/i.test(label(el))||/send message|send-button|chat-send|submit-message|send/i.test(meta(el))));
       if(send.length)return send.sort((a,b)=>label(a).length-label(b).length)[0];
-      const form=box.closest("form");
+      const form=box.closest?.("form");
       const submit=form?.querySelector('button[type="submit"],input[type="submit"]');
       if(visible(submit)&&enabled(submit))return submit;
     }
-    return buttons.filter(enabled).find(el=>/^stream$/i.test(label(el)))||
-      buttons.filter(enabled).filter(el=>/\bstream\b/i.test(label(el))&&!/streaming settings|stream history|stream key/i.test(label(el))).sort((a,b)=>label(a).length-label(b).length)[0]||
-      (!chatMode?buttons.filter(el=>enabled(el)&&/generate speech/i.test(label(el))).sort((a,b)=>label(a).length-label(b).length)[0]:null);
+    return pool.filter(enabled).find(el=>/^stream$/i.test(label(el)))||
+      pool.filter(enabled).filter(el=>/\bstream\b/i.test(label(el))&&!/streaming settings|stream history|stream key/i.test(label(el))).sort((a,b)=>label(a).length-label(b).length)[0]||
+      pool.filter(el=>enabled(el)&&/send|submit|generate|run/i.test(label(el))).sort((a,b)=>label(a).length-label(b).length)[0]||null;
   }
   let busy=false,lastText="",lastAt=0;
   chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
@@ -46,19 +75,20 @@
     const now=Date.now();
     if(text.toLowerCase()===lastText.toLowerCase()&&now-lastAt<5000){sendResponse({ok:true,duplicate:true,message:"Duplicate phrase ignored."});return;}
     if(busy){sendResponse({ok:false,message:"Still submitting the previous phrase; try again after it finishes."});return;}
-    const box=findTextBox();
-    if(!box){sendResponse({ok:false,message:"Can't find the TTSLab chatbox or text field. Open the chat or model page and try again."});return;}
-    const button=findActionButton(box);
-    if(!button){sendResponse({ok:false,message:"Transcript entered, but I couldn't find a Send or Stream button to click."});return;}
-    if(button.disabled||button.getAttribute("aria-disabled")==="true"||button.getAttribute("aria-busy")==="true"){sendResponse({ok:false,message:"The Send/Stream button is unavailable right now. Wait for TTSLab to finish, then try again."});return;}
+    const roots=rootsFor(document),box=findTextBox(roots);
+    if(!box){sendResponse({ok:false,message:"I still can't find a visible text field on this TTSLab page. Refresh the TTSLab tab after reloading the extension; if it persists, send me a screenshot of the page and address bar."});return;}
+    const button=findActionButton(box,roots);
+    if(!button){sendResponse({ok:false,message:"I found a text field but couldn't identify its Send or Stream button. Send me a screenshot of the TTSLab page so I can target the exact controls."});return;}
+    if(!enabledButton(button)){sendResponse({ok:false,message:"The Send/Stream button is unavailable right now. Wait for TTSLab to finish, then try again."});return;}
     busy=true;
     try {
       setText(box,text);
       button.click();
       lastText=text;lastAt=Date.now();
-      sendResponse({ok:true,message:/send|reply|submit/i.test(label(button))?"Transcribed into the TTSLab chatbox and clicked Send.":"Transcribed into the TTSLab text field and clicked Stream."});
+      sendResponse({ok:true,message:/send|reply|submit|go/i.test(label(button))?"Transcribed into the TTSLab text field and clicked Send.":"Transcribed into the TTSLab text field and clicked Stream."});
     } catch(error) {
       sendResponse({ok:false,message:"Couldn't submit this phrase: "+(error?.message||String(error))});
     } finally {busy=false;}
   });
+  function enabledButton(el){return !el.disabled&&el.getAttribute("aria-disabled")!=="true"&&el.getAttribute("aria-busy")!=="true";}
 })();
