@@ -11,15 +11,15 @@ async function findTtsTab(){
  const matches=tabs.filter(tab=>{try{const host=new URL(tab.url||"").hostname.toLowerCase();return host===TTS_HOST||host.endsWith("."+TTS_HOST);}catch{return false;}});
  return matches.find(tab=>tab.active)||matches[0]||null;
 }
-async function submitToTts(text){
+async function sendToTts(type,text){
  const tab=await findTtsTab();
  if(!tab?.id)return{ok:false,message:"Open the TTSLab tool/model page in a Chrome tab first. Dictation stays running; this phrase was not submitted."};
- try{return await chrome.tabs.sendMessage(tab.id,{type:"TT_FAST_SUBMIT",text});}
+ try{return await chrome.tabs.sendMessage(tab.id,{type,text});}
  catch(error){return{ok:false,message:"Can't reach the TTSLab page. Refresh that page once, then try again. "+(error?.message||"")};}
 }
 chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
  if(message?.type==="TT_FAST_TOGGLE"||message?.type==="TT_FAST_STATUS"){
   (async()=>{try{await ensureOffscreen();const result=await chrome.runtime.sendMessage({type:message.type==="TT_FAST_TOGGLE"?"TT_OFFSCREEN_TOGGLE":"TT_OFFSCREEN_STATUS"});sendResponse(result||{listening:false,message:"Dictation engine didn't respond. Reload the extension."});}catch(error){sendResponse({listening:false,message:"Could not start background dictation: "+(error?.message||String(error))});}})();return true;
  }
- if(message?.type==="TT_FAST_SUBMIT"){submitToTts(String(message.text||"")).then(sendResponse).catch(error=>sendResponse({ok:false,message:error?.message||String(error)}));return true;}
+ if(message?.type==="TT_FAST_SUBMIT"||message?.type==="TT_FAST_PREVIEW"){sendToTts(message.type,String(message.text||"")).then(result=>{if(message.type==="TT_FAST_SUBMIT")sendResponse(result);}).catch(error=>{if(message.type==="TT_FAST_SUBMIT")sendResponse({ok:false,message:error?.message||String(error)});});return message.type==="TT_FAST_SUBMIT";}
 });
