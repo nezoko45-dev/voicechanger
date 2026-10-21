@@ -1,7 +1,7 @@
 (() => {
  const SpeechRecognition=self.SpeechRecognition||self.webkitSpeechRecognition;
  let recognition=null,listening=false,starting=false,finalText="",interimText="",silenceTimer=null,restartTimer=null,restartDelay=250,lastSubmitted="",lastSubmittedAt=0,submitInFlight=false;
- const PAUSE_MS=1400;
+ const PAUSE_MS=2200, INTERIM_GRACE_MS=1200;
  function report(message){chrome.runtime.sendMessage({type:"TT_FAST_STATUS",listening,message}).catch(()=>{});}
  async function submit(text){
   const phrase=String(text||"").replace(/\s+/g," ").trim();if(!phrase)return;
@@ -11,8 +11,19 @@
   catch(error){report("Submission failed: "+(error?.message||String(error)));}
   finally{submitInFlight=false;}
  }
- function flush(){clearTimeout(silenceTimer);silenceTimer=null;const phrase=(finalText+" "+interimText).replace(/\s+/g," ").trim();finalText="";interimText="";if(phrase)void submit(phrase);}
- function scheduleFlush(){clearTimeout(silenceTimer);silenceTimer=setTimeout(flush,PAUSE_MS);}
+ function flush(allowInterim=false){
+  clearTimeout(silenceTimer);silenceTimer=null;
+  // SpeechRecognition can expose a word as interim before it has finished decoding it.
+  // Give the engine extra time to finalize instead of submitting the first partial result.
+  if(interimText.trim()&&!allowInterim){
+   silenceTimer=setTimeout(()=>flush(true),INTERIM_GRACE_MS);
+   return;
+  }
+  const phrase=(finalText+" "+interimText).replace(/\s+/g," ").trim();
+  finalText="";interimText="";
+  if(phrase)void submit(phrase);
+ }
+ function scheduleFlush(){clearTimeout(silenceTimer);silenceTimer=setTimeout(()=>flush(false),PAUSE_MS);}
  function startRecognition(){
   if(!listening||recognition||!SpeechRecognition)return;
   const r=new SpeechRecognition();recognition=r;r.continuous=true;r.interimResults=true;r.lang="en-US";
