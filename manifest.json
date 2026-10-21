@@ -3,7 +3,7 @@
   "name": "TTSLab Fast Dictation",
   "version": "3.0.0",
   "minimum_chrome_version": "116",
-  "description": "Simple background dictation for TTSLab; submits each phrase after a short pause.",
+  "description": "Live background dictation for TTSLab; shows words as you speak and auto-submits after a pause.",
   "permissions": ["tabs", "offscreen"],
   "host_permissions": ["https://ttslab.dev/*", "https://*.ttslab.dev/*"],
   "content_scripts": [{
