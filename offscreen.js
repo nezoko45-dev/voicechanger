@@ -1,6 +1,6 @@
 (() => {
  const SpeechRecognition=self.SpeechRecognition||self.webkitSpeechRecognition;
- let recognition=null,listening=false,starting=false,finalText="",interimText="",restartTimer=null,restartDelay=400,lastSubmitted="",lastSubmittedAt=0,submitInFlight=false,stopRequested=false,lastError="";
+ let recognition=null,listening=false,starting=false,finalText="",interimText="",restartTimer=null,utteranceTimer=null,restartDelay=400,lastSubmitted="",lastSubmittedAt=0,submitInFlight=false,stopRequested=false,lastError="";
   function report(message){chrome.runtime.sendMessage({type:"TT_FAST_STATUS",listening,message}).catch(()=>{});}
  async function submit(text){
   const phrase=String(text||"").replace(/\s+/g," ").trim();if(!phrase)return;
@@ -11,8 +11,7 @@
   finally{submitInFlight=false;}
  }
  function flush(){
-  // Only submit when the user explicitly presses Stop. No silence timer:
-  // keep the latest interim words until recognition has stopped and finalized its results.
+  clearTimeout(utteranceTimer);
   const phrase=(finalText+" "+interimText).replace(/\s+/g," ").trim();
   finalText="";interimText="";
   if(phrase)void submit(phrase);
@@ -21,7 +20,20 @@
   if(!listening||stopRequested||recognition||!SpeechRecognition)return;
   const r=new SpeechRecognition();recognition=r;r.continuous=true;r.interimResults=true;r.lang="en-US";
   r.onstart=()=>{restartDelay=400;lastError="";report("Listening. You can leave the TTSLab tab in the background.");};
-  r.onresult=event=>{let interim="";for(let i=event.resultIndex;i<event.results.length;i++){const result=event.results[i],phrase=result[0]?.transcript||"";if(result.isFinal)finalText+=phrase+" ";else interim+=phrase;}interimText=interim;};
+  r.onresult=event=>{
+   let interim="",gotFinal=false;
+   for(let i=event.resultIndex;i<event.results.length;i++){
+    const result=event.results[i],phrase=result[0]?.transcript||"";
+    if(result.isFinal){finalText+=phrase+" ";gotFinal=true;}else interim+=phrase;
+   }
+   interimText=interim;
+   const liveText=(finalText+" "+interimText).replace(/\s+/g," ").trim();
+   chrome.runtime.sendMessage({type:"TT_FAST_PREVIEW",text:liveText}).catch(()=>{});
+   if(gotFinal){
+    clearTimeout(utteranceTimer);
+    utteranceTimer=setTimeout(()=>{const phrase=finalText.trim();finalText="";interimText="";if(phrase)void submit(phrase);},1200);
+   }
+  };
   r.onerror=event=>{
    const code=String(event?.error||"unknown");lastError=code;
    if(["not-allowed","service-not-allowed"].includes(code)){
