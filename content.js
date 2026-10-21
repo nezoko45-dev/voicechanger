@@ -4,7 +4,7 @@
   const visible = el => !!el && el.getClientRects().length > 0 && el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0;
   const meta = el => [el.getAttribute?.("aria-label"),el.getAttribute?.("placeholder"),el.getAttribute?.("data-placeholder"),el.getAttribute?.("name"),el.getAttribute?.("data-testid"),el.getAttribute?.("title"),el.getAttribute?.("role"),el.getAttribute?.("contenteditable")].filter(Boolean).join(" ").toLowerCase();
   const chatHints = /chat|message|conversation|ask|reply|talk to|voice agent/;
-  const speechHints = /fish\\s*audio|generate speech|text to speech|tts|speech text/;
+  const speechHints = /fish\s*audio|generate speech|text to speech|tts|speech text/;
   const boxSelector = 'textarea,input:not([type]),input[type="text"],input:not([type="hidden"]),[contenteditable="true"],[role="textbox"],[data-slate-editor="true"],[data-lexical-editor="true"],[data-placeholder],[data-testid*="input" i],[class*="textarea" i],[class*="composer" i]';
   function rootsFor(doc) {
     const roots=[], seen=new Set();
@@ -67,7 +67,7 @@
     }
     return pool.filter(enabled).find(el=>/^stream$/i.test(label(el)))||
       pool.filter(enabled).filter(el=>/\bstream\b/i.test(label(el))&&!/streaming settings|stream history|stream key/i.test(label(el))).sort((a,b)=>label(a).length-label(b).length)[0]||
-      pool.filter(el=>enabled(el)&&/generate\\s*speech|generate|create speech|text to speech|stream|send|submit|run/i.test(label(el))).sort((a,b)=>{const score=x=>(/generate\\s*speech/i.test(label(x))?0:/^stream$/i.test(label(x))?1:/send|submit/i.test(label(x))?2:3);return score(a)-score(b)||label(a).length-label(b).length;})[0]||null;
+      pool.filter(el=>enabled(el)&&/generate\s*speech|generate|create speech|text to speech|stream|send|submit|run/i.test(label(el))).sort((a,b)=>{const score=x=>(/generate\s*speech/i.test(label(x))?0:/^stream$/i.test(label(x))?1:/send|submit/i.test(label(x))?2:3);return score(a)-score(b)||label(a).length-label(b).length;})[0]||null;
   }
   let busy=false,lastText="",lastAt=0;
   chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
