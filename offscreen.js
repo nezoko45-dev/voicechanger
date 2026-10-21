@@ -22,7 +22,13 @@
   const r=new SpeechRecognition();recognition=r;r.continuous=true;r.interimResults=true;r.lang="en-US";
   r.onstart=()=>{restartDelay=250;report("Listening. You can leave the TTSLab tab in the background.");};
   r.onresult=event=>{let interim="";for(let i=event.resultIndex;i<event.results.length;i++){const result=event.results[i],phrase=result[0]?.transcript||"";if(result.isFinal)finalText+=phrase+" ";else interim+=phrase;}interimText=interim;};
-  r.onerror=event=>{if(["not-allowed","service-not-allowed","audio-capture"].includes(event.error)){listening=false;clearTimeout(restartTimer);report(event.error==="audio-capture"?"Microphone unavailable. Check Chrome and Windows microphone permissions.":"Microphone permission denied. Allow microphone access, then start again.");}else if(listening)report("Speech recognition paused ("+event.error+"); reconnecting…");};
+  r.onerror=event=>{
+   if(["not-allowed","service-not-allowed"].includes(event.error)){
+    listening=false;clearTimeout(restartTimer);report("Microphone permission denied. Allow microphone access for Chrome, then start again.");
+   }else if(listening){
+    report("Speech recognition interrupted ("+event.error+"); reconnecting…");
+   }
+  };
   r.onend=()=>{if(recognition===r)recognition=null;if(!listening){flush();report("Dictation stopped.");return;}clearTimeout(restartTimer);restartTimer=setTimeout(startRecognition,restartDelay);restartDelay=Math.min(1800,restartDelay*1.5);};
   try{r.start();}catch(error){recognition=null;if(listening){report("Recognition restart failed; retrying…");clearTimeout(restartTimer);restartTimer=setTimeout(startRecognition,600);}}
  }
@@ -31,8 +37,8 @@
   if(starting)return{listening,message:"Dictation is already starting."};
   if(listening){listening=false;clearTimeout(restartTimer);if(recognition){try{recognition.stop();}catch{flush();}}else flush();report("Stopping dictation…");return{listening:false,message:"Stopping dictation…"};}
   starting=true;
-  try{const stream=await navigator.mediaDevices.getUserMedia({audio:true});stream.getTracks().forEach(track=>track.stop());listening=true;startRecognition();return{listening:true,message:"Starting dictation…"};}
-  catch(error){listening=false;const message=error?.name==="NotAllowedError"?"Microphone access denied. Allow microphone access for Chrome, then retry.":"Microphone unavailable: "+(error?.message||String(error));report(message);return{listening:false,message};}
+  try{listening=true;startRecognition();return{listening:true,message:"Starting dictation…"};}
+  catch(error){listening=false;const message="Could not start speech recognition: "+(error?.message||String(error));report(message);return{listening:false,message};}
   finally{starting=false;}
  }
  chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
