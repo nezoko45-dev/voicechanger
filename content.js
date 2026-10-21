@@ -69,8 +69,16 @@
   }
   let busy=false,lastText="",lastAt=0;
   chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
-    if(message?.type!=="TT_FAST_SUBMIT")return;
+    if(message?.type!=="TT_FAST_SUBMIT"&&message?.type!=="TT_FAST_PREVIEW")return;
     const text=String(message.text||"").replace(/\s+/g," ").trim();
+    if(message.type==="TT_FAST_PREVIEW"){
+      if(!text){sendResponse({ok:true});return;}
+      const previewRoots=rootsFor(document),previewBox=findTextBox(previewRoots);
+      if(!previewBox){sendResponse({ok:false,message:"Can't find a visible TTSLab text field for live dictation."});return;}
+      try{setText(previewBox,text);sendResponse({ok:true,message:"Live transcript updated."});}
+      catch(error){sendResponse({ok:false,message:"Couldn't update live transcript: "+(error?.message||String(error))});}
+      return;
+    }
     if(!text){sendResponse({ok:false,message:"No speech was recognized."});return;}
     const now=Date.now();
     if(text.toLowerCase()===lastText.toLowerCase()&&now-lastAt<5000){sendResponse({ok:true,duplicate:true,message:"Duplicate phrase ignored."});return;}
