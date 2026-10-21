@@ -21,5 +21,5 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
  if(message?.type==="TT_FAST_TOGGLE"||message?.type==="TT_FAST_STATUS"){
   (async()=>{try{await ensureOffscreen();const result=await chrome.runtime.sendMessage({type:message.type==="TT_FAST_TOGGLE"?"TT_OFFSCREEN_TOGGLE":"TT_OFFSCREEN_STATUS"});sendResponse(result||{listening:false,message:"Dictation engine didn't respond. Reload the extension."});}catch(error){sendResponse({listening:false,message:"Could not start background dictation: "+(error?.message||String(error))});}})();return true;
  }
- if(message?.type==="TT_FAST_SUBMIT"||message?.type==="TT_FAST_PREVIEW"){sendToTts(message.type,String(message.text||"")).then(result=>{if(message.type==="TT_FAST_SUBMIT")sendResponse(result);}).catch(error=>{if(message.type==="TT_FAST_SUBMIT")sendResponse({ok:false,message:error?.message||String(error)});});return message.type==="TT_FAST_SUBMIT";}
+ if(message?.type==="TT_FAST_SUBMIT"||message?.type==="TT_FAST_PREVIEW"){sendToTts(message.type,String(message.text||"")).then(result=>sendResponse(result||{ok:true})).catch(error=>sendResponse({ok:false,message:error?.message||String(error)}));return true;}
 });
