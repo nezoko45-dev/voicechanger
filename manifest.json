@@ -7,7 +7,7 @@
   "permissions": ["tabs", "offscreen"],
   "host_permissions": ["https://ttslab.dev/*", "https://*.ttslab.dev/*", "https://fish.audio/*", "https://*.fish.audio/*"],
   "content_scripts": [{
-    "matches": ["https://ttslab.dev/*", "https://*.ttslab.dev/*"],
+    "matches": ["https://ttslab.dev/*", "https://*.ttslab.dev/*", "https://fish.audio/*", "https://*.fish.audio/*"],
     "js": ["content.js"],
     "run_at": "document_idle"
   }],
