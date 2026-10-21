@@ -1,18 +1,18 @@
 {
   "manifest_version": 3,
-  "name": "TTSLab Fast Dictation",
+  "name": "Fast Dictation for TTSLab + Fish Audio",
   "version": "3.0.0",
   "minimum_chrome_version": "116",
-  "description": "Live background dictation for TTSLab; shows words as you speak and auto-submits after a pause.",
+  "description": "Live background dictation for TTSLab and Fish Audio; generates speech after a pause.",
   "permissions": ["tabs", "offscreen"],
-  "host_permissions": ["https://ttslab.dev/*", "https://*.ttslab.dev/*"],
+  "host_permissions": ["https://ttslab.dev/*", "https://*.ttslab.dev/*", "https://fish.audio/*", "https://*.fish.audio/*"],
   "content_scripts": [{
     "matches": ["https://ttslab.dev/*", "https://*.ttslab.dev/*"],
     "js": ["content.js"],
     "run_at": "document_idle"
   }],
   "action": {
-    "default_title": "TTSLab Fast Dictation",
+    "default_title": "Fast Dictation for TTSLab + Fish Audio",
     "default_popup": "popup.html"
   },
   "background": { "service_worker": "service-worker.js" }
