@@ -1,43 +1,19 @@
 {
   "manifest_version": 3,
-  "name": "TTSLab Voice Dictation",
-  "version": "2.4.0",
+  "name": "TTSLab Fast Dictation",
+  "version": "3.0.0",
   "minimum_chrome_version": "116",
-  "description": "Hands-free voice dictation for TTSLab: transcribe speech and click \"Stream\" after each pause.",
-  "permissions": [
-    "storage",
-    "sidePanel",
-    "tabs",
-    "offscreen"
-  ],
-  "host_permissions": [
-    "https://ttslab.dev/*",
-    "https://*.ttslab.dev/*",
-    "http://ttslab.dev/*",
-    "http://*.ttslab.dev/*"
-  ],
-  "content_scripts": [
-    {
-      "matches": [
-        "https://ttslab.dev/*",
-        "https://*.ttslab.dev/*",
-        "http://ttslab.dev/*",
-        "http://*.ttslab.dev/*"
-      ],
-      "js": [
-        "content.js"
-      ],
-      "run_at": "document_idle"
-    }
-  ],
+  "description": "Simple background dictation for TTSLab; submits each phrase after a short pause.",
+  "permissions": ["tabs", "offscreen"],
+  "host_permissions": ["https://ttslab.dev/*", "https://*.ttslab.dev/*"],
+  "content_scripts": [{
+    "matches": ["https://ttslab.dev/*", "https://*.ttslab.dev/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle"
+  }],
   "action": {
-    "default_title": "tts.dev Voice Dictation",
+    "default_title": "TTSLab Fast Dictation",
     "default_popup": "popup.html"
   },
-  "side_panel": {
-    "default_path": "dashboard.html"
-  },
-  "background": {
-    "service_worker": "service-worker.js"
-  }
+  "background": { "service_worker": "service-worker.js" }
 }
