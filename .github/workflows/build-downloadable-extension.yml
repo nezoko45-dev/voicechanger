@@ -1,0 +1,46 @@
+name: Build downloadable Voicechanger extension
+
+on:
+  push:
+    branches:
+      - feature/ttslab-fast-dictation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/ttslab-fast-dictation
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install build dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build extension
+        run: npm run build
+
+      - name: Prepare installable ZIP
+        run: |
+          test -f dist/manifest.json
+          test -f dist/voice-clone.js
+          cd dist
+          zip -r ../voicechanger-webgpu.zip .
+
+      - name: Upload installable extension
+        uses: actions/upload-artifact@v4
+        with:
+          name: voicechanger-webgpu-extension
+          path: voicechanger-webgpu.zip
+          if-no-files-found: error
+          retention-days: 30
