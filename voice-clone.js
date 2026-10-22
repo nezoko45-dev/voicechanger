@@ -61,24 +61,24 @@ import { pipeline } from "@huggingface/transformers";
     loading = true;
     updateControls();
     try {
-      if (!navigator.gpu) throw new Error("WebGPU is unavailable. Try a recent Chrome or Edge build with WebGPU enabled.");
-      const adapter = await navigator.gpu.requestAdapter();
-      if (!adapter) throw new Error("No WebGPU adapter was found. Check your browser and graphics drivers.");
-      setModelStatus("Starting Chatterbox WebGPU voice model…");
+      const hasWebGPU = !!navigator.gpu && !!(await navigator.gpu.requestAdapter());
+      setModelStatus(hasWebGPU
+        ? "Starting Chatterbox model (WebGPU preferred)…"
+        : "No WebGPU adapter detected. Trying the slower browser CPU/WASM fallback…");
       progressBar.style.width = "0%";
       const engine = new ChatterboxEngine({
-        requiresGpu: true,
         onProgress: reportModelProgress,
       });
-      tts = await VoxShot.create({ engine, device: "webgpu", minChunkLength: 20 });
-      if (tts.device && !String(tts.device).startsWith("webgpu")) {
-        const selectedDevice = tts.device;
-        await tts.dispose();
-        tts = null;
-        throw new Error("The voice engine did not stay on WebGPU (selected " + selectedDevice + ").");
-      }
-      engineBadge.textContent = "Voice model ready · WebGPU";
-      setModelStatus("Voice model ready. Next, select a reference WAV.");
+      // Prefer WebGPU but allow VoxShot's WASM fallback on unsupported devices.
+      tts = await VoxShot.create({ engine, device: "auto", minChunkLength: 20 });
+      const selectedDevice = String(tts.device || "automatic");
+      const usingWebGPU = selectedDevice.startsWith("webgpu");
+      engineBadge.textContent = usingWebGPU
+        ? "Voice model ready · WebGPU"
+        : "Voice model ready · CPU/WASM";
+      setModelStatus(usingWebGPU
+        ? "Voice model ready on WebGPU. Next, select a reference WAV."
+        : "Voice model ready using CPU/WASM fallback. Generation may be much slower. Next, select a reference WAV.");
       progressBar.style.width = "100%";
     } catch (error) {
       engineBadge.textContent = "Model load failed";
@@ -180,11 +180,13 @@ import { pipeline } from "@huggingface/transformers";
 
   async function getLocalAsr() {
     if (asr) return asr;
-    if (!navigator.gpu || !(await navigator.gpu.requestAdapter())) throw new Error("WebGPU is required for local dictation.");
-    dictationStatus.textContent = "Loading local Whisper model…";
+    const hasWebGPU = !!navigator.gpu && !!(await navigator.gpu.requestAdapter());
+    dictationStatus.textContent = hasWebGPU
+      ? "Loading local Whisper model on WebGPU…"
+      : "WebGPU unavailable; loading slower local Whisper CPU/WASM model…";
     asr = await pipeline("automatic-speech-recognition", "onnx-community/whisper-tiny.en", {
-      device: "webgpu",
-      dtype: "q4",
+      device: hasWebGPU ? "webgpu" : "wasm",
+      dtype: hasWebGPU ? "q4" : "q8",
       progress_callback: (event) => {
         if (event?.status === "progress" && Number.isFinite(event.progress)) {
           dictationStatus.textContent = "Downloading local dictation model " + Math.round(event.progress) + "%";
