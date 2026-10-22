@@ -1,15 +1,15 @@
-# Fast Dictation + Browser Voice Clone Studio
+# Fast Dictation + Browser Kokoro TTS Studio
 
 A Chrome Manifest V3 extension with two tools:
 
 - Hands-free dictation on [TTSLab.dev](https://ttslab.dev/) and [Fish Audio](https://fish.audio/).
-- A browser-only voice-cloning studio that uses WebGPU for text-to-speech in a selected reference voice and local speech recognition for dictation.
+- A browser-only text-to-speech studio using Kokoro-82M and local speech recognition.
 
 ## Build the extension
 
 The voice studio bundles its JavaScript model runtime locally so the extension does not load executable code from a CDN.
 
-Requirements: Node.js 20+ and a recent Chrome or Edge build with WebGPU support.
+Requirements: Node.js 20+ and a recent Chrome or Edge browser. WebGPU is used when available; CPU/WASM is the fallback.
 
 1. Download and extract this branch, or clone the repository and check out `feature/ttslab-fast-dictation`.
 2. In the repository folder, run:
@@ -31,26 +31,26 @@ Do not load the repository root as the unpacked extension: the root contains sou
 
 Chrome speech recognition behavior and page selectors can vary by browser version and website updates.
 
-## Use Browser Voice Clone Studio
+## Use Browser Kokoro Studio
 
 1. Click the extension icon, then **Open Voice Clone Studio**.
-2. Click **Load WebGPU models**. On first use, the Chatterbox voice model downloads about 1.5 GB and is cached by the browser. Allow time for model download and GPU session initialization.
-3. Choose a clean WAV reference recording, ideally 5–15 seconds long, from a voice you own or have permission to use. Click **Use this reference voice**.
-4. Click **Start local dictation**, speak, then click **Stop dictation**. Whisper runs in-browser on WebGPU and inserts the recognized text into the editor. You can edit or type text directly instead.
+2. Click **Load Kokoro model**. The Kokoro-82M model downloads on first use and is cached by the browser.
+3. Choose a built-in Kokoro voice preset.
+4. Click **Start local dictation**, speak, then click **Stop dictation**. Whisper runs in-browser and inserts recognized text into the editor. You can also type text directly.
 5. Click **Synthesize speech**. The generated audio appears as a playable WAV clip with a **Download WAV** link.
 
-### Model and browser notes
+## Model and browser notes
 
-- Voice cloning uses [VoxShot](https://github.com/m96-chan/voxshot) with the Chatterbox ONNX model through Transformers.js. Speech generation and the local Whisper dictation model run on WebGPU; the studio refuses to start if WebGPU is unavailable.
-- The current Chatterbox checkpoint is English-focused. Other languages may not synthesize correctly.
-- First-time model downloads are large and require an internet connection. Model weights are cached by the browser after download. Subsequent inference runs locally.
-- Reference audio and synthesis text are passed to local in-browser model code, not to a voice-cloning API. Model files are downloaded from Hugging Face.
-- Voice cloning is resource-intensive; GPU memory, browser version, graphics drivers, and hardware affect performance.
-- Use reference recordings only when you have permission to use that voice. Do not use this tool for impersonation or deception.
+- Speech synthesis uses [Kokoro-82M](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX) through Transformers.js. VoxShot and Chatterbox have been removed from the voice studio.
+- Kokoro uses its own built-in voice presets; it does **not** clone a voice from a reference WAV. This replaces the unstable VoxShot/Chatterbox path with reliable preset-voice TTS, rather than reference-audio cloning.
+- First-time model downloads require an internet connection. After the model files are cached, inference runs locally in the browser.
+- Dictation model files are downloaded from Hugging Face. Dictated text and generated speech are processed in-browser.
+- Performance depends on browser version, device memory, GPU support, and hardware.
+- Use voice features responsibly and do not use generated speech for impersonation or deception.
 
 ## Implementation notes
 
 - MV3 extension source files are in the repository root.
 - `npm run build` copies the extension into `dist/` and bundles `voice-clone.js` with the model runtime.
-- The previous Python/VoiceClonNX helper is no longer used by the WebGPU studio.
+- The previous Python/VoiceClonNX helper is no longer used by the studio.
 - All changes for this work are on `feature/ttslab-fast-dictation`; `main` is not modified.
