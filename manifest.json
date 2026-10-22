@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Fast Dictation for TTSLab + Fish Audio",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "minimum_chrome_version": "116",
   "description": "Live background dictation for TTSLab and Fish Audio; generates speech after a pause.",
   "permissions": ["tabs", "offscreen", "storage"],
