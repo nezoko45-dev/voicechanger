@@ -200,11 +200,12 @@
       // existing result card, so after a short render grace period accept the
       // latest visible non-reference Play control even if its node was reused.
       if (button && generationStartedAt && button.getAttribute("data-pw-seen") !== "old") return button;
-      if (button && generationStartedAt && Date.now() - generationStartedAt > 5000) {
-        const area = button.closest("section,article,[class*='result'],[class*='output'],[class*='generated']") || button.parentElement;
-        const areaText = (area?.innerText || "").toLowerCase();
-        if (areaText.includes(phrase.trim().toLowerCase()) || areaText.includes("generated") || areaText.includes("result")) return button;
-      }
+      // PocketWebTools can reuse the same bottom result-player button between
+      // generations. In that case it is still marked "old", even though it now
+      // controls the new output, and the result card may not repeat the phrase.
+      // After allowing the page time to generate/render, accept the last visible
+      // non-reference Play control as the reused result player.
+      if (button && generationStartedAt && Date.now() - generationStartedAt > 5000) return button;
       await new Promise(resolve => setTimeout(resolve, 400));
     }
     return null;
