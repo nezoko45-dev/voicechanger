@@ -1,5 +1,5 @@
-import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2";
-import { VoxShot, ChatterboxEngine } from "https://esm.sh/voxshot@0.4.0?bundle";
+import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0";
+import { VoxShot, ChatterboxEngine } from "https://esm.sh/voxshot@0.3.0?bundle";
 
 const $ = id => document.getElementById(id);
 const ui = Object.fromEntries(["startBtn","stopBtn","status","modelStatus","hint","input","messageInput","sendBtn","chatForm","messages","turnCount","orb","meterFill","voiceFile","cloneBtn","voiceStatus","voiceProgress","consent","micBtn","micStatus","engineLabel"].map(id=>[id,$(id)]));
