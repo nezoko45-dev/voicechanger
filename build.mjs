@@ -21,6 +21,18 @@ async function copyTree(from, to) {
 await rm(out, { recursive: true, force: true });
 await mkdir(out, { recursive: true });
 await copyTree(root, out);
+
+// Ship the exact ONNX Runtime Web glue/WASM files alongside the extension.
+// MV3 extension pages cannot safely import executable runtime modules from a CDN.
+const ortDist = path.join(root, "node_modules", "onnxruntime-web", "dist");
+const ortOut = path.join(out, "ort");
+await mkdir(ortOut, { recursive: true });
+for (const name of await readdir(ortDist)) {
+  if (/^ort-wasm-simd-threaded(?:-jsep|-jspi|-asyncify)?\.(?:mjs|wasm)$/.test(name)) {
+    await cp(path.join(ortDist, name), path.join(ortOut, name));
+  }
+}
+
 await build({
   entryPoints: [path.join(root, "voice-clone.js")],
   outfile: path.join(out, "voice-clone.js"),
@@ -32,4 +44,4 @@ await build({
   legalComments: "none",
   logLevel: "info"
 });
-console.log("Built unpacked extension into ./dist. Load dist/ in chrome://extensions.");
+console.log("Built unpacked extension into ./dist with a local ONNX Runtime Web runtime.");
