@@ -3,7 +3,7 @@
 A Chrome Manifest V3 extension with two tools:
 
 - Hands-free dictation on [TTSLab.dev](https://ttslab.dev/) and [Fish Audio](https://fish.audio/).
-- An F5-TTS browser-demo launcher for evaluating reference-audio voice cloning.
+- An F5-TTS browser voice-cloning studio bundled from the upstream browser implementation.
 
 ## Build the extension
 
@@ -27,15 +27,15 @@ Requirements: Node.js 20+ and a recent Chrome or Edge browser.
 ## Try F5-TTS voice cloning
 
 1. Click the extension icon, then **Open Voice Clone Studio**.
-2. Click **Open F5-TTS browser demo**. It opens the F5-TTS demo in a separate tab.
+2. Click **Open F5-TTS voice cloning inside this extension** to launch the bundled studio.
 3. Upload a clean 5–10 second reference clip, provide its exact transcript, enter the new text, and generate speech.
 
-**Important:** this is an initial evaluation launcher, not yet a bundled F5-TTS inference engine inside the extension. The upstream browser implementation uses a custom ONNX encoder/transformer/decoder pipeline, tensor/audio operations, and worker integration; it is not compatible with a simple Transformers.js model-ID swap. The demo itself runs inference locally in your browser and downloads model assets on first use.
+The GitHub Actions build checks out the upstream [nsarang/voice-cloning-f5-tts](https://github.com/nsarang/voice-cloning-f5-tts) project, builds it as a static app, and packages it inside this extension at `f5tts/`. It uses the project's custom ONNX encoder/transformer/decoder pipeline, tensor/audio operations, and worker integration. Model assets are downloaded on first use; synthesis runs locally in the browser. The upstream project is Apache-2.0 licensed.
 
 ## Model and privacy notes
 
 - F5-TTS is a zero-shot voice-cloning model; use only reference audio you own or have permission to use.
 - The external demo is maintained at [nsarang/voice-cloning-f5-tts](https://github.com/nsarang/voice-cloning-f5-tts).
 - First-time model downloads require an internet connection. Browser/device capability affects speed and compatibility.
-- This branch's voice studio no longer presents Kokoro preset voices as voice cloning.
+- The bundled F5-TTS browser engine replaces the earlier Kokoro preset-voice studio.
 - All changes for this work are on `feature/ttslab-fast-dictation`; `main` is not modified.
