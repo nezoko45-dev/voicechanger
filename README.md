@@ -1,3 +1,11 @@
+## PocketWebTools continuous voice dictation
+
+A separate helper extension is included at [`extension/pocketweb-dictation`](extension/pocketweb-dictation/). It listens to your speech, waits for a pause, inserts the recognized sentence into [PocketWebTools Voice Cloning](https://pocketweb.tools/voice-cloning), clicks **Generate Speech**, plays the generated audio when possible, and resumes listening.
+
+To install it, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the `extension/pocketweb-dictation` folder. Open the PocketWebTools Voice Cloning page, then click the helper's toolbar icon and choose **Start listening**. Use **Stop** to end the loop. This helper is separate from the main local voiceclonnx extension and requires desktop Chrome/Chromium with Web Speech recognition support. Details and limitations are in the [helper README](extension/pocketweb-dictation/README.md).
+
+---
+
 # VoiceChanger — voiceclonnx Chrome extension
 
 A minimal Chrome extension with one manually selected **reference voice** and an automatically created **source recording**. Audio conversion runs in a local Python service powered by [voiceclonnx](https://github.com/TigreGotico/voiceclonnx).
