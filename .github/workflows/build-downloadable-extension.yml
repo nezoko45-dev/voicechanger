@@ -34,6 +34,26 @@ jobs:
       - name: Build extension bundle
         run: npm run build
 
+      - name: Check out F5-TTS browser engine
+        uses: actions/checkout@v4
+        with:
+          repository: nsarang/voice-cloning-f5-tts
+          ref: main
+          path: f5tts-upstream
+
+      - name: Build F5-TTS browser engine
+        working-directory: f5tts-upstream
+        run: |
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npm run build -- --base=./
+
+      - name: Bundle F5-TTS app into extension
+        run: |
+          test -s f5tts-upstream/dist/index.html
+          mkdir -p dist/f5tts
+          cp -R f5tts-upstream/dist/. dist/f5tts/
+          test -s dist/f5tts/index.html
+
       - name: Verify unpacked extension
         run: |
           test -s dist/manifest.json
