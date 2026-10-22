@@ -78,30 +78,25 @@
   }
 
   function findResultPlayButton(phrase) {
-    const buttons = [...document.querySelectorAll("button,[role=button]")].filter(isVisible);
+    // The page has multiple Play buttons (including a top/reference player).
+    // Choose the LAST visible Play control in DOM order, which belongs to the
+    // bottom/latest generated output on the PocketWebTools page.
+    const buttons = [...document.querySelectorAll("button,[role=button],input[type=button]")].filter(isVisible);
     const playButtons = buttons.filter(el => {
-      const text = (el.innerText || el.textContent || el.getAttribute("aria-label") || el.title || "").trim().toLowerCase();
-      const label = (el.getAttribute("aria-label") || el.title || "").toLowerCase();
+      const text = (el.innerText || el.textContent || el.value || "").trim().toLowerCase();
+      const label = (el.getAttribute("aria-label") || el.title || "").trim().toLowerCase();
       return text === "play" || label === "play" || label.includes("play audio") || label.includes("play result");
     });
-
-    // Prefer a Play button in a result/card that contains the newly generated text.
-    const phraseLower = phrase.trim().toLowerCase();
-    for (const button of playButtons) {
+    const eligible = playButtons.filter(button => {
       let node = button;
-      for (let depth = 0; node && depth < 6; depth++, node = node.parentElement) {
+      for (let depth = 0; node && depth < 5; depth++, node = node.parentElement) {
         const text = (node.innerText || node.textContent || "").toLowerCase();
-        if (text.includes(phraseLower) && text.length < 5000) return button;
+        if (text.includes("reference audio") || text.includes("upload reference")) return false;
       }
-    }
-    // Fallback: prefer buttons near audio players, excluding reference/source upload sections.
-    return playButtons.find(button => {
-      const area = button.closest("section,article,[class*='result'],[class*='output'],[class*='generated']") || button.parentElement;
-      const text = (area?.innerText || "").toLowerCase();
-      return !text.includes("reference audio") && !text.includes("upload reference");
-    }) || null;
+      return true;
+    });
+    return eligible.length ? eligible[eligible.length - 1] : null;
   }
-
   async function waitForResultPlayButton(phrase, timeoutMs = 60000) {
     const started = Date.now();
     while (Date.now() - started < timeoutMs) {
