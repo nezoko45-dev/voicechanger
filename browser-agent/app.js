@@ -1,160 +1,26 @@
 import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2";
+import { VoxShot, ChatterboxEngine } from "https://esm.sh/voxshot@0.4.0?bundle";
 
-const MODEL_ID = "onnx-community/Qwen2.5-0.5B-Instruct";
-const $ = (id) => document.getElementById(id);
-const startBtn = $("startBtn");
-const stopBtn = $("stopBtn");
-const status = $("status");
-const modelStatus = $("modelStatus");
-const hint = $("hint");
-const input = $("messageInput");
-const sendBtn = $("sendBtn");
-const form = $("chatForm");
-const messagesEl = $("messages");
-const turnCount = $("turnCount");
-const orb = $("orb");
-const meterFill = $("meterFill");
+const $ = id => document.getElementById(id);
+const ui = Object.fromEntries(["startBtn","stopBtn","status","modelStatus","hint","input","messageInput","sendBtn","chatForm","messages","turnCount","orb","meterFill","voiceFile","cloneBtn","voiceStatus","voiceProgress","consent","micBtn","micStatus","engineLabel"].map(id=>[id,$(id)]));
+ui.input = ui.messageInput;
+env.allowLocalModels = false; env.useBrowserCache = true;
 
-let generator = null;
-let loadingPromise = null;
-let sessionActive = false;
-let busy = false;
-let turns = 0;
-const history = [{ role: "system", content: "You are a friendly, concise voice-call AI assistant. Speak naturally, use short responses, and ask one question at a time when useful." }];
+let llm=null, asr=null, tts=null, loadPromise=null, session=false, busy=false, recorder=null, stream=null, chunks=[], voiceReady=false, turns=0, audioCtx=null;
+let abortController=null;
+const history=[{role:"system",content:"You are a friendly, concise voice-call AI assistant. Speak naturally in short responses, as if talking aloud. Ask one question at a time when helpful."}];
 
-env.allowLocalModels = false;
-env.useBrowserCache = true;
-
-function setStatus(text, mode = "") {
-  status.textContent = text;
-  orb.classList.toggle("active", mode === "active");
-  orb.classList.toggle("thinking", mode === "thinking");
-}
-function addMessage(role, content) {
-  $("emptyState")?.remove();
-  const node = document.createElement("div");
-  node.className = `message ${role}`;
-  const label = document.createElement("div");
-  label.className = "message-label";
-  label.textContent = role === "user" ? "You" : "Agent";
-  const body = document.createElement("div");
-  body.textContent = content;
-  node.append(label, body);
-  messagesEl.append(node);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-}
-function setBusy(value) {
-  busy = value;
-  sendBtn.disabled = value || !sessionActive;
-  input.disabled = value || !sessionActive;
-  startBtn.disabled = value || sessionActive;
-  stopBtn.disabled = value || !sessionActive;
-  meterFill.style.width = value ? "72%" : (sessionActive ? "28%" : "0%");
-}
-async function loadModel() {
-  if (generator) return generator;
-  if (loadingPromise) return loadingPromise;
-  loadingPromise = (async () => {
-    modelStatus.textContent = "Downloading model · first run may take a while…";
-    hint.textContent = "Model weights are downloaded from Hugging Face and cached by your browser. No API key is used.";
-    setStatus("Preparing your local AI", "thinking");
-    try {
-      const device = navigator.gpu ? "webgpu" : "wasm";
-      modelStatus.textContent = `Loading ${MODEL_ID} · ${device.toUpperCase()}`;
-      generator = await pipeline("text-generation", MODEL_ID, {
-        device,
-        dtype: device === "webgpu" ? "q4" : "q4",
-        progress_callback: (progress) => {
-          if (progress?.status === "progress" && Number.isFinite(progress.progress)) {
-            modelStatus.textContent = `Downloading model · ${Math.round(progress.progress)}%`;
-          } else if (progress?.status) {
-            modelStatus.textContent = `Model: ${progress.status}`;
-          }
-        }
-      });
-      modelStatus.textContent = `Local model ready · ${device.toUpperCase()}`;
-      hint.textContent = "Your chat prompts and generated replies are processed in this browser. The initial model download requires an internet connection.";
-      return generator;
-    } catch (error) {
-      generator = null;
-      modelStatus.textContent = "Model failed to load";
-      hint.textContent = `Could not load the model: ${error.message}. Try Chrome or Edge with WebGPU enabled, or reload to retry.`;
-      throw error;
-    } finally {
-      loadingPromise = null;
-    }
-  })();
-  return loadingPromise;
-}
-async function startSession() {
-  sessionActive = true;
-  startBtn.disabled = true;
-  stopBtn.disabled = false;
-  setStatus("Warming up the local model", "thinking");
-  try {
-    await loadModel();
-    input.disabled = false;
-    sendBtn.disabled = false;
-    setStatus("Connected · your turn", "active");
-    input.focus();
-  } catch {
-    sessionActive = false;
-    startBtn.disabled = false;
-    stopBtn.disabled = true;
-    setStatus("Couldn't start — check the model status");
-  }
-}
-function endSession() {
-  sessionActive = false;
-  setBusy(false);
-  startBtn.disabled = false;
-  stopBtn.disabled = true;
-  input.disabled = true;
-  sendBtn.disabled = true;
-  setStatus("Session ended");
-  modelStatus.textContent = generator ? "Local model ready · cached in this page" : "AI model not loaded";
-}
-async function sendMessage(text) {
-  const prompt = text.trim();
-  if (!prompt || busy || !sessionActive) return;
-  addMessage("user", prompt);
-  history.push({ role: "user", content: prompt });
-  input.value = "";
-  setBusy(true);
-  setStatus("Thinking locally…", "thinking");
-  try {
-    const model = await loadModel();
-    const output = await model(history, {
-      max_new_tokens: 160,
-      do_sample: true,
-      temperature: 0.7,
-      top_p: 0.9,
-      repetition_penalty: 1.08,
-      return_full_text: false
-    });
-    const answer = output?.[0]?.generated_text?.trim() || "Sorry, I couldn't form a reply. Try asking another way.";
-    history.push({ role: "assistant", content: answer });
-    addMessage("assistant", answer);
-    turns += 1;
-    turnCount.textContent = `${turns} ${turns === 1 ? "turn" : "turns"}`;
-    setStatus("Connected · your turn", "active");
-  } catch (error) {
-    const message = `I hit a model error: ${error.message}`;
-    addMessage("assistant", message);
-    history.pop();
-    setStatus("Model error · try again");
-  } finally {
-    setBusy(false);
-    if (sessionActive) {
-      input.disabled = false;
-      sendBtn.disabled = false;
-      input.focus();
-    }
-  }
-}
-startBtn.addEventListener("click", startSession);
-stopBtn.addEventListener("click", endSession);
-form.addEventListener("submit", (event) => {
-  event.preventDefault();
-  sendMessage(input.value);
-});
+function status(text,mode=""){ui.status.textContent=text;ui.orb.classList.toggle("active",mode==="active");ui.orb.classList.toggle("thinking",mode==="thinking");}
+function addMessage(role,text){$("emptyState")?.remove();const node=document.createElement("div");node.className="message "+role;const label=document.createElement("div");label.className="message-label";label.textContent=role==="user"?"You":"Agent";const body=document.createElement("div");body.textContent=text;node.append(label,body);ui.messages.append(node);ui.messages.scrollTop=ui.messages.scrollHeight;}
+function setBusy(v){busy=v;ui.sendBtn.disabled=v||!session;ui.messageInput.disabled=v||!session;ui.startBtn.disabled=v||session;ui.stopBtn.disabled=v||!session;ui.micBtn.disabled=v||!session;ui.meterFill.style.width=v?"75%":session?"24%":"0%";}
+async function loadCore(){if(llm&&asr)return;if(loadPromise)return loadPromise;loadPromise=(async()=>{const device=navigator.gpu?"webgpu":"wasm";ui.modelStatus.textContent="Loading local speech and language models…";status("Preparing your local AI","thinking");const options={device,dtype:"q4",progress_callback:p=>{if(p?.status==="progress"&&Number.isFinite(p.progress))ui.modelStatus.textContent="Downloading model · "+Math.round(p.progress)+"%";else if(p?.status==="ready")ui.modelStatus.textContent="Initializing local models…";}};[llm,asr]=await Promise.all([pipeline("text-generation","onnx-community/Qwen2.5-0.5B-Instruct",options),pipeline("automatic-speech-recognition","onnx-community/whisper-tiny.en",options)]);ui.modelStatus.textContent="Local LLM + speech recognition ready · "+device.toUpperCase();ui.hint.textContent="Speech transcription and replies run locally after model downloads. Voice cloning is an optional separate model.";})().catch(e=>{llm=null;asr=null;ui.modelStatus.textContent="Model load failed: "+e.message;throw e;}).finally(()=>loadPromise=null);return loadPromise;}
+async function startSession(){ui.startBtn.disabled=true;try{await loadCore();session=true;setBusy(false);ui.messageInput.disabled=false;ui.sendBtn.disabled=false;ui.micBtn.disabled=false;ui.stopBtn.disabled=false;status("Connected · your turn","active");ui.messageInput.focus();}catch(e){session=false;ui.startBtn.disabled=false;ui.stopBtn.disabled=true;status("Could not start · check model status");}}
+function stopMic(){if(recorder&&recorder.state!=="inactive")recorder.stop();if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}ui.micBtn.classList.remove("recording");ui.micBtn.textContent="🎙 Start talking";ui.micStatus.textContent="Microphone off";}
+function endSession(){session=false;stopMic();abortController?.abort();setBusy(false);ui.startBtn.disabled=false;ui.stopBtn.disabled=true;ui.messageInput.disabled=true;ui.sendBtn.disabled=true;ui.micBtn.disabled=true;status("Session ended");}
+async function cloneVoice(){const file=ui.voiceFile.files?.[0];if(!file){ui.voiceProgress.textContent="Choose an audio sample first.";return;}if(!ui.consent.checked){ui.voiceProgress.textContent="Please confirm you own the voice or have permission.";return;}ui.cloneBtn.disabled=true;try{ui.voiceProgress.textContent="Loading voice cloning model (first run may download ~1.5 GB)…";const engine=new ChatterboxEngine({onProgress:p=>{if(p?.status)ui.voiceProgress.textContent="Voice model: "+p.status+(p.plan?" · "+p.plan:"");else if(p?.progress)ui.voiceProgress.textContent="Loading voice model…";}});tts=await VoxShot.create({engine,minChunkLength:20});ui.voiceProgress.textContent="Encoding reference voice…";await tts.cloneVoice(file);await tts.saveVoice("my-voice");voiceReady=true;ui.voiceStatus.textContent="Voice loaded";ui.engineLabel.textContent="Voice output: cloned voice ready";ui.voiceProgress.textContent="Your voice is ready. Agent replies will be spoken aloud.";if(session)status("Connected · cloned voice ready","active");}catch(e){tts=null;voiceReady=false;ui.voiceProgress.textContent="Voice setup failed: "+e.message+" · Try Chrome on a WebGPU-capable computer.";ui.voiceStatus.textContent="Setup failed";}finally{ui.cloneBtn.disabled=false;}}
+async function speak(text){if(!tts||!voiceReady)return;try{ui.engineLabel.textContent="Voice output: generating…";const audio=await tts.speak(text.slice(0,500));if(session)await audio.play();ui.engineLabel.textContent="Voice output: cloned voice ready";}catch(e){ui.engineLabel.textContent="Speech failed: "+e.message;}}
+async function sendMessage(text){const prompt=text.trim();if(!prompt||busy||!session)return;addMessage("user",prompt);history.push({role:"user",content:prompt});ui.messageInput.value="";setBusy(true);status("Thinking locally…","thinking");abortController=new AbortController();try{const output=await llm(history,{max_new_tokens:130,do_sample:true,temperature:.7,top_p:.9,repetition_penalty:1.08,return_full_text:false});const answer=output?.[0]?.generated_text?.trim()||"Sorry, I couldn't form a reply. Could you try again?";history.push({role:"assistant",content:answer});addMessage("assistant",answer);turns++;ui.turnCount.textContent=turns+" "+(turns===1?"turn":"turns");if(voiceReady){status("Speaking in your cloned voice…","active");await speak(answer);}status("Connected · your turn","active");}catch(e){addMessage("assistant","I hit a model error: "+e.message);history.pop();status("Model error · try again");}finally{abortController=null;setBusy(false);if(session){ui.messageInput.disabled=false;ui.sendBtn.disabled=false;ui.micBtn.disabled=false;ui.messageInput.focus();}}}
+async function audioToFloat32(blob){audioCtx ||= new AudioContext();const buffer=await audioCtx.decodeAudioData(await blob.arrayBuffer());const mono=new Float32Array(buffer.length);for(let c=0;c<buffer.numberOfChannels;c++){const data=buffer.getChannelData(c);for(let i=0;i<data.length;i++)mono[i]+=data[i]/buffer.numberOfChannels;}const targetRate=16000;if(buffer.sampleRate===targetRate)return {audio:mono,sampling_rate:targetRate};const outLength=Math.floor(mono.length*targetRate/buffer.sampleRate),out=new Float32Array(outLength),ratio=buffer.sampleRate/targetRate;for(let i=0;i<outLength;i++){const pos=i*ratio,left=Math.floor(pos),right=Math.min(left+1,mono.length-1),frac=pos-left;out[i]=mono[left]*(1-frac)+mono[right]*frac;}return {audio:out,sampling_rate:targetRate};}
+async function transcribe(blob){try{ui.micStatus.textContent="Transcribing locally…";status("Transcribing your speech…","thinking");const audio=await audioToFloat32(blob);const result=await asr(audio,{sampling_rate:audio.sampling_rate,chunk_length_s:20,stride_length_s:4});const text=result?.text?.trim();if(text)await sendMessage(text);else{status("Didn't catch that · try again");ui.micStatus.textContent="No speech detected";}}catch(e){ui.micStatus.textContent="Transcription error: "+e.message;status("Transcription failed");}}
+async function toggleMic(){if(recorder&&recorder.state==="recording"){recorder.stop();ui.micBtn.classList.remove("recording");ui.micBtn.textContent="🎙 Start talking";ui.micStatus.textContent="Processing recording…";return;}try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});chunks=[];const type=MediaRecorder.isTypeSupported("audio/webm;codecs=opus")?"audio/webm;codecs=opus":"";recorder=new MediaRecorder(stream,type?{mimeType:type}:undefined);recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data);};recorder.onstop=async()=>{const blob=new Blob(chunks,{type:recorder.mimeType||"audio/webm"});stream?.getTracks().forEach(t=>t.stop());stream=null;ui.micBtn.classList.remove("recording");ui.micBtn.textContent="🎙 Start talking";if(blob.size>1000)await transcribe(blob);else{ui.micStatus.textContent="No audio captured";status("Try recording again");}};recorder.start();ui.micBtn.classList.add("recording");ui.micBtn.textContent="■ Finish speaking";ui.micStatus.textContent="Recording on device · press finish when done";status("Listening…","active");}catch(e){ui.micStatus.textContent="Microphone unavailable: "+e.message;status("Allow microphone access and retry");}}
+ui.startBtn.addEventListener("click",startSession);ui.stopBtn.addEventListener("click",endSession);ui.chatForm.addEventListener("submit",e=>{e.preventDefault();sendMessage(ui.messageInput.value);});ui.cloneBtn.addEventListener("click",cloneVoice);ui.voiceFile.addEventListener("change",()=>{ui.cloneBtn.disabled=!ui.voiceFile.files?.length;ui.voiceStatus.textContent=ui.voiceFile.files?.length?"Sample selected":"Not configured";});ui.micBtn.addEventListener("click",toggleMic);
