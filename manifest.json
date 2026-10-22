@@ -4,8 +4,8 @@
   "version": "3.0.0",
   "minimum_chrome_version": "116",
   "description": "Live background dictation for TTSLab and Fish Audio; generates speech after a pause.",
-  "permissions": ["tabs", "offscreen"],
-  "host_permissions": ["https://ttslab.dev/*", "https://*.ttslab.dev/*", "https://fish.audio/*", "https://*.fish.audio/*"],
+  "permissions": ["tabs", "offscreen", "storage"],
+  "host_permissions": ["https://ttslab.dev/*", "https://*.ttslab.dev/*", "https://fish.audio/*", "https://*.fish.audio/*", "http://127.0.0.1:8765/*", "http://localhost:8765/*"],
   "content_scripts": [{
     "matches": ["https://ttslab.dev/*", "https://*.ttslab.dev/*", "https://fish.audio/*", "https://*.fish.audio/*"],
     "js": ["content.js"],
