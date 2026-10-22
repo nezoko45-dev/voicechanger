@@ -2,18 +2,18 @@
  const API="http://127.0.0.1:8765";
  const $=s=>document.querySelector(s);
  const health=$("#health"),status=$("#status"),referenceInput=$("#reference"),saveReference=$("#saveReference"),referenceStatus=$("#referenceStatus"),startButton=$("#start"),stopButton=$("#stop"),micStatus=$("#micStatus"),levelBar=$("#level"),clips=$("#clips");
- let referenceReady=false,stream=null,audioContext=null,processor=null,source=null,recording=false,frames=[],preRoll=[],phraseActive=false,phraseSamples=0,silenceSamples=0,clipNumber=0,processing=0,referenceName="";
+ let referenceReady=false,pendingReference=false,stream=null,audioContext=null,processor=null,source=null,recording=false,frames=[],preRoll=[],phraseActive=false,phraseSamples=0,silenceSamples=0,clipNumber=0,processing=0,referenceName="";
  const TARGET_SILENCE=0.85,MIN_PHRASE_SECONDS=0.38,MAX_PHRASE_SECONDS=15,PRE_ROLL_SECONDS=0.20,THRESHOLD=0.014;
  function setStatus(text){status.textContent=text;}
  async function checkHealth(){
-  try{const r=await fetch(API+"/health");if(!r.ok)throw Error("HTTP "+r.status);const data=await r.json();health.textContent=data.reference_ready?"Local helper ready · reference WAV is saved.":"Local helper ready · choose a reference WAV below.";health.style.color="#7ce9be";referenceReady=!!data.reference_ready;referenceStatus.textContent=referenceReady?"A reference WAV is saved locally.": "No reference WAV saved yet.";saveReference.disabled=!referenceInput.files.length;startButton.disabled=!referenceReady;setStatus(referenceReady?"Ready to record and convert phrases.":"Choose and save a reference WAV to begin.");}
+  try{const r=await fetch(API+"/health");if(!r.ok)throw Error("HTTP "+r.status);const data=await r.json();health.textContent=data.reference_ready?"Local helper ready · reference WAV is saved.":"Local helper ready · choose a reference WAV below.";health.style.color="#7ce9be";referenceReady=!!data.reference_ready;referenceStatus.textContent=referenceReady?"A reference WAV is saved locally.": "No reference WAV saved yet.";saveReference.disabled=!referenceInput.files.length;startButton.disabled=!referenceReady||pendingReference;setStatus(referenceReady?"Ready to record and convert phrases.":"Choose and save a reference WAV to begin.");}
   catch(e){health.textContent="Local helper not reachable. Start it with: python voiceclonnx_helper/server.py";health.style.color="#ffaaaa";startButton.disabled=true;saveReference.disabled=!referenceInput.files.length;setStatus("Waiting for the local VoiceClonNX helper.");}
  }
- referenceInput.addEventListener("change",()=>{saveReference.disabled=!referenceInput.files.length;referenceStatus.textContent=referenceInput.files[0]?.name||"No file selected.";});
+ referenceInput.addEventListener("change",()=>{pendingReference=!!referenceInput.files.length;saveReference.disabled=!referenceInput.files.length;startButton.disabled=!referenceReady||pendingReference;referenceStatus.textContent=referenceInput.files[0]?.name||"No file selected.";});
  saveReference.addEventListener("click",async()=>{
   const file=referenceInput.files[0];if(!file)return;if(!file.name.toLowerCase().endsWith(".wav")){setStatus("Please choose a WAV file.");return;}
   saveReference.disabled=true;referenceStatus.textContent="Uploading reference to local helper…";
-  try{const form=new FormData();form.append("file",file,file.name);const r=await fetch(API+"/reference",{method:"POST",body:form});const data=await r.json();if(!r.ok)throw Error(data.detail||"Reference upload failed.");referenceReady=true;referenceName=file.name;referenceStatus.textContent="Saved locally: "+file.name;setStatus("Reference voice saved. Start the microphone when ready.");startButton.disabled=false;}
+  try{const form=new FormData();form.append("file",file,file.name);const r=await fetch(API+"/reference",{method:"POST",body:form});const data=await r.json();if(!r.ok)throw Error(data.detail||"Reference upload failed.");referenceReady=true;pendingReference=false;referenceName=file.name;referenceStatus.textContent="Saved locally: "+file.name;setStatus("Reference voice saved. Start the microphone when ready.");startButton.disabled=false;}
   catch(e){referenceStatus.textContent="Could not save reference.";setStatus("Reference upload failed: "+e.message);}
   finally{saveReference.disabled=!referenceInput.files.length;}
  });
@@ -80,7 +80,7 @@
   recording=false;levelBar.style.width="0";if(phraseActive)endPhrase();
   if(processor){processor.onaudioprocess=null;processor.disconnect();processor=null;}if(source){source.disconnect();source=null;}
   if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}if(audioContext){try{await audioContext.close();}catch{}audioContext=null;}
-  frames=[];preRoll=[];phraseActive=false;silenceSamples=0;startButton.disabled=!referenceReady;stopButton.disabled=true;micStatus.textContent="Microphone off";setStatus(processing?"Microphone stopped; waiting for conversion to finish.":"Microphone stopped.");
+  frames=[];preRoll=[];phraseActive=false;silenceSamples=0;startButton.disabled=!referenceReady||pendingReference;stopButton.disabled=true;micStatus.textContent="Microphone off";setStatus(processing?"Microphone stopped; waiting for conversion to finish.":"Microphone stopped.");
  }
  startButton.addEventListener("click",startMic);stopButton.addEventListener("click",stopMic);
  $("#clear").addEventListener("click",()=>{for(const audio of clips.querySelectorAll("audio"))if(audio.src.startsWith("blob:"))URL.revokeObjectURL(audio.src);clips.replaceChildren(Object.assign(document.createElement("p"),{textContent:"Your converted phrases will appear here.",className:"muted"}));clipNumber=0;});
