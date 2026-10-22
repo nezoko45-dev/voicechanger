@@ -60,7 +60,11 @@
   function stopRecognition() {
     clearTimeout(restartTimer);
     clearTimeout(phraseTimer);
-    try { recognition?.stop(); } catch {}
+    // Detach the old instance before stopping it so its asynchronous onend
+    // cannot interfere with the next listening session.
+    const oldRecognition = recognition;
+    recognition = null;
+    try { oldRecognition?.stop(); } catch {}
   }
 
   function armSilenceTimer() {
@@ -197,7 +201,15 @@
       await new Promise(resolve => setTimeout(resolve, 2500));
     } finally {
       busy = false;
-      if (running) startRecognition();
+      // Always create a fresh recognition session after generation/playback,
+      // including when generation or result-button detection fails.
+      if (running) {
+        clearTimeout(restartTimer);
+        recognition = null;
+        restartTimer = setTimeout(() => {
+          if (running && !busy && !recognition) startRecognition();
+        }, 300);
+      }
     }
   }
 
@@ -243,7 +255,7 @@
     };
     instance.onend = () => {
       if (instance !== recognition) return;
-      if (running && !busy) {
+      if (running && !busy && instance === recognition) {
         clearTimeout(restartTimer);
         restartTimer = setTimeout(() => {
           if (running && !busy && instance === recognition) {
@@ -255,7 +267,7 @@
     };
     try {
       instance.start();
-      showStatus("Listening… pause for about 2.5 seconds to generate each sentence.");
+      showStatus("Listening continuously — pause for 2.5 seconds after each sentence. I’ll resume listening after playback.");
     } catch (error) {
       showStatus("Could not start microphone recognition: " + (error?.message || "retrying") + ".");
       clearTimeout(restartTimer);
