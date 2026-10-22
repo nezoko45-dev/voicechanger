@@ -1,39 +1,18 @@
-# VoiceChanger PocketWeb Dictation — local microphone transcription
+# VoiceChanger PocketWeb Dictation
 
-The extension captures audio from the computer's default microphone using `getUserMedia()` and `MediaRecorder`. It does **not** use Chrome's `SpeechRecognition` API. A local Faster-Whisper server transcribes recorded audio; no cloud transcription API is used.
+This Chrome extension uses the browser's built-in Web Speech recognition (`SpeechRecognition` / `webkitSpeechRecognition`) to dictate sentences into PocketWebTools. **No Python, local server, or separate transcription engine is required.**
 
-## Requirements
-
-- Desktop Chrome/Chromium
-- Python 3.10+
-- FFmpeg installed and available on PATH
-- Internet access once to download the Faster-Whisper model
-
-## Start the local transcription server
-
-From the repository root:
-
-```bash
-python -m pip install -r requirements-local.txt
-python local_transcriber.py
-```
-
-The first run downloads the `small` model. Inference then runs locally. The server binds only to `127.0.0.1:8178`. Set `WHISPER_MODEL=base` for a lighter/faster model or `WHISPER_MODEL=medium` for higher accuracy with greater compute/memory cost.
-
-## Load and use the extension
+## Use it
 
 1. Open `chrome://extensions`, enable Developer mode, and click **Load unpacked**.
 2. Select the folder containing this branch's root `manifest.json`, `content.js`, `popup.html`, and `popup.js`.
 3. Open [PocketWebTools Voice Cloning](https://pocketweb.tools/voice-cloning).
-4. Start the local server, click the extension icon, then **Start listening**.
-5. Allow microphone access if prompted. Speak a sentence and pause for 2.5 seconds. The extension transcribes locally, enters the sentence, clicks Generate, plays the result, then resumes listening. Use **Stop** to end.
+4. Click the extension icon and choose **Start listening**. Allow microphone access if Chrome prompts you.
+5. Speak naturally. After 2.5 seconds of silence, the extension submits the recognized sentence, clicks Generate, plays the generated result, and resumes listening. Use **Stop** to end the loop.
 
-## Troubleshooting
+## Notes
 
-- Keep the local server terminal open. If the extension says the server is unavailable, run `python local_transcriber.py` and check port 8178.
-- If microphone access fails, allow it for `pocketweb.tools` in Chrome site settings, reload the tab, and try again.
-- FFmpeg is required to decode WebM audio.
-- The initial model download can take a while; CPU-only transcription may have noticeable latency.
-- Result Play-button detection depends on PocketWebTools' page markup and may need adjustment if their UI changes.
-
-Audio is sent to `127.0.0.1` for local transcription. Model files download from Hugging Face on first launch.
+- Uses the speech recognition service provided by your browser/platform; availability and recognition behavior depend on Chrome and its configured speech service.
+- Desktop Chrome is recommended. If recognition is unavailable or permission is denied, check the site's microphone permission and browser/platform speech settings.
+- The result Play-button selection is heuristic and may need adjustment if PocketWebTools changes its page markup.
+- Use only a voice you own or have permission to clone.
