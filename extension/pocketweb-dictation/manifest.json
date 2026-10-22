@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "VoiceChanger PocketWeb Dictation",
+  "version": "1.0.0",
+  "description": "Continuously dictate sentences into PocketWebTools voice cloning, generate and play each sentence, then resume listening.",
+  "permissions": [
+    "activeTab"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "PocketWeb Dictation"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://pocketweb.tools/voice-cloning*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
