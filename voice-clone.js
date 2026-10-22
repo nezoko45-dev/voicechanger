@@ -1,307 +1,138 @@
-import { ChatterboxEngine, VoxShot } from "voxshot";
 import { env, pipeline } from "@huggingface/transformers";
 
-// MV3 blocks remote executable modules. Load the matching ONNX Runtime Web glue locally.
 env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL("ort/");
 
 (() => {
-  const $ = (selector) => document.querySelector(selector);
-  const loadButton = $("#loadModels");
-  const modelStatus = $("#modelStatus");
-  const progressBar = $("#progressBar");
-  const engineBadge = $("#engineBadge");
-  const referenceInput = $("#reference");
-  const setReferenceButton = $("#setReference");
-  const referenceStatus = $("#referenceStatus");
-  const textInput = $("#text");
-  const dictateButton = $("#dictate");
-  const stopDictationButton = $("#stopDictation");
-  const dictationStatus = $("#dictationStatus");
-  const synthesizeButton = $("#synthesize");
-  const stopAudioButton = $("#stopAudio");
-  const synthesisStatus = $("#synthesisStatus");
-  const clips = $("#clips");
-  const stopDictationButtonInitialText = stopDictationButton.textContent;
+  const $ = (s) => document.querySelector(s);
+  const loadButton = $("#loadModels"), modelStatus = $("#modelStatus"), progressBar = $("#progressBar"), engineBadge = $("#engineBadge");
+  const textInput = $("#text"), dictateButton = $("#dictate"), stopDictationButton = $("#stopDictation"), dictationStatus = $("#dictationStatus");
+  const synthesizeButton = $("#synthesize"), stopAudioButton = $("#stopAudio"), synthesisStatus = $("#synthesisStatus"), clips = $("#clips");
+  let tts = null, asr = null, loading = false, synthesizing = false, mediaRecorder = null, micStream = null, recordedChunks = [], activeAudio = null, clipNumber = 0;
 
-  let tts = null;
-  let asr = null;
-  let referenceFile = null;
-  let loading = false;
-  let synthesizing = false;
-  let mediaRecorder = null;
-  let micStream = null;
-  let recordedChunks = [];
-  let activeAudio = null;
-  let clipNumber = 0;
-
-  function setModelStatus(message) { modelStatus.textContent = message; }
-  function setSynthesisStatus(message) { synthesisStatus.textContent = message; }
   function updateControls() {
-    setReferenceButton.disabled = !tts || !referenceInput.files?.[0] || loading;
     dictateButton.disabled = !tts || loading || synthesizing || !!mediaRecorder;
-    synthesizeButton.disabled = !tts || !referenceFile || !textInput.value.trim() || loading || synthesizing;
-    loadButton.disabled = loading;
+    synthesizeButton.disabled = !tts || !textInput.value.trim() || loading || synthesizing;
+    loadButton.disabled = loading || !!tts;
   }
-  function reportModelProgress(event) {
-    if (!event) return;
-    if (event.status === "progress" && Number.isFinite(event.progress)) {
-      progressBar.style.width = Math.max(0, Math.min(100, event.progress)) + "%";
-      setModelStatus("Downloading " + (event.file || "model files") + " · " + Math.round(event.progress) + "%");
-    } else if (event.status === "load-start") {
-      setModelStatus("Preparing " + (event.plan || "WebGPU") + "…");
-    } else if (event.status === "load-fallback") {
-      setModelStatus("WebGPU model plan failed: " + (event.reason || "unknown reason"));
-    } else if (event.status === "load-ready") {
-      setModelStatus("Voice model ready on " + (event.plan || "WebGPU") + ".");
-    } else if (event.status === "load-compiling") {
-      setModelStatus("Model files downloaded. Compiling GPU sessions; this can take a few minutes…");
-      progressBar.style.width = "100%";
-    }
-  }
+  function status(message) { modelStatus.textContent = message; }
+  function setSynthesisStatus(message) { synthesisStatus.textContent = message; }
 
   async function loadModels() {
     if (loading || tts) return;
-    loading = true;
-    updateControls();
+    loading = true; updateControls(); progressBar.style.width = "0%";
     try {
-      const hasWebGPU = !!navigator.gpu && !!(await navigator.gpu.requestAdapter());
-      setModelStatus(hasWebGPU
-        ? "Starting Chatterbox model (WebGPU preferred)…"
-        : "No WebGPU adapter detected. Trying the slower browser CPU/WASM fallback…");
-      progressBar.style.width = "0%";
-      const engine = new ChatterboxEngine({
-        onProgress: reportModelProgress,
+      status("Loading Kokoro-82M speech model locally… The first download may take a few minutes.");
+      tts = await pipeline("text-to-speech", "onnx-community/Kokoro-82M-v1.0-ONNX", {
+        device: navigator.gpu ? "webgpu" : "wasm",
+        dtype: navigator.gpu ? "fp32" : "q8",
+        progress_callback: (event) => {
+          if (event?.status === "progress" && Number.isFinite(event.progress)) {
+            progressBar.style.width = Math.max(0, Math.min(100, event.progress)) + "%";
+            status("Downloading " + (event.file || "Kokoro model files") + " · " + Math.round(event.progress) + "%");
+          }
+        }
       });
-      // Prefer WebGPU but allow VoxShot's WASM fallback on unsupported devices.
-      tts = await VoxShot.create({ engine, device: "auto", minChunkLength: 20 });
-      const selectedDevice = String(tts.device || "automatic");
-      const usingWebGPU = selectedDevice.startsWith("webgpu");
-      engineBadge.textContent = usingWebGPU
-        ? "Voice model ready · WebGPU"
-        : "Voice model ready · CPU/WASM";
-      setModelStatus(usingWebGPU
-        ? "Voice model ready on WebGPU. Next, select a reference WAV."
-        : "Voice model ready using CPU/WASM fallback. Generation may be much slower. Next, select a reference WAV.");
+      engineBadge.textContent = "Kokoro ready";
+      status("Kokoro is ready. Choose a built-in voice, then type text or use local dictation.");
       progressBar.style.width = "100%";
     } catch (error) {
-      engineBadge.textContent = "Model load failed";
-      setModelStatus("Could not load the WebGPU voice model: " + (error?.message || String(error)));
-    } finally {
-      loading = false;
-      updateControls();
-    }
+      tts = null; engineBadge.textContent = "Model load failed";
+      status("Could not load Kokoro: " + (error?.message || String(error)));
+    } finally { loading = false; updateControls(); }
   }
 
-  referenceInput.addEventListener("change", () => {
-    const file = referenceInput.files?.[0] || null;
-    referenceStatus.textContent = file ? file.name + " selected; click Use this reference voice." : "No reference selected.";
-    setReferenceButton.disabled = !tts || !file || loading;
-  });
-
-  setReferenceButton.addEventListener("click", async () => {
-    const file = referenceInput.files?.[0];
-    if (!file || !tts) return;
-    if (!file.name.toLowerCase().endsWith(".wav") && file.type !== "audio/wav" && file.type !== "audio/x-wav") {
-      referenceStatus.textContent = "Please choose a WAV file.";
-      return;
-    }
-    setReferenceButton.disabled = true;
-    referenceStatus.textContent = "Preparing reference voice locally…";
-    try {
-      await tts.cloneVoice(file);
-      referenceFile = file;
-      referenceStatus.textContent = "Reference voice ready: " + file.name;
-      setSynthesisStatus("Reference voice set. Enter text or use local dictation.");
-    } catch (error) {
-      referenceFile = null;
-      referenceStatus.textContent = "Could not use this reference: " + (error?.message || String(error));
-    } finally {
-      updateControls();
-    }
-  });
+  function wavBlob(samples, sampleRate) {
+    const pcm = samples instanceof Float32Array ? samples : new Float32Array(samples);
+    const buffer = new ArrayBuffer(44 + pcm.length * 2), view = new DataView(buffer);
+    const write = (offset, str) => { for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)); };
+    write(0, "RIFF"); view.setUint32(4, 36 + pcm.length * 2, true); write(8, "WAVE"); write(12, "fmt ");
+    view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+    write(36, "data"); view.setUint32(40, pcm.length * 2, true);
+    for (let i = 0; i < pcm.length; i++) { const s = Math.max(-1, Math.min(1, pcm[i])); view.setInt16(44 + i * 2, s < 0 ? s * 32768 : s * 32767, true); }
+    return new Blob([buffer], { type: "audio/wav" });
+  }
 
   function addClip(blob, label) {
-    clipNumber += 1;
+    clipNumber++;
     if (clips.querySelector("p")) clips.replaceChildren();
-    const url = URL.createObjectURL(blob);
-    const card = document.createElement("div");
-    card.className = "clip";
-    const title = document.createElement("strong");
-    title.textContent = "Clip " + clipNumber + " · " + label;
-    const audio = document.createElement("audio");
-    audio.controls = true;
-    audio.preload = "metadata";
-    audio.src = url;
-    const download = document.createElement("a");
-    download.href = url;
-    download.download = "browser-voice-clone-" + String(clipNumber).padStart(3, "0") + ".wav";
-    download.textContent = "Download WAV";
-    card.append(title, audio, download);
-    clips.prepend(card);
+    const url = URL.createObjectURL(blob), card = document.createElement("div"); card.className = "clip";
+    const title = document.createElement("strong"); title.textContent = "Clip " + clipNumber + " · " + label;
+    const audio = document.createElement("audio"); audio.controls = true; audio.preload = "metadata"; audio.src = url;
+    const download = document.createElement("a"); download.href = url; download.download = "kokoro-speech-" + String(clipNumber).padStart(3, "0") + ".wav"; download.textContent = "Download WAV";
+    card.append(title, audio, download); clips.prepend(card); return audio;
   }
 
   async function synthesize() {
-    const text = textInput.value.trim();
-    if (!tts || !referenceFile || !text || synthesizing) return;
-    synthesizing = true;
-    updateControls();
-    setSynthesisStatus("Synthesizing on WebGPU. Longer text may take a while…");
+    const text = textInput.value.trim(); if (!tts || !text || synthesizing) return;
+    synthesizing = true; updateControls(); setSynthesisStatus("Generating speech with Kokoro locally…");
     try {
-      const audio = await tts.speak(text);
-      const blob = audio.toBlob();
-      addClip(blob, text.length > 64 ? text.slice(0, 61) + "…" : text);
-      stopAudioButton.disabled = false;
+      const voice = $("#voice").value;
+      const result = await tts(text, { voice });
+      const samples = result.audio;
+      const blob = wavBlob(samples, result.sampling_rate || 24000);
+      const audio = addClip(blob, voice);
+      if (activeAudio) { try { activeAudio.pause(); } catch {} }
+      activeAudio = audio; stopAudioButton.disabled = false;
       setSynthesisStatus("Speech generated locally. Play it here or download the WAV.");
-      const latest = clips.querySelector("audio");
-      if (latest) {
-        if (activeAudio) { try { activeAudio.pause(); } catch {} }
-        activeAudio = latest;
-        await latest.play().catch(() => {});
-      }
-    } catch (error) {
-      setSynthesisStatus("Synthesis failed: " + (error?.message || String(error)));
-    } finally {
-      synthesizing = false;
-      updateControls();
-    }
-  }
-
-  function resampleLinear(input, sourceRate, targetRate) {
-    if (sourceRate === targetRate) return input;
-    const outputLength = Math.max(1, Math.round(input.length * targetRate / sourceRate));
-    const output = new Float32Array(outputLength);
-    const ratio = sourceRate / targetRate;
-    for (let i = 0; i < outputLength; i++) {
-      const position = i * ratio;
-      const left = Math.min(input.length - 1, Math.floor(position));
-      const right = Math.min(input.length - 1, left + 1);
-      const fraction = position - left;
-      output[i] = input[left] * (1 - fraction) + input[right] * fraction;
-    }
-    return output;
+      await audio.play().catch(() => {});
+    } catch (error) { setSynthesisStatus("Kokoro synthesis failed: " + (error?.message || String(error))); }
+    finally { synthesizing = false; updateControls(); }
   }
 
   async function getLocalAsr() {
     if (asr) return asr;
+    dictationStatus.textContent = "Loading local Whisper dictation model…";
     const hasWebGPU = !!navigator.gpu && !!(await navigator.gpu.requestAdapter());
-    dictationStatus.textContent = hasWebGPU
-      ? "Loading local Whisper model on WebGPU…"
-      : "WebGPU unavailable; loading slower local Whisper CPU/WASM model…";
     asr = await pipeline("automatic-speech-recognition", "onnx-community/whisper-tiny.en", {
-      device: hasWebGPU ? "webgpu" : "wasm",
-      dtype: hasWebGPU ? "q4" : "q8",
-      progress_callback: (event) => {
-        if (event?.status === "progress" && Number.isFinite(event.progress)) {
-          dictationStatus.textContent = "Downloading local dictation model " + Math.round(event.progress) + "%";
-        } else if (event?.status === "done") {
-          dictationStatus.textContent = "Preparing local dictation model…";
-        }
-      },
+      device: hasWebGPU ? "webgpu" : "wasm", dtype: hasWebGPU ? "q4" : "q8",
+      progress_callback: (event) => { if (event?.status === "progress") dictationStatus.textContent = "Downloading dictation model " + Math.round(event.progress) + "%"; }
     });
     return asr;
   }
-
-  async function startDictation() {
-    if (mediaRecorder) return;
-    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
-      setSynthesisStatus("This browser does not support microphone recording.");
-      return;
-    }
-    recordedChunks = [];
-    try {
-      await getLocalAsr();
-      micStream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      });
-      const options = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? { mimeType: "audio/webm;codecs=opus" } : undefined;
-      mediaRecorder = new MediaRecorder(micStream, options);
-      mediaRecorder.addEventListener("dataavailable", (event) => {
-        if (event.data?.size) recordedChunks.push(event.data);
-      });
-      mediaRecorder.addEventListener("stop", transcribeRecording, { once: true });
-      mediaRecorder.start();
-      dictationStatus.textContent = "Recording · local";
-      dictateButton.disabled = true;
-      stopDictationButton.disabled = false;
-    } catch (error) {
-      stopMicTracks();
-      mediaRecorder = null;
-      dictationStatus.textContent = "Mic off";
-      setSynthesisStatus("Could not start local dictation: " + (error?.message || String(error)));
-      updateControls();
-    }
+  function stopMicTracks() { if (micStream) micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+  function resample(input, sourceRate, targetRate) {
+    if (sourceRate === targetRate) return input;
+    const out = new Float32Array(Math.max(1, Math.round(input.length * targetRate / sourceRate))), ratio = sourceRate / targetRate;
+    for (let i = 0; i < out.length; i++) { const p = i * ratio, l = Math.min(input.length - 1, Math.floor(p)), r = Math.min(input.length - 1, l + 1), f = p - l; out[i] = input[l] * (1 - f) + input[r] * f; }
+    return out;
   }
-
-  function stopMicTracks() {
-    if (micStream) micStream.getTracks().forEach((track) => track.stop());
-    micStream = null;
-  }
-
   async function transcribeRecording() {
-    const recorder = mediaRecorder;
-    mediaRecorder = null;
-    stopMicTracks();
-    stopDictationButton.disabled = true;
-    dictationStatus.textContent = "Transcribing locally…";
+    mediaRecorder = null; stopMicTracks(); stopDictationButton.disabled = true; dictationStatus.textContent = "Transcribing locally…";
     try {
       if (!recordedChunks.length) throw new Error("No microphone audio was captured.");
-      const blob = new Blob(recordedChunks, { type: recordedChunks[0]?.type || "audio/webm" });
-      recordedChunks = [];
-      const decodeContext = new AudioContext();
+      const blob = new Blob(recordedChunks, { type: recordedChunks[0]?.type || "audio/webm" }); recordedChunks = [];
+      const ctx = new AudioContext();
       try {
-        const decoded = await decodeContext.decodeAudioData(await blob.arrayBuffer());
-        const mono = decoded.getChannelData(0);
-        const samples = resampleLinear(mono, decoded.sampleRate, 16000);
-        const result = await asr({ raw: samples, sampling_rate: 16000 });
-        const transcript = (result?.text || "").trim();
-        if (!transcript) throw new Error("No speech was recognized. Try speaking a little longer or closer to the microphone.");
-        const existing = textInput.value.trim();
-        textInput.value = existing ? existing + " " + transcript : transcript;
+        const decoded = await ctx.decodeAudioData(await blob.arrayBuffer()), samples = resample(decoded.getChannelData(0), decoded.sampleRate, 16000);
+        const result = await asr({ raw: samples, sampling_rate: 16000 }), transcript = (result?.text || "").trim();
+        if (!transcript) throw new Error("No speech was recognized. Try speaking closer to the microphone.");
+        textInput.value = textInput.value.trim() ? textInput.value.trim() + " " + transcript : transcript;
         textInput.dispatchEvent(new Event("input", { bubbles: true }));
-        dictationStatus.textContent = "Dictation added";
-        setSynthesisStatus("Dictation completed on-device. Review the text, then synthesize.");
-      } finally {
-        await decodeContext.close();
-      }
-    } catch (error) {
-      dictationStatus.textContent = "Dictation failed";
-      setSynthesisStatus("Local dictation failed: " + (error?.message || String(error)));
-    } finally {
-      updateControls();
-    }
+        dictationStatus.textContent = "Dictation added"; setSynthesisStatus("Dictation completed on-device. Review the text, then synthesize.");
+      } finally { await ctx.close(); }
+    } catch (error) { dictationStatus.textContent = "Dictation failed"; setSynthesisStatus("Local dictation failed: " + (error?.message || String(error))); }
+    finally { updateControls(); }
   }
-
-  function stopDictation() {
-    if (mediaRecorder && mediaRecorder.state !== "inactive") {
-      dictationStatus.textContent = "Finishing recording…";
-      mediaRecorder.stop();
-    }
-    stopDictationButton.disabled = true;
+  async function startDictation() {
+    if (mediaRecorder) return;
+    try {
+      await getLocalAsr();
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      const options = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? { mimeType: "audio/webm;codecs=opus" } : undefined;
+      mediaRecorder = new MediaRecorder(micStream, options); recordedChunks = [];
+      mediaRecorder.addEventListener("dataavailable", e => { if (e.data?.size) recordedChunks.push(e.data); });
+      mediaRecorder.addEventListener("stop", transcribeRecording, { once: true }); mediaRecorder.start();
+      dictationStatus.textContent = "Recording · local"; dictateButton.disabled = true; stopDictationButton.disabled = false;
+    } catch (error) { stopMicTracks(); mediaRecorder = null; setSynthesisStatus("Could not start local dictation: " + (error?.message || String(error))); updateControls(); }
   }
-
-  textInput.addEventListener("input", updateControls);
   loadButton.addEventListener("click", loadModels);
+  textInput.addEventListener("input", updateControls);
   synthesizeButton.addEventListener("click", synthesize);
   dictateButton.addEventListener("click", startDictation);
-  stopDictationButton.addEventListener("click", stopDictation);
-  stopAudioButton.disabled = true;
-  stopAudioButton.addEventListener("click", () => {
-    if (activeAudio) { activeAudio.pause(); activeAudio.currentTime = 0; }
-    stopAudioButton.disabled = true;
-  });
-  $("#clear").addEventListener("click", () => {
-    for (const audio of clips.querySelectorAll("audio")) {
-      audio.pause();
-      if (audio.src.startsWith("blob:")) URL.revokeObjectURL(audio.src);
-    }
-    clips.replaceChildren(Object.assign(document.createElement("p"), { textContent: "Generated audio will appear here.", className: "muted" }));
-    clipNumber = 0;
-  });
-  window.addEventListener("beforeunload", () => {
-    stopMicTracks();
-    if (tts) void tts.dispose();
-    if (activeAudio) activeAudio.pause();
-  });
-  stopDictationButton.textContent = stopDictationButtonInitialText;
+  stopDictationButton.addEventListener("click", () => { if (mediaRecorder && mediaRecorder.state !== "inactive") { dictationStatus.textContent = "Finishing recording…"; mediaRecorder.stop(); } stopDictationButton.disabled = true; });
+  stopAudioButton.disabled = true; stopAudioButton.addEventListener("click", () => { if (activeAudio) { activeAudio.pause(); activeAudio.currentTime = 0; } stopAudioButton.disabled = true; });
+  $("#clear").addEventListener("click", () => { for (const audio of clips.querySelectorAll("audio")) { audio.pause(); if (audio.src.startsWith("blob:")) URL.revokeObjectURL(audio.src); } clips.replaceChildren(Object.assign(document.createElement("p"), { textContent: "Generated audio will appear here.", className: "muted" })); clipNumber = 0; });
+  window.addEventListener("beforeunload", () => { stopMicTracks(); if (activeAudio) activeAudio.pause(); });
   updateControls();
 })();
