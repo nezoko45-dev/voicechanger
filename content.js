@@ -63,21 +63,33 @@
     try { recognition?.stop(); } catch {}
   }
 
+  function armSilenceTimer() {
+    clearTimeout(phraseTimer);
+    if (!latestPhrase) return;
+    phraseTimer = setTimeout(() => {
+      const remaining = PAUSE_MS - (Date.now() - lastSpeechAt);
+      if (remaining > 0) {
+        phraseTimer = setTimeout(() => {
+          if (Date.now() - lastSpeechAt >= PAUSE_MS && latestPhrase) {
+            const phrase = latestPhrase.trim();
+            latestPhrase = "";
+            processPhrase(phrase);
+          } else {
+            armSilenceTimer();
+          }
+        }, remaining);
+        return;
+      }
+      const phrase = latestPhrase.trim();
+      latestPhrase = "";
+      if (phrase) processPhrase(phrase);
+    }, PAUSE_MS);
+  }
+
   function schedulePhrase(text) {
     latestPhrase = text.trim();
     lastSpeechAt = Date.now();
-    clearTimeout(phraseTimer);
-    if (!latestPhrase) return;
-    // Only start work after a full quiet window. Every new recognized phrase resets it.
-    phraseTimer = setTimeout(() => {
-      if (Date.now() - lastSpeechAt < PAUSE_MS) {
-        schedulePhrase(latestPhrase);
-        return;
-      }
-      const phrase = latestPhrase;
-      latestPhrase = "";
-      processPhrase(phrase);
-    }, PAUSE_MS);
+    armSilenceTimer();
   }
 
   function isVisible(el) {
@@ -110,10 +122,14 @@
     while (Date.now() - started < timeoutMs) {
       if (!running) return null;
       const button = findResultPlayButton(phrase);
-      // Never click a stale Play button that existed before this generation began.
-      if (button && generationStartedAt && button.getAttribute("data-pw-seen") !== "old") {
+      // Prefer a newly-created Play control. Some versions of the page reuse an
+      // existing result card, so after a short render grace period accept the
+      // latest visible non-reference Play control even if its node was reused.
+      if (button && generationStartedAt && button.getAttribute("data-pw-seen") !== "old") return button;
+      if (button && generationStartedAt && Date.now() - generationStartedAt > 5000) {
         const area = button.closest("section,article,[class*='result'],[class*='output'],[class*='generated']") || button.parentElement;
-        if (area && (area.innerText || "").toLowerCase().includes(phrase.trim().toLowerCase())) return button;
+        const areaText = (area?.innerText || "").toLowerCase();
+        if (areaText.includes(phrase.trim().toLowerCase()) || areaText.includes("generated") || areaText.includes("result")) return button;
       }
       await new Promise(resolve => setTimeout(resolve, 400));
     }
@@ -203,7 +219,9 @@
         const latestResult = event.results[event.results.length - 1];
         if (latestResult && !latestResult.isFinal) {
           lastSpeechAt = Date.now();
-          clearTimeout(phraseTimer);
+          // Keep the pending phrase timer armed; clearing it here could leave
+          // dictation permanently waiting if no further final event arrives.
+          if (latestPhrase) armSilenceTimer();
           showStatus("Speech detected — waiting for silence…");
         }
       }
