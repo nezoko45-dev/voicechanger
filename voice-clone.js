@@ -61,6 +61,7 @@
    else frames.push(copy);
    phraseSamples+=phraseActive&&frames.length===preRoll.length?0:copy.length;
    silenceSamples=0;
+   if(phraseSamples/audioContext.sampleRate>=MAX_PHRASE_SECONDS)endPhrase();
   }else if(phraseActive){
    frames.push(copy);phraseSamples+=copy.length;silenceSamples+=copy.length;
    if(silenceSamples/audioContext.sampleRate>=TARGET_SILENCE||phraseSamples/audioContext.sampleRate>=MAX_PHRASE_SECONDS)endPhrase();
