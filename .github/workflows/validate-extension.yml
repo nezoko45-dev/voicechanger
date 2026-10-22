@@ -3,10 +3,10 @@ name: Validate Chrome extension
 on:
   push:
     branches:
-      - rebuild/uberduck-voice-dictation
+      - feature/ttslab-fast-dictation
   pull_request:
     branches:
-      - rebuild/uberduck-voice-dictation
+      - feature/ttslab-fast-dictation
 
 jobs:
   validate:
@@ -47,6 +47,12 @@ jobs:
           if (process.exitCode) process.exit(process.exitCode);
           console.log('Manifest JSON is valid and referenced files exist.');
           NODE
+      - name: Build browser WebGPU extension bundle
+        run: |
+          npm install
+          npm run build
+          test -f dist/manifest.json
+          test -f dist/voice-clone.js
       - name: Check JavaScript syntax
         run: |
           for file in *.js; do
