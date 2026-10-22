@@ -249,9 +249,16 @@
     };
     instance.onerror = event => {
       if (instance !== recognition) return;
-      if (running && event.error !== "no-speech" && event.error !== "aborted") {
-        showStatus("Microphone recognition: " + event.error + ". Retrying…");
+      if (!running || event.error === "aborted") return;
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        showStatus("Microphone permission denied by Chrome. Allow microphone access, then press Start again.");
+        return;
       }
+      if (event.error !== "no-speech") {
+        showStatus("Speech recognition error: " + event.error + " — restarting listening…");
+      }
+      // Chrome can terminate a recognition session on network/no-speech errors.
+      // onend below performs the restart without turning the overall session off.
     };
     instance.onend = () => {
       if (instance !== recognition) return;
@@ -263,6 +270,15 @@
             startRecognition();
           }
         }, 500);
+      } else if (running && !busy && instance === recognition) {
+        // Defensive fallback: never leave the session marked as running with
+        // an ended recognizer and no restart scheduled.
+        restartTimer = setTimeout(() => {
+          if (running && !busy && instance === recognition) {
+            recognition = null;
+            startRecognition();
+          }
+        }, 800);
       }
     };
     try {
@@ -276,7 +292,7 @@
           recognition = null;
           startRecognition();
         }
-      }, 1000);
+      }, 1200);
     }
   }
 
