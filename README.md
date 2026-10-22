@@ -24,3 +24,21 @@ A minimal Chrome extension for hands-free dictation on [TTSLab.dev](https://ttsl
 Chrome speech recognition can still have service-side latency and may behave differently across Chrome versions. The TTSLab and Fish Audio text-field/button selectors are generic and need live-page testing.
 
 All changes are on `feature/ttslab-fast-dictation`. The `main` branch was not changed.
+
+
+## Local Voice Clone Studio (VoiceClonNX)
+
+This branch also includes an opt-in local voice-conversion studio. It records short phrases from your microphone, converts each phrase to a reference voice WAV you select, then lets you play or download each result. The reference and source recordings are processed by a local Python helper; they are not uploaded to a hosted voice service by this extension.
+
+### Setup
+
+1. Install Python 3.10+.
+2. From this repository folder, run `python -m venv .venv`, activate the environment, then run `pip install -r voiceclonnx_helper/requirements.txt`.
+3. Start the helper with `python voiceclonnx_helper/server.py`. It binds only to `127.0.0.1:8765`.
+4. Reload the unpacked extension at `chrome://extensions`, click the extension icon, and choose **Open Voice Clone Studio**.
+5. In the studio, choose a WAV recording of your own voice as the reference, click **Save reference voice**, then **Start microphone**. Speak a phrase and pause; the studio sends each detected phrase to the local helper for conversion.
+6. Play or download the resulting WAV clips from the studio.
+
+The first conversion may download model weights and can take time. VoiceClonNX is audio-to-audio voice conversion, not text-to-speech; it transforms each captured spoken phrase to the reference voice. The initial implementation uses the FACodec engine. Model availability, dependencies, microphone permission, and real-time performance depend on your computer.
+
+See [VoiceClonNX documentation](https://github.com/TigreGotico/voiceclonnx) for engine behavior and model-weight licensing. Use reference recordings only when you have permission to use that voice.
