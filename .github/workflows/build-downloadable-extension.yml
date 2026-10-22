@@ -23,16 +23,25 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install build dependencies
-        run: npm install --no-audit --no-fund
+      - name: Show build environment
+        run: |
+          node --version
+          npm --version
 
-      - name: Build extension
+      - name: Install build dependencies
+        run: npm install --no-audit --no-fund --legacy-peer-deps
+
+      - name: Build extension bundle
         run: npm run build
+
+      - name: Verify unpacked extension
+        run: |
+          test -s dist/manifest.json
+          test -s dist/voice-clone.js
+          node -e "const m=require('./dist/manifest.json'); if(m.manifest_version!==3) process.exit(1); console.log('Manifest V3 verified')"
 
       - name: Prepare installable ZIP
         run: |
-          test -f dist/manifest.json
-          test -f dist/voice-clone.js
           cd dist
           zip -r ../voicechanger-webgpu.zip .
 
