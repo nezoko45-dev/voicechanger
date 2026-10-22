@@ -17,6 +17,8 @@
   let analyser = null;
   let meterFrame = null;
   let silenceObserved = false;
+  let micHasSpoken = false;
+  let silenceRestarted = false;
   const PAUSE_MS = 2500;
 
   function showStatus(message) {
@@ -102,13 +104,31 @@
       const rms = Math.sqrt(sum / samples.length);
       // The stream is used to detect actual microphone activity and silence.
       // SpeechRecognition supplies the transcript because it cannot accept a getUserMedia stream.
+      const now = Date.now();
       if (rms > 0.018) {
-        lastSpeechAt = Date.now();
+        lastSpeechAt = now;
+        micHasSpoken = true;
+        silenceRestarted = false;
         silenceObserved = false;
         if (latestPhrase) armSilenceTimer();
-      } else if (latestPhrase && Date.now() - lastSpeechAt >= PAUSE_MS && !silenceObserved) {
-        silenceObserved = true;
-        armSilenceTimer();
+      } else if (micHasSpoken && now - lastSpeechAt >= PAUSE_MS) {
+        if (latestPhrase && !silenceObserved) {
+          // Final transcript exists: let the normal 2.5-second phrase timer process it.
+          silenceObserved = true;
+          armSilenceTimer();
+        } else if (!latestPhrase && !busy && running && recognition && !silenceRestarted) {
+          // No final transcript arrived after a real pause. Recycle the Web Speech
+          // session once per silence period; getUserMedia remains the audio-level
+          // watchdog and the next sound re-arms this recovery.
+          silenceRestarted = true;
+          const oldRecognition = recognition;
+          recognition = null;
+          try { oldRecognition.stop(); } catch {}
+          clearTimeout(restartTimer);
+          restartTimer = setTimeout(() => {
+            if (running && !busy && !recognition) startRecognition();
+          }, 250);
+        }
       }
       meterFrame = requestAnimationFrame(meter);
     };
