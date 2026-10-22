@@ -1,35 +1,26 @@
-# Local Voice Agent (prototype)
+# Local Voice Agent
 
-A static browser app prototype in the `browser-agent/` folder. It does not require an API key or a server-side inference backend.
+A browser-first voice conversation prototype. It has a live call interface, local speech-to-text, a local language model, microphone capture, and optional zero-shot voice cloning.
 
-## Run it
+## Use it
 
-Because browser ES modules and model assets need an HTTP origin, publish this folder as a static site (for example, GitHub Pages or a free static host), or run any local static file server during development. No package install is required to use a published version.
+Host the `browser-agent/` folder on an HTTPS static host (GitHub Pages works), then open it in current desktop Chrome. Grant microphone permission. Press **Start session** and wait for model loading. To talk, press **Start talking**, speak, then press **Finish speaking**. To enable voice cloning, choose a clean 5–15 second English sample of your own voice, confirm consent, and load the voice model.
 
-1. Open `index.html` on the hosted HTTPS site in a current Chrome or Edge browser.
-2. Select **Start session**.
-3. Wait for the first model download to finish.
-4. Send a message in the conversation box.
+No API key, paid inference service, or app backend is used. The model downloads from public CDNs/model hosting on first use and is cached by the browser. Model files may be large; voice cloning can require around 1.5 GB plus substantial RAM/VRAM. GPU compatibility and performance vary by device.
 
-## Current scope
+## Included
+- Interactive call-style interface and conversation history.
+- Browser-side text generation via Transformers.js and Qwen2.5 0.5B Instruct.
+- Browser-side transcription via Whisper tiny English model; microphone audio is decoded/resampled in the browser.
+- Optional zero-shot English voice cloning and TTS via VoxShot + Chatterbox ONNX.
+- Explicit voice-ownership/permission confirmation.
 
-- Responsive call-style UI.
-- Local text conversation using Transformers.js and the Qwen2.5 0.5B Instruct ONNX model.
-- Uses WebGPU when available and falls back to WASM.
-- No API key or paid inference endpoint.
+## Known limits
+- This is a prototype, not yet production hardened. The first load may be slow and model CDN/runtime compatibility can change.
+- Push-to-talk is implemented; continuous voice activity detection, automatic end-of-turn detection, and barge-in are not implemented yet.
+- Cloned speech is generated after the LLM response, so response latency can be noticeable.
+- VoxShot's public API is still pre-1.0 and the Chatterbox engine is English-focused. Browsers without a capable GPU may be very slow or fail due to memory limits.
+- The app's JavaScript and CSS are statically hosted, but it is not a static mockup: interactions and inference happen at runtime in the browser. A zero-backend design still needs a hosted frontend and public model downloads; it cannot avoid downloading model weights.
 
-## Not implemented yet
-
-- Microphone capture with fully local speech recognition.
-- Zero-shot voice-clone inference and streaming speech output.
-- Interrupt/barge-in handling and hands-free turn detection.
-
-The browser's built-in speech recognition is intentionally not presented as private/local because implementations may send audio to a browser-vendor service. The browser's built-in speech synthesis is also not voice cloning. Those will be replaced by a documented local inference path before calling this a complete voice agent.
-
-## Privacy and model downloads
-
-Model files are fetched from Hugging Face on first use and may be cached by the browser. Conversation generation is performed in the browser after the model loads. A first-run internet connection is required. Browser/GPU memory limits and model support vary by device.
-
-## License notes
-
-Check the model card and runtime/model licenses before redistributing a public deployment. Clone only a voice you own or have permission to use.
+## Privacy
+Microphone recordings are handled in the page and passed to the local ASR model; voice reference audio is passed to the local TTS engine. Model weights are downloaded from public hosting. No audio/text inference API is configured. Only clone a voice you own or have explicit permission to use.
