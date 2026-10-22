@@ -19,13 +19,13 @@ input[type=file]{display:block;margin:10px 0 12px;max-width:100%}textarea{width:
 </head>
 <body><main>
 <h1>🎙 Browser Voice Clone Studio</h1>
-<p class="muted">Choose a reference WAV, dictate or type text, then synthesize it in the reference voice. Speech synthesis and local dictation run in-browser; WebGPU is required.</p>
+<p class="muted">Type or dictate text, choose a Kokoro voice, then synthesize speech locally in your browser. Kokoro uses built-in voices and does not clone an uploaded reference recording.</p>
 <div class="card">
   <h2>1. Load the browser models</h2>
-  <div class="row"><button id="loadModels">⚡ Load WebGPU models</button><span id="engineBadge" class="tag">Not loaded</span></div>
-  <div id="modelStatus" class="status" role="status">Model weights download on first use and are cached by the browser. The voice model is large (about 1.5 GB).</div>
+  <div class="row"><button id="loadModels">⚡ Load Kokoro model</button><span id="engineBadge" class="tag">Not loaded</span></div>
+  <div id="modelStatus" class="status" role="status">Kokoro-82M model files download on first use and are cached by the browser.</div>
   <div class="progress"><span id="progressBar"></span></div>
-  <p class="note">Uses Chatterbox ONNX through VoxShot / Transformers.js. The current voice-cloning checkpoint is English-focused. Your reference audio and synthesis text are not sent to a voice service.</p>
+  <p class="note">Uses Kokoro-82M through Transformers.js. Speech generation and dictation run locally after model download; no voice-cloning reference audio is used.</p>
 </div>
 <div class="card">
   <h2>2. Choose a reference voice WAV</h2>
@@ -39,12 +39,12 @@ input[type=file]{display:block;margin:10px 0 12px;max-width:100%}textarea{width:
   <textarea id="text" maxlength="4000" placeholder="Type text here, or use Start local dictation."></textarea>
   <p class="note">Local dictation uses an in-browser Whisper model via WebGPU and downloads its weights separately. No browser cloud speech-recognition API is used.</p>
   <div class="row"><button id="synthesize" disabled>✨ Synthesize speech</button><button id="stopAudio" class="secondary" disabled>Stop playback</button></div>
-  <div id="synthesisStatus" class="status" aria-live="polite">Load the models and select a reference WAV to begin.</div>
+  <div id="synthesisStatus" class="status" aria-live="polite">Load Kokoro, choose a voice preset, and enter text to begin.</div>
 </div>
 <div class="card">
   <h2>4. Generated WAVs</h2>
   <div id="clips" class="clips"><p class="muted">Generated audio will appear here.</p></div>
   <div class="row"><button id="clear" class="secondary">Clear generated clips</button></div>
 </div>
-<p class="note">Privacy: model inference runs locally in your browser. The model files are downloaded from Hugging Face on first use. Use reference recordings only with permission. This feature does not require Python or a local helper server.</p>
-</main><script type="module" src="voice-clone.js"></script></body></html>
+<p class="note">Privacy: model inference runs locally in your browser. The model files are downloaded from Hugging Face on first use. Kokoro voice presets are used instead of reference-voice cloning. This feature does not require Python or a local helper server.</p>
+</main><script type="module" src="voice-clone.js"></script></body></html<div class="card">\n  <h2>2. Choose a Kokoro voice</h2>\n  <label for="voice">Voice preset</label>\n  <select id="voice" style="display:block;margin:10px 0 12px;padding:10px;background:#0d1526;color:#edf2ff;border:1px solid #43516c;border-radius:8px;width:100%">\n    <option value="af_heart">American female · Heart</option>\n    <option value="af_bella">American female · Bella</option>\n    <option value="af_nicole">American female · Nicole</option>\n    <option value="am_adam">American male · Adam</option>\n    <option value="am_michael">American male · Michael</option>\n    <option value="bf_emma">British female · Emma</option>\n    <option value="bm_george">British male · George</option>\n  </select>\n  <p class="note">Kokoro uses preset voices; it cannot clone the voice from a WAV reference file.</p>\n</div>\n>
