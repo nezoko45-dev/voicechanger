@@ -71,10 +71,11 @@ import { pipeline } from "@huggingface/transformers";
         onProgress: reportModelProgress,
       });
       tts = await VoxShot.create({ engine, device: "webgpu", minChunkLength: 20 });
-      if (tts.device && tts.device !== "webgpu") {
+      if (tts.device && !String(tts.device).startsWith("webgpu")) {
+        const selectedDevice = tts.device;
         await tts.dispose();
         tts = null;
-        throw new Error("The voice engine did not stay on WebGPU (selected " + tts.device + ").");
+        throw new Error("The voice engine did not stay on WebGPU (selected " + selectedDevice + ").");
       }
       engineBadge.textContent = "Voice model ready · WebGPU";
       setModelStatus("Voice model ready. Next, select a reference WAV.");
@@ -146,6 +147,7 @@ import { pipeline } from "@huggingface/transformers";
       const audio = await tts.speak(text);
       const blob = audio.toBlob();
       addClip(blob, text.length > 64 ? text.slice(0, 61) + "…" : text);
+      stopAudioButton.disabled = false;
       setSynthesisStatus("Speech generated locally. Play it here or download the WAV.");
       const latest = clips.querySelector("audio");
       if (latest) {
@@ -277,8 +279,10 @@ import { pipeline } from "@huggingface/transformers";
   synthesizeButton.addEventListener("click", synthesize);
   dictateButton.addEventListener("click", startDictation);
   stopDictationButton.addEventListener("click", stopDictation);
+  stopAudioButton.disabled = true;
   stopAudioButton.addEventListener("click", () => {
     if (activeAudio) { activeAudio.pause(); activeAudio.currentTime = 0; }
+    stopAudioButton.disabled = true;
   });
   $("#clear").addEventListener("click", () => {
     for (const audio of clips.querySelectorAll("audio")) {
