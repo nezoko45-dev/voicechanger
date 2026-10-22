@@ -72,17 +72,73 @@
     }, PAUSE_MS);
   }
 
-  async function waitForAudio(previousAudio, previousSrc, timeoutMs = 60000) {
+  function isVisible(el) {
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden";
+  }
+
+  function findResultPlayButton(phrase) {
+    const buttons = [...document.querySelectorAll("button,[role=button]")].filter(isVisible);
+    const playButtons = buttons.filter(el => {
+      const text = (el.innerText || el.textContent || el.getAttribute("aria-label") || el.title || "").trim().toLowerCase();
+      const label = (el.getAttribute("aria-label") || el.title || "").toLowerCase();
+      return text === "play" || label === "play" || label.includes("play audio") || label.includes("play result");
+    });
+
+    // Prefer a Play button in a result/card that contains the newly generated text.
+    const phraseLower = phrase.trim().toLowerCase();
+    for (const button of playButtons) {
+      let node = button;
+      for (let depth = 0; node && depth < 6; depth++, node = node.parentElement) {
+        const text = (node.innerText || node.textContent || "").toLowerCase();
+        if (text.includes(phraseLower) && text.length < 5000) return button;
+      }
+    }
+    // Fallback: prefer buttons near audio players, excluding reference/source upload sections.
+    return playButtons.find(button => {
+      const area = button.closest("section,article,[class*='result'],[class*='output'],[class*='generated']") || button.parentElement;
+      const text = (area?.innerText || "").toLowerCase();
+      return !text.includes("reference audio") && !text.includes("upload reference");
+    }) || null;
+  }
+
+  async function waitForResultPlayButton(phrase, timeoutMs = 60000) {
     const started = Date.now();
     while (Date.now() - started < timeoutMs) {
       if (!running) return null;
-      const audios = [...document.querySelectorAll("audio,video")];
-      const candidate = audios.find(a => a !== previousAudio || (a.currentSrc || a.src) !== previousSrc) ||
-        audios.find(a => (a.currentSrc || a.src) && !a.ended);
-      if (candidate && (candidate.currentSrc || candidate.src || candidate.querySelector("source"))) return candidate;
+      const button = findResultPlayButton(phrase);
+      if (button) return button;
       await new Promise(resolve => setTimeout(resolve, 400));
     }
     return null;
+  }
+
+  async function waitForPlaybackToFinish(playButton, phrase) {
+    // If the result exposes an audio element, wait for its playback to finish.
+    const started = Date.now();
+    while (running && Date.now() - started < 120000) {
+      const audio = [...document.querySelectorAll("audio,video")].find(el => {
+        const area = el.closest("section,article,[class*='result'],[class*='output'],[class*='generated']") || el.parentElement;
+        return (area?.innerText || "").toLowerCase().includes(phrase.trim().toLowerCase());
+      });
+      if (audio) {
+        if (audio.ended) return;
+        if (!audio.paused) {
+          await new Promise(resolve => {
+            const done = () => { audio.removeEventListener("ended", done); resolve(); };
+            audio.addEventListener("ended", done, { once:true });
+            const check = setInterval(() => {
+              if (!running || audio.ended) { clearInterval(check); done(); }
+            }, 400);
+          });
+          return;
+        }
+      }
+      await new Promise(resolve => setTimeout(resolve, 400));
+      // If the site's Play button becomes Pause and then back to Play, playback likely finished.
+      const label = (playButton.getAttribute("aria-label") || playButton.title || playButton.textContent || "").toLowerCase();
+      if (started + 2500 < Date.now() && label.includes("play")) return;
+    }
   }
 
   async function processPhrase(phrase) {
@@ -95,33 +151,14 @@
       const button = findGenerateButton();
       if (!box || !button) throw new Error("Could not find the text box or Generate Speech button on this page.");
       setText(box, phrase);
-      const beforeAudio = [...document.querySelectorAll("audio,video")].at(-1) || null;
-      const beforeSrc = beforeAudio ? (beforeAudio.currentSrc || beforeAudio.src) : "";
       button.click();
-      showStatus("Waiting for generated audio…");
-      const audio = await waitForAudio(beforeAudio, beforeSrc);
+      showStatus("Waiting for the generated result's Play button…");
+      const playButton = await waitForResultPlayButton(phrase);
       if (!running) return;
-      if (!audio) throw new Error("No audio player detected after 60 seconds. Check the page and try again.");
-      try {
-        audio.currentTime = 0;
-        await audio.play();
-      } catch (error) {
-        showStatus("Audio is ready; press Play in the page if autoplay is blocked.");
-        await new Promise(resolve => {
-          const done = () => { audio.removeEventListener("ended", done); resolve(); };
-          audio.addEventListener("ended", done, { once:true });
-          setTimeout(done, 120000);
-        });
-      }
-      if (audio && !audio.paused && !audio.ended) {
-        await new Promise(resolve => {
-          const done = () => { audio.removeEventListener("ended", done); resolve(); };
-          audio.addEventListener("ended", done, { once:true });
-          const check = setInterval(() => {
-            if (!running || audio.ended) { clearInterval(check); done(); }
-          }, 500);
-        });
-      }
+      if (!playButton) throw new Error("Could not find the Play button under the generated result after 60 seconds.");
+      showStatus("Playing generated result…");
+      playButton.click();
+      await waitForPlaybackToFinish(playButton, phrase);
     } catch (error) {
       showStatus(error.message || "Something went wrong.");
       await new Promise(resolve => setTimeout(resolve, 2500));
