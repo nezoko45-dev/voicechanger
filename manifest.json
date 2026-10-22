@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Fast Dictation for TTSLab + Fish Audio",
+  "name": "Fast Dictation + F5-TTS Voice Cloning",
   "version": "3.2.1",
   "minimum_chrome_version": "116",
-  "description": "Hands-free dictation plus browser-local WebGPU voice cloning.",
+  "description": "Hands-free dictation plus browser-local F5-TTS voice cloning.",
   "permissions": [
     "tabs",
     "offscreen",
@@ -33,7 +33,7 @@
     }
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co https://cdn-lfs.huggingface.co https://cdn-lfs-us-1.huggingface.co"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co https://cdn-lfs.huggingface.co https://cdn-lfs-us-1.huggingface.co https://cas-bridge.xethub.hf.co https://*.xethub.hf.co"
   },
   "action": {
     "default_title": "Fast Dictation for TTSLab + Fish Audio",
