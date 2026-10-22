@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import re
 import tempfile
 import threading
 import uuid
@@ -32,6 +33,14 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def restrict_local_api(request, call_next):
+    origin = request.headers.get("origin")
+    if origin and not re.fullmatch(r"(chrome-extension://[a-p]{32}|http://(127\\.0\\.0\\.1|localhost)(:\\d+)?)", origin):
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=403, content={"detail": "This local helper only accepts requests from the extension or localhost."})
+    return await call_next(request)
 
 def read_wav(path: Path):
     try:
