@@ -1,46 +1,56 @@
-# Fast Dictation for TTSLab + Fish Audio
+# Fast Dictation + Browser Voice Clone Studio
 
-A minimal Chrome extension for hands-free dictation on [TTSLab.dev](https://ttslab.dev/) and [Fish Audio](https://fish.audio/).
+A Chrome Manifest V3 extension with two tools:
 
-## Use
+- Hands-free dictation on [TTSLab.dev](https://ttslab.dev/) and [Fish Audio](https://fish.audio/).
+- A browser-only voice-cloning studio that uses WebGPU for text-to-speech in a selected reference voice and local speech recognition for dictation.
 
-1. Download the ZIP from **Code → Download ZIP** on this branch and extract it.
-2. Open `chrome://extensions`, enable Developer mode, and use **Load unpacked** (or reload the existing unpacked extension).
-3. Open the TTSLab tool/model page with its **Stream** button, or Fish Audio’s text-to-speech page with its **Generate Speech** button. Keep it open in a tab.
-4. Click the extension icon and choose **Start listening**. Allow microphone access.
-5. Speak naturally. Your words appear in the TTSLab text field while you speak. After a brief pause (about 1.2 seconds after speech is recognized), the extension automatically clicks **Generate Speech**, **Stream**, or **Send**, depending on the page.
-6. Keep talking to submit more phrases. Press **Stop listening** only when you are finished.
+## Build the extension
 
-## Why this version is simpler
+The voice studio bundles its JavaScript model runtime locally so the extension does not load executable code from a CDN.
 
-- No dashboard or automatic tab switching.
-- Speech recognition runs in a Chrome offscreen document; submissions go directly to the open TTSLab or Fish Audio tab even if it is not the active tab.
-- Interim transcript previews are written into the TTSLab or Fish Audio field while you speak.
-- A short pause submits the completed phrase automatically; dictation keeps listening for the next phrase.
-- Duplicate suppression, control detection, and automatic recognition reconnects.
+Requirements: Node.js 20+ and a recent Chrome or Edge build with WebGPU support.
 
-## Limitations
+1. Download and extract this branch, or clone the repository and check out `feature/ttslab-fast-dictation`.
+2. In the repository folder, run:
+   ```sh
+   npm install
+   npm run build
+   ```
+3. Open `chrome://extensions`, enable Developer mode, click **Load unpacked**, and select the generated `dist/` folder.
+4. After changes, run `npm run build` again and click **Reload** on the extension card.
 
-Chrome speech recognition can still have service-side latency and may behave differently across Chrome versions. The TTSLab and Fish Audio text-field/button selectors are generic and need live-page testing.
+Do not load the repository root as the unpacked extension: the root contains source files; `dist/` contains the bundled extension.
 
-All changes are on `feature/ttslab-fast-dictation`. The `main` branch was not changed.
+## Use dictation on TTSLab or Fish Audio
 
+1. Open a TTSLab tool/model page with its **Stream** button, or Fish Audio’s text-to-speech page with its **Generate Speech** button. Keep it open in a tab.
+2. Click the extension icon and choose **Start listening**. Allow microphone access.
+3. Speak naturally. Interim transcript previews appear in the text field. After a brief pause, the extension attempts to click **Generate Speech**, **Stream**, or **Send**, depending on the page.
+4. Keep talking for additional phrases; press **Stop listening** when finished.
 
-## Local Voice Clone Studio (VoiceClonNX)
+Chrome speech recognition behavior and page selectors can vary by browser version and website updates.
 
-This branch also includes an opt-in local voice-conversion studio. It records short phrases from your microphone, converts each phrase to a reference voice WAV you select, then lets you play or download each result. The reference and source recordings are processed by a local Python helper; they are not uploaded to a hosted voice service by this extension.
+## Use Browser Voice Clone Studio
 
-### Setup
+1. Click the extension icon, then **Open Voice Clone Studio**.
+2. Click **Load WebGPU models**. On first use, the Chatterbox voice model downloads about 1.5 GB and is cached by the browser. Allow time for model download and GPU session initialization.
+3. Choose a clean WAV reference recording, ideally 5–15 seconds long, from a voice you own or have permission to use. Click **Use this reference voice**.
+4. Click **Start local dictation**, speak, then click **Stop dictation**. Whisper runs in-browser on WebGPU and inserts the recognized text into the editor. You can edit or type text directly instead.
+5. Click **Synthesize speech**. The generated audio appears as a playable WAV clip with a **Download WAV** link.
 
-1. Install Python 3.10+.
-2. From this repository folder, run `python -m venv .venv`.
-3. Activate it: Windows PowerShell: `.\\.venv\\Scripts\\Activate.ps1`; macOS/Linux: `source .venv/bin/activate`.
-4. Install dependencies with `python -m pip install -r voiceclonnx_helper/requirements.txt`.
-5. Start the helper with `python voiceclonnx_helper/server.py`. It binds only to `127.0.0.1:8765`.
-4. Reload the unpacked extension at `chrome://extensions`, click the extension icon, and choose **Open Voice Clone Studio**.
-5. In the studio, choose a WAV recording of your own voice as the reference, click **Save reference voice**, then **Start microphone**. Speak a phrase and pause; the studio sends each detected phrase to the local helper for conversion.
-6. Play or download the resulting WAV clips from the studio.
+### Model and browser notes
 
-The first conversion may download model weights and can take time. VoiceClonNX is audio-to-audio voice conversion, not text-to-speech; it transforms each captured spoken phrase to the reference voice. The initial implementation uses the FACodec engine. Model availability, dependencies, microphone permission, and real-time performance depend on your computer.
+- Voice cloning uses [VoxShot](https://github.com/m96-chan/voxshot) with the Chatterbox ONNX model through Transformers.js. Speech generation and the local Whisper dictation model run on WebGPU; the studio refuses to start if WebGPU is unavailable.
+- The current Chatterbox checkpoint is English-focused. Other languages may not synthesize correctly.
+- First-time model downloads are large and require an internet connection. Model weights are cached by the browser after download. Subsequent inference runs locally.
+- Reference audio and synthesis text are passed to local in-browser model code, not to a voice-cloning API. Model files are downloaded from Hugging Face.
+- Voice cloning is resource-intensive; GPU memory, browser version, graphics drivers, and hardware affect performance.
+- Use reference recordings only when you have permission to use that voice. Do not use this tool for impersonation or deception.
 
-See [VoiceClonNX documentation](https://github.com/TigreGotico/voiceclonnx) for engine behavior and model-weight licensing. Use reference recordings only when you have permission to use that voice.
+## Implementation notes
+
+- MV3 extension source files are in the repository root.
+- `npm run build` copies the extension into `dist/` and bundles `voice-clone.js` with the model runtime.
+- The previous Python/VoiceClonNX helper is no longer used by the WebGPU studio.
+- All changes for this work are on `feature/ttslab-fast-dictation`; `main` is not modified.
