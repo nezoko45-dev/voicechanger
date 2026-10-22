@@ -33,8 +33,10 @@ This branch also includes an opt-in local voice-conversion studio. It records sh
 ### Setup
 
 1. Install Python 3.10+.
-2. From this repository folder, run `python -m venv .venv`, activate the environment, then run `pip install -r voiceclonnx_helper/requirements.txt`.
-3. Start the helper with `python voiceclonnx_helper/server.py`. It binds only to `127.0.0.1:8765`.
+2. From this repository folder, run `python -m venv .venv`.
+3. Activate it: Windows PowerShell: `.\\.venv\\Scripts\\Activate.ps1`; macOS/Linux: `source .venv/bin/activate`.
+4. Install dependencies with `python -m pip install -r voiceclonnx_helper/requirements.txt`.
+5. Start the helper with `python voiceclonnx_helper/server.py`. It binds only to `127.0.0.1:8765`.
 4. Reload the unpacked extension at `chrome://extensions`, click the extension icon, and choose **Open Voice Clone Studio**.
 5. In the studio, choose a WAV recording of your own voice as the reference, click **Save reference voice**, then **Start microphone**. Speak a phrase and pause; the studio sends each detected phrase to the local helper for conversion.
 6. Play or download the resulting WAV clips from the studio.
