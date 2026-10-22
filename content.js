@@ -12,6 +12,11 @@
   let lastSpeechAt = 0;
   let generationStartedAt = 0;
   let statusNode = null;
+  let micStream = null;
+  let audioContext = null;
+  let analyser = null;
+  let meterFrame = null;
+  let silenceObserved = false;
   const PAUSE_MS = 2500;
 
   function showStatus(message) {
@@ -65,6 +70,51 @@
     try { oldRecognition?.stop(); } catch {}
   }
 
+  function stopMicrophoneMeter() {
+    if (meterFrame !== null) cancelAnimationFrame(meterFrame);
+    meterFrame = null;
+    try { audioContext?.close(); } catch {}
+    audioContext = null;
+    analyser = null;
+    if (micStream) micStream.getTracks().forEach(track => track.stop());
+    micStream = null;
+  }
+
+  async function startMicrophoneMeter() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("getUserMedia is unavailable here. Open PocketWebTools in a secure, supported Chrome tab.");
+    }
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioContext.createMediaStreamSource(micStream);
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 1024;
+    source.connect(analyser);
+    const samples = new Uint8Array(analyser.fftSize);
+    const meter = () => {
+      if (!running || !analyser) return;
+      analyser.getByteTimeDomainData(samples);
+      let sum = 0;
+      for (let i = 0; i < samples.length; i++) {
+        const normalized = (samples[i] - 128) / 128;
+        sum += normalized * normalized;
+      }
+      const rms = Math.sqrt(sum / samples.length);
+      // The stream is used to detect actual microphone activity and silence.
+      // SpeechRecognition supplies the transcript because it cannot accept a getUserMedia stream.
+      if (rms > 0.018) {
+        lastSpeechAt = Date.now();
+        silenceObserved = false;
+        if (latestPhrase) armSilenceTimer();
+      } else if (latestPhrase && Date.now() - lastSpeechAt >= PAUSE_MS && !silenceObserved) {
+        silenceObserved = true;
+        armSilenceTimer();
+      }
+      meterFrame = requestAnimationFrame(meter);
+    };
+    meterFrame = requestAnimationFrame(meter);
+  }
+
   function armSilenceTimer() {
     clearTimeout(phraseTimer);
     if (!latestPhrase) return;
@@ -75,6 +125,7 @@
           if (Date.now() - lastSpeechAt >= PAUSE_MS && latestPhrase) {
             const phrase = latestPhrase.trim();
             latestPhrase = "";
+            silenceObserved = false;
             processPhrase(phrase);
           } else {
             armSilenceTimer();
@@ -84,6 +135,7 @@
       }
       const phrase = latestPhrase.trim();
       latestPhrase = "";
+      silenceObserved = false;
       if (phrase) processPhrase(phrase);
     }, PAUSE_MS);
   }
@@ -211,8 +263,8 @@
   function startRecognition() {
     if (!running || busy) return;
     if (!SpeechRecognition) {
-      showStatus("Default browser speech recognition is unavailable. Try desktop Chrome.");
-      running = false; return;
+      showStatus("Browser speech recognition is unavailable. Try desktop Chrome.");
+      running = false; stopMicrophoneMeter(); return;
     }
     const instance = new SpeechRecognition();
     recognition = instance;
@@ -261,8 +313,15 @@
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.action === "START") {
       if (!SpeechRecognition) { sendResponse({message:"Browser speech recognition is unavailable. Use desktop Chrome."}); return; }
-      running = true; busy = false; startRecognition();
-      sendResponse({message:"Browser speech recognition started."});
+      running = true; busy = false;
+      startMicrophoneMeter().then(() => {
+        if (running) startRecognition();
+      }).catch(error => {
+        running = false;
+        stopMicrophoneMeter();
+        showStatus(error?.name === "NotAllowedError" ? "Microphone access denied. Allow microphone access and try again." : (error.message || "Could not access microphone."));
+      });
+      sendResponse({message:"Requesting microphone access and starting browser speech recognition."});
       return;
     }
     if (message?.action === "STOP") {
@@ -271,6 +330,7 @@
       latestPhrase = "";
       lastSpeechAt = 0;
       stopRecognition();
+      stopMicrophoneMeter();
       showStatus("Stopped.");
       sendResponse({ message:"Listening stopped." });
     }
