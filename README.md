@@ -1,6 +1,6 @@
 # VoiceChanger PocketWeb Dictation
 
-This Chrome extension uses the browser's built-in Web Speech recognition (`SpeechRecognition` / `webkitSpeechRecognition`) to dictate sentences into PocketWebTools. **No Python, local server, or separate transcription engine is required.**
+This Chrome extension uses `navigator.mediaDevices.getUserMedia()` to request and monitor microphone audio for activity/silence, and the browser's built-in Web Speech API (`SpeechRecognition` / `webkitSpeechRecognition`) to convert speech to text. The Web Speech API does not accept a `getUserMedia()` stream directly, so it remains the transcription layer. **No Python or separate transcription server is required.**
 
 ## Use it
 
@@ -12,7 +12,7 @@ This Chrome extension uses the browser's built-in Web Speech recognition (`Speec
 
 ## Notes
 
-- Uses the speech recognition service provided by your browser/platform; availability and recognition behavior depend on Chrome and its configured speech service.
+- Microphone access and audio-level monitoring use `getUserMedia()` and Web Audio API; browser speech recognition provides the transcript and may rely on the browser/platform's online speech service.
 - Desktop Chrome is recommended. If recognition is unavailable or permission is denied, check the site's microphone permission and browser/platform speech settings.
 - The result Play-button selection is heuristic and may need adjustment if PocketWebTools changes its page markup.
 - Use only a voice you own or have permission to clone.
