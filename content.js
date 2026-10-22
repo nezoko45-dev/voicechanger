@@ -208,12 +208,15 @@
       running = false;
       return;
     }
-    try { recognition?.abort(); } catch {}
-    recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = document.documentElement.lang || navigator.language || "en-US";
-    recognition.onresult = event => {
+    // Do not abort a previous instance here: its delayed onend event can race
+    // with the new instance and create duplicate recognizers or stop dictation.
+    const instance = new SpeechRecognition();
+    recognition = instance;
+    instance.continuous = true;
+    instance.interimResults = true;
+    instance.lang = document.documentElement.lang || navigator.language || "en-US";
+    instance.onresult = event => {
+      if (instance !== recognition || !running || busy) return;
       // Any speech event cancels the quiet timer immediately, including interim speech.
       if (event.results.length) {
         const latestResult = event.results[event.results.length - 1];
@@ -232,23 +235,36 @@
       }
       if (finalText.trim()) schedulePhrase((latestPhrase ? latestPhrase + " " : "") + finalText.trim());
     };
-    recognition.onerror = event => {
+    instance.onerror = event => {
+      if (instance !== recognition) return;
       if (running && event.error !== "no-speech" && event.error !== "aborted") {
-        showStatus("Microphone recognition: " + event.error);
+        showStatus("Microphone recognition: " + event.error + ". Retrying…");
       }
     };
-    recognition.onend = () => {
+    instance.onend = () => {
+      if (instance !== recognition) return;
       if (running && !busy) {
+        clearTimeout(restartTimer);
         restartTimer = setTimeout(() => {
-          if (running && !busy) startRecognition();
-        }, 350);
+          if (running && !busy && instance === recognition) {
+            recognition = null;
+            startRecognition();
+          }
+        }, 500);
       }
     };
     try {
-      recognition.start();
-      showStatus("Listening… pause for about 2 seconds to generate each sentence.");
-    } catch {
-      restartTimer = setTimeout(() => { if (running && !busy) startRecognition(); }, 700);
+      instance.start();
+      showStatus("Listening… pause for about 2.5 seconds to generate each sentence.");
+    } catch (error) {
+      showStatus("Could not start microphone recognition: " + (error?.message || "retrying") + ".");
+      clearTimeout(restartTimer);
+      restartTimer = setTimeout(() => {
+        if (running && !busy && instance === recognition) {
+          recognition = null;
+          startRecognition();
+        }
+      }, 1000);
     }
   }
 
