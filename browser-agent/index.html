@@ -1,50 +1,15 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#10131b">
-  <title>Local Voice Agent</title>
-  <link rel="stylesheet" href="./styles.css">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#10131b">
+<title>Local Voice Agent</title><link rel="stylesheet" href="./styles.css">
 </head>
-<body>
-  <main class="app">
-    <header class="topbar">
-      <a class="brand" href="./" aria-label="Local Voice Agent home"><span class="brand-mark">◉</span> LOCAL<span>VOICE</span></a>
-      <div class="privacy"><span class="dot"></span> Browser-first · No API key</div>
-    </header>
-
-    <section class="hero">
-      <p class="eyebrow">YOUR PRIVATE AI CALL</p>
-      <h1>A voice agent,<br><span>on your device.</span></h1>
-      <p class="intro">A first working shell for a browser-only conversation. The language model is intended to run locally; voice cloning and fully local speech recognition are the next integrations.</p>
-    </section>
-
-    <section class="call-card" aria-label="Voice agent call">
-      <div class="orb-wrap"><div class="orb" id="orb"><div class="orb-core"></div></div></div>
-      <div class="call-status" id="status" role="status">Ready when you are</div>
-      <div class="model-status" id="modelStatus">AI model not loaded</div>
-      <div class="controls">
-        <button id="startBtn" class="primary"><span>▶</span> Start session</button>
-        <button id="stopBtn" class="round" aria-label="End session" title="End session" disabled>■</button>
-      </div>
-      <div class="meter"><span id="meterFill"></span></div>
-      <p class="hint" id="hint">First load downloads the model into your browser cache. WebGPU-compatible Chrome or Edge is recommended.</p>
-    </section>
-
-    <section class="conversation">
-      <div class="section-heading"><h2>Conversation</h2><span id="turnCount">0 turns</span></div>
-      <div id="messages" class="messages" aria-live="polite">
-        <div class="empty-state" id="emptyState">Your conversation will appear here.</div>
-      </div>
-      <form id="chatForm" class="composer">
-        <label class="sr-only" for="messageInput">Message your agent</label>
-        <input id="messageInput" autocomplete="off" placeholder="Type a message to test the agent…" disabled>
-        <button id="sendBtn" type="submit" aria-label="Send message" disabled>↑</button>
-      </form>
-    </section>
-    <footer><span>Prototype · local model loading</span><span id="engineLabel">Voice output: not connected</span></footer>
-  </main>
-  <script type="module" src="./app.js"></script>
-</body>
-</html>
+<body><main class="app">
+<header class="topbar"><a class="brand" href="./"><span class="brand-mark">◉</span> LOCAL<span>VOICE</span></a><div class="privacy"><span class="dot"></span> On-device AI · No API key</div></header>
+<section class="hero"><p class="eyebrow">YOUR PRIVATE AI CALL</p><h1>Talk naturally.<br><span>Stay on your device.</span></h1><p class="intro">A browser-based voice conversation with local speech recognition, a local language model, and optional voice cloning. No paid inference API or backend.</p></section>
+<section class="call-card" aria-label="Voice agent call"><div class="orb-wrap"><div class="orb" id="orb"><div class="orb-core"></div></div></div><div class="call-status" id="status" role="status">Ready when you are</div><div class="model-status" id="modelStatus">Models not loaded</div>
+<div class="controls"><button id="startBtn" class="primary"><span>▶</span> Start session</button><button id="stopBtn" class="round" aria-label="End session" title="End session" disabled>■</button></div><div class="meter"><span id="meterFill"></span></div><p class="hint" id="hint">First run downloads several hundred MB for the language model and speech recognition. Voice cloning may download about 1.5 GB more.</p></section>
+<section class="voice-setup"><div class="section-heading"><h2>Your cloned voice</h2><span id="voiceStatus">Not configured</span></div><p class="voice-note">Upload a clean 5–15 second sample of your own voice (English). The reference audio is processed locally.</p><div class="voice-row"><label class="file-label" for="voiceFile">Choose voice sample</label><input id="voiceFile" type="file" accept="audio/*,.wav,.mp3,.m4a,.webm"><button id="cloneBtn" class="secondary" disabled>Load voice model</button></div><div class="voice-progress" id="voiceProgress" role="status"></div><label class="consent"><input id="consent" type="checkbox"> I own this voice or have explicit permission to clone it.</label></section>
+<section class="conversation"><div class="section-heading"><h2>Conversation</h2><span id="turnCount">0 turns</span></div><div id="messages" class="messages" aria-live="polite"><div class="empty-state" id="emptyState">Start a session, then talk or type to begin.</div></div><form id="chatForm" class="composer"><label class="sr-only" for="messageInput">Message your agent</label><input id="messageInput" autocomplete="off" placeholder="Type a message or use the microphone…" disabled><button id="sendBtn" type="submit" aria-label="Send message" disabled>↑</button></form><div class="mic-row"><button id="micBtn" class="secondary" disabled>🎙 Start talking</button><span id="micStatus">Microphone off</span></div></section>
+<footer><span>Interactive local AI prototype</span><span id="engineLabel">Voice output: not connected</span></footer>
+</main><script type="module" src="./app.js"></script></body></html>
