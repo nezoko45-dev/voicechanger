@@ -1,5 +1,8 @@
 import { ChatterboxEngine, VoxShot } from "voxshot";
-import { pipeline } from "@huggingface/transformers";
+import { env, pipeline } from "@huggingface/transformers";
+
+// MV3 blocks remote executable modules. Load the matching ONNX Runtime Web glue locally.
+env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL("ort/");
 
 (() => {
   const $ = (selector) => document.querySelector(selector);
