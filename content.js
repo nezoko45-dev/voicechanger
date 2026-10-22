@@ -2,8 +2,9 @@
   if (window.__pocketWebDictationInstalled) return;
   window.__pocketWebDictationInstalled = true;
 
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let recognition = null;
+  let mediaStream = null, mediaRecorder = null, audioContext = null, analyser = null, micFrame = null;
+  let audioChunks = [], speechDetected = false, lastLoudAt = 0, transcribing = false;
+  const LOCAL_TRANSCRIBE_URL = "http://127.0.0.1:8178/transcribe";
   let running = false;
   let busy = false;
   let restartTimer = null;
@@ -62,9 +63,14 @@
     clearTimeout(phraseTimer);
     // Detach the old instance before stopping it so its asynchronous onend
     // cannot interfere with the next listening session.
-    const oldRecognition = recognition;
-    recognition = null;
-    try { oldRecognition?.stop(); } catch {}
+    if (micFrame !== null) cancelAnimationFrame(micFrame);
+    micFrame = null;
+    try { if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop(); } catch {}
+    mediaRecorder = null;
+    try { mediaStream?.getTracks().forEach(track => track.stop()); } catch {}
+    mediaStream = null;
+    try { audioContext?.close(); } catch {}
+    audioContext = null; analyser = null; audioChunks = []; speechDetected = false; transcribing = false;
   }
 
   function armSilenceTimer() {
@@ -205,107 +211,81 @@
       // including when generation or result-button detection fails.
       if (running) {
         clearTimeout(restartTimer);
-        recognition = null;
-        restartTimer = setTimeout(() => {
-          if (running && !busy && !recognition) startRecognition();
-        }, 300);
+        restartTimer = setTimeout(() => { if (running && !busy && !mediaStream) startMicrophone(); }, 500);
       }
     }
   }
 
-  function startRecognition() {
-    if (!running || busy) return;
-    if (!SpeechRecognition) {
-      showStatus("Speech recognition is not supported here. Try desktop Chrome.");
-      running = false;
-      return;
+  async function transcribeAudio(blob) {
+    const form = new FormData(); form.append("file", blob, "dictation.webm");
+    const response = await fetch(LOCAL_TRANSCRIBE_URL, {method:"POST", body:form});
+    if (!response.ok) throw new Error("Local transcription server HTTP " + response.status);
+    return String((await response.json()).text || "").trim();
+  }
+  function startRecorder() {
+    if (!running || busy || !mediaStream) return;
+    audioChunks = []; speechDetected = false;
+    const types = ["audio/webm;codecs=opus","audio/webm","audio/ogg;codecs=opus"];
+    const mimeType = types.find(t => MediaRecorder.isTypeSupported(t));
+    try { mediaRecorder = mimeType ? new MediaRecorder(mediaStream,{mimeType}) : new MediaRecorder(mediaStream); }
+    catch(e) { showStatus("Could not start microphone recorder: " + e.message); return; }
+    const recorder = mediaRecorder;
+    recorder.ondataavailable = e => { if(e.data?.size) audioChunks.push(e.data); };
+    recorder.onstop = async () => {
+      const blob = new Blob(audioChunks,{type:recorder.mimeType || "audio/webm"}); audioChunks=[];
+      if (!running || busy || !speechDetected || blob.size < 1000 || transcribing) {
+        if (running && !busy && mediaStream) startRecorder(); return;
+      }
+      transcribing=true; showStatus("Transcribing locally…");
+      try {
+        const phrase=await transcribeAudio(blob);
+        if(running && phrase) await processPhrase(phrase);
+        else if(running) showStatus("No speech recognized — keep talking.");
+      } catch(e) {
+        showStatus((e.message || "Local transcription failed") + ". Is local_transcriber.py running?");
+        await new Promise(r=>setTimeout(r,2000));
+      } finally {
+        transcribing=false;
+        if(running && !busy && mediaStream && (!mediaRecorder || mediaRecorder.state==="inactive")) startRecorder();
+      }
+    };
+    recorder.start(250); showStatus("Microphone active — pause 2.5 seconds after each sentence.");
+  }
+  function monitorMicrophone() {
+    if(!running || !analyser) return;
+    const samples=new Uint8Array(analyser.fftSize); analyser.getByteTimeDomainData(samples);
+    let sum=0; for(const x of samples){const n=(x-128)/128;sum+=n*n;}
+    const rms=Math.sqrt(sum/samples.length), now=Date.now();
+    if(rms>0.018){speechDetected=true;lastLoudAt=now;}
+    if(speechDetected && !busy && !transcribing && now-lastLoudAt>=PAUSE_MS && mediaRecorder && mediaRecorder.state==="recording") {
+      try { mediaRecorder.stop(); } catch {}
     }
-    // Do not abort a previous instance here: its delayed onend event can race
-    // with the new instance and create duplicate recognizers or stop dictation.
-    const instance = new SpeechRecognition();
-    recognition = instance;
-    instance.continuous = true;
-    instance.interimResults = true;
-    instance.lang = document.documentElement.lang || navigator.language || "en-US";
-    instance.onresult = event => {
-      if (instance !== recognition || !running || busy) return;
-      // Any speech event cancels the quiet timer immediately, including interim speech.
-      if (event.results.length) {
-        const latestResult = event.results[event.results.length - 1];
-        if (latestResult && !latestResult.isFinal) {
-          lastSpeechAt = Date.now();
-          // Keep the pending phrase timer armed; clearing it here could leave
-          // dictation permanently waiting if no further final event arrives.
-          if (latestPhrase) armSilenceTimer();
-          showStatus("Speech detected — waiting for silence…");
-        }
-      }
-      let finalText = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result.isFinal) finalText += result[0].transcript + " ";
-      }
-      if (finalText.trim()) schedulePhrase((latestPhrase ? latestPhrase + " " : "") + finalText.trim());
-    };
-    instance.onerror = event => {
-      if (instance !== recognition) return;
-      if (!running || event.error === "aborted") return;
-      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-        showStatus("Microphone permission denied by Chrome. Allow microphone access, then press Start again.");
-        return;
-      }
-      if (event.error !== "no-speech") {
-        showStatus("Speech recognition error: " + event.error + " — restarting listening…");
-      }
-      // Chrome can terminate a recognition session on network/no-speech errors.
-      // onend below performs the restart without turning the overall session off.
-    };
-    instance.onend = () => {
-      if (instance !== recognition) return;
-      if (running && !busy && instance === recognition) {
-        clearTimeout(restartTimer);
-        restartTimer = setTimeout(() => {
-          if (running && !busy && instance === recognition) {
-            recognition = null;
-            startRecognition();
-          }
-        }, 500);
-      } else if (running && !busy && instance === recognition) {
-        // Defensive fallback: never leave the session marked as running with
-        // an ended recognizer and no restart scheduled.
-        restartTimer = setTimeout(() => {
-          if (running && !busy && instance === recognition) {
-            recognition = null;
-            startRecognition();
-          }
-        }, 800);
-      }
-    };
+    micFrame=requestAnimationFrame(monitorMicrophone);
+  }
+  async function startMicrophone() {
+    if(!running || busy || mediaStream) return;
+    if(!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder==="undefined") {
+      showStatus("Microphone capture is unsupported here. Use desktop Chrome on HTTPS."); running=false; return;
+    }
     try {
-      instance.start();
-      showStatus("Listening continuously — pause for 2.5 seconds after each sentence. I’ll resume listening after playback.");
-    } catch (error) {
-      showStatus("Could not start microphone recognition: " + (error?.message || "retrying") + ".");
-      clearTimeout(restartTimer);
-      restartTimer = setTimeout(() => {
-        if (running && !busy && instance === recognition) {
-          recognition = null;
-          startRecognition();
-        }
-      }, 1200);
+      showStatus("Requesting microphone access…");
+      mediaStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});
+      if(!running){mediaStream.getTracks().forEach(t=>t.stop());mediaStream=null;return;}
+      audioContext=new AudioContext(); const source=audioContext.createMediaStreamSource(mediaStream);
+      analyser=audioContext.createAnalyser(); analyser.fftSize=2048; source.connect(analyser);
+      lastLoudAt=Date.now(); startRecorder(); monitorMicrophone();
+    } catch(e) {
+      mediaStream?.getTracks().forEach(t=>t.stop());mediaStream=null;
+      showStatus("Microphone unavailable: "+(e.message||e)+". Allow microphone access and press Start again.");running=false;
     }
   }
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.action === "START") {
-      if (!SpeechRecognition) {
-        sendResponse({ message:"Speech recognition is not supported by this browser. Use desktop Chrome." });
-        return;
-      }
-      running = true;
-      busy = false;
-      startRecognition();
-      sendResponse({ message:"Listening started. Keep this tab open." });
+      running=true; busy=false; clearTimeout(restartTimer);
+      if(mediaStream) stopRecognition();
+      startMicrophone();
+      sendResponse({message:"Microphone capture starting. Allow microphone access if prompted."});
       return;
     }
     if (message?.action === "STOP") {
@@ -314,7 +294,6 @@
       latestPhrase = "";
       lastSpeechAt = 0;
       stopRecognition();
-      try { recognition?.abort(); } catch {}
       showStatus("Stopped.");
       sendResponse({ message:"Listening stopped." });
     }
