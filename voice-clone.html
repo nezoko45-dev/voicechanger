@@ -2,49 +2,40 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Browser Voice Clone Studio</title>
+<title>F5-TTS Voice Clone Studio</title>
 <style>
-:root{color-scheme:dark;font:15px/1.5 system-ui,sans-serif;background:#0a1020;color:#edf2ff}
-*{box-sizing:border-box}body{margin:0}main{max-width:900px;margin:auto;padding:28px 18px 60px}
-h1{font-size:28px;line-height:1.2;margin:0 0 8px}h2{font-size:17px;margin:0 0 10px}
-.muted,.note{color:#aab7d2}.note{font-size:13px}.card{background:#151e31;border:1px solid #2c3850;border-radius:14px;padding:18px;margin-top:16px}
-button,.fileButton{border:0;border-radius:9px;padding:11px 14px;background:#39d6a0;color:#082219;font-weight:750;cursor:pointer}
-button.secondary{background:#283752;color:#edf2ff}button.danger{background:#ef6969;color:#280808}button:disabled{opacity:.5;cursor:not-allowed}
-input[type=file]{display:block;margin:10px 0 12px;max-width:100%}textarea{width:100%;min-height:145px;resize:vertical;border:1px solid #43516c;border-radius:10px;background:#0d1526;color:#edf2ff;padding:12px;font:inherit}
-.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.status{padding:12px;border-radius:9px;background:#0d1526;margin-top:12px;overflow-wrap:anywhere}
-.progress{height:8px;border-radius:8px;background:#29354a;overflow:hidden;margin-top:12px}.progress span{display:block;width:0;height:100%;background:#39d6a0;transition:width .15s}
-.clips{display:grid;gap:12px;margin-top:12px}.clip{background:#0d1526;padding:12px;border-radius:10px}.clip audio{display:block;width:100%;margin:8px 0}.clip a{color:#8db6ff}
+:root{color-scheme:dark;font:15px/1.55 system-ui,sans-serif;background:#0a1020;color:#edf2ff}
+*{box-sizing:border-box}body{margin:0}main{max-width:820px;margin:auto;padding:32px 18px 60px}
+h1{font-size:30px;line-height:1.2;margin:0 0 12px}h2{font-size:18px;margin:0 0 10px}
+p{margin:8px 0 14px}.muted,.note{color:#aab7d2}.note{font-size:13px}
+.card{background:#151e31;border:1px solid #2c3850;border-radius:14px;padding:20px;margin-top:16px}
+button,.link{display:inline-block;border:0;border-radius:9px;padding:12px 16px;background:#39d6a0;color:#082219;font-weight:750;text-decoration:none;cursor:pointer}
+button.secondary,.link.secondary{background:#283752;color:#edf2ff}
 .tag{display:inline-block;border:1px solid #43516c;border-radius:999px;padding:2px 8px;font-size:12px;color:#c8d5ef}
+li{margin:7px 0}.warn{border-left:3px solid #e6b65c;padding-left:12px}
 </style>
 </head>
 <body><main>
-<h1>🎙 Browser Voice Clone Studio</h1>
-<p class="muted">Type or dictate text, choose a Kokoro voice, then synthesize speech locally in your browser. Kokoro uses built-in voices and does not clone an uploaded reference recording.</p>
+<h1>🎙 F5-TTS Voice Clone Studio</h1>
+<p class="muted">Testing the F5-TTS browser voice-cloning engine as the replacement for VoxShot/Kokoro.</p>
 <div class="card">
-  <h2>1. Load the browser models</h2>
-  <div class="row"><button id="loadModels">⚡ Load Kokoro model</button><span id="engineBadge" class="tag">Not loaded</span></div>
-  <div id="modelStatus" class="status" role="status">Kokoro-82M model files download on first use and are cached by the browser.</div>
-  <div class="progress"><span id="progressBar"></span></div>
-  <p class="note">Uses Kokoro-82M through Transformers.js. Speech generation and dictation run locally after model download; no voice-cloning reference audio is used.</p>
+  <h2>Try F5-TTS now</h2>
+  <p>The browser demo below runs F5-TTS locally on your device. Upload a short clean reference recording, provide its transcript, enter the text you want spoken, and generate audio.</p>
+  <a class="link" href="https://voice-cloning-f5-tts.vercel.app/" target="_blank" rel="noopener noreferrer">Open F5-TTS browser demo ↗</a>
+  <p class="note">The demo downloads its model files on first use. WebGPU-capable Chrome or Edge is recommended. Your reference recording is processed by the demo in your browser, not sent to a voice-generation server.</p>
 </div>
 <div class="card">
-  <h2>2. Choose a reference voice WAV</h2>
-  <p class="note">Use 5–15 seconds of clean speech from a voice you own or have permission to use. The reference is held in this tab and passed to the local model only.</p>
-  <input id="reference" type="file" accept=".wav,audio/wav,audio/x-wav">
-  <div class="row"><button id="setReference" disabled>Use this reference voice</button><span id="referenceStatus" class="muted">No reference selected.</span></div>
+  <h2>How to test it</h2>
+  <ol>
+    <li>Open the demo and choose the single-speaker TTS mode.</li>
+    <li>Upload a clean 5–10 second WAV/MP3 of a voice you own or have permission to use.</li>
+    <li>Enter the exact words spoken in the reference clip.</li>
+    <li>Type a new sentence, generate it, and listen to the similarity and quality.</li>
+  </ol>
 </div>
 <div class="card">
-  <h2>3. Dictate or enter text</h2>
-  <div class="row"><button id="dictate" class="secondary" disabled>🎤 Start local dictation</button><button id="stopDictation" class="secondary" disabled>Stop dictation</button><span id="dictationStatus" class="tag">Mic off</span></div>
-  <textarea id="text" maxlength="4000" placeholder="Type text here, or use Start local dictation."></textarea>
-  <p class="note">Local dictation uses an in-browser Whisper model via WebGPU and downloads its weights separately. No browser cloud speech-recognition API is used.</p>
-  <div class="row"><button id="synthesize" disabled>✨ Synthesize speech</button><button id="stopAudio" class="secondary" disabled>Stop playback</button></div>
-  <div id="synthesisStatus" class="status" aria-live="polite">Load Kokoro, choose a voice preset, and enter text to begin.</div>
+  <h2>About this extension build</h2>
+  <p class="warn">This is an initial F5-TTS evaluation launcher, not yet a bundled F5-TTS inference engine inside the extension. The full browser pipeline requires its custom ONNX encoder/transformer/decoder runtime and supporting tensor/audio code; it cannot be safely replaced by changing a model ID.</p>
+  <p class="note">The previous Kokoro preset-voice interface has been removed from this page so it is not mistaken for voice cloning. This launcher opens the separate F5-TTS demo for a quick quality check while the extension integration is prepared.</p>
 </div>
-<div class="card">
-  <h2>4. Generated WAVs</h2>
-  <div id="clips" class="clips"><p class="muted">Generated audio will appear here.</p></div>
-  <div class="row"><button id="clear" class="secondary">Clear generated clips</button></div>
-</div>
-<p class="note">Privacy: model inference runs locally in your browser. The model files are downloaded from Hugging Face on first use. Kokoro voice presets are used instead of reference-voice cloning. This feature does not require Python or a local helper server.</p>
-</main><script type="module" src="voice-clone.js"></script></body></html<div class="card">\n  <h2>2. Choose a Kokoro voice</h2>\n  <label for="voice">Voice preset</label>\n  <select id="voice" style="display:block;margin:10px 0 12px;padding:10px;background:#0d1526;color:#edf2ff;border:1px solid #43516c;border-radius:8px;width:100%">\n    <option value="af_heart">American female · Heart</option>\n    <option value="af_bella">American female · Bella</option>\n    <option value="af_nicole">American female · Nicole</option>\n    <option value="am_adam">American male · Adam</option>\n    <option value="am_michael">American male · Michael</option>\n    <option value="bf_emma">British female · Emma</option>\n    <option value="bm_george">British male · George</option>\n  </select>\n  <p class="note">Kokoro uses preset voices; it cannot clone the voice from a WAV reference file.</p>\n</div>\n>
+</main></body></html>
