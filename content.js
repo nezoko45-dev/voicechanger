@@ -316,6 +316,7 @@
       running = true; busy = false;
       startMicrophoneMeter().then(() => {
         if (running) startRecognition();
+        else stopMicrophoneMeter();
       }).catch(error => {
         running = false;
         stopMicrophoneMeter();
