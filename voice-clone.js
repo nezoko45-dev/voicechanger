@@ -247,7 +247,7 @@ import { pipeline } from "@huggingface/transformers";
         const decoded = await decodeContext.decodeAudioData(await blob.arrayBuffer());
         const mono = decoded.getChannelData(0);
         const samples = resampleLinear(mono, decoded.sampleRate, 16000);
-        const result = await asr({ audio: samples, sampling_rate: 16000 });
+        const result = await asr({ raw: samples, sampling_rate: 16000 });
         const transcript = (result?.text || "").trim();
         if (!transcript) throw new Error("No speech was recognized. Try speaking a little longer or closer to the microphone.");
         const existing = textInput.value.trim();
