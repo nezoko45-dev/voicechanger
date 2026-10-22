@@ -1,12 +1,50 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Local Voice Clone Studio</title>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Browser Voice Clone Studio</title>
 <style>
-:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0b1020;color:#edf2ff;font:15px/1.5 system-ui,sans-serif}main{max-width:860px;margin:0 auto;padding:28px 18px 60px}h1{font-size:28px;line-height:1.15;margin:0 0 8px}h2{font-size:17px;margin:0 0 12px}.muted{color:#aab7d2}.card{background:#151e31;border:1px solid #2c3850;border-radius:14px;padding:18px;margin-top:16px}button,.fileButton{border:0;border-radius:9px;padding:11px 14px;background:#39d6a0;color:#082219;font-weight:750;cursor:pointer}button.secondary{background:#283752;color:#edf2ff}button.danger{background:#ef6969;color:#280808}button:disabled{opacity:.5;cursor:not-allowed}input[type=file]{display:block;margin:10px 0 12px;max-width:100%}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.status{padding:12px;border-radius:9px;background:#0d1526;margin-top:14px;overflow-wrap:anywhere}.meter{height:8px;border-radius:8px;background:#29354a;overflow:hidden;margin-top:12px}.meter span{display:block;width:0;height:100%;background:#39d6a0;transition:width .08s}.clips{display:grid;gap:12px;margin-top:12px}.clip{background:#0d1526;padding:12px;border-radius:10px}.clip audio{display:block;width:100%;margin:8px 0}.clip a{color:#8db6ff}.note{font-size:13px;color:#aab7d2}.tag{display:inline-block;border:1px solid #43516c;border-radius:999px;padding:2px 8px;font-size:12px;color:#c8d5ef}
-</style></head><body><main>
-<h1>🎙 Local Voice Clone Studio</h1><p class="muted">Speak a phrase, pause, and convert that recording to your reference voice using the local VoiceClonNX helper. Play or save each converted WAV.</p>
-<div class="card"><h2>1. Local engine</h2><div id="health" class="status" role="status">Checking local helper at 127.0.0.1:8765…</div><p class="note">Start the helper from the repository folder with <code>python voiceclonnx_helper/server.py</code>. The first conversion may download model files.</p></div>
-<div class="card"><h2>2. Choose your reference voice WAV</h2><p class="note">Use a clear recording of your own voice, ideally with little background noise. The helper keeps the selected reference locally until you replace it.</p><input id="reference" type="file" accept=".wav,audio/wav,audio/x-wav"><div class="row"><button id="saveReference" disabled>Save reference voice</button><span id="referenceStatus" class="muted">No reference selected this session.</span></div></div>
-<div class="card"><h2>3. Capture and convert phrases</h2><p class="note">Microphone capture stays in this tab. A short silence ends a phrase; each phrase is sent to your local helper for conversion. Allow microphone access when prompted.</p><div class="row"><button id="start" disabled>▶ Start microphone</button><button id="stop" class="danger" disabled>■ Stop microphone</button><span id="micStatus" class="tag">Microphone off</span></div><div class="meter"><span id="level"></span></div><div id="status" class="status" aria-live="polite">Ready when the helper and reference WAV are available.</div></div>
-<div class="card"><h2>4. Converted WAV clips</h2><div id="clips" class="clips"><p class="muted">Your converted phrases will appear here.</p></div><div class="row"><button id="clear" class="secondary">Clear clip list</button></div></div>
-<p class="note">Privacy: phrase audio and the reference WAV are sent only to the local helper at 127.0.0.1:8765. This uses audio-to-audio voice conversion, not text-to-speech. Use only voices you have permission to convert.</p>
+:root{color-scheme:dark;font:15px/1.5 system-ui,sans-serif;background:#0a1020;color:#edf2ff}
+*{box-sizing:border-box}body{margin:0}main{max-width:900px;margin:auto;padding:28px 18px 60px}
+h1{font-size:28px;line-height:1.2;margin:0 0 8px}h2{font-size:17px;margin:0 0 10px}
+.muted,.note{color:#aab7d2}.note{font-size:13px}.card{background:#151e31;border:1px solid #2c3850;border-radius:14px;padding:18px;margin-top:16px}
+button,.fileButton{border:0;border-radius:9px;padding:11px 14px;background:#39d6a0;color:#082219;font-weight:750;cursor:pointer}
+button.secondary{background:#283752;color:#edf2ff}button.danger{background:#ef6969;color:#280808}button:disabled{opacity:.5;cursor:not-allowed}
+input[type=file]{display:block;margin:10px 0 12px;max-width:100%}textarea{width:100%;min-height:145px;resize:vertical;border:1px solid #43516c;border-radius:10px;background:#0d1526;color:#edf2ff;padding:12px;font:inherit}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.status{padding:12px;border-radius:9px;background:#0d1526;margin-top:12px;overflow-wrap:anywhere}
+.progress{height:8px;border-radius:8px;background:#29354a;overflow:hidden;margin-top:12px}.progress span{display:block;width:0;height:100%;background:#39d6a0;transition:width .15s}
+.clips{display:grid;gap:12px;margin-top:12px}.clip{background:#0d1526;padding:12px;border-radius:10px}.clip audio{display:block;width:100%;margin:8px 0}.clip a{color:#8db6ff}
+.tag{display:inline-block;border:1px solid #43516c;border-radius:999px;padding:2px 8px;font-size:12px;color:#c8d5ef}
+</style>
+</head>
+<body><main>
+<h1>🎙 Browser Voice Clone Studio</h1>
+<p class="muted">Choose a reference WAV, dictate or type text, then synthesize it in the reference voice. Speech synthesis and local dictation run in-browser; WebGPU is required.</p>
+<div class="card">
+  <h2>1. Load the browser models</h2>
+  <div class="row"><button id="loadModels">⚡ Load WebGPU models</button><span id="engineBadge" class="tag">Not loaded</span></div>
+  <div id="modelStatus" class="status" role="status">Model weights download on first use and are cached by the browser. The voice model is large (about 1.5 GB).</div>
+  <div class="progress"><span id="progressBar"></span></div>
+  <p class="note">Uses Chatterbox ONNX through VoxShot / Transformers.js. The current voice-cloning checkpoint is English-focused. Your reference audio and synthesis text are not sent to a voice service.</p>
+</div>
+<div class="card">
+  <h2>2. Choose a reference voice WAV</h2>
+  <p class="note">Use 5–15 seconds of clean speech from a voice you own or have permission to use. The reference is held in this tab and passed to the local model only.</p>
+  <input id="reference" type="file" accept=".wav,audio/wav,audio/x-wav">
+  <div class="row"><button id="setReference" disabled>Use this reference voice</button><span id="referenceStatus" class="muted">No reference selected.</span></div>
+</div>
+<div class="card">
+  <h2>3. Dictate or enter text</h2>
+  <div class="row"><button id="dictate" class="secondary" disabled>🎤 Start local dictation</button><button id="stopDictation" class="secondary" disabled>Stop dictation</button><span id="dictationStatus" class="tag">Mic off</span></div>
+  <textarea id="text" maxlength="4000" placeholder="Type text here, or use Start local dictation."></textarea>
+  <p class="note">Local dictation uses an in-browser Whisper model via WebGPU and downloads its weights separately. No browser cloud speech-recognition API is used.</p>
+  <div class="row"><button id="synthesize" disabled>✨ Synthesize speech</button><button id="stopAudio" class="secondary" disabled>Stop playback</button></div>
+  <div id="synthesisStatus" class="status" aria-live="polite">Load the models and select a reference WAV to begin.</div>
+</div>
+<div class="card">
+  <h2>4. Generated WAVs</h2>
+  <div id="clips" class="clips"><p class="muted">Generated audio will appear here.</p></div>
+  <div class="row"><button id="clear" class="secondary">Clear generated clips</button></div>
+</div>
+<p class="note">Privacy: model inference runs locally in your browser. The model files are downloaded from Hugging Face on first use. Use reference recordings only with permission. This feature does not require Python or a local helper server.</p>
 </main><script src="voice-clone.js"></script></body></html>
