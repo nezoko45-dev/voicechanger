@@ -1,89 +1,298 @@
+import { ChatterboxEngine, VoxShot } from "voxshot";
+import { pipeline } from "@huggingface/transformers";
+
 (() => {
- const API="http://127.0.0.1:8765";
- const $=s=>document.querySelector(s);
- const health=$("#health"),status=$("#status"),referenceInput=$("#reference"),saveReference=$("#saveReference"),referenceStatus=$("#referenceStatus"),startButton=$("#start"),stopButton=$("#stop"),micStatus=$("#micStatus"),levelBar=$("#level"),clips=$("#clips");
- let referenceReady=false,pendingReference=false,stream=null,audioContext=null,processor=null,source=null,recording=false,frames=[],preRoll=[],phraseActive=false,phraseSamples=0,silenceSamples=0,clipNumber=0,processing=0,referenceName="";
- const TARGET_SILENCE=0.85,MIN_PHRASE_SECONDS=0.38,MAX_PHRASE_SECONDS=15,PRE_ROLL_SECONDS=0.20,THRESHOLD=0.014;
- function setStatus(text){status.textContent=text;}
- async function checkHealth(){
-  try{const r=await fetch(API+"/health");if(!r.ok)throw Error("HTTP "+r.status);const data=await r.json();health.textContent=data.reference_ready?"Local helper ready · reference WAV is saved.":"Local helper ready · choose a reference WAV below.";health.style.color="#7ce9be";referenceReady=!!data.reference_ready;referenceStatus.textContent=referenceReady?"A reference WAV is saved locally.": "No reference WAV saved yet.";saveReference.disabled=!referenceInput.files.length;startButton.disabled=!referenceReady||pendingReference;setStatus(referenceReady?"Ready to record and convert phrases.":"Choose and save a reference WAV to begin.");}
-  catch(e){health.textContent="Local helper not reachable. Start it with: python voiceclonnx_helper/server.py";health.style.color="#ffaaaa";startButton.disabled=true;saveReference.disabled=!referenceInput.files.length;setStatus("Waiting for the local VoiceClonNX helper.");}
- }
- referenceInput.addEventListener("change",()=>{pendingReference=!!referenceInput.files.length;saveReference.disabled=!referenceInput.files.length;startButton.disabled=!referenceReady||pendingReference;referenceStatus.textContent=referenceInput.files[0]?.name||"No file selected.";});
- saveReference.addEventListener("click",async()=>{
-  const file=referenceInput.files[0];if(!file)return;if(!file.name.toLowerCase().endsWith(".wav")){setStatus("Please choose a WAV file.");return;}
-  saveReference.disabled=true;referenceStatus.textContent="Uploading reference to local helper…";
-  try{const form=new FormData();form.append("file",file,file.name);const r=await fetch(API+"/reference",{method:"POST",body:form});const data=await r.json();if(!r.ok)throw Error(data.detail||"Reference upload failed.");referenceReady=true;pendingReference=false;referenceName=file.name;referenceStatus.textContent="Saved locally: "+file.name;setStatus("Reference voice saved. Start the microphone when ready.");startButton.disabled=false;}
-  catch(e){referenceStatus.textContent="Could not save reference.";setStatus("Reference upload failed: "+e.message);}
-  finally{saveReference.disabled=!referenceInput.files.length;}
- });
- function wavBlob(samples,sampleRate){
-  const buffer=new ArrayBuffer(44+samples.length*2),view=new DataView(buffer);
-  const write=(offset,s)=>{for(let i=0;i<s.length;i++)view.setUint8(offset+i,s.charCodeAt(i));};
-  write(0,"RIFF");view.setUint32(4,36+samples.length*2,true);write(8,"WAVE");write(12,"fmt ");view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);view.setUint32(24,sampleRate,true);view.setUint32(28,sampleRate*2,true);view.setUint16(32,2,true);view.setUint16(34,16,true);write(36,"data");view.setUint32(40,samples.length*2,true);
-  for(let i=0;i<samples.length;i++){const s=Math.max(-1,Math.min(1,samples[i]));view.setInt16(44+i*2,s<0?s*32768:s*32767,true);}
-  return new Blob([buffer],{type:"audio/wav"});
- }
- function merge(chunks){let n=0;for(const a of chunks)n+=a.length;const out=new Float32Array(n);let p=0;for(const a of chunks){out.set(a,p);p+=a.length;}return out;}
- function addClip(blob,filename){
-  clipNumber++;if(clips.querySelector("p"))clips.replaceChildren();
-  const url=URL.createObjectURL(blob),card=document.createElement("div");card.className="clip";
-  const title=document.createElement("strong");title.textContent="Phrase "+clipNumber+" · "+filename;
-  const audio=document.createElement("audio");audio.controls=true;audio.src=url;
-  const link=document.createElement("a");link.href=url;link.download=filename;link.textContent="Download WAV";
-  card.append(title,audio,link);clips.prepend(card);
- }
- async function convertPhrase(samples,sampleRate){
-  if(samples.length/sampleRate<MIN_PHRASE_SECONDS)return;
-  processing++;setStatus("Converting phrase locally… ("+processing+" in progress)");
-  try{
-   const wav=wavBlob(samples,sampleRate),form=new FormData();form.append("file",wav,"phrase.wav");
-   const r=await fetch(API+"/convert",{method:"POST",body:form});
-   if(!r.ok){let msg="Conversion failed (HTTP "+r.status+")";try{msg=(await r.json()).detail||msg;}catch{}throw Error(msg);}
-   const blob=await r.blob();const filename="voice-clone-"+new Date().toISOString().replace(/[:.]/g,"-")+".wav";addClip(blob,filename);setStatus("Converted phrase ready. Keep speaking or pause for another phrase.");
-  }catch(e){setStatus("Conversion error: "+e.message);}
-  finally{processing=Math.max(0,processing-1);}
- }
- function endPhrase(){
-  if(!phraseActive)return;
-  phraseActive=false;silenceSamples=0;
-  const data=merge(frames);frames=[];phraseSamples=0;
-  if(data.length)void convertPhrase(data,audioContext.sampleRate);
- }
- function onAudio(event){
-  if(!recording)return;
-  const input=event.inputBuffer.getChannelData(0),copy=new Float32Array(input);
-  let sum=0;for(let i=0;i<copy.length;i++)sum+=copy[i]*copy[i];const rms=Math.sqrt(sum/copy.length);
-  levelBar.style.width=Math.min(100,Math.round(rms*700))+"%";
-  const preMax=Math.ceil(audioContext.sampleRate*PRE_ROLL_SECONDS/2048)+1;preRoll.push(copy);while(preRoll.length>preMax)preRoll.shift();
-  if(rms>THRESHOLD){
-   if(!phraseActive){phraseActive=true;frames=preRoll.slice();phraseSamples=frames.reduce((n,a)=>n+a.length,0);setStatus("Speech detected…");}
-   else frames.push(copy);
-   phraseSamples+=phraseActive&&frames.length===preRoll.length?0:copy.length;
-   silenceSamples=0;
-   if(phraseSamples/audioContext.sampleRate>=MAX_PHRASE_SECONDS)endPhrase();
-  }else if(phraseActive){
-   frames.push(copy);phraseSamples+=copy.length;silenceSamples+=copy.length;
-   if(silenceSamples/audioContext.sampleRate>=TARGET_SILENCE||phraseSamples/audioContext.sampleRate>=MAX_PHRASE_SECONDS)endPhrase();
+  const $ = (selector) => document.querySelector(selector);
+  const loadButton = $("#loadModels");
+  const modelStatus = $("#modelStatus");
+  const progressBar = $("#progressBar");
+  const engineBadge = $("#engineBadge");
+  const referenceInput = $("#reference");
+  const setReferenceButton = $("#setReference");
+  const referenceStatus = $("#referenceStatus");
+  const textInput = $("#text");
+  const dictateButton = $("#dictate");
+  const stopDictationButton = $("#stopDictation");
+  const dictationStatus = $("#dictationStatus");
+  const synthesizeButton = $("#synthesize");
+  const stopAudioButton = $("#stopAudio");
+  const synthesisStatus = $("#synthesisStatus");
+  const clips = $("#clips");
+  const stopDictationButtonInitialText = stopDictationButton.textContent;
+
+  let tts = null;
+  let asr = null;
+  let referenceFile = null;
+  let loading = false;
+  let synthesizing = false;
+  let mediaRecorder = null;
+  let micStream = null;
+  let recordedChunks = [];
+  let activeAudio = null;
+  let clipNumber = 0;
+
+  function setModelStatus(message) { modelStatus.textContent = message; }
+  function setSynthesisStatus(message) { synthesisStatus.textContent = message; }
+  function updateControls() {
+    setReferenceButton.disabled = !tts || !referenceInput.files?.[0] || loading;
+    dictateButton.disabled = !tts || loading || synthesizing || !!mediaRecorder;
+    synthesizeButton.disabled = !tts || !referenceFile || !textInput.value.trim() || loading || synthesizing;
+    loadButton.disabled = loading;
   }
- }
- async function startMic(){
-  if(!referenceReady){setStatus("Save a reference WAV before recording.");return;}
-  try{
-   stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
-   audioContext=new AudioContext();source=audioContext.createMediaStreamSource(stream);processor=audioContext.createScriptProcessor(2048,1,1);
-   processor.onaudioprocess=onAudio;source.connect(processor);processor.connect(audioContext.destination);
-   recording=true;startButton.disabled=true;stopButton.disabled=false;micStatus.textContent="Listening";setStatus("Listening. Pause briefly after each phrase to convert it.");await audioContext.resume();
-  }catch(e){setStatus("Could not start microphone: "+e.message+" — check browser microphone permission.");await stopMic();}
- }
- async function stopMic(){
-  recording=false;levelBar.style.width="0";if(phraseActive)endPhrase();
-  if(processor){processor.onaudioprocess=null;processor.disconnect();processor=null;}if(source){source.disconnect();source=null;}
-  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}if(audioContext){try{await audioContext.close();}catch{}audioContext=null;}
-  frames=[];preRoll=[];phraseActive=false;silenceSamples=0;startButton.disabled=!referenceReady||pendingReference;stopButton.disabled=true;micStatus.textContent="Microphone off";setStatus(processing?"Microphone stopped; waiting for conversion to finish.":"Microphone stopped.");
- }
- startButton.addEventListener("click",startMic);stopButton.addEventListener("click",stopMic);
- $("#clear").addEventListener("click",()=>{for(const audio of clips.querySelectorAll("audio"))if(audio.src.startsWith("blob:"))URL.revokeObjectURL(audio.src);clips.replaceChildren(Object.assign(document.createElement("p"),{textContent:"Your converted phrases will appear here.",className:"muted"}));clipNumber=0;});
- window.addEventListener("beforeunload",()=>{if(stream)stream.getTracks().forEach(t=>t.stop());});
- checkHealth();setInterval(checkHealth,10000);
+  function reportModelProgress(event) {
+    if (!event) return;
+    if (event.status === "progress" && Number.isFinite(event.progress)) {
+      progressBar.style.width = Math.max(0, Math.min(100, event.progress)) + "%";
+      setModelStatus("Downloading " + (event.file || "model files") + " · " + Math.round(event.progress) + "%");
+    } else if (event.status === "load-start") {
+      setModelStatus("Preparing " + (event.plan || "WebGPU") + "…");
+    } else if (event.status === "load-fallback") {
+      setModelStatus("WebGPU model plan failed: " + (event.reason || "unknown reason"));
+    } else if (event.status === "load-ready") {
+      setModelStatus("Voice model ready on " + (event.plan || "WebGPU") + ".");
+    } else if (event.status === "load-compiling") {
+      setModelStatus("Model files downloaded. Compiling GPU sessions; this can take a few minutes…");
+      progressBar.style.width = "100%";
+    }
+  }
+
+  async function loadModels() {
+    if (loading || tts) return;
+    loading = true;
+    updateControls();
+    try {
+      if (!navigator.gpu) throw new Error("WebGPU is unavailable. Try a recent Chrome or Edge build with WebGPU enabled.");
+      const adapter = await navigator.gpu.requestAdapter();
+      if (!adapter) throw new Error("No WebGPU adapter was found. Check your browser and graphics drivers.");
+      setModelStatus("Starting Chatterbox WebGPU voice model…");
+      progressBar.style.width = "0%";
+      const engine = new ChatterboxEngine({
+        requiresGpu: true,
+        onProgress: reportModelProgress,
+      });
+      tts = await VoxShot.create({ engine, device: "webgpu", minChunkLength: 20 });
+      if (tts.device && tts.device !== "webgpu") {
+        await tts.dispose();
+        tts = null;
+        throw new Error("The voice engine did not stay on WebGPU (selected " + tts.device + ").");
+      }
+      engineBadge.textContent = "Voice model ready · WebGPU";
+      setModelStatus("Voice model ready. Next, select a reference WAV.");
+      progressBar.style.width = "100%";
+    } catch (error) {
+      engineBadge.textContent = "Model load failed";
+      setModelStatus("Could not load the WebGPU voice model: " + (error?.message || String(error)));
+    } finally {
+      loading = false;
+      updateControls();
+    }
+  }
+
+  referenceInput.addEventListener("change", () => {
+    const file = referenceInput.files?.[0] || null;
+    referenceStatus.textContent = file ? file.name + " selected; click Use this reference voice." : "No reference selected.";
+    setReferenceButton.disabled = !tts || !file || loading;
+  });
+
+  setReferenceButton.addEventListener("click", async () => {
+    const file = referenceInput.files?.[0];
+    if (!file || !tts) return;
+    if (!file.name.toLowerCase().endsWith(".wav") && file.type !== "audio/wav" && file.type !== "audio/x-wav") {
+      referenceStatus.textContent = "Please choose a WAV file.";
+      return;
+    }
+    setReferenceButton.disabled = true;
+    referenceStatus.textContent = "Preparing reference voice locally…";
+    try {
+      await tts.cloneVoice(file);
+      referenceFile = file;
+      referenceStatus.textContent = "Reference voice ready: " + file.name;
+      setSynthesisStatus("Reference voice set. Enter text or use local dictation.");
+    } catch (error) {
+      referenceFile = null;
+      referenceStatus.textContent = "Could not use this reference: " + (error?.message || String(error));
+    } finally {
+      updateControls();
+    }
+  });
+
+  function addClip(blob, label) {
+    clipNumber += 1;
+    if (clips.querySelector("p")) clips.replaceChildren();
+    const url = URL.createObjectURL(blob);
+    const card = document.createElement("div");
+    card.className = "clip";
+    const title = document.createElement("strong");
+    title.textContent = "Clip " + clipNumber + " · " + label;
+    const audio = document.createElement("audio");
+    audio.controls = true;
+    audio.preload = "metadata";
+    audio.src = url;
+    const download = document.createElement("a");
+    download.href = url;
+    download.download = "browser-voice-clone-" + String(clipNumber).padStart(3, "0") + ".wav";
+    download.textContent = "Download WAV";
+    card.append(title, audio, download);
+    clips.prepend(card);
+  }
+
+  async function synthesize() {
+    const text = textInput.value.trim();
+    if (!tts || !referenceFile || !text || synthesizing) return;
+    synthesizing = true;
+    updateControls();
+    setSynthesisStatus("Synthesizing on WebGPU. Longer text may take a while…");
+    try {
+      const audio = await tts.speak(text);
+      const blob = audio.toBlob();
+      addClip(blob, text.length > 64 ? text.slice(0, 61) + "…" : text);
+      setSynthesisStatus("Speech generated locally. Play it here or download the WAV.");
+      const latest = clips.querySelector("audio");
+      if (latest) {
+        if (activeAudio) { try { activeAudio.pause(); } catch {} }
+        activeAudio = latest;
+        await latest.play().catch(() => {});
+      }
+    } catch (error) {
+      setSynthesisStatus("Synthesis failed: " + (error?.message || String(error)));
+    } finally {
+      synthesizing = false;
+      updateControls();
+    }
+  }
+
+  function resampleLinear(input, sourceRate, targetRate) {
+    if (sourceRate === targetRate) return input;
+    const outputLength = Math.max(1, Math.round(input.length * targetRate / sourceRate));
+    const output = new Float32Array(outputLength);
+    const ratio = sourceRate / targetRate;
+    for (let i = 0; i < outputLength; i++) {
+      const position = i * ratio;
+      const left = Math.min(input.length - 1, Math.floor(position));
+      const right = Math.min(input.length - 1, left + 1);
+      const fraction = position - left;
+      output[i] = input[left] * (1 - fraction) + input[right] * fraction;
+    }
+    return output;
+  }
+
+  async function getLocalAsr() {
+    if (asr) return asr;
+    if (!navigator.gpu || !(await navigator.gpu.requestAdapter())) throw new Error("WebGPU is required for local dictation.");
+    dictationStatus.textContent = "Loading local Whisper model…";
+    asr = await pipeline("automatic-speech-recognition", "onnx-community/whisper-tiny.en", {
+      device: "webgpu",
+      dtype: "q4",
+      progress_callback: (event) => {
+        if (event?.status === "progress" && Number.isFinite(event.progress)) {
+          dictationStatus.textContent = "Downloading local dictation model " + Math.round(event.progress) + "%";
+        } else if (event?.status === "done") {
+          dictationStatus.textContent = "Preparing local dictation model…";
+        }
+      },
+    });
+    return asr;
+  }
+
+  async function startDictation() {
+    if (mediaRecorder) return;
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      setSynthesisStatus("This browser does not support microphone recording.");
+      return;
+    }
+    recordedChunks = [];
+    try {
+      await getLocalAsr();
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+      const options = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? { mimeType: "audio/webm;codecs=opus" } : undefined;
+      mediaRecorder = new MediaRecorder(micStream, options);
+      mediaRecorder.addEventListener("dataavailable", (event) => {
+        if (event.data?.size) recordedChunks.push(event.data);
+      });
+      mediaRecorder.addEventListener("stop", transcribeRecording, { once: true });
+      mediaRecorder.start();
+      dictationStatus.textContent = "Recording · local";
+      dictateButton.disabled = true;
+      stopDictationButton.disabled = false;
+    } catch (error) {
+      stopMicTracks();
+      mediaRecorder = null;
+      dictationStatus.textContent = "Mic off";
+      setSynthesisStatus("Could not start local dictation: " + (error?.message || String(error)));
+      updateControls();
+    }
+  }
+
+  function stopMicTracks() {
+    if (micStream) micStream.getTracks().forEach((track) => track.stop());
+    micStream = null;
+  }
+
+  async function transcribeRecording() {
+    const recorder = mediaRecorder;
+    mediaRecorder = null;
+    stopMicTracks();
+    stopDictationButton.disabled = true;
+    dictationStatus.textContent = "Transcribing locally…";
+    try {
+      if (!recordedChunks.length) throw new Error("No microphone audio was captured.");
+      const blob = new Blob(recordedChunks, { type: recordedChunks[0]?.type || "audio/webm" });
+      recordedChunks = [];
+      const decodeContext = new AudioContext();
+      try {
+        const decoded = await decodeContext.decodeAudioData(await blob.arrayBuffer());
+        const mono = decoded.getChannelData(0);
+        const samples = resampleLinear(mono, decoded.sampleRate, 16000);
+        const result = await asr({ audio: samples, sampling_rate: 16000 });
+        const transcript = (result?.text || "").trim();
+        if (!transcript) throw new Error("No speech was recognized. Try speaking a little longer or closer to the microphone.");
+        const existing = textInput.value.trim();
+        textInput.value = existing ? existing + " " + transcript : transcript;
+        textInput.dispatchEvent(new Event("input", { bubbles: true }));
+        dictationStatus.textContent = "Dictation added";
+        setSynthesisStatus("Dictation completed on-device. Review the text, then synthesize.");
+      } finally {
+        await decodeContext.close();
+      }
+    } catch (error) {
+      dictationStatus.textContent = "Dictation failed";
+      setSynthesisStatus("Local dictation failed: " + (error?.message || String(error)));
+    } finally {
+      updateControls();
+    }
+  }
+
+  function stopDictation() {
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+      dictationStatus.textContent = "Finishing recording…";
+      mediaRecorder.stop();
+    }
+    stopDictationButton.disabled = true;
+  }
+
+  textInput.addEventListener("input", updateControls);
+  loadButton.addEventListener("click", loadModels);
+  synthesizeButton.addEventListener("click", synthesize);
+  dictateButton.addEventListener("click", startDictation);
+  stopDictationButton.addEventListener("click", stopDictation);
+  stopAudioButton.addEventListener("click", () => {
+    if (activeAudio) { activeAudio.pause(); activeAudio.currentTime = 0; }
+  });
+  $("#clear").addEventListener("click", () => {
+    for (const audio of clips.querySelectorAll("audio")) {
+      audio.pause();
+      if (audio.src.startsWith("blob:")) URL.revokeObjectURL(audio.src);
+    }
+    clips.replaceChildren(Object.assign(document.createElement("p"), { textContent: "Generated audio will appear here.", className: "muted" }));
+    clipNumber = 0;
+  });
+  window.addEventListener("beforeunload", () => {
+    stopMicTracks();
+    if (tts) void tts.dispose();
+    if (activeAudio) activeAudio.pause();
+  });
+  stopDictationButton.textContent = stopDictationButtonInitialText;
+  updateControls();
 })();
