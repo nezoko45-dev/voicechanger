@@ -9,8 +9,10 @@
   let restartTimer = null;
   let phraseTimer = null;
   let latestPhrase = "";
+  let lastSpeechAt = 0;
+  let generationStartedAt = 0;
   let statusNode = null;
-  const PAUSE_MS = 1800;
+  const PAUSE_MS = 2500;
 
   function showStatus(message) {
     if (!statusNode || !statusNode.isConnected) {
@@ -63,9 +65,15 @@
 
   function schedulePhrase(text) {
     latestPhrase = text.trim();
+    lastSpeechAt = Date.now();
     clearTimeout(phraseTimer);
     if (!latestPhrase) return;
+    // Only start work after a full quiet window. Every new recognized phrase resets it.
     phraseTimer = setTimeout(() => {
+      if (Date.now() - lastSpeechAt < PAUSE_MS) {
+        schedulePhrase(latestPhrase);
+        return;
+      }
       const phrase = latestPhrase;
       latestPhrase = "";
       processPhrase(phrase);
@@ -102,7 +110,11 @@
     while (Date.now() - started < timeoutMs) {
       if (!running) return null;
       const button = findResultPlayButton(phrase);
-      if (button) return button;
+      // Never click a stale Play button that existed before this generation began.
+      if (button && generationStartedAt && button.getAttribute("data-pw-seen") !== "old") {
+        const area = button.closest("section,article,[class*='result'],[class*='output'],[class*='generated']") || button.parentElement;
+        if (area && (area.innerText || "").toLowerCase().includes(phrase.trim().toLowerCase())) return button;
+      }
       await new Promise(resolve => setTimeout(resolve, 400));
     }
     return null;
@@ -145,6 +157,15 @@
       const box = findTextBox();
       const button = findGenerateButton();
       if (!box || !button) throw new Error("Could not find the text box or Generate Speech button on this page.");
+      // Stop recognition and cancel any pending silence timer before generating.
+      clearTimeout(phraseTimer);
+      latestPhrase = "";
+      // Mark existing Play controls so they can never be mistaken for this result.
+      document.querySelectorAll("button,[role=button],input[type=button]").forEach(el => {
+        const t = (el.innerText || el.textContent || el.value || el.getAttribute("aria-label") || el.title || "").trim().toLowerCase();
+        if (t === "play" || t.includes("play audio") || t.includes("play result")) el.setAttribute("data-pw-seen", "old");
+      });
+      generationStartedAt = Date.now();
       setText(box, phrase);
       button.click();
       showStatus("Waiting for the generated result's Play button…");
@@ -152,6 +173,7 @@
       if (!running) return;
       if (!playButton) throw new Error("Could not find the Play button under the generated result after 60 seconds.");
       showStatus("Playing generated result…");
+      playButton.removeAttribute("data-pw-seen");
       playButton.click();
       await waitForPlaybackToFinish(playButton, phrase);
     } catch (error) {
@@ -176,6 +198,15 @@
     recognition.interimResults = true;
     recognition.lang = document.documentElement.lang || navigator.language || "en-US";
     recognition.onresult = event => {
+      // Any speech event cancels the quiet timer immediately, including interim speech.
+      if (event.results.length) {
+        const latestResult = event.results[event.results.length - 1];
+        if (latestResult && !latestResult.isFinal) {
+          lastSpeechAt = Date.now();
+          clearTimeout(phraseTimer);
+          showStatus("Speech detected — waiting for silence…");
+        }
+      }
       let finalText = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
@@ -219,6 +250,7 @@
       running = false;
       busy = false;
       latestPhrase = "";
+      lastSpeechAt = 0;
       stopRecognition();
       try { recognition?.abort(); } catch {}
       showStatus("Stopped.");
