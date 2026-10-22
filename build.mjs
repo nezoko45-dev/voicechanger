@@ -28,7 +28,7 @@ const ortDist = path.join(root, "node_modules", "onnxruntime-web", "dist");
 const ortOut = path.join(out, "ort");
 await mkdir(ortOut, { recursive: true });
 for (const name of await readdir(ortDist)) {
-  if (/^ort-wasm-simd-threaded(?:-jsep|-jspi|-asyncify)?\.(?:mjs|wasm)$/.test(name)) {
+  if (/^ort-wasm-simd-threaded(?:\.[a-z0-9-]+)?\.(?:mjs|wasm)$/.test(name)) {
     await cp(path.join(ortDist, name), path.join(ortOut, name));
   }
 }
