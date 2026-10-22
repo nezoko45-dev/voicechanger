@@ -21,7 +21,7 @@ li{margin:7px 0}.warn{border-left:3px solid #e6b65c;padding-left:12px}
 <div class="card">
   <h2>Try F5-TTS now</h2>
   <p>The browser demo below runs F5-TTS locally on your device. Upload a short clean reference recording, provide its transcript, enter the text you want spoken, and generate audio.</p>
-  <a class="link" href="https://voice-cloning-f5-tts.vercel.app/" target="_blank" rel="noopener noreferrer">Open F5-TTS browser demo ↗</a>
+  <a class="link" href="f5tts/index.html">Open F5-TTS voice cloning inside this extension ↗</a><p class="note">If the bundled studio does not load on your browser, <a href="https://voice-cloning-f5-tts.vercel.app/" target="_blank" rel="noopener noreferrer">open the hosted demo instead</a>.</p>
   <p class="note">The demo downloads its model files on first use. WebGPU-capable Chrome or Edge is recommended. Your reference recording is processed by the demo in your browser, not sent to a voice-generation server.</p>
 </div>
 <div class="card">
@@ -35,7 +35,7 @@ li{margin:7px 0}.warn{border-left:3px solid #e6b65c;padding-left:12px}
 </div>
 <div class="card">
   <h2>About this extension build</h2>
-  <p class="warn">This is an initial F5-TTS evaluation launcher, not yet a bundled F5-TTS inference engine inside the extension. The full browser pipeline requires its custom ONNX encoder/transformer/decoder runtime and supporting tensor/audio code; it cannot be safely replaced by changing a model ID.</p>
-  <p class="note">The previous Kokoro preset-voice interface has been removed from this page so it is not mistaken for voice cloning. This launcher opens the separate F5-TTS demo for a quick quality check while the extension integration is prepared.</p>
+  <p class="warn">The F5-TTS browser studio is bundled into this extension during the GitHub Actions build from the upstream open-source project. It uses a custom ONNX encoder/transformer/decoder pipeline and supporting tensor/audio code; it cannot be replaced by changing a model ID.</p>
+  <p class="note">The F5-TTS studio runs inference in the browser using WebGPU/WASM. Model weights download on first use and are cached by the browser; first launch requires an internet connection.</p>
 </div>
 </main></body></html>
