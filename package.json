@@ -1,0 +1,17 @@
+{
+  "name": "voicechanger-browser-webgpu",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Build tooling for the browser-only WebGPU voice-cloning extension studio.",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
+    "voxshot": "^0.3.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
