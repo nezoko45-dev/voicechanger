@@ -13,7 +13,7 @@
   chrome.storage.local.get({ echoGuardEnabled: false, echoAudioCompareEnabled: false }, data => {
     enabled = !!data.echoGuardEnabled;
     audioCompareEnabled = !!data.echoAudioCompareEnabled;
-    if (enabled) scheduleVoiceRestart();
+    if (enabled || audioCompareEnabled) scheduleVoiceRestart();
   });
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "local" && changes.echoGuardEnabled) {
@@ -22,6 +22,7 @@
     }
     if (area === "local" && changes.echoAudioCompareEnabled) {
       audioCompareEnabled = !!changes.echoAudioCompareEnabled.newValue;
+      if (audioCompareEnabled) scheduleVoiceRestart();
     }
   });
 
@@ -131,7 +132,7 @@
     // but stop as soon as Voice Mode is already open.
     let attempts = 0;
     const tryStart = () => {
-      if (!enabled || attempts >= 10) return;
+      if ((!enabled && !audioCompareEnabled) || attempts >= 10) return;
       attempts++;
       if (voiceModeLooksActive()) {
         console.info("[Echo Guard] Voice Mode is already active.");
@@ -144,7 +145,7 @@
   }
 
   function clickStartVoice() {
-    if (!enabled) return false;
+    if (!enabled && !audioCompareEnabled) return false;
     const candidates = [...document.querySelectorAll("button, [role='button']")]
       .filter(el => el.getClientRects().length && !el.disabled);
     const target = candidates.find(el => {
