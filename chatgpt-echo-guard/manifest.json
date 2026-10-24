@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT Echo Guard",
-  "version": "1.4.0",
-  "description": "Automatically send locally transcribed microphone phrases to ChatGPT as text when the composer is available.",
+  "version": "1.5.0",
+  "description": "Detect local echo mismatches and send a single recovery prompt with cooldown.",
   "permissions": [
     "storage",
     "tabCapture",
