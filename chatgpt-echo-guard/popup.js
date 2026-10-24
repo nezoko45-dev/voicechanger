@@ -40,7 +40,8 @@ chrome.runtime.onMessage.addListener(message => {
     const detail = typeof message.detail === "string" ? message.detail :
       message.detail?.user ? "Mic: " + message.detail.user + " | ChatGPT: " + message.detail.assistant :
       JSON.stringify(message.detail || "");
-    if (message.status === "mismatch") setStatus("Mismatch detected. " + detail);
+    if (message.status === "mismatch") setStatus("Mismatch detected; replacing playback with your mic clip. " + detail);
+    else if (message.status === "corrected") setStatus("Spoken echo corrected locally; chat was not refreshed. " + detail);
     else if (message.status === "match") setStatus("Exact spoken-word match. " + detail);
     else if (detail) setStatus(detail);
   }
