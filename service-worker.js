@@ -73,6 +73,8 @@ async function startCompare(tabId) {
   const result = await chrome.runtime.sendMessage({ type: "FISH_AUDIO_OFFSCREEN_START", streamId });
   if (!result?.ok) throw new Error(result?.error || "Could not start audio capture.");
   await chrome.tabs.sendMessage(tabId, { type: "FISH_AUDIO_MISMATCH_RECOVERY", enabled: true });
+  const clicker = await chrome.tabs.sendMessage(tabId, { type: "FISH_AUDIO_AUTO_START" });
+  chrome.runtime.sendMessage({ type: "FISH_AUDIO_STATUS_UPDATE", automatic: !!clicker?.automatic, mismatchRecoveryEnabled: true, message: "Local mismatch monitoring and automatic Call again clicking are running." }).catch(() => {});
 }
 async function stopCompare() {
   await chrome.storage.local.set({ fishAudioCompareEnabled: false });
