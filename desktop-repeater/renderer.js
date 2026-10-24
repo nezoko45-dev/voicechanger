@@ -4,8 +4,8 @@ import { KokoroTTS } from "kokoro-js";
 const $ = id => document.getElementById(id);
 let stt = null, tts = null, loaded = false, listening = false, busy = false;
 let lastText = "", stream = null, ctx = null, source = null, processor = null, muteNode = null;
-let frameBuffer = [], preRoll = [], speakingFrames = [], speechActive = false, quietFrames = 0, segmentBusy = false;
-let inputRate = 48000, lastInferenceAt = 0, micPermissionRequested = false;
+let preRoll = [], speakingFrames = [], speechActive = false, quietFrames = 0, segmentBusy = false;
+let inputRate = 48000;
 
 function status(s) { $("status").textContent = s; }
 function state(s) { $("state").textContent = s; }
@@ -15,7 +15,6 @@ async function refreshMics() {
   try {
     const tmp = await navigator.mediaDevices.getUserMedia({ audio: true });
     tmp.getTracks().forEach(t => t.stop());
-    micPermissionRequested = true;
     const devices = await navigator.mediaDevices.enumerateDevices();
     const select = $("mic"), old = select.value;
     select.innerHTML = '<option value="">System default</option>';
@@ -26,69 +25,54 @@ async function refreshMics() {
       select.appendChild(option);
     });
     if ([...select.options].some(o => o.value === old)) select.value = old;
-  } catch (e) {
-    status("Microphone permission: " + e.message);
-  }
+  } catch (e) { status("Microphone permission: " + e.message); }
 }
 
 async function loadModels() {
-  $("load").disabled = true;
-  state("Loading");
-  status("Loading Whisper. The first launch downloads model files.");
-  progress(2);
+  $("load").disabled = true; state("Loading");
+  status("Loading Whisper model. First launch downloads model files."); progress(2);
   try {
     env.allowLocalModels = false;
     env.useBrowserCache = true;
-    const wantGpu = $("gpu").checked;
-    const model = $("asr").value;
+    const wantGpu = $("gpu").checked, model = $("asr").value;
     try {
       stt = await pipeline("automatic-speech-recognition", model, {
         device: wantGpu ? "webgpu" : "wasm",
         dtype: wantGpu ? "fp32" : "q8",
         progress_callback: p => {
-          if (typeof p.progress === "number") progress(Math.max(2, Math.min(48, p.progress * 0.48)));
+          if (typeof p.progress === "number") progress(Math.max(2, Math.min(48, p.progress * .48)));
           if (p.status === "downloading") status("Downloading Whisper model files…");
         }
       });
       $("engine").textContent = "Whisper: " + (wantGpu ? "WebGPU" : "WASM");
     } catch (e) {
       if (!wantGpu) throw e;
-      console.warn("Whisper WebGPU unavailable; using WASM", e);
+      console.warn("Whisper WebGPU failed; using WASM", e);
       status("Whisper WebGPU unavailable; switching to WASM…");
       stt = await pipeline("automatic-speech-recognition", model, { device: "wasm", dtype: "q8" });
       $("engine").textContent = "Whisper: WASM fallback";
     }
-
-    status("Loading Kokoro speech model…");
-    progress(52);
+    status("Loading Kokoro speech model…"); progress(52);
     try {
       tts = await KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-v1.0-ONNX", {
-        device: wantGpu ? "webgpu" : "wasm",
-        dtype: wantGpu ? "fp32" : "q8"
+        device: wantGpu ? "webgpu" : "wasm", dtype: wantGpu ? "fp32" : "q8"
       });
       $("engine").textContent += " · Kokoro: " + (wantGpu ? "WebGPU" : "WASM");
     } catch (e) {
       if (!wantGpu) throw e;
-      console.warn("Kokoro WebGPU unavailable; using WASM", e);
+      console.warn("Kokoro WebGPU failed; using WASM", e);
       status("Kokoro WebGPU unavailable; switching to WASM…");
       tts = await KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-v1.0-ONNX", { device: "wasm", dtype: "q8" });
       $("engine").textContent += " · Kokoro: WASM fallback";
     }
-
-    loaded = true;
-    progress(100);
-    state("Ready");
-    status("Models loaded. Press Start listening and speak clearly, then pause.");
-    $("start").disabled = false;
-    $("repeat").disabled = !lastText;
-    $("asr").disabled = true;
-    $("gpu").disabled = true;
+    loaded = true; progress(100); state("Ready");
+    status("Models loaded. Press Start listening, speak clearly, then pause.");
+    $("start").disabled = false; $("repeat").disabled = !lastText;
+    $("asr").disabled = true; $("gpu").disabled = true;
   } catch (e) {
-    console.error(e);
-    state("Load failed");
+    console.error(e); state("Load failed");
     status("Could not load models: " + (e?.message || String(e)));
-    $("load").disabled = false;
-    progress(0);
+    $("load").disabled = false; progress(0);
   }
 }
 
@@ -98,50 +82,36 @@ async function startListening() {
     stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         deviceId: $("mic").value ? { exact: $("mic").value } : undefined,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-        channelCount: 1
+        echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1
       }
     });
-    ctx = new AudioContext();
-    await ctx.resume();
-    inputRate = ctx.sampleRate;
-    source = ctx.createMediaStreamSource(stream);
-
-    // PCM capture avoids the broken/partial WebM fragments produced by
-    // cutting a MediaRecorder stream into arbitrary silence-delimited blobs.
-    processor = ctx.createScriptProcessor(4096, 1, 1);
-    muteNode = ctx.createGain();
-    muteNode.gain.value = 0;
-    source.connect(processor);
-    processor.connect(muteNode);
-    muteNode.connect(ctx.destination);
-    processor.onaudioprocess = onAudioFrame;
-
-    resetSegmenter();
+    await attachCapture();
     listening = true;
-    $("start").disabled = true;
-    $("stop").disabled = false;
-    $("mic").disabled = true;
-    state("Listening");
-    status("Listening — speak clearly, then pause briefly. Only captured speech is sent to Whisper.");
+    $("start").disabled = true; $("stop").disabled = false; $("mic").disabled = true;
+    state("Listening"); status("Listening — speak clearly, then pause briefly.");
   } catch (e) {
-    console.error(e);
-    status("Microphone error: " + (e?.message || String(e)));
+    console.error(e); status("Microphone error: " + (e?.message || String(e)));
     stopListening();
   }
 }
 
-function resetSegmenter() {
-  frameBuffer = [];
-  preRoll = [];
-  speakingFrames = [];
-  speechActive = false;
-  quietFrames = 0;
-  segmentBusy = false;
+async function attachCapture() {
+  ctx = new AudioContext();
+  await ctx.resume();
+  inputRate = ctx.sampleRate;
+  source = ctx.createMediaStreamSource(stream);
+  // Raw PCM is segmented before transcription; never pass incomplete WebM
+  // fragments to Whisper.
+  processor = ctx.createScriptProcessor(4096, 1, 1);
+  muteNode = ctx.createGain(); muteNode.gain.value = 0;
+  source.connect(processor); processor.connect(muteNode); muteNode.connect(ctx.destination);
+  processor.onaudioprocess = onAudioFrame;
+  resetSegmenter();
 }
 
+function resetSegmenter() {
+  preRoll = []; speakingFrames = []; speechActive = false; quietFrames = 0;
+}
 function rmsOf(samples) {
   let sum = 0;
   for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
@@ -149,18 +119,17 @@ function rmsOf(samples) {
 }
 
 function onAudioFrame(event) {
-  if (!listening || busy || !stt) return;
-  const input = event.inputBuffer.getChannelData(0);
-  const frame = new Float32Array(input);
+  if (!listening || busy || segmentBusy || !stt) return;
+  const frame = new Float32Array(event.inputBuffer.getChannelData(0));
   const rms = rmsOf(frame);
   $("levelbar").style.width = Math.min(100, rms * 650) + "%";
   $("level").textContent = "Microphone level: " + Math.round(rms * 100) + "%";
 
-  // 40–90 ms of pre-roll preserves the beginning of words.
   preRoll.push(frame);
   if (preRoll.length > 3) preRoll.shift();
 
-  const threshold = 0.012;
+  // Raise this slightly if the mic is picking up fans or room noise.
+  const threshold = 0.014;
   if (rms >= threshold) {
     if (!speechActive) {
       speechActive = true;
@@ -170,13 +139,11 @@ function onAudioFrame(event) {
     }
     speakingFrames.push(frame);
     quietFrames = 0;
-    // Safety cap: force a segment at ~14 seconds to avoid unbounded buffers.
-    if (speakingFrames.length * frame.length / inputRate >= 14) finishSegment();
+    if (speakingFrames.length * frame.length / inputRate >= 12) finishSegment();
   } else if (speechActive) {
     speakingFrames.push(frame);
     quietFrames++;
-    // ScriptProcessor runs every 4096 samples; 5 quiet frames is about 0.45s
-    // at 44.1 kHz and is enough to split phrases without sending long silence.
+    // 5 frames is about 0.45 seconds at common Windows audio rates.
     if (quietFrames >= 5) finishSegment();
   }
 }
@@ -186,18 +153,16 @@ function finishSegment() {
   speechActive = false;
   quietFrames = 0;
   const frames = speakingFrames;
-  speakingFrames = [];
-  preRoll = [];
+  speakingFrames = []; preRoll = [];
   const length = frames.reduce((n, f) => n + f.length, 0);
   const duration = length / inputRate;
-  if (duration < 0.35) return; // ignore clicks and very short noise bursts
+  if (duration < 0.45) return;
   const pcm = new Float32Array(length);
   let offset = 0;
-  for (const f of frames) { pcm.set(f, offset); offset += f.length; }
+  for (const frame of frames) { pcm.set(frame, offset); offset += frame.length; }
   segmentBusy = true;
   transcribePcm(pcm).catch(e => {
-    console.error(e);
-    status("Transcription failed: " + (e?.message || String(e)));
+    console.error(e); status("Transcription failed: " + (e?.message || String(e)));
   }).finally(() => {
     segmentBusy = false;
     if (listening && !busy) status("Listening — speak clearly, then pause briefly.");
@@ -209,11 +174,8 @@ function resample(input, fromRate, toRate) {
   const ratio = fromRate / toRate;
   const length = Math.floor(input.length / ratio);
   const output = new Float32Array(length);
-  // Averaging each source interval reduces aliasing better than selecting
-  // individual samples and is sufficient for speech input.
   for (let i = 0; i < length; i++) {
-    const start = Math.floor(i * ratio);
-    const end = Math.min(input.length, Math.floor((i + 1) * ratio));
+    const start = Math.floor(i * ratio), end = Math.min(input.length, Math.floor((i + 1) * ratio));
     let sum = 0;
     for (let j = start; j < end; j++) sum += input[j];
     output[i] = sum / Math.max(1, end - start);
@@ -224,26 +186,24 @@ function resample(input, fromRate, toRate) {
 async function transcribePcm(pcm) {
   if (!stt || !listening) return;
   const samples = resample(pcm, inputRate, 16000);
-  const duration = samples.length / 16000;
-  if (duration < 0.35 || rmsOf(samples) < 0.006) return;
-  status("Transcribing captured speech locally…");
-  // Do not decode a partial MediaRecorder/WebM blob. Whisper receives a clean
-  // mono Float32Array sampled at exactly 16 kHz.
-  const result = await stt(samples, {
-    sampling_rate: 16000,
-    chunk_length_s: 0,
-    stride_length_s: 0
-  });
-  let text = (typeof result?.text === "string" ? result.text : "").trim();
-  text = text.replace(/\s+/g, " ");
-  if (!text || /^[.,!?…\s]+$/.test(text)) return;
-
-  // Prevent Whisper from inventing a sentence from near-silence.
-  if (rmsOf(samples) < 0.009 && duration < 1.1) {
-    status("Ignored a quiet/noisy segment; keep the microphone closer and try again.");
+  const duration = samples.length / 16000, level = rmsOf(samples);
+  if (duration < 0.45 || level < 0.008) {
+    status("Ignored a quiet/noise-only segment. Speak closer to the microphone.");
     return;
   }
-
+  status("Transcribing captured speech locally…");
+  // Keep the Transformers.js ASR call minimal and pass mono 16 kHz PCM.
+  const result = await stt(samples, { sampling_rate: 16000 });
+  const text = (typeof result?.text === "string" ? result.text : "").trim().replace(/\s+/g, " ");
+  if (!text || /^[.,!?…\s]+$/.test(text)) {
+    status("No clear words detected. Please try again.");
+    return;
+  }
+  // Do not speak hallucinated output from a quiet/very short recording.
+  if (level < 0.012 && duration < 1.2) {
+    status("Ignored a low-volume segment to avoid false transcriptions.");
+    return;
+  }
   lastText = text;
   $("transcript").textContent = text;
   $("repeat").disabled = false;
@@ -252,8 +212,7 @@ async function transcribePcm(pcm) {
 
 function wavBlob(samples, rate) {
   const data = samples instanceof Float32Array ? samples : new Float32Array(samples);
-  const buffer = new ArrayBuffer(44 + data.length * 2);
-  const view = new DataView(buffer);
+  const buffer = new ArrayBuffer(44 + data.length * 2), view = new DataView(buffer);
   const write = (offset, str) => { for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)); };
   write(0, "RIFF"); view.setUint32(4, 36 + data.length * 2, true);
   write(8, "WAVE"); write(12, "fmt "); view.setUint32(16, 16, true);
@@ -272,9 +231,7 @@ async function speak(text) {
   if (!tts || !text.trim() || busy) return;
   const resume = listening;
   if ($("pause").checked && listening) pauseCapture();
-  busy = true;
-  state("Speaking");
-  status("Generating Kokoro speech…");
+  busy = true; state("Speaking"); status("Generating Kokoro speech…");
   try {
     const out = await tts.generate(text, { voice: $("voice").value });
     const audio = out?.audio ?? out;
@@ -287,70 +244,40 @@ async function speak(text) {
         player.onerror = () => reject(new Error("Audio playback failed"));
         player.play().catch(reject);
       });
-    } finally {
-      URL.revokeObjectURL(url);
-    }
+    } finally { URL.revokeObjectURL(url); }
   } catch (e) {
-    console.error(e);
-    status("Kokoro TTS failed: " + (e?.message || String(e)));
+    console.error(e); status("Kokoro TTS failed: " + (e?.message || String(e)));
   } finally {
     busy = false;
-    if (resume && $("pause").checked) resumeCapture();
+    if (resume && $("pause").checked) await resumeCapture();
     else if (listening) { state("Listening"); status("Listening — speak clearly, then pause briefly."); }
     else { state("Ready"); status("Ready."); }
   }
 }
 
 function disconnectAudio() {
-  if (processor) {
-    processor.onaudioprocess = null;
-    try { processor.disconnect(); } catch {}
-    processor = null;
-  }
+  if (processor) { processor.onaudioprocess = null; try { processor.disconnect(); } catch {} processor = null; }
   if (source) { try { source.disconnect(); } catch {} source = null; }
   if (muteNode) { try { muteNode.disconnect(); } catch {} muteNode = null; }
 }
-
 function pauseCapture() {
-  listening = false;
-  disconnectAudio();
+  listening = false; disconnectAudio();
   if (ctx) { const old = ctx; ctx = null; old.close().catch(() => {}); }
 }
-
 async function resumeCapture() {
   if (!stream || !loaded) return;
   try {
-    ctx = new AudioContext();
-    await ctx.resume();
-    inputRate = ctx.sampleRate;
-    source = ctx.createMediaStreamSource(stream);
-    processor = ctx.createScriptProcessor(4096, 1, 1);
-    muteNode = ctx.createGain();
-    muteNode.gain.value = 0;
-    source.connect(processor); processor.connect(muteNode); muteNode.connect(ctx.destination);
-    processor.onaudioprocess = onAudioFrame;
-    resetSegmenter();
-    listening = true;
-    state("Listening");
-    status("Listening — speak clearly, then pause briefly.");
-  } catch (e) {
-    status("Could not resume microphone: " + e.message);
-    stopListening();
-  }
+    await attachCapture(); listening = true;
+    state("Listening"); status("Listening — speak clearly, then pause briefly.");
+  } catch (e) { status("Could not resume microphone: " + e.message); stopListening(); }
 }
-
 function stopListening() {
-  listening = false;
-  disconnectAudio();
+  listening = false; disconnectAudio();
   if (ctx) { const old = ctx; ctx = null; old.close().catch(() => {}); }
   if (stream) stream.getTracks().forEach(t => t.stop());
-  stream = null;
-  resetSegmenter();
-  $("start").disabled = !loaded;
-  $("stop").disabled = true;
-  $("mic").disabled = false;
-  state(loaded ? "Ready" : "Stopped");
-  status("Listening stopped.");
+  stream = null; resetSegmenter();
+  $("start").disabled = !loaded; $("stop").disabled = true; $("mic").disabled = false;
+  state(loaded ? "Ready" : "Stopped"); status("Listening stopped.");
 }
 
 $("load").addEventListener("click", loadModels);
