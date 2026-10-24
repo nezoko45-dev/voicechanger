@@ -3,20 +3,25 @@
   window.__chatgptEchoGuardInstalled = true;
 
   let enabled = false;
+  let audioCompareEnabled = false;
   let lastAssistantText = "";
   let lastUserText = "";
   let handledAssistantText = "";
   let lastResetAt = 0;
   let scanTimer = null;
 
-  chrome.storage.local.get({ echoGuardEnabled: false }, data => {
+  chrome.storage.local.get({ echoGuardEnabled: false, echoAudioCompareEnabled: false }, data => {
     enabled = !!data.echoGuardEnabled;
+    audioCompareEnabled = !!data.echoAudioCompareEnabled;
     if (enabled) scheduleVoiceRestart();
   });
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "local" && changes.echoGuardEnabled) {
       enabled = !!changes.echoGuardEnabled.newValue;
       if (enabled) scheduleVoiceRestart();
+    }
+    if (area === "local" && changes.echoAudioCompareEnabled) {
+      audioCompareEnabled = !!changes.echoAudioCompareEnabled.newValue;
     }
   });
 
@@ -221,7 +226,8 @@
   }
 
   function scan() {
-    if (!enabled) return;
+    // Audio mode owns comparisons when active; avoid duplicate text-DOM resets.
+    if (!enabled || audioCompareEnabled) return;
 
     const userResult = getLatestTexts("user");
     const assistantResult = getLatestTexts("assistant");
