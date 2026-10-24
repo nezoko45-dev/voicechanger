@@ -14,12 +14,12 @@
 </head>
 <body>
   <h1>ChatGPT Echo Guard</h1>
-  <p>Transcribe your microphone locally and automatically send each recognized phrase to ChatGPT as text when the composer is available.</p>
+  <p>Compare your microphone and ChatGPT audio locally. Send one recovery prompt only when a mismatch is detected.</p>
   <label><input id="enabled" type="checkbox"> Arm transcript fallback</label>
   <button id="audioToggle">Start live transcript helper</button>
   <button id="stopAudio" class="secondary">Stop transcript helper</button>
   <div id="status">Loading…</div>
-  <p class="note">Run EchoGuardTranscriber.exe first. Auto-send can interrupt or exit Voice Mode; ChatGPT's private internal transcript cannot be edited directly. Speech is transcribed locally with no cloud speech API.</p>
+  <p class="note">Run EchoGuardTranscriber.exe first. Recovery prompts may interrupt or exit Voice Mode. A 15-second cooldown and match-based re-arm prevent rapid repeats. Speech is transcribed locally with no cloud speech API.</p>
   <script src="popup.js"></script>
 </body>
 </html>
