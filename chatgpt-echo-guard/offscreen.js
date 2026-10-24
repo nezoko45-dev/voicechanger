@@ -36,7 +36,7 @@ async function start(streamId) {
   micRecorder = makeSegmenter(micContext, micStream, "user");
   tabRecorder = makeSegmenter(tabContext, tabStream, "assistant");
   await Promise.all([micContext.resume(), tabContext.resume()]);
-  status("Echo correction active: ChatGPT audio is buffered until local comparison finishes. Mismatches replay your captured mic phrase instead of opening a new chat.");
+  status("Live transcript helper active: Voice Mode audio stays live; local words appear in an on-page correction panel.");
 }
 
 function makeSegmenter(context, stream, role) {
@@ -45,7 +45,8 @@ function makeSegmenter(context, stream, role) {
     numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1]
   });
   const mute = context.createGain();
-  mute.gain.value = 0;
+  // Tab audio must remain audible; mic capture stays muted to prevent feedback.
+  mute.gain.value = role === "assistant" ? 1 : 0;
   source.connect(processor);
   processor.connect(mute);
   mute.connect(context.destination);
@@ -76,15 +77,15 @@ function makeSegmenter(context, stream, role) {
             latestUserClip.transcribedAt = Date.now();
           }
           if (role === "assistant") {
-            const userClip = latestUserClip && Date.now() - latestUserClip.at < 45000 ? latestUserClip : null;
-            if (result?.status === "mismatch" && userClip?.frames) {
-              status("Mismatch corrected locally: playing your captured microphone phrase; chat stays open.");
-              await playFrames(userClip.frames, userClip.sampleRate, tabContext);
-              chrome.runtime.sendMessage({ type: "ECHO_AUDIO_STATUS", status: "corrected", detail: { user: result.user, assistant: result.assistant } }).catch(() => {});
-            } else {
-              if (result?.status === "match") status("Words match. Playing buffered ChatGPT audio.");
-              await playFrames(saved, sampleRate, tabContext);
-            }
+            // Assistant audio is already playing live through the AudioWorklet.
+            // Keep transcript comparison informational; never buffer or substitute speech.
+            if (result?.text) chrome.runtime.sendMessage({
+              type: "ECHO_ASSISTANT_TRANSCRIPT",
+              text: result.text,
+              status: result.status || "unknown",
+              user: result.user || "",
+              assistant: result.assistant || ""
+            }).catch(() => {});
           }
         }).catch(error => status("Transcription error: " + error.message));
       }
@@ -108,7 +109,10 @@ async function transcribe(frames, sampleRate, role) {
     throw new Error("EchoGuardTranscriber returned HTTP " + response.status + detail);
   }
   if (result.error) throw new Error(result.error);
-  if (role === "user" && result.text) status("Heard you: " + result.text);
+  if (role === "user" && result.text) {
+    status("Local transcript: " + result.text);
+    chrome.runtime.sendMessage({ type: "ECHO_LOCAL_TRANSCRIPT", text: result.text, at: Date.now() }).catch(() => {});
+  }
   if (role !== "assistant" || !result.text) return result;
   if (result.status === "waiting") {
     status("ChatGPT audio buffered; no recent mic phrase to compare, so the original audio will play.");
