@@ -1,10 +1,10 @@
 # ChatGPT Echo Guard
 
-Chrome Manifest V3 extension that shows a **live local transcript helper while ChatGPT Voice Mode remains open**. It captures microphone audio and ChatGPT tab audio, transcribes both locally with the separate Windows EXE, and displays the recognized words in an on-page panel. ChatGPT's audio is passed through in real time; Echo Guard does not buffer, replace, or synthesize playback.
+Chrome Manifest V3 extension that captures your microphone and ChatGPT tab audio, transcribes locally with the separate Windows EXE, and **automatically sends each recognized microphone phrase as a text message** when ChatGPT's composer is available. ChatGPT tab audio is passed through in real time; Echo Guard does not buffer or replace playback.
 
 ## Important limitation
 
-A normal Chrome extension cannot edit ChatGPT Voice Mode's private, internal live-recognition transcript or change words ChatGPT has already received. This helper shows a local Whisper transcript so you can spot recognition errors. The **Copy my words** button can copy your local transcript, but it does not inject that text into Voice Mode. To make ChatGPT receive guaranteed corrected text, a separate text-before-send workflow would be needed instead of native live microphone input.
+A normal Chrome extension cannot edit ChatGPT Voice Mode's private internal live-recognition transcript. This version automatically sends locally recognized mic phrases as separate text messages when a visible composer and Send button are available. **Important:** sending text may interrupt or exit Voice Mode, and the extension cannot guarantee the current ChatGPT interface will allow text submission while voice is active. If no composer is available, it retries briefly and reports the limitation in the panel.
 
 ## Install the Chrome extension
 
@@ -21,7 +21,7 @@ A normal Chrome extension cannot edit ChatGPT Voice Mode's private, internal liv
 4. Double-click `EchoGuardTranscriber.exe` and leave its console window open.
 5. The first launch downloads the English Whisper model. This one-time download requires internet; after the model is cached, transcription runs locally/offline.
 6. Open the Echo Guard extension popup and click **Start live transcript helper**. Allow microphone access if Chrome asks.
-7. Keep ChatGPT Voice Mode open and speak normally. A small panel on the ChatGPT page shows your locally recognized words and a local estimate of ChatGPT's spoken words.
+7. Speak normally. Echo Guard transcribes short mic phrases locally and attempts to send each phrase automatically as text. The on-page panel shows the latest transcript and whether automatic sending succeeded.
 
 ## How it works
 
@@ -29,7 +29,7 @@ A normal Chrome extension cannot edit ChatGPT Voice Mode's private, internal liv
 - ChatGPT's audio continues playing live through the extension's audio worklet; it is not held for transcription.
 - Short segments are sent to the EXE over loopback at `http://127.0.0.1:8765/transcribe`.
 - Faster-Whisper transcribes the audio locally. The on-page panel displays the transcript estimates and flags a mismatch when the local comparison detects one.
-- The **Copy my words** button copies the latest locally recognized microphone text, which you can use if you decide to send corrected text separately.
+- Each recognized microphone phrase is automatically forwarded to the ChatGPT page, where the extension fills the composer and clicks Send if those controls are available. The panel retains a copy button as a fallback.
 - The server binds to `127.0.0.1` only. Audio is processed locally and is not sent to a cloud transcription API.
 
 ## Controls and privacy
