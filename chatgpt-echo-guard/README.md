@@ -1,10 +1,14 @@
 # ChatGPT Echo Guard
 
-Chrome Manifest V3 extension for a voice-repeater workflow. The extension captures microphone audio and the active ChatGPT tab's audio. A separate **local Windows EXE** transcribes each audio stream using Faster-Whisper, and the extension compares the recognized words. With spoken correction enabled, ChatGPT's tab audio is buffered until local transcription completes; a mismatch substitutes the captured microphone phrase for the buffered ChatGPT clip. The current chat is kept open.
+Chrome Manifest V3 extension that shows a **live local transcript helper while ChatGPT Voice Mode remains open**. It captures microphone audio and ChatGPT tab audio, transcribes both locally with the separate Windows EXE, and displays the recognized words in an on-page panel. ChatGPT's audio is passed through in real time; Echo Guard does not buffer, replace, or synthesize playback.
+
+## Important limitation
+
+A normal Chrome extension cannot edit ChatGPT Voice Mode's private, internal live-recognition transcript or change words ChatGPT has already received. This helper shows a local Whisper transcript so you can spot recognition errors. The **Copy my words** button can copy your local transcript, but it does not inject that text into Voice Mode. To make ChatGPT receive guaranteed corrected text, a separate text-before-send workflow would be needed instead of native live microphone input.
 
 ## Install the Chrome extension
 
-1. Download the repository or just its `chatgpt-echo-guard` folder.
+1. Download the repository or its `chatgpt-echo-guard` folder.
 2. Visit `chrome://extensions`, enable **Developer mode**, and click **Load unpacked**.
 3. Select the `chatgpt-echo-guard` folder, or click **Reload** if already installed.
 4. Open `https://chatgpt.com` in Chrome and refresh the page.
@@ -16,33 +20,31 @@ Chrome Manifest V3 extension for a voice-repeater workflow. The extension captur
 3. Under **Artifacts**, download `EchoGuardTranscriber-Windows-x64` and extract `EchoGuardTranscriber.exe`.
 4. Double-click `EchoGuardTranscriber.exe` and leave its console window open.
 5. The first launch downloads the English Whisper model. This one-time download requires internet; after the model is cached, transcription runs locally/offline.
-6. Open the Echo Guard extension popup and click **Start local audio comparison**. Allow microphone access if Chrome asks.
-7. Use ChatGPT Voice Mode and speak a short phrase, then wait for the response. Headphones help prevent feedback.
+6. Open the Echo Guard extension popup and click **Start live transcript helper**. Allow microphone access if Chrome asks.
+7. Keep ChatGPT Voice Mode open and speak normally. A small panel on the ChatGPT page shows your locally recognized words and a local estimate of ChatGPT's spoken words.
 
 ## How it works
 
-- The extension captures the microphone and ChatGPT tab as separate audio streams.
-- ChatGPT tab audio is held in memory rather than played immediately. This creates a phrase-sized delay while the extension waits for local transcription.
-- Short audio segments are sent to the EXE over loopback at `http://127.0.0.1:8765/transcribe`.
-- The EXE runs Faster-Whisper locally and returns recognized text. The extension compares the recognized phrases.
-- If they match, the buffered ChatGPT audio plays. If they mismatch, Echo Guard plays the captured microphone phrase instead. It does not open or refresh a chat in audio-correction mode.
-- This is output-audio substitution, not editing ChatGPT's generated response or changing what ChatGPT internally said. The replacement is your recorded mic audio, so it preserves your actual voice and wording rather than synthesizing a corrected ChatGPT voice.
-- The server binds to `127.0.0.1` only and only accepts requests from a Chrome extension origin. Audio clips are held in memory and are not written to disk or sent to a cloud transcription API.
+- The extension captures microphone and ChatGPT tab audio separately.
+- ChatGPT's audio continues playing live through the extension's audio worklet; it is not held for transcription.
+- Short segments are sent to the EXE over loopback at `http://127.0.0.1:8765/transcribe`.
+- Faster-Whisper transcribes the audio locally. The on-page panel displays the transcript estimates and flags a mismatch when the local comparison detects one.
+- The **Copy my words** button copies the latest locally recognized microphone text, which you can use if you decide to send corrected text separately.
+- The server binds to `127.0.0.1` only. Audio is processed locally and is not sent to a cloud transcription API.
 
 ## Controls and privacy
 
-- **Start local audio comparison** starts microphone and ChatGPT tab capture.
-- **Stop audio comparison** ends capture.
-- **Arm transcript fallback** keeps the older visible-text check available when audio comparison is not running.
-- Audio comparison now uses buffered spoken correction and does not intentionally open a new chat. The separate **Arm transcript fallback** option retains the older visible-text fallback behavior.
-- Transcription is local. The EXE does not need Python installed separately.
+- **Start live transcript helper** starts microphone and ChatGPT tab capture.
+- **Stop transcript helper** ends capture.
+- **Arm transcript fallback** retains the older visible-text check when audio comparison is not running.
+- Headphones help prevent the microphone from hearing ChatGPT's speaker output and confusing it with your speech.
+- The EXE does not require Python to be installed separately.
 
 ## Troubleshooting
 
 - If the popup says the local server is unavailable, run `EchoGuardTranscriber.exe` and keep its console open. It should show `127.0.0.1:8765`.
 - If the first launch fails to download the model, reconnect to the internet and launch the EXE again.
-- If microphone access fails, open Chrome site/extension permissions and allow microphone access, then stop and restart capture.
-- Use headphones to prevent the microphone from hearing ChatGPT's own speaker output and confusing it with your speech.
-- The first model load can take time and uses CPU; transcription may lag on slower computers. Since tab audio is buffered until a phrase is transcribed, expect a noticeable delay before ChatGPT audio plays. This tradeoff is necessary to decide whether to pass through the original clip or replace it.
-- ChatGPT's tab controls and Voice Mode restart are best-effort because its interface can change.
+- If microphone access fails, allow microphone access in Chrome permissions, then stop and restart capture.
+- The first model load can take time and uses CPU; transcription may lag on slower computers.
+- ChatGPT's tab controls and Voice Mode UI can change, so the helper does not rely on a supported API to alter ChatGPT's internal transcript.
 - The EXE is built by GitHub Actions but has not been runtime-tested on your specific Windows machine. Windows may show a SmartScreen warning because the EXE is unsigned; only run builds from the repository you trust.
