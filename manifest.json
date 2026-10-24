@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Fish Audio Repeater Clicker",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "minimum_chrome_version": "116",
   "description": "Locally compare your speech with Fish Audio output, click Call again on mismatches, and auto-click Call again whenever it becomes available.",
   "permissions": [
