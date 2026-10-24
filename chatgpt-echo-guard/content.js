@@ -36,11 +36,70 @@
     .replace(/\s+/g, " ")
     .trim();
 
+  function isVisible(el) {
+    return !!el && el.getClientRects().length > 0 &&
+      getComputedStyle(el).visibility !== "hidden" &&
+      getComputedStyle(el).display !== "none";
+  }
+
+  function textOf(el) {
+    return (el?.innerText || el?.textContent || "").replace(/\\s+/g, " ").trim();
+  }
+
   function getMessages(role) {
     return [...document.querySelectorAll('[data-message-author-role="' + role + '"]')]
-      .filter(el => el.getClientRects().length)
-      .map(el => (el.innerText || el.textContent || "").trim())
+      .filter(isVisible)
+      .map(textOf)
       .filter(Boolean);
+  }
+
+  // Voice Mode may render live captions outside the normal chat-message list.
+  // Only use fallback nodes that explicitly identify their speaker; guessing from
+  // arbitrary page text could trigger a new chat based on unrelated UI text.
+  function getVoiceTranscriptMessages(role) {
+    const selectors = [
+      '[data-testid*="transcript" i]',
+      '[data-testid*="caption" i]',
+      '[data-testid*="voice" i]',
+      '[aria-live="polite"]',
+      '[aria-live="assertive"]',
+      '[role="log"]',
+      '[class*="transcript" i]',
+      '[class*="caption" i]'
+    ];
+    const found = new Set();
+    for (const selector of selectors) {
+      for (const el of document.querySelectorAll(selector)) {
+        if (!isVisible(el)) continue;
+        const text = textOf(el);
+        if (!text || text.length > 3000) continue;
+        const meta = [
+          el.getAttribute("aria-label") || "",
+          el.getAttribute("title") || "",
+          el.getAttribute("data-testid") || "",
+          el.getAttribute("data-speaker") || "",
+          el.getAttribute("data-role") || "",
+          el.className?.toString?.() || "",
+          el.parentElement?.getAttribute("aria-label") || "",
+          el.parentElement?.getAttribute("data-testid") || "",
+          el.parentElement?.className?.toString?.() || ""
+        ].join(" ").toLowerCase();
+        const userSpeaker = /(^|[\\s_-])(user|you|human|speaker-user|user-transcript)([\\s_-]|$)/.test(meta);
+        const assistantSpeaker = /assistant|chatgpt|speaker-assistant|assistant-transcript/.test(meta);
+        const matchesRole = role === "user" ? userSpeaker && !assistantSpeaker : assistantSpeaker;
+        if (!matchesRole) continue;
+        found.add(text);
+      }
+    }
+    // Remove parent containers when they merely repeat the same transcript text.
+    return [...found].filter(text => text.length > 0);
+  }
+
+  function getLatestTexts(role) {
+    const normal = getMessages(role);
+    if (normal.length) return { messages: normal, source: "chat-messages" };
+    const voice = getVoiceTranscriptMessages(role);
+    return { messages: voice, source: voice.length ? "voice-transcript" : "none" };
   }
 
   function similarity(a, b) {
@@ -163,9 +222,26 @@
 
   function scan() {
     if (!enabled) return;
-    const users = getMessages("user");
-    const assistants = getMessages("assistant");
-    if (!users.length || !assistants.length) return;
+
+    const userResult = getLatestTexts("user");
+    const assistantResult = getLatestTexts("assistant");
+    const users = userResult.messages;
+    const assistants = assistantResult.messages;
+    if (!users.length || !assistants.length) {
+      if (voiceModeLooksActive()) {
+        const now = Date.now();
+        if (!scan.lastVoiceDiagnostic || now - scan.lastVoiceDiagnostic > 10000) {
+          scan.lastVoiceDiagnostic = now;
+          console.debug("[Echo Guard] Voice Mode detected; transcript sources:", {
+            user: userResult.source,
+            assistant: assistantResult.source,
+            userCount: users.length,
+            assistantCount: assistants.length
+          });
+        }
+      }
+      return;
+    }
 
     const userText = users[users.length - 1];
     const assistantText = assistants[assistants.length - 1];
@@ -178,19 +254,23 @@
     if (assistantText === lastAssistantText) return;
     lastAssistantText = assistantText;
 
-    // Wait until the assistant transcript has settled, rather than reacting to partial streaming text.
     clearTimeout(scanTimer);
     scanTimer = setTimeout(() => {
       if (!enabled || Date.now() - lastResetAt < 1200) return;
-      const currentUsers = getMessages("user");
-      const currentAssistants = getMessages("assistant");
+      const currentUsers = getLatestTexts("user").messages;
+      const currentAssistants = getLatestTexts("assistant").messages;
       const latestUser = currentUsers[currentUsers.length - 1] || "";
       const latestAssistant = currentAssistants[currentAssistants.length - 1] || "";
       if (!latestUser || !latestAssistant || latestAssistant !== lastAssistantText) return;
       if (latestAssistant === handledAssistantText) return;
 
       const score = similarity(latestUser, latestAssistant);
-      console.info("[Echo Guard] Finished assistant transcript checked.", { score, latestUser, latestAssistant });
+      console.info("[Echo Guard] Settled transcript checked.", {
+        score,
+        source: { user: userResult.source, assistant: assistantResult.source },
+        latestUser,
+        latestAssistant
+      });
       if (score < 1) {
         console.warn("[Echo Guard] Response was not an exact echo; requesting a new chat.", { latestUser, latestAssistant });
         handledAssistantText = latestAssistant;
