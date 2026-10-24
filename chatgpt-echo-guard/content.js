@@ -27,6 +27,7 @@
   });
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type === "ECHO_AUTO_SEND_TRANSCRIPT") autoSendTranscript(String(message.text || ""));
     if (message?.type === "ECHO_GUARD_NEW_CHAT") {
       const ok = clickNewChat();
       if (!ok) retryAudioNewChat();
@@ -56,7 +57,7 @@
     heading.textContent = "Echo Guard · Live transcript helper";
     heading.style.cssText = "font-weight:700;margin-bottom:5px";
     const note = document.createElement("div");
-    note.textContent = "Local suggestions only — ChatGPT's Voice Mode transcript is not being edited or replaced.";
+    note.textContent = "Auto-send is on: local mic phrases are sent as text when the composer is available. This may interrupt Voice Mode.";
     note.style.cssText = "opacity:.75;font-size:11px;margin-bottom:10px";
     const userLabel = document.createElement("div");
     userLabel.textContent = "Your words (local Whisper):";
@@ -74,14 +75,14 @@
     assistantText.style.cssText = "white-space:pre-wrap;overflow-wrap:anywhere;margin:3px 0 10px";
     const copy = document.createElement("button");
     copy.type = "button";
-    copy.textContent = "Copy my corrected words";
+    copy.textContent = "Copy latest mic words";
     copy.style.cssText = "padding:6px 10px;border:1px solid #8888;border-radius:8px;background:transparent;color:inherit;cursor:pointer";
     copy.addEventListener("click", async () => {
       if (!localTranscriptText) return;
       try {
         await navigator.clipboard.writeText(localTranscriptText);
         copy.textContent = "Copied!";
-        setTimeout(() => { if (copy.isConnected) copy.textContent = "Copy my corrected words"; }, 1200);
+        setTimeout(() => { if (copy.isConnected) copy.textContent = "Copy latest mic words"; }, 1200);
       } catch {
         copy.textContent = "Clipboard unavailable";
       }
@@ -95,6 +96,39 @@
     transcriptPanel.append(heading,note,userLabel,userText,assistantLabel,assistantText,copy,close);
     document.documentElement.appendChild(transcriptPanel);
     return transcriptPanel;
+  }
+
+  function findComposer() {
+    for (const selector of ['#prompt-textarea','[contenteditable="true"][data-placeholder]','[contenteditable="true"][role="textbox"]','textarea']) {
+      const el=[...document.querySelectorAll(selector)].find(n=>n.getClientRects().length&&!n.disabled&&!n.readOnly&&!n.closest('[aria-hidden="true"]'));
+      if(el)return el;
+    }
+    return null;
+  }
+  function autoSendTranscript(rawText,attempt=0) {
+    const text=String(rawText||"").trim();
+    if(!text||text.length<2)return;
+    const composer=findComposer();
+    if(!composer){
+      if(attempt<12){setTimeout(()=>autoSendTranscript(text,attempt+1),500);return;}
+      chrome.runtime.sendMessage({type:"ECHO_AUTO_SEND_STATUS",status:"unavailable",text,detail:"ChatGPT's text composer is not available. Voice Mode may need to be exited before text can be sent."}).catch(()=>{});
+      return;
+    }
+    try {
+      composer.focus();
+      if(composer instanceof HTMLTextAreaElement||composer instanceof HTMLInputElement){
+        const setter=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(composer),"value")?.set;
+        if(setter)setter.call(composer,text);else composer.value=text;
+        composer.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:text}));
+      } else {
+        composer.replaceChildren(); composer.textContent=text;
+        composer.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:text}));
+      }
+      const send=[...document.querySelectorAll('[data-testid="send-button"],button[aria-label*="Send" i],button[aria-label*="Submit" i]')].find(b=>b.getClientRects().length&&!b.disabled);
+      if(!send){chrome.runtime.sendMessage({type:"ECHO_AUTO_SEND_STATUS",status:"composer-filled",text,detail:"Transcript filled but Send was unavailable."}).catch(()=>{});return;}
+      send.click();
+      chrome.runtime.sendMessage({type:"ECHO_AUTO_SEND_STATUS",status:"sent",text,detail:"Locally transcribed words sent to ChatGPT as text."}).catch(()=>{});
+    } catch(e){chrome.runtime.sendMessage({type:"ECHO_AUTO_SEND_STATUS",status:"error",text,detail:"Could not insert transcript: "+String(e?.message||e)}).catch(()=>{});}
   }
 
   chrome.runtime.onMessage.addListener(message => {
