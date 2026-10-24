@@ -1,24 +1,17 @@
 <!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Fish Audio Auto Clicker</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fish Audio Repeater Clicker</title>
 <style>
-*{box-sizing:border-box}body{font:14px/1.5 system-ui,sans-serif;width:300px;padding:16px;margin:0;color:#eef4ff;background:#111827}
-h1{font-size:17px;margin:0 0 6px}p{margin:8px 0 14px;color:#c5cee0}
-button{border:0;border-radius:9px;padding:12px;background:#18a879;color:#041b14;font-weight:750;cursor:pointer;width:100%;min-height:44px}
+*{box-sizing:border-box}body{font:14px/1.5 system-ui,sans-serif;width:320px;padding:16px;margin:0;color:#eef4ff;background:#111827}
+h1{font-size:17px;margin:0 0 6px}p{margin:8px 0 12px;color:#c5cee0}
+button{border:0;border-radius:9px;padding:11px;background:#18a879;color:#041b14;font-weight:750;cursor:pointer;width:100%;min-height:42px;margin-top:7px}
 button.stop{background:#ef6461;color:#250909}button:disabled{opacity:.65;cursor:wait}
-#status{padding:10px;border-radius:8px;background:#202b3e;overflow-wrap:anywhere;margin-top:12px}
+#status{padding:10px;border-radius:8px;background:#202b3e;overflow-wrap:anywhere;margin-top:12px;min-height:42px}
 .small{font-size:12px;color:#a7b4cb}
-</style>
-</head>
-<body>
-<h1>Fish Audio Auto Clicker</h1>
-<p>Start watching the Fish Audio page. It will click “Call again” when available and wait for the next button cycle.</p>
-<button id="toggle" type="button">▶ Start automatic clicking</button>
-<p id="status" role="status" aria-live="polite">Ready.</p>
-<p class="small">Keep the Fish Audio tab open. Stop the clicker before switching to another task.</p>
-<script src="popup.js"></script>
-</body>
-</html>
+</style></head><body>
+<h1>Fish Audio Repeater Clicker</h1>
+<p>Auto-clicks <b>Call again</b> when it becomes available. Optional local/offline transcription detects when Fish Audio doesn't repeat your words and triggers one recovery click.</p>
+<button id="auto" type="button">▶ Start auto-clicking Call again</button>
+<button id="monitor" type="button">🎙 Start local mismatch monitor</button>
+<p id="status" role="status" aria-live="polite">Ready. Start the local transcriber before enabling mismatch monitoring.</p>
+<p class="small">Audio is transcribed on this PC by Faster-Whisper. Keep Fish Audio open in a tab. Sending audio to a local service does not upload it to a cloud transcription API.</p>
+<script src="popup.js"></script></body></html>
