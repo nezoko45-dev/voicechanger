@@ -9,9 +9,15 @@
   let lastResetAt = 0;
   let scanTimer = null;
 
-  chrome.storage.local.get({ echoGuardEnabled: false }, data => { enabled = !!data.echoGuardEnabled; });
+  chrome.storage.local.get({ echoGuardEnabled: false }, data => {
+    enabled = !!data.echoGuardEnabled;
+    if (enabled) setTimeout(clickStartVoice, 1200);
+  });
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes.echoGuardEnabled) enabled = !!changes.echoGuardEnabled.newValue;
+    if (area === "local" && changes.echoGuardEnabled) {
+      enabled = !!changes.echoGuardEnabled.newValue;
+      if (enabled) setTimeout(clickStartVoice, 500);
+    }
   });
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -61,6 +67,29 @@
     return /end voice|exit voice|stop voice|voice mode|turn off voice|mute microphone|unmute microphone/.test(labels);
   }
 
+  function clickStartVoice() {
+    if (!enabled) return false;
+    const candidates = [...document.querySelectorAll("button, [role='button']")]
+      .filter(el => el.getClientRects().length && !el.disabled);
+    const target = candidates.find(el => {
+      const label = [
+        el.getAttribute("aria-label") || "",
+        el.getAttribute("title") || "",
+        el.innerText || "",
+        el.textContent || ""
+      ].join(" ").toLowerCase().replace(/\\s+/g, " ").trim();
+      return /^(start voice|start voice mode|voice mode|talk with voice|open voice mode|voice)(\\b|$)/.test(label)
+        || /\\b(start voice|start voice mode|talk with voice|open voice mode)\\b/.test(label);
+    });
+    if (!target) {
+      console.warn("[Echo Guard] Start Voice button not found; click it manually if needed.");
+      return false;
+    }
+    target.click();
+    console.info("[Echo Guard] Clicked Start Voice.");
+    return true;
+  }
+
   function clickNewChat() {
     const candidates = [...document.querySelectorAll("button, a, [role='button']")]
       .filter(el => el.getClientRects().length);
@@ -80,6 +109,9 @@
       handledAssistantText = "";
       lastAssistantText = "";
       lastUserText = "";
+      // Give the new conversation UI time to render, then try to restart Voice Mode.
+      setTimeout(clickStartVoice, 1400);
+      setTimeout(clickStartVoice, 2800);
       return true;
     }
     // Common ChatGPT sidebar button can be icon-only; use a conservative title/aria-label check above.
