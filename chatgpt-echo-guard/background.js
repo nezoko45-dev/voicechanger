@@ -15,13 +15,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     stopAudioCompare().then(() => sendResponse({ ok: true }), error => sendResponse({ ok: false, error: String(error) }));
     return true;
   }
+  if (message?.type === "ECHO_LOCAL_TRANSCRIPT" || message?.type === "ECHO_ASSISTANT_TRANSCRIPT") {
+    if (Number.isInteger(captureTabId)) {
+      chrome.tabs.sendMessage(captureTabId, message).catch(() => {});
+    }
+    if (message.type === "ECHO_ASSISTANT_TRANSCRIPT") {
+      chrome.runtime.sendMessage({
+        type: "ECHO_AUDIO_STATUS_UPDATE",
+        status: message.status || "info",
+        detail: { user: message.user || "", assistant: message.assistant || "", text: message.text || "" }
+      }).catch(() => {});
+    }
+    return;
+  }
   if (message?.type === "ECHO_AUDIO_MISMATCH") {
-    // Compatibility only: spoken correction must never force a new chat.
-    chrome.runtime.sendMessage({
-      type: "ECHO_AUDIO_STATUS_UPDATE",
-      status: "info",
-      detail: "Mismatch detected; use buffered audio correction instead of opening a new chat."
-    }).catch(() => {});
+    // Mismatches are displayed for the user; do not restart or replace the chat.
+    chrome.runtime.sendMessage({ type: "ECHO_AUDIO_STATUS_UPDATE", status: "info", detail: "Transcript mismatch detected; see the live transcript helper on the ChatGPT page." }).catch(() => {});
     return;
   }
   if (message?.type === "ECHO_AUDIO_STATUS") {
