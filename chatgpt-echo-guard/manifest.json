@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT Echo Guard",
-  "version": "1.3.0",
-  "description": "Show local Whisper transcript suggestions during ChatGPT Voice Mode without delaying or replacing audio.",
+  "version": "1.4.0",
+  "description": "Automatically send locally transcribed microphone phrases to ChatGPT as text when the composer is available.",
   "permissions": [
     "storage",
     "tabCapture",
