@@ -80,8 +80,13 @@ async function transcribe(frames, sampleRate, role) {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ audio: bytesToBase64(wav), sample_rate: 16000, role })
   });
-  if (!response.ok) throw new Error("EchoGuardTranscriber returned HTTP " + response.status + ". Is the EXE running?");
-  const result = await response.json();
+  let result;
+  try { result = await response.json(); }
+  catch { result = { error: await response.text().catch(() => "") }; }
+  if (!response.ok) {
+    const detail = result?.error ? ": " + result.error : "";
+    throw new Error("EchoGuardTranscriber returned HTTP " + response.status + detail);
+  }
   if (result.error) throw new Error(result.error);
   if (role === "user" && result.text) status("Heard you: " + result.text);
   if (role !== "assistant" || !result.text) return;
