@@ -12,6 +12,9 @@
   let observer = null;
   let waitingForReset = false;
   let lastAction = "Automatic clicker is stopped.";
+  let mismatchRecoveryEnabled = false;
+  let lastMismatchAt = 0;
+  const MISMATCH_COOLDOWN_MS = 15000;
 
   function findCallAgainButton() {
     const buttons = [...document.querySelectorAll(
@@ -74,10 +77,39 @@
   }
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message?.type === "FISH_AUDIO_AUTO_TOGGLE") {
+    if (message?.type === "FISH_AUDIO_MISMATCH_RECOVERY") {
+      mismatchRecoveryEnabled = !!message.enabled;
+      if (mismatchRecoveryEnabled) lastAction = "Local transcript mismatch recovery is enabled.";
+      sendResponse({ ok: true, automatic, mismatchRecoveryEnabled, message: lastAction });
+    } else if (message?.type === "FISH_AUDIO_TRANSCRIPT_MISMATCH") {
+      const now = Date.now();
+      if (!mismatchRecoveryEnabled) {
+        sendResponse({ ok: false, message: "Mismatch detected, but transcript recovery is turned off." });
+        return;
+      }
+      if (now - lastMismatchAt < MISMATCH_COOLDOWN_MS) {
+        sendResponse({ ok: false, message: "Mismatch detected during cooldown; duplicate Call again suppressed." });
+        return;
+      }
+      lastMismatchAt = now;
+      const button = findCallAgainButton();
+      if (enabled(button)) {
+        if (automatic && waitingForReset) {
+          lastAction = "Transcript mismatch detected; already waiting for the automatic Call again cycle.";
+        } else {
+          waitingForReset = true;
+          button.click();
+          lastAction = "Transcript mismatch detected. Clicked “Call again” once.";
+        }
+      } else {
+        lastAction = "Transcript mismatch detected. Waiting for “Call again” to become available; the watcher will click it automatically.";
+      }
+      chrome.runtime.sendMessage({ type: "FISH_AUDIO_AUTO_STATUS", automatic, mismatchRecoveryEnabled, message: lastAction }).catch(() => {});
+      sendResponse({ ok: true, automatic, mismatchRecoveryEnabled, message: lastAction });
+    } else if (message?.type === "FISH_AUDIO_AUTO_TOGGLE") {
       sendResponse(automatic ? stop() : start());
     } else if (message?.type === "FISH_AUDIO_GET_STATUS") {
-      sendResponse({ ok: true, automatic, message: lastAction });
+      sendResponse({ ok: true, automatic, mismatchRecoveryEnabled, message: lastAction });
     } else if (message?.type === "FISH_AUDIO_AUTO_STOP") {
       sendResponse(stop());
     } else if (message?.type === "FISH_AUDIO_CALL_AGAIN") {
