@@ -64,7 +64,7 @@
       b.getAttribute("title") || "",
       b.innerText || ""
     ].join(" ").toLowerCase()).join(" | ");
-    return /end voice|exit voice|stop voice|voice mode|turn off voice|mute microphone|unmute microphone/.test(labels);
+    return /end voice|exit voice|stop voice|turn off voice|mute microphone|unmute microphone/.test(labels);
   }
 
   function scheduleVoiceRestart() {
