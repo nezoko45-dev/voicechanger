@@ -9,7 +9,7 @@ class EchoGuardCaptureProcessor extends AudioWorkletProcessor {
   process(inputs, outputs) {
     const input = inputs[0]?.[0];
     const output = outputs[0]?.[0];
-    if (output) output.fill(0);
+    if (output) { if (input) output.set(input); else output.fill(0); }
     if (input) {
       let sourceOffset = 0;
       while (sourceOffset < input.length) {
