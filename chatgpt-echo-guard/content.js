@@ -155,7 +155,7 @@
     // Wait until the assistant transcript has settled, rather than reacting to partial streaming text.
     clearTimeout(scanTimer);
     scanTimer = setTimeout(() => {
-      if (!enabled || Date.now() - lastResetAt < 5000) return;
+      if (!enabled || Date.now() - lastResetAt < 1200) return;
       const currentUsers = getMessages("user");
       const currentAssistants = getMessages("assistant");
       const latestUser = currentUsers[currentUsers.length - 1] || "";
