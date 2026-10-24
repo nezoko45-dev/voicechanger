@@ -126,6 +126,7 @@ class Handler(BaseHTTPRequestHandler):
             self._headers()
             self.wfile.write(json.dumps(result).encode("utf-8"))
         except Exception as exc:
+            print(f"Transcription request rejected: {type(exc).__name__}: {exc}", flush=True)
             self._headers(400)
             self.wfile.write(json.dumps({"error": str(exc)}).encode("utf-8"))
 
