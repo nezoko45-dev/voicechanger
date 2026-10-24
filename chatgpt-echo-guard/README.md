@@ -9,7 +9,7 @@ A small Chrome Manifest V3 extension for the voice-repeater workflow. When armed
 3. Turn on **Developer mode**.
 4. Click **Load unpacked** and select this folder.
 5. Open or refresh `https://chatgpt.com`.
-6. Click the extension icon and enable **Arm echo guard** before starting the voice-repeater session.
+6. Click the extension icon and enable **Arm echo guard**. The extension will try to start Voice Mode when armed and again after it creates a new chat.
 
 ## Notes
 
@@ -17,3 +17,4 @@ A small Chrome Manifest V3 extension for the voice-repeater workflow. When armed
 - ChatGPT's DOM and Voice Mode controls can change. Detection depends on visible transcript elements and recognizable Voice Mode button labels, so it may need selector updates if the site changes.
 - Similarity is heuristic. Speech recognition errors or short phrases can cause false positives/negatives. Keep the guard disarmed during ordinary ChatGPT conversations.
 - The popup includes a manual **Start fresh chat now** button for testing.
+- When armed, the extension tries to click ChatGPT's Start Voice button on enable and after a detected mismatch creates a new chat. ChatGPT may require a real user click or may change the button label, so automatic voice startup is best-effort.
