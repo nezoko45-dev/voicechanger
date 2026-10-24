@@ -2,6 +2,8 @@
 // Audio clips are sent only to 127.0.0.1. No audio is uploaded to a cloud service.
 let micStream, tabStream, micContext, tabContext, micRecorder, tabRecorder;
 let queue = Promise.resolve();
+let latestUserClip = null;
+let activePlayback = null;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "ECHO_OFFSCREEN_START") {
@@ -22,10 +24,10 @@ async function start(streamId) {
     audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId } },
     video: false
   });
-  // tabCapture silences captured tab audio unless it is played back locally.
+  // Buffer ChatGPT audio instead of playing it immediately. After local transcription,
+  // we play the original clip on a match or substitute the user's captured mic clip
+  // on a mismatch. This adds a phrase-sized delay but avoids refreshing the chat.
   tabContext = new AudioContext();
-  const tabSource = tabContext.createMediaStreamSource(tabStream);
-  tabSource.connect(tabContext.destination);
   micContext = new AudioContext();
   await Promise.all([
     micContext.audioWorklet.addModule(chrome.runtime.getURL("audio-worklet.js")),
@@ -34,7 +36,7 @@ async function start(streamId) {
   micRecorder = makeSegmenter(micContext, micStream, "user");
   tabRecorder = makeSegmenter(tabContext, tabStream, "assistant");
   await Promise.all([micContext.resume(), tabContext.resume()]);
-  status("Capturing mic + ChatGPT audio with AudioWorklet. The local EXE compares recognized words.");
+  status("Echo correction active: ChatGPT audio is buffered until local comparison finishes. Mismatches replay your captured mic phrase instead of opening a new chat.");
 }
 
 function makeSegmenter(context, stream, role) {
@@ -66,7 +68,25 @@ function makeSegmenter(context, stream, role) {
       const duration = sampleCount / sampleRate, saved = frames;
       recording = false; frames = []; sampleCount = 0;
       if (duration >= 0.45) {
-        queue = queue.then(() => transcribe(saved, sampleRate, role)).catch(error => status("Transcription error: " + error.message));
+        if (role === "user") latestUserClip = { frames: saved, sampleRate, at: Date.now(), text: "" };
+        queue = queue.then(async () => {
+          const result = await transcribe(saved, sampleRate, role);
+          if (role === "user" && result?.text && latestUserClip?.at) {
+            latestUserClip.text = result.text;
+            latestUserClip.transcribedAt = Date.now();
+          }
+          if (role === "assistant") {
+            const userClip = latestUserClip && Date.now() - latestUserClip.at < 45000 ? latestUserClip : null;
+            if (result?.status === "mismatch" && userClip?.frames) {
+              status("Mismatch corrected locally: playing your captured microphone phrase; chat stays open.");
+              await playFrames(userClip.frames, userClip.sampleRate, tabContext);
+              chrome.runtime.sendMessage({ type: "ECHO_AUDIO_STATUS", status: "corrected", detail: { user: result.user, assistant: result.assistant } }).catch(() => {});
+            } else {
+              if (result?.status === "match") status("Words match. Playing buffered ChatGPT audio.");
+              await playFrames(saved, sampleRate, tabContext);
+            }
+          }
+        }).catch(error => status("Transcription error: " + error.message));
       }
     }
   };
@@ -89,19 +109,48 @@ async function transcribe(frames, sampleRate, role) {
   }
   if (result.error) throw new Error(result.error);
   if (role === "user" && result.text) status("Heard you: " + result.text);
-  if (role !== "assistant" || !result.text) return;
+  if (role !== "assistant" || !result.text) return result;
   if (result.status === "waiting") {
-    status("ChatGPT audio heard; waiting for a recent microphone phrase.");
-    return;
-  }
-  if (result.status === "match") {
-    status("Exact spoken-word match: " + (result.user || result.text));
+    status("ChatGPT audio buffered; no recent mic phrase to compare, so the original audio will play.");
+  } else if (result.status === "match") {
     chrome.runtime.sendMessage({ type: "ECHO_AUDIO_STATUS", status: "match", detail: { user: result.user, assistant: result.assistant } }).catch(() => {});
   } else if (result.status === "mismatch") {
-    status("Mismatch detected — asking the extension to open a new chat.");
     chrome.runtime.sendMessage({ type: "ECHO_AUDIO_STATUS", status: "mismatch", detail: { user: result.user, assistant: result.assistant } }).catch(() => {});
-    chrome.runtime.sendMessage({ type: "ECHO_AUDIO_MISMATCH", user: result.user, assistant: result.assistant }).catch(() => {});
   }
+  return result;
+}
+
+async function playFrames(frames, sourceRate, context) {
+  if (!context || context.state === "closed") return;
+  const sourceLength = frames.reduce((sum, frame) => sum + frame.length, 0);
+  if (!sourceLength) return;
+  const source = new Float32Array(sourceLength);
+  let offset = 0;
+  for (const frame of frames) { source.set(frame, offset); offset += frame.length; }
+  let samples = source;
+  if (sourceRate !== context.sampleRate) {
+    const targetLength = Math.max(1, Math.floor(source.length * context.sampleRate / sourceRate));
+    samples = new Float32Array(targetLength);
+    const ratio = sourceRate / context.sampleRate;
+    for (let i = 0; i < targetLength; i++) {
+      const p = i * ratio, left = Math.floor(p), right = Math.min(left + 1, source.length - 1);
+      samples[i] = source[left] * (1 - (p - left)) + source[right] * (p - left);
+    }
+  }
+  if (activePlayback) {
+    try { activePlayback.stop(); } catch {}
+    activePlayback = null;
+  }
+  const buffer = context.createBuffer(1, samples.length, context.sampleRate);
+  buffer.copyToChannel(samples, 0);
+  const player = context.createBufferSource();
+  player.buffer = buffer;
+  player.connect(context.destination);
+  activePlayback = player;
+  player.onended = () => { if (activePlayback === player) activePlayback = null; player.disconnect(); };
+  await context.resume();
+  player.start();
+  await new Promise(resolve => { player.onended = () => { if (activePlayback === player) activePlayback = null; player.disconnect(); resolve(); }; });
 }
 
 function resampleFrames(frames, sourceRate, targetRate) {
@@ -154,6 +203,8 @@ function stop() {
   for (const item of [micRecorder, tabRecorder]) {
     try { item?.processor.disconnect(); item?.source.disconnect(); item?.mute.disconnect(); } catch {}
   }
+  if (activePlayback) { try { activePlayback.stop(); } catch {} activePlayback = null; }
+  latestUserClip = null;
   micStream = tabStream = micContext = tabContext = micRecorder = tabRecorder = null;
   queue = Promise.resolve();
 }
