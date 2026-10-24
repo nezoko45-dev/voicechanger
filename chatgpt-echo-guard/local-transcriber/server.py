@@ -59,6 +59,20 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
+    def do_GET(self):
+        if self.path in ("/", "/health"):
+            self._headers(200)
+            self.wfile.write(json.dumps({
+                "ok": True,
+                "service": "ChatGPT Echo Guard local transcriber",
+                "model": MODEL_NAME,
+                "endpoint": "POST /transcribe",
+                "note": "Open this page to check service status; audio transcription is available only to the Chrome extension."
+            }).encode("utf-8"))
+            return
+        self._headers(404)
+        self.wfile.write(b'{"error":"not found"}')
+
     def do_OPTIONS(self):
         if not self.headers.get("Origin", "").startswith("chrome-extension://"):
             self._headers(403)
