@@ -20,21 +20,32 @@ class Handler(BaseHTTPRequestHandler):
     def _headers(self, status=200):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        # Localhost-only API; Chrome extension origin is validated by binding to loopback.
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        origin = self.headers.get("Origin", "")
+        if origin.startswith("chrome-extension://"):
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
     def do_OPTIONS(self):
+        if not self.headers.get("Origin", "").startswith("chrome-extension://"):
+            self._headers(403)
+            return
         self._headers(204)
 
     def do_POST(self):
+        if not self.headers.get("Origin", "").startswith("chrome-extension://"):
+            self._headers(403)
+            self.wfile.write(b'{"error":"extension origin required"}')
+            return
         if self.path != "/transcribe":
-            self._headers(404); self.wfile.write(b'{"error":"not found"}'); return
+            self._headers(404)
+            self.wfile.write(b'{"error":"not found"}')
+            return
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if length <= 0 or length > 30_000_000:
+            if length <= 0 or length > 30000000:
                 raise ValueError("invalid request size")
             payload = json.loads(self.rfile.read(length))
             raw = base64.b64decode(payload["audio"], validate=True)
