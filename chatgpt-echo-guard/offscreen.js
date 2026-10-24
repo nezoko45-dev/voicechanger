@@ -1,9 +1,6 @@
-// Audio stays in this offscreen extension document; only WAV bytes are sent to
-// the user's local Whisper service at 127.0.0.1.
+// Chrome captures audio; the local EXE transcribes and compares it.
+// Audio clips are sent only to 127.0.0.1. The EXE returns match/mismatch decisions.
 let micStream, tabStream, micContext, tabContext, micRecorder, tabRecorder;
-let lastUserText = "";
-let lastUserAt = 0;
-let busy = false;
 let queue = Promise.resolve();
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -33,7 +30,7 @@ async function start(streamId) {
   micRecorder = makeSegmenter(micContext, micStream, "user");
   tabRecorder = makeSegmenter(tabContext, tabStream, "assistant");
   await Promise.all([micContext.resume(), tabContext.resume()]);
-  status("Capturing mic + ChatGPT audio. Transcription stays local.");
+  status("Capturing mic + ChatGPT audio. The local EXE compares recognized words.");
 }
 
 function makeSegmenter(context, stream, role) {
@@ -70,46 +67,29 @@ function makeSegmenter(context, stream, role) {
 }
 
 async function transcribe(frames, sampleRate, role) {
-  busy = true;
-  try {
-    // Whisper expects 16 kHz mono samples; Chrome commonly captures at 48 kHz.\n    const resampled = resampleFrames(frames, sampleRate, 16000);\n    const wav = encodeWav([resampled], 16000);
-    const response = await fetch("http://127.0.0.1:8765/transcribe", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ audio: bytesToBase64(wav), sample_rate: sampleRate })
-    });
-    if (!response.ok) throw new Error("Local Whisper server returned HTTP " + response.status + ". Is local-transcriber running?");
-    const result = await response.json(), text = normalize(result.text || "");
-    if (!text) return;
-    if (role === "user") {
-      lastUserText = text; lastUserAt = Date.now();
-      status("Heard you: " + text);
-      return;
-    }
-    status("ChatGPT said: " + text);
-    if (!lastUserText || Date.now() - lastUserAt > 45000) {
-      status("ChatGPT audio heard; waiting for your next utterance.");
-      return;
-    }
-    const same = text === lastUserText;
-    chrome.runtime.sendMessage({
-      type: "ECHO_AUDIO_STATUS", status: same ? "match" : "mismatch",
-      detail: { user: lastUserText, assistant: text }
-    }).catch(() => {});
-    if (!same) {
-      status("Mismatch detected — opening a new chat.");
-      chrome.runtime.sendMessage({ type: "ECHO_AUDIO_MISMATCH", user: lastUserText, assistant: text }).catch(() => {});
-      lastUserText = "";
-    } else {
-      status("Exact spoken-word match.");
-      lastUserText = "";
-    }
-  } finally { busy = false; }
-}
-
-function normalize(value) {
-  return String(value).toLocaleLowerCase().normalize("NFKD")
-    .replace(/[’']/g, "").replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .replace(/\s+/g, " ").trim();
+  const resampled = resampleFrames(frames, sampleRate, 16000);
+  const wav = encodeWav([resampled], 16000);
+  const response = await fetch("http://127.0.0.1:8765/transcribe", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ audio: bytesToBase64(wav), sample_rate: 16000, role })
+  });
+  if (!response.ok) throw new Error("EchoGuardTranscriber returned HTTP " + response.status + ". Is the EXE running?");
+  const result = await response.json();
+  if (result.error) throw new Error(result.error);
+  if (role === "user" && result.text) status("Heard you: " + result.text);
+  if (role !== "assistant" || !result.text) return;
+  if (result.status === "waiting") {
+    status("ChatGPT audio heard; waiting for a recent microphone phrase.");
+    return;
+  }
+  if (result.status === "match") {
+    status("Exact spoken-word match: " + (result.user || result.text));
+    chrome.runtime.sendMessage({ type: "ECHO_AUDIO_STATUS", status: "match", detail: { user: result.user, assistant: result.assistant } }).catch(() => {});
+  } else if (result.status === "mismatch") {
+    status("Mismatch detected — asking the extension to open a new chat.");
+    chrome.runtime.sendMessage({ type: "ECHO_AUDIO_STATUS", status: "mismatch", detail: { user: result.user, assistant: result.assistant } }).catch(() => {});
+    chrome.runtime.sendMessage({ type: "ECHO_AUDIO_MISMATCH", user: result.user, assistant: result.assistant }).catch(() => {});
+  }
 }
 
 function resampleFrames(frames, sourceRate, targetRate) {
@@ -137,8 +117,8 @@ function encodeWav(frames, sampleRate) {
   write(0, "RIFF"); view.setUint32(4, 36 + length * 2, true); write(8, "WAVE");
   write(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
   view.setUint16(22, 1, true); view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true); view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true); write(36, "data"); view.setUint32(40, length * 2, true);
+  view.setUint32(28, sampleRate * 2, true); view.setUint16(32, 2, true); write(36, "data");
+  view.setUint32(40, length * 2, true);
   let offset = 44;
   for (const frame of frames) for (let i = 0; i < frame.length; i++) {
     const sample = Math.max(-1, Math.min(1, frame[i]));
@@ -162,5 +142,5 @@ function stop() {
     try { item?.processor.disconnect(); item?.source.disconnect(); item?.mute.disconnect(); } catch {}
   }
   micStream = tabStream = micContext = tabContext = micRecorder = tabRecorder = null;
-  lastUserText = ""; lastUserAt = 0; busy = false; queue = Promise.resolve();
+  queue = Promise.resolve();
 }
