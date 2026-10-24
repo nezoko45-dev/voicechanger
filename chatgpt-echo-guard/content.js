@@ -106,8 +106,11 @@
     // Prefer ChatGPT's stable test id, then accessible labels, then visible text.
     const preferred = [
       '[data-testid="create-new-chat-button"]',
+      '[data-testid*="new-chat" i]',
       'button[aria-label*="New chat" i]',
       'button[aria-label*="New conversation" i]',
+      '[role="button"][aria-label*="New chat" i]',
+      '[role="button"][aria-label*="New conversation" i]',
       'a[aria-label*="New chat" i]',
       'button[title*="New chat" i]',
       'button[title*="New conversation" i]'
@@ -147,13 +150,15 @@
   }
 
   function retryAutomaticNewChat(assistantText, attempt = 0) {
-    if (!enabled || attempt >= 8) {
-      console.error("[Echo Guard] Automatic new-chat retry limit reached. Check that ChatGPT's sidebar is available.");
+    // Keep retrying for up to 30 seconds while this same non-echo response is current.
+    // ChatGPT's sidebar and its controls can render late or change during Voice Mode.
+    if (!enabled || attempt >= 40) {
+      console.error("[Echo Guard] Automatic new-chat retries ended after 30 seconds. Check whether ChatGPT's sidebar is available.");
       return;
     }
     if (assistantText !== lastAssistantText) return;
     if (clickNewChat()) return;
-    setTimeout(() => retryAutomaticNewChat(assistantText, attempt + 1), 700);
+    setTimeout(() => retryAutomaticNewChat(assistantText, attempt + 1), 750);
   }
 
   function scan() {
