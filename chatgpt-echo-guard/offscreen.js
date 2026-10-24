@@ -24,9 +24,8 @@ async function start(streamId) {
     audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId } },
     video: false
   });
-  // Buffer ChatGPT audio instead of playing it immediately. After local transcription,
-  // we play the original clip on a match or substitute the user's captured mic clip
-  // on a mismatch. This adds a phrase-sized delay but avoids refreshing the chat.
+  // ChatGPT audio plays through immediately. Mic phrases are transcribed locally
+  // and forwarded to the ChatGPT page as text when its composer is available.
   tabContext = new AudioContext();
   micContext = new AudioContext();
   await Promise.all([
@@ -36,7 +35,7 @@ async function start(streamId) {
   micRecorder = makeSegmenter(micContext, micStream, "user");
   tabRecorder = makeSegmenter(tabContext, tabStream, "assistant");
   await Promise.all([micContext.resume(), tabContext.resume()]);
-  status("Live transcript helper active: Voice Mode audio stays live; local words appear in an on-page correction panel.");
+  status("Automatic transcript mode active: mic phrases are sent as text when ChatGPT's composer is available. This may interrupt Voice Mode.");
 }
 
 function makeSegmenter(context, stream, role) {
@@ -112,6 +111,8 @@ async function transcribe(frames, sampleRate, role) {
   if (role === "user" && result.text) {
     status("Local transcript: " + result.text);
     chrome.runtime.sendMessage({ type: "ECHO_LOCAL_TRANSCRIPT", text: result.text, at: Date.now() }).catch(() => {});
+    const cleaned = String(result.text).trim();
+    if (cleaned) chrome.runtime.sendMessage({ type: "ECHO_AUTO_SEND_TRANSCRIPT", text: cleaned, at: Date.now() }).catch(() => {});
   }
   if (role !== "assistant" || !result.text) return result;
   if (result.status === "waiting") {
