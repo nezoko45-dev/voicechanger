@@ -4,6 +4,9 @@ let micStream, tabStream, micContext, tabContext, micRecorder, tabRecorder;
 let queue = Promise.resolve();
 let latestUserClip = null;
 let activePlayback = null;
+let recoveryArmed = true;
+let lastRecoveryPromptAt = 0;
+const RECOVERY_COOLDOWN_MS = 15000;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "ECHO_OFFSCREEN_START") {
@@ -18,6 +21,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function start(streamId) {
   stop();
+  recoveryArmed = true;
+  lastRecoveryPromptAt = 0;
   status("Requesting microphone permission…");
   micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
   tabStream = await navigator.mediaDevices.getUserMedia({
@@ -76,8 +81,7 @@ function makeSegmenter(context, stream, role) {
             latestUserClip.transcribedAt = Date.now();
           }
           if (role === "assistant") {
-            // Assistant audio is already playing live through the AudioWorklet.
-            // Keep transcript comparison informational; never buffer or substitute speech.
+            // Audio plays live. Trigger at most once per mismatch episode.
             if (result?.text) chrome.runtime.sendMessage({
               type: "ECHO_ASSISTANT_TRANSCRIPT",
               text: result.text,
@@ -85,6 +89,20 @@ function makeSegmenter(context, stream, role) {
               user: result.user || "",
               assistant: result.assistant || ""
             }).catch(() => {});
+            if (result?.status === "match") {
+              recoveryArmed = true;
+              status("Echo match detected; mismatch recovery is re-armed.");
+            } else if (result?.status === "mismatch" && recoveryArmed) {
+              recoveryArmed = false;
+              const now = Date.now();
+              if (now - lastRecoveryPromptAt >= RECOVERY_COOLDOWN_MS) {
+                lastRecoveryPromptAt = now;
+                chrome.runtime.sendMessage({ type: "ECHO_RECOVERY_PROMPT", user: result.user || "", assistant: result.assistant || "", at: now }).catch(() => {});
+                status("Echo mismatch detected. Sending one recovery prompt; waiting for a match before re-arming.");
+              } else {
+                status("Echo mismatch detected during cooldown; recovery prompt suppressed.");
+              }
+            }
           }
         }).catch(error => status("Transcription error: " + error.message));
       }
@@ -111,8 +129,6 @@ async function transcribe(frames, sampleRate, role) {
   if (role === "user" && result.text) {
     status("Local transcript: " + result.text);
     chrome.runtime.sendMessage({ type: "ECHO_LOCAL_TRANSCRIPT", text: result.text, at: Date.now() }).catch(() => {});
-    const cleaned = String(result.text).trim();
-    if (cleaned) chrome.runtime.sendMessage({ type: "ECHO_AUTO_SEND_TRANSCRIPT", text: cleaned, at: Date.now() }).catch(() => {});
   }
   if (role !== "assistant" || !result.text) return result;
   if (result.status === "waiting") {
