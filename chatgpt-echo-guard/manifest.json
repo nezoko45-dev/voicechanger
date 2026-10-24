@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT Echo Guard",
-  "version": "1.1.1",
-  "description": "Compare microphone speech with ChatGPT Voice Mode audio using local Whisper transcription.",
+  "version": "1.2.0",
+  "description": "Compare microphone speech with ChatGPT Voice Mode audio and substitute mismatched playback using local Whisper transcription.",
   "permissions": [
     "storage",
     "tabCapture",
