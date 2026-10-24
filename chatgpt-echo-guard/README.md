@@ -8,7 +8,7 @@ Chrome Manifest V3 extension for a voice-repeater workflow. The optional **Local
 2. Visit `chrome://extensions`, enable **Developer mode**, and click **Load unpacked**.
 3. Select the `chatgpt-echo-guard` folder, or click **Reload** if already installed.
 4. Open `https://chatgpt.com` in Chrome and refresh it.
-5. Open `chatgpt-echo-guard/local-transcriber` on your computer and run `setup-local-transcriber.bat` once. This installs the local speech-recognition packages and downloads the English Whisper model. It requires internet during first-time setup.
+5. Open `chatgpt-echo-guard/local-transcriber` on your computer and run `setup-local-transcriber.bat` once. This installs the local speech-recognition packages. The English Whisper model downloads the first time you launch the local transcriber, so internet is required during setup/first launch.
 6. Run `start-local-transcriber.bat` and leave its console window open.
 7. Open the Echo Guard extension popup and click **Start local audio comparison**. Allow microphone access if Chrome asks.
 8. Use ChatGPT Voice Mode with headphones if possible. Speak one short phrase and let ChatGPT respond.
