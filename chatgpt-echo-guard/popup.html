@@ -14,9 +14,8 @@
 </head>
 <body>
   <h1>ChatGPT Echo Guard</h1>
-  <p>When armed, it watches ChatGPT Voice Mode. If the assistant's next message doesn't resemble your latest utterance, it clicks New chat.</p>
+  <p>When armed, it automatically checks each finished assistant response. If it does not exactly repeat your latest words, it opens a new chat and attempts to restart Voice Mode.</p>
   <label><input id="enabled" type="checkbox"> Arm echo guard</label>
-  <button id="reset">Start fresh chat now</button>
   <div id="status">Loading…</div>
   <script src="popup.js"></script>
 </body>
