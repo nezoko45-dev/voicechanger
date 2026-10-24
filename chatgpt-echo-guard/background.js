@@ -15,6 +15,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     stopAudioCompare().then(() => sendResponse({ ok: true }), error => sendResponse({ ok: false, error: String(error) }));
     return true;
   }
+  if (message?.type === "ECHO_AUTO_SEND_TRANSCRIPT") {
+    if (Number.isInteger(captureTabId)) chrome.tabs.sendMessage(captureTabId,message).catch(()=>{});
+    return;
+  }
+  if (message?.type === "ECHO_AUTO_SEND_STATUS") {
+    chrome.runtime.sendMessage({type:"ECHO_AUDIO_STATUS_UPDATE",status:message.status,detail:message.detail,text:message.text||""}).catch(()=>{});
+    return;
+  }
   if (message?.type === "ECHO_LOCAL_TRANSCRIPT" || message?.type === "ECHO_ASSISTANT_TRANSCRIPT") {
     if (Number.isInteger(captureTabId)) {
       chrome.tabs.sendMessage(captureTabId, message).catch(() => {});
