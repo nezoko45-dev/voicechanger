@@ -24,6 +24,16 @@
       buttons.find(el => /\bcall again\b/i.test(label(el))) || null;
   }
 
+  function findEndCallButton() {
+    const buttons = [...document.querySelectorAll(
+      "button, [role='button'], input[type='button'], input[type='submit']"
+    )].filter(el => visible(el));
+    // Prefer an explicit End call / Hang up label. Fish Audio's red styling
+    // varies by page theme, so use the accessible label rather than color alone.
+    return buttons.find(el => /^(end call|endcall|hang up|hangup|stop call)[.!]?$/i.test(label(el))) ||
+      buttons.find(el => /\\b(end call|endcall|hang up|hangup)\\b/i.test(label(el))) || null;
+  }
+
   function enabled(button) {
     return !!button && !button.disabled &&
       button.getAttribute("aria-disabled") !== "true" &&
@@ -92,17 +102,47 @@
         return;
       }
       lastMismatchAt = now;
-      const button = findCallAgainButton();
-      if (enabled(button)) {
-        if (automatic && waitingForReset) {
-          lastAction = "Transcript mismatch detected; already waiting for the automatic Call again cycle.";
-        } else {
-          waitingForReset = true;
-          button.click();
-          lastAction = "Transcript mismatch detected. Clicked “Call again” once.";
+      const endCallButton = findEndCallButton();
+      if (enabled(endCallButton)) {
+        // End the current Fish Audio call first, then let the DOM observer
+        // click Call again only after that button becomes available.
+        if (!automatic) {
+          automatic = true;
+          observer = new MutationObserver(scan);
+          observer.observe(document.documentElement, {
+            subtree: true,
+            childList: true,
+            attributes: true,
+            attributeFilter: ["disabled", "aria-disabled", "aria-busy", "aria-label", "title", "class", "style"]
+          });
         }
+        waitingForReset = true;
+        endCallButton.click();
+        lastAction = "Transcript mismatch detected. Clicked “End call”; waiting for “Call again” to appear.";
       } else {
-        lastAction = "Transcript mismatch detected. Waiting for “Call again” to become available; the watcher will click it automatically.";
+        const button = findCallAgainButton();
+        if (enabled(button)) {
+          if (automatic && waitingForReset) {
+            lastAction = "Transcript mismatch detected; already waiting for the automatic Call again cycle.";
+          } else {
+            waitingForReset = true;
+            button.click();
+            lastAction = "Transcript mismatch detected. No End call button found, so clicked “Call again” directly.";
+          }
+        } else {
+          lastAction = "Transcript mismatch detected. No End call button found; waiting for “Call again” to become available.";
+          if (!automatic) {
+            automatic = true;
+            waitingForReset = false;
+            observer = new MutationObserver(scan);
+            observer.observe(document.documentElement, {
+              subtree: true,
+              childList: true,
+              attributes: true,
+              attributeFilter: ["disabled", "aria-disabled", "aria-busy", "aria-label", "title", "class", "style"]
+            });
+          }
+        }
       }
       chrome.runtime.sendMessage({ type: "FISH_AUDIO_AUTO_STATUS", automatic, mismatchRecoveryEnabled, message: lastAction }).catch(() => {});
       sendResponse({ ok: true, automatic, mismatchRecoveryEnabled, message: lastAction });
