@@ -27,6 +27,10 @@
   });
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type === "ECHO_RECOVERY_PROMPT") {
+      const recoveryPrompt = "REPEAT MODE RECOVERY: You are a voice repeater. Resume repeating the user words exactly. Do not answer conversationally, explain, or add commentary. Repeat only the user words.";
+      autoSendTranscript(recoveryPrompt);
+    }
     if (message?.type === "ECHO_AUTO_SEND_TRANSCRIPT") autoSendTranscript(String(message.text || ""));
     if (message?.type === "ECHO_GUARD_NEW_CHAT") {
       const ok = clickNewChat();
@@ -54,10 +58,10 @@
       "font:13px/1.45 system-ui,sans-serif"
     ].join(";");
     const heading = document.createElement("div");
-    heading.textContent = "Echo Guard · Live transcript helper";
+    heading.textContent = "Echo Guard · Echo recovery";
     heading.style.cssText = "font-weight:700;margin-bottom:5px";
     const note = document.createElement("div");
-    note.textContent = "Auto-send is on: local mic phrases are sent as text when the composer is available. This may interrupt Voice Mode.";
+    note.textContent = "Recovery prompts are sent only after a detected echo mismatch, with a cooldown and re-arm after a match. Sending may interrupt Voice Mode.";
     note.style.cssText = "opacity:.75;font-size:11px;margin-bottom:10px";
     const userLabel = document.createElement("div");
     userLabel.textContent = "Your words (local Whisper):";
