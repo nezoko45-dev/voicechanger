@@ -1,5 +1,5 @@
-// Chrome captures audio; the local EXE transcribes and compares it.
-// Audio clips are sent only to 127.0.0.1. The EXE returns match/mismatch decisions.
+// Chrome captures audio through AudioWorklet; the local EXE transcribes and compares it.
+// Audio clips are sent only to 127.0.0.1. No audio is uploaded to a cloud service.
 let micStream, tabStream, micContext, tabContext, micRecorder, tabRecorder;
 let queue = Promise.resolve();
 
@@ -27,15 +27,21 @@ async function start(streamId) {
   const tabSource = tabContext.createMediaStreamSource(tabStream);
   tabSource.connect(tabContext.destination);
   micContext = new AudioContext();
+  await Promise.all([
+    micContext.audioWorklet.addModule(chrome.runtime.getURL("audio-worklet.js")),
+    tabContext.audioWorklet.addModule(chrome.runtime.getURL("audio-worklet.js"))
+  ]);
   micRecorder = makeSegmenter(micContext, micStream, "user");
   tabRecorder = makeSegmenter(tabContext, tabStream, "assistant");
   await Promise.all([micContext.resume(), tabContext.resume()]);
-  status("Capturing mic + ChatGPT audio. The local EXE compares recognized words.");
+  status("Capturing mic + ChatGPT audio with AudioWorklet. The local EXE compares recognized words.");
 }
 
 function makeSegmenter(context, stream, role) {
   const source = context.createMediaStreamSource(stream);
-  const processor = context.createScriptProcessor(4096, 1, 1);
+  const processor = new AudioWorkletNode(context, "echo-guard-capture", {
+    numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1]
+  });
   const mute = context.createGain();
   mute.gain.value = 0;
   source.connect(processor);
@@ -43,8 +49,9 @@ function makeSegmenter(context, stream, role) {
   mute.connect(context.destination);
   let frames = [], sampleCount = 0, speechStartedAt = 0, lastLoudAt = 0, recording = false;
   const sampleRate = context.sampleRate;
-  processor.onaudioprocess = event => {
-    const input = event.inputBuffer.getChannelData(0);
+  processor.port.onmessage = event => {
+    const input = event.data?.samples;
+    if (!(input instanceof Float32Array)) return;
     let energy = 0;
     for (let i = 0; i < input.length; i++) energy += input[i] * input[i];
     const rms = Math.sqrt(energy / input.length), now = Date.now();
