@@ -103,31 +103,57 @@
   }
 
   function clickNewChat() {
-    const candidates = [...document.querySelectorAll("button, a, [role='button']")]
-      .filter(el => el.getClientRects().length);
-    const target = candidates.find(el => {
-      const label = [
-        el.getAttribute("aria-label") || "",
-        el.getAttribute("title") || "",
-        el.innerText || "",
-        el.textContent || ""
-      ].join(" ").toLowerCase().replace(/\s+/g, " ").trim();
-      return /^(new chat|new conversation)(\b|$)/.test(label) ||
-        /\b(new chat|new conversation)\b/.test(label);
-    });
+    // Prefer ChatGPT's stable test id, then accessible labels, then visible text.
+    const preferred = [
+      '[data-testid="create-new-chat-button"]',
+      'button[aria-label*="New chat" i]',
+      'button[aria-label*="New conversation" i]',
+      'a[aria-label*="New chat" i]',
+      'button[title*="New chat" i]',
+      'button[title*="New conversation" i]'
+    ];
+    let target = null;
+    for (const selector of preferred) {
+      target = [...document.querySelectorAll(selector)]
+        .find(el => el.getClientRects().length && !el.disabled);
+      if (target) break;
+    }
+    if (!target) {
+      const candidates = [...document.querySelectorAll("button, a, [role='button']")]
+        .filter(el => el.getClientRects().length && !el.disabled);
+      target = candidates.find(el => {
+        const label = [
+          el.getAttribute("aria-label") || "",
+          el.getAttribute("title") || "",
+          el.innerText || "",
+          el.textContent || ""
+        ].join(" ").toLowerCase().replace(/\s+/g, " ").trim();
+        return /^(new chat|new conversation)(\b|$)/.test(label) ||
+          /\b(new chat|new conversation)\b/.test(label);
+      });
+    }
     if (target) {
       target.click();
       lastResetAt = Date.now();
       handledAssistantText = "";
       lastAssistantText = "";
       lastUserText = "";
-      // Give the new conversation UI time to render, then try to restart Voice Mode.
+      console.info("[Echo Guard] Automatically opened a new chat after a non-echo response.");
       scheduleVoiceRestart();
       return true;
     }
-    // Common ChatGPT sidebar button can be icon-only; use a conservative title/aria-label check above.
-    console.warn("[Echo Guard] Could not find the New chat button.");
+    console.warn("[Echo Guard] New chat control not visible yet; automatic retry will continue.");
     return false;
+  }
+
+  function retryAutomaticNewChat(assistantText, attempt = 0) {
+    if (!enabled || attempt >= 8) {
+      console.error("[Echo Guard] Automatic new-chat retry limit reached. Check that ChatGPT's sidebar is available.");
+      return;
+    }
+    if (assistantText !== lastAssistantText) return;
+    if (clickNewChat()) return;
+    setTimeout(() => retryAutomaticNewChat(assistantText, attempt + 1), 700);
   }
 
   function scan() {
@@ -162,16 +188,8 @@
       console.info("[Echo Guard] Finished assistant transcript checked.", { score, latestUser, latestAssistant });
       if (score < 1) {
         console.warn("[Echo Guard] Response was not an exact echo; requesting a new chat.", { latestUser, latestAssistant });
-        const reset = clickNewChat();
-        if (reset) handledAssistantText = latestAssistant;
-        else {
-          // Don't permanently mark this response handled if ChatGPT's New chat control
-          // wasn't found; the next scan should retry instead of silently giving up.
-          handledAssistantText = "";
-          setTimeout(() => {
-            if (enabled && latestAssistant === lastAssistantText) clickNewChat();
-          }, 900);
-        }
+        handledAssistantText = latestAssistant;
+        retryAutomaticNewChat(latestAssistant);
       } else {
         handledAssistantText = latestAssistant;
       }
