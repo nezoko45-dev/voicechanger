@@ -19,6 +19,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (Number.isInteger(captureTabId)) chrome.tabs.sendMessage(captureTabId,message).catch(()=>{});
     return;
   }
+  if (message?.type === "ECHO_RECOVERY_PROMPT") {
+    if (Number.isInteger(captureTabId)) chrome.tabs.sendMessage(captureTabId, message).catch(() => {});
+    return;
+  }
   if (message?.type === "ECHO_AUTO_SEND_STATUS") {
     chrome.runtime.sendMessage({type:"ECHO_AUDIO_STATUS_UPDATE",status:message.status,detail:message.detail,text:message.text||""}).catch(()=>{});
     return;
