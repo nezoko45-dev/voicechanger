@@ -31,7 +31,7 @@ This requires Python and the one-time Faster-Whisper model setup. Audio clips ar
 3. Wait for the model to finish loading. The first run downloads the Whisper model; later runs can work locally with the cached model.
 4. In Chrome, open `http://127.0.0.1:8765/health` and check that it reports `"ok": true`.
 5. Return to Fish Audio, click the extension icon, and choose **Start local mismatch monitor**. Approve microphone access if Chrome asks.
-6. For both behaviors at once, turn on **Start auto-clicking Call again** as well.
+Starting local mismatch monitoring also starts the automatic Call again watcher. You can run the auto-clicker alone without starting transcription.
 
 On a transcript mismatch, the extension attempts one Call again click. If the button is not yet available, the independent auto-click watcher can click it when it appears. Repeated mismatches are throttled for 15 seconds.
 
