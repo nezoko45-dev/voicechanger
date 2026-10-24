@@ -16,10 +16,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message?.type === "ECHO_AUDIO_MISMATCH") {
-    if (captureTabId != null) chrome.tabs.sendMessage(captureTabId, { type: "ECHO_GUARD_NEW_CHAT" }).catch(() => {});
-    else chrome.storage.local.get({ echoCaptureTabId: null }, data => {
-      if (data.echoCaptureTabId != null) chrome.tabs.sendMessage(data.echoCaptureTabId, { type: "ECHO_GUARD_NEW_CHAT" }).catch(() => {});
-    });
+    // Compatibility only: spoken correction must never force a new chat.
+    chrome.runtime.sendMessage({
+      type: "ECHO_AUDIO_STATUS_UPDATE",
+      status: "info",
+      detail: "Mismatch detected; use buffered audio correction instead of opening a new chat."
+    }).catch(() => {});
     return;
   }
   if (message?.type === "ECHO_AUDIO_STATUS") {
