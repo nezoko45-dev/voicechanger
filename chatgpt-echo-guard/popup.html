@@ -14,12 +14,12 @@
 </head>
 <body>
   <h1>ChatGPT Echo Guard</h1>
-  <p>Compare what your microphone hears with ChatGPT Voice Mode audio using a local Whisper model.</p>
+  <p>Compare your microphone with ChatGPT Voice Mode using the local Echo Guard EXE.</p>
   <label><input id="enabled" type="checkbox"> Arm transcript fallback</label>
   <button id="audioToggle">Start local audio comparison</button>
   <button id="stopAudio" class="secondary">Stop audio comparison</button>
   <div id="status">Loading…</div>
-  <p class="note">Audio comparison requires the local transcriber to be running. Audio is sent only to 127.0.0.1 on this computer.</p>
+  <p class="note">Run EchoGuardTranscriber.exe first. Speech is transcribed on this computer; no cloud speech API is used.</p>
   <script src="popup.js"></script>
 </body>
 </html>
