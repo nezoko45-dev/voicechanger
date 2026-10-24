@@ -29,6 +29,7 @@
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type === "ECHO_GUARD_NEW_CHAT") {
       const ok = clickNewChat();
+      if (!ok) retryAudioNewChat();
       sendResponse({ ok });
     }
     return true;
@@ -212,6 +213,15 @@
     }
     console.warn("[Echo Guard] New chat control not visible yet; automatic retry will continue.");
     return false;
+  }
+
+  function retryAudioNewChat(attempt = 0) {
+    if ((!enabled && !audioCompareEnabled) || attempt >= 40) {
+      console.error("[Echo Guard] Audio-mode new-chat retries ended after 30 seconds.");
+      return;
+    }
+    if (clickNewChat()) return;
+    setTimeout(() => retryAudioNewChat(attempt + 1), 750);
   }
 
   function retryAutomaticNewChat(assistantText, attempt = 0) {
