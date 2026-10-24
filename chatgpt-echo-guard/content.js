@@ -44,17 +44,12 @@
   }
 
   function similarity(a, b) {
-    a = normalize(a); b = normalize(b);
-    if (!a || !b) return 0;
-    if (a === b || a.includes(b) || b.includes(a)) return 1;
-    const A = new Set(a.split(" ").filter(Boolean));
-    const B = new Set(b.split(" ").filter(Boolean));
-    let common = 0;
-    for (const word of A) if (B.has(word)) common++;
-    const dice = (2 * common) / (A.size + B.size);
-    // A transcript may have a couple of recognition differences, but a merely related reply
-    // should not count as an echo.
-    return dice;
+    // Echo mode means the assistant must repeat the actual words, not merely mention
+    // some of the same words in a different sentence.
+    const left = normalize(a);
+    const right = normalize(b);
+    if (!left || !right) return 0;
+    return left === right ? 1 : 0;
   }
 
   function voiceModeLooksActive() {
@@ -163,15 +158,22 @@
       if (!latestUser || !latestAssistant || latestAssistant !== lastAssistantText) return;
       if (latestAssistant === handledAssistantText) return;
 
-      handledAssistantText = latestAssistant;
       const score = similarity(latestUser, latestAssistant);
-      // Short utterances are especially prone to transcription mismatch. Require a very close
-      // match for tiny utterances and a modest overlap for longer ones.
-      const words = normalize(latestUser).split(" ").filter(Boolean).length;
-      const threshold = words <= 3 ? 0.75 : 0.45;
-      if (score < threshold) {
-        console.warn("[Echo Guard] Assistant response did not look like an echo; starting a new chat.", { score, latestUser, latestAssistant });
-        clickNewChat();
+      console.info("[Echo Guard] Finished assistant transcript checked.", { score, latestUser, latestAssistant });
+      if (score < 1) {
+        console.warn("[Echo Guard] Response was not an exact echo; requesting a new chat.", { latestUser, latestAssistant });
+        const reset = clickNewChat();
+        if (reset) handledAssistantText = latestAssistant;
+        else {
+          // Don't permanently mark this response handled if ChatGPT's New chat control
+          // wasn't found; the next scan should retry instead of silently giving up.
+          handledAssistantText = "";
+          setTimeout(() => {
+            if (enabled && latestAssistant === lastAssistantText) clickNewChat();
+          }, 900);
+        }
+      } else {
+        handledAssistantText = latestAssistant;
       }
     }, 1800);
   }
