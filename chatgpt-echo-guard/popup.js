@@ -25,7 +25,7 @@ audioToggle.addEventListener("click", async () => {
     const result = await chrome.runtime.sendMessage({ type: "ECHO_AUDIO_START", tabId: tab.id });
     if (!result?.ok) throw new Error(result?.error || "Could not start capture.");
     audioToggle.textContent = "Audio comparison is running";
-    setStatus("Automatic mode running. Recognized mic phrases are sent as text when ChatGPT's composer is available; Voice Mode may be interrupted.");
+    setStatus("Echo recovery running. One prompt is sent on a detected mismatch; it re-arms after a match and has a 15-second cooldown.");
   } catch (error) { setStatus("Could not start: " + error.message); }
 });
 stopAudio.addEventListener("click", async () => {
@@ -40,7 +40,7 @@ chrome.runtime.onMessage.addListener(message => {
     const detail = typeof message.detail === "string" ? message.detail :
       message.detail?.user ? "Mic: " + message.detail.user + " | ChatGPT: " + message.detail.assistant :
       JSON.stringify(message.detail || "");
-    if (message.status === "mismatch") setStatus("Transcript mismatch detected; see the on-page panel. " + detail);
+    if (message.status === "mismatch") setStatus("Transcript mismatch detected; recovery may be triggered. " + detail);
     else if (message.status === "corrected") setStatus("Local transcript suggestion available. " + detail);
     else if (message.status === "sent") setStatus("Auto-sent transcript: " + detail);
     else if (message.status === "composer-filled") setStatus("Transcript filled but not sent: " + detail);
