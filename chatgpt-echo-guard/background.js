@@ -1,6 +1,7 @@
 // MV3 service worker: starts tab capture from the popup's user gesture and hosts
 // the offscreen document that records separate mic/tab audio streams.
 let captureTabId = null;
+chrome.storage.local.get({ echoCaptureTabId: null }, data => { captureTabId = data.echoCaptureTabId; });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "ECHO_AUDIO_START") {
@@ -16,6 +17,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === "ECHO_AUDIO_MISMATCH") {
     if (captureTabId != null) chrome.tabs.sendMessage(captureTabId, { type: "ECHO_GUARD_NEW_CHAT" }).catch(() => {});
+    else chrome.storage.local.get({ echoCaptureTabId: null }, data => {
+      if (data.echoCaptureTabId != null) chrome.tabs.sendMessage(data.echoCaptureTabId, { type: "ECHO_GUARD_NEW_CHAT" }).catch(() => {});
+    });
     return;
   }
   if (message?.type === "ECHO_AUDIO_STATUS") {
@@ -38,6 +42,7 @@ async function ensureOffscreen() {
 async function startAudioCompare(tabId) {
   if (!Number.isInteger(tabId)) throw new Error("Open ChatGPT in a tab first.");
   captureTabId = tabId;
+  await chrome.storage.local.set({ echoCaptureTabId: tabId });
   const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
   await ensureOffscreen();
   const response = await chrome.runtime.sendMessage({ type: "ECHO_OFFSCREEN_START", streamId });
@@ -49,6 +54,7 @@ async function stopAudioCompare() {
   await chrome.storage.local.set({ echoAudioCompareEnabled: false });
   try { await chrome.runtime.sendMessage({ type: "ECHO_OFFSCREEN_STOP" }); } catch {}
   captureTabId = null;
+  await chrome.storage.local.remove("echoCaptureTabId");
 }
 
 chrome.runtime.onStartup.addListener(() => stopAudioCompare());
