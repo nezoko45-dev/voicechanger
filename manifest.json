@@ -1,15 +1,19 @@
 {
   "manifest_version": 3,
-  "name": "Fish Audio Call Again Clicker",
-  "version": "3.1.0",
+  "name": "Fish Audio Repeater Clicker",
+  "version": "4.0.0",
   "minimum_chrome_version": "116",
-  "description": "Automatically click Fish Audio's Call again button when it becomes available.",
+  "description": "Locally compare your speech with Fish Audio output, click Call again on mismatches, and auto-click Call again whenever it becomes available.",
   "permissions": [
-    "tabs"
+    "tabs",
+    "storage",
+    "tabCapture",
+    "offscreen"
   ],
   "host_permissions": [
     "https://fish.audio/*",
-    "https://*.fish.audio/*"
+    "https://*.fish.audio/*",
+    "http://127.0.0.1:8765/*"
   ],
   "content_scripts": [
     {
