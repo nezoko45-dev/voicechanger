@@ -11,6 +11,7 @@
   let automatic = false;
   let observer = null;
   let waitingForReset = false;
+  let waitingForEndCallToDisappear = false;
   let lastAction = "Automatic clicker is stopped.";
   let mismatchRecoveryEnabled = false;
   let lastMismatchAt = 0;
@@ -42,6 +43,13 @@
 
   function scan() {
     if (!automatic) return;
+    if (waitingForEndCallToDisappear) {
+      // Do not accidentally click a stale Call again button before the ended
+      // call has actually disappeared from the page.
+      if (findEndCallButton()) return;
+      waitingForEndCallToDisappear = false;
+      waitingForReset = false;
+    }
     const button = findCallAgainButton();
     if (!button || !enabled(button)) {
       // Re-arm only after the current action has visibly reset.
@@ -82,6 +90,7 @@
     if (observer) observer.disconnect();
     observer = null;
     waitingForReset = false;
+    waitingForEndCallToDisappear = false;
     lastAction = "Automatic clicker stopped.";
     return { ok: true, automatic, message: lastAction };
   }
@@ -117,6 +126,7 @@
           });
         }
         waitingForReset = true;
+        waitingForEndCallToDisappear = true;
         endCallButton.click();
         lastAction = "Transcript mismatch detected. Clicked “End call”; waiting for “Call again” to appear.";
       } else {
