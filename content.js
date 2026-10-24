@@ -106,6 +106,8 @@
       }
       chrome.runtime.sendMessage({ type: "FISH_AUDIO_AUTO_STATUS", automatic, mismatchRecoveryEnabled, message: lastAction }).catch(() => {});
       sendResponse({ ok: true, automatic, mismatchRecoveryEnabled, message: lastAction });
+    } else if (message?.type === "FISH_AUDIO_AUTO_START") {
+      sendResponse(start());
     } else if (message?.type === "FISH_AUDIO_AUTO_TOGGLE") {
       sendResponse(automatic ? stop() : start());
     } else if (message?.type === "FISH_AUDIO_GET_STATUS") {
