@@ -115,9 +115,6 @@
       if (!latestUser || !latestAssistant || latestAssistant !== lastAssistantText) return;
       if (latestAssistant === handledAssistantText) return;
 
-      // Only act when Voice Mode appears active; this avoids resetting ordinary text chats.
-      if (!voiceModeLooksActive()) return;
-
       handledAssistantText = latestAssistant;
       const score = similarity(latestUser, latestAssistant);
       // Short utterances are especially prone to transcription mismatch. Require a very close
