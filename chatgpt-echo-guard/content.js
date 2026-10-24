@@ -35,6 +35,91 @@
     return true;
   });
 
+
+  let transcriptPanel = null;
+  let localTranscriptText = "";
+  let assistantTranscriptText = "";
+
+  function ensureTranscriptPanel() {
+    if (transcriptPanel?.isConnected) return transcriptPanel;
+    transcriptPanel = document.createElement("section");
+    transcriptPanel.id = "echo-guard-live-transcript";
+    transcriptPanel.setAttribute("role", "status");
+    transcriptPanel.style.cssText = [
+      "position:fixed","right:18px","bottom:18px","z-index:2147483647",
+      "width:min(360px,calc(100vw - 36px))","max-height:42vh","overflow:auto",
+      "padding:14px","border:1px solid #7778","border-radius:14px",
+      "background:Canvas","color:CanvasText","box-shadow:0 8px 32px #0004",
+      "font:13px/1.45 system-ui,sans-serif"
+    ].join(";");
+    const heading = document.createElement("div");
+    heading.textContent = "Echo Guard · Live transcript helper";
+    heading.style.cssText = "font-weight:700;margin-bottom:5px";
+    const note = document.createElement("div");
+    note.textContent = "Local suggestions only — ChatGPT's Voice Mode transcript is not being edited or replaced.";
+    note.style.cssText = "opacity:.75;font-size:11px;margin-bottom:10px";
+    const userLabel = document.createElement("div");
+    userLabel.textContent = "Your words (local Whisper):";
+    userLabel.style.fontWeight = "600";
+    const userText = document.createElement("div");
+    userText.id = "echo-guard-local-words";
+    userText.textContent = "Waiting for speech…";
+    userText.style.cssText = "white-space:pre-wrap;overflow-wrap:anywhere;margin:3px 0 10px";
+    const assistantLabel = document.createElement("div");
+    assistantLabel.textContent = "ChatGPT audio transcript (local estimate):";
+    assistantLabel.style.fontWeight = "600";
+    const assistantText = document.createElement("div");
+    assistantText.id = "echo-guard-assistant-words";
+    assistantText.textContent = "Waiting for ChatGPT speech…";
+    assistantText.style.cssText = "white-space:pre-wrap;overflow-wrap:anywhere;margin:3px 0 10px";
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.textContent = "Copy my corrected words";
+    copy.style.cssText = "padding:6px 10px;border:1px solid #8888;border-radius:8px;background:transparent;color:inherit;cursor:pointer";
+    copy.addEventListener("click", async () => {
+      if (!localTranscriptText) return;
+      try {
+        await navigator.clipboard.writeText(localTranscriptText);
+        copy.textContent = "Copied!";
+        setTimeout(() => { if (copy.isConnected) copy.textContent = "Copy my corrected words"; }, 1200);
+      } catch {
+        copy.textContent = "Clipboard unavailable";
+      }
+    });
+    const close = document.createElement("button");
+    close.type = "button";
+    close.textContent = "×";
+    close.setAttribute("aria-label", "Hide Echo Guard transcript helper");
+    close.style.cssText = "position:absolute;right:8px;top:7px;border:0;background:transparent;color:inherit;font-size:20px;cursor:pointer";
+    close.addEventListener("click", () => { transcriptPanel?.remove(); transcriptPanel = null; });
+    transcriptPanel.append(heading,note,userLabel,userText,assistantLabel,assistantText,copy,close);
+    document.documentElement.appendChild(transcriptPanel);
+    return transcriptPanel;
+  }
+
+  chrome.runtime.onMessage.addListener(message => {
+    if (message?.type === "ECHO_LOCAL_TRANSCRIPT") {
+      localTranscriptText = String(message.text || "");
+      ensureTranscriptPanel();
+      const node = transcriptPanel.querySelector("#echo-guard-local-words");
+      if (node) node.textContent = localTranscriptText || "No words recognized.";
+    }
+    if (message?.type === "ECHO_ASSISTANT_TRANSCRIPT") {
+      assistantTranscriptText = String(message.text || "");
+      ensureTranscriptPanel();
+      const node = transcriptPanel.querySelector("#echo-guard-assistant-words");
+      if (node) node.textContent = assistantTranscriptText || "No words recognized.";
+      const userNode = transcriptPanel.querySelector("#echo-guard-local-words");
+      if (userNode && message.status === "mismatch") {
+        userNode.style.textDecoration = "underline wavy #d97706";
+        userNode.title = "The locally recognized words differ from the locally recognized ChatGPT audio.";
+      } else if (userNode) {
+        userNode.style.textDecoration = "none";
+        userNode.title = "";
+      }
+    }
+  });
+
   const normalize = s => (s || "")
     .toLocaleLowerCase()
     .normalize("NFKD")
