@@ -72,7 +72,7 @@ function makeSegmenter(context, stream, role) {
 async function transcribe(frames, sampleRate, role) {
   busy = true;
   try {
-    const wav = encodeWav(frames, sampleRate);
+    // Whisper expects 16 kHz mono samples; Chrome commonly captures at 48 kHz.\n    const resampled = resampleFrames(frames, sampleRate, 16000);\n    const wav = encodeWav([resampled], 16000);
     const response = await fetch("http://127.0.0.1:8765/transcribe", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ audio: bytesToBase64(wav), sample_rate: sampleRate })
@@ -110,6 +110,24 @@ function normalize(value) {
   return String(value).toLocaleLowerCase().normalize("NFKD")
     .replace(/[’']/g, "").replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ").trim();
+}
+
+function resampleFrames(frames, sourceRate, targetRate) {
+  const sourceLength = frames.reduce((sum, frame) => sum + frame.length, 0);
+  const source = new Float32Array(sourceLength);
+  let cursor = 0;
+  for (const frame of frames) { source.set(frame, cursor); cursor += frame.length; }
+  if (sourceRate === targetRate) return source;
+  const targetLength = Math.max(1, Math.floor(sourceLength * targetRate / sourceRate));
+  const target = new Float32Array(targetLength);
+  const ratio = sourceRate / targetRate;
+  for (let i = 0; i < targetLength; i++) {
+    const position = i * ratio;
+    const left = Math.floor(position), right = Math.min(left + 1, sourceLength - 1);
+    const fraction = position - left;
+    target[i] = source[left] * (1 - fraction) + source[right] * fraction;
+  }
+  return target;
 }
 
 function encodeWav(frames, sampleRate) {
