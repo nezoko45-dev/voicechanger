@@ -14,12 +14,12 @@
 </head>
 <body>
   <h1>ChatGPT Echo Guard</h1>
-  <p>Show your locally recognized words beside a local estimate of ChatGPT's spoken words while Voice Mode audio keeps playing live.</p>
+  <p>Transcribe your microphone locally and automatically send each recognized phrase to ChatGPT as text when the composer is available.</p>
   <label><input id="enabled" type="checkbox"> Arm transcript fallback</label>
   <button id="audioToggle">Start live transcript helper</button>
   <button id="stopAudio" class="secondary">Stop transcript helper</button>
   <div id="status">Loading…</div>
-  <p class="note">Run EchoGuardTranscriber.exe first. This does not edit ChatGPT's internal transcript or change what it receives. Speech is transcribed on this computer; no cloud speech API is used.</p>
+  <p class="note">Run EchoGuardTranscriber.exe first. Auto-send can interrupt or exit Voice Mode; ChatGPT's private internal transcript cannot be edited directly. Speech is transcribed locally with no cloud speech API.</p>
   <script src="popup.js"></script>
 </body>
 </html>
