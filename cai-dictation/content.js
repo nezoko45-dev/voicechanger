@@ -13,13 +13,22 @@
     return [...main.querySelectorAll('button,[role="button"]')].filter(btn=>{
       const label=[btn.getAttribute('aria-label'),btn.getAttribute('title'),btn.getAttribute('data-testid'),btn.getAttribute('data-state')].join(' ').toLowerCase();
       const text=(btn.innerText||btn.textContent||'').replace(/\s+/g,' ').trim().toLowerCase();
-      const svg=btn.querySelector('svg');
-      const hasTriangle=!!(svg&&svg.querySelector('path[d*="L"],polygon,polyline'));
-      // Match the reply audio player's play control, not the separate "Voice" pill.
-      const saysPlay=/(^|\\b)(play|play audio|play voice|playback|listen)(\\b|$)/i.test(label)||/^play( audio| voice)?$/.test(text);
+      const saysPlay=/(^|\b)(play|play audio|play voice|playback|listen)(\b|$)/i.test(label)||/^play( audio| voice)?$/.test(text);
       const saysVoice=text==='voice'||label.trim()==='voice';
       if(saysVoice||/send|submit|regenerate|edit|share|copy|delete|report|like|dislike/i.test(label+' '+text))return false;
-      return saysPlay || (!label.trim()&&!text&&hasTriangle&&btn.closest('[data-message-id],[data-testid*="message"],[class*="message"],[class*="Message"]'));
+      if(saysPlay)return true;
+      // Character.AI can render the blue triangle without accessible text.
+      // In that case, identify the unlabeled icon button next to the "voice recorder" reply label.
+      if(label.trim()||text)return false;
+      const svg=btn.querySelector('svg');
+      const hasIcon=!!(svg&&svg.querySelector('path,polygon,polyline'));
+      if(!hasIcon)return false;
+      let parent=btn.parentElement;
+      for(let depth=0;parent&&depth<5;depth++,parent=parent.parentElement){
+        const nearby=(parent.innerText||parent.textContent||'').replace(/\s+/g,' ').trim().toLowerCase();
+        if(nearby.includes('voice recorder')&&parent.querySelector('button,[role="button"]')===btn)return true;
+      }
+      return false;
     });
   }
   function sendAndPlayReply(el){
