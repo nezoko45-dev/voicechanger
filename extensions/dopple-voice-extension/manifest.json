@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Dopple Voice Dictation",
+  "version": "1.1.0",
+  "description": "Continuously dictate messages into Dopple.ai, restart speech recognition sessions, and submit with Enter after a pause.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://dopple.ai/*",
+    "https://www.dopple.ai/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://dopple.ai/*",
+        "https://www.dopple.ai/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Dopple Voice Dictation",
+    "default_popup": "popup.html"
+  }
+}
