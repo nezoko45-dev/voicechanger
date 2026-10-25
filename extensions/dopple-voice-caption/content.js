@@ -4,7 +4,7 @@
 
   const state = { auto: true, lastText: "", voice: null, rate: 1, pitch: 1.12, observer: null, scanTimer: null };
   const $ = (s, root=document) => root.querySelector(s);
-  const clean = s => (s || "").replace(/\\s+/g, " ").trim();
+  const clean = s => (s || "").replace(/\s+/g, " ").trim();
   const ignored = new Set(["read aloud", "copy", "regenerate", "edit", "like", "dislike", "share", "retry", "stop generating"]);
 
   function chooseFemaleVoice() {
