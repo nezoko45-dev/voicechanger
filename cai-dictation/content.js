@@ -8,42 +8,35 @@
   function read(el){return el.isContentEditable?el.textContent.trim():(el.value||'').trim()}
   function setText(el,text){el.focus();if(el.isContentEditable||el.getAttribute('contenteditable')==='true'){el.textContent=text;el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}))}else{const setter=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),'value')?.set;setter?setter.call(el,text):el.value=text;el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}));try{el.setSelectionRange(text.length,text.length)}catch{}}el.dispatchEvent(new Event('change',{bubbles:true}))}
   function sendButton(el){const scope=el.closest('form')||el.parentElement?.parentElement?.parentElement||document;return[...scope.querySelectorAll('button')].find(b=>!b.disabled&&b.getAttribute('aria-disabled')!=='true'&&/send|submit|send-message|submit-message/i.test([b.getAttribute('aria-label'),b.title,b.innerText,b.getAttribute('data-testid')].join(' ')))}
-  function sendAfterSilence(){if(sendTimer)clearTimeout(sendTimer);sendTimer=setTimeout(()=>{sendTimer=null;const el=composer();if(!el||!read(el))return;const btn=sendButton(el);if(btn){btn.click();showStatus('Silence detected — message sent.')}else showStatus('Silence detected, but Send was not found. Please send manually.')},SILENCE_TO_SEND_MS)}
-  function showStatus(message){let el=document.getElementById('__cai_dictation_status');if(!el){el=document.createElement('div');el.id='__cai_dictation_status';Object.assign(el.style,{position:'fixed',zIndex:'2147483647',bottom:'14px',right:'14px',padding:'9px 12px',borderRadius:'10px',background:'#211b2a',color:'#fff',font:'13px system-ui',boxShadow:'0 4px 20px #0005',maxWidth:'360px'});document.documentElement.appendChild(el)}el.textContent='🎙 '+message}
-  // Target only the visible "Voice" button in the Character.AI chat content,
-  // such as the one shown beneath a reply in a newly opened chat.
-  let voiceRecoveryTimer=null,voiceRecoveryGeneration=0;
-  function voiceButtonFrom(target){
-    const btn=target instanceof Element?target.closest('button,[role="button"]'):null;
-    if(!btn)return null;
-    const visibleText=(btn.innerText||btn.textContent||'').replace(/\s+/g,' ').trim().toLowerCase();
-    if(visibleText!=='voice')return null;
-    // Ignore site navigation/header controls; prefer the button inside the chat's main content.
-    const main=document.querySelector('main,[role="main"]');
-    if(main&&!main.contains(btn))return null;
-    return btn;
+  function voiceButtons(){
+    const main=document.querySelector('main,[role="main"]')||document;
+    return [...main.querySelectorAll('button,[role="button"]')].filter(btn=>(btn.innerText||btn.textContent||'').replace(/\s+/g,' ').trim().toLowerCase()==='voice');
   }
-  function hasActiveMedia(){
-    return [...document.querySelectorAll('audio,video')].some(m=>!m.paused&&!m.ended&&m.currentTime>0);
-  }
-  document.addEventListener('click',event=>{
-    const btn=voiceButtonFrom(event.target);
-    if(!btn)return;
-    if(voiceRecoveryTimer)clearTimeout(voiceRecoveryTimer);
-    const attempt=++voiceRecoveryGeneration;
-    voiceRecoveryTimer=setTimeout(()=>{
-      voiceRecoveryTimer=null;
-      if(attempt!==voiceRecoveryGeneration||!btn.isConnected||hasActiveMedia())return;
-      // If no audio started, toggle this exact Voice button off, then back on once.
-      btn.click();
+  function sendAndPlayReply(el){
+    const send=sendButton(el);
+    if(!send){showStatus('Silence detected, but Send was not found. Please send manually.');return}
+    const previous=new Set(voiceButtons());
+    let finished=false,observer=null,timeout=null;
+    const cleanup=()=>{if(observer)observer.disconnect();if(timeout)clearTimeout(timeout)};
+    const tryPlay=()=>{
+      if(finished)return false;
+      const button=voiceButtons().find(candidate=>!previous.has(candidate));
+      if(!button||!button.isConnected)return false;
+      finished=true;cleanup();
       setTimeout(()=>{
-        if(attempt===voiceRecoveryGeneration&&btn.isConnected&&!hasActiveMedia()){
-          btn.click();
-          showStatus('Character.AI Voice button did not start playback — toggled off and back on.');
-        }
-      },350);
-    },2200);
-  },true);
+        if(button.isConnected){button.click();showStatus('Message sent — clicked Voice on the new reply.')}
+      },250);
+      return true;
+    };
+    observer=new MutationObserver(()=>tryPlay());
+    observer.observe(document.body,{childList:true,subtree:true,characterData:true});
+    timeout=setTimeout(()=>{if(finished)return;finished=true;cleanup();showStatus('Message sent, but the new reply Voice button was not detected.')},45000);
+    send.click();
+    showStatus('Message sent — waiting for the new reply, then clicking Voice…');
+    setTimeout(tryPlay,300);
+  }
+  function sendAfterSilence(){if(sendTimer)clearTimeout(sendTimer);sendTimer=setTimeout(()=>{sendTimer=null;const el=composer();if(!el||!read(el))return;sendAndPlayReply(el)},SILENCE_TO_SEND_MS)}
+  function showStatus(message){let el=document.getElementById('__cai_dictation_status');if(!el){el=document.createElement('div');el.id='__cai_dictation_status';Object.assign(el.style,{position:'fixed',zIndex:'2147483647',bottom:'14px',right:'14px',padding:'9px 12px',borderRadius:'10px',background:'#211b2a',color:'#fff',font:'13px system-ui',boxShadow:'0 4px 20px #0005',maxWidth:'360px'});document.documentElement.appendChild(el)}el.textContent='🎙 '+message}
   function scheduleRestart(delay){if(!listening||restartTimer)return;const token=generation;restartTimer=setTimeout(()=>{restartTimer=null;if(listening&&token===generation)startSession()},delay)}
   function stop(){listening=false;generation++;if(restartTimer)clearTimeout(restartTimer);if(sendTimer)clearTimeout(sendTimer);restartTimer=sendTimer=null;if(recognition){const old=recognition;recognition=null;old.onend=old.onerror=old.onresult=null;try{old.stop()}catch{}}showStatus('Dictation stopped.');return{ok:true,message:'Dictation stopped.'}}
   function startSession(){if(!listening)return;const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){listening=false;showStatus('Chrome speech recognition is unavailable.');return}const token=generation,instance=new SR();recognition=instance;instance.continuous=true;instance.interimResults=false;instance.lang=navigator.language||'en-US';instance.maxAlternatives=1;
