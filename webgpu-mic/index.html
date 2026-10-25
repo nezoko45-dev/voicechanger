@@ -21,7 +21,7 @@
   <h2>1 · Record microphone audio</h2>
   <label for="mic">Microphone</label><select id="mic" aria-label="Microphone"></select>
   <div><button id="start">Start recording</button><button id="stop" disabled>Stop recording</button></div>
-  <p id="recording" class="muted">No recording yet.</p><audio id="sourcePreview" controls hidden></audio>
+  <p id="recording" class="muted">No recording yet.</p><label><input id="autoConvert" type="checkbox" checked> Automatically convert when I stop recording</label><p>Live microphone level</p><meter id="micLevel" min="0" max="1" value="0" style="width:100%;height:20px"></meter><audio id="sourcePreview" controls hidden></audio>
 </div>
 <div class="panel">
   <h2>2 · Select your reference WAV</h2>
@@ -32,14 +32,14 @@
   <h2>3 · Convert</h2>
   <label for="engine">VoiceClonNX engine</label>
   <select id="engine"><option value="facodec">FACodec (recommended)</option><option value="openvoice">OpenVoice V2</option><option value="knnvc">kNN-VC</option><option value="chatterbox">Chatterbox</option></select>
-  <div><button id="convert" disabled>Convert recording</button></div>
+  <div><button id="convert" disabled>Convert recording</button></div><p class="muted">Folder automation: choose a folder of WAV files below. New WAV files will be converted automatically while this page stays open.</p><button id="watchFolder" type="button">Choose WAV folder to watch</button><button id="stopWatching" type="button" disabled>Stop folder watch</button><p id="folderStatus" class="muted">No folder selected.</p><ul id="folderQueue"></ul>
   <p id="status" role="status">Record audio and choose a reference WAV to begin.</p>
   <audio id="resultAudio" controls hidden></audio>
   <p><a id="download" hidden download="voiceclonnx-converted.wav">Download converted WAV</a></p>
 </div>
 <script>
 const $=id=>document.getElementById(id);
-let stream=null,recorder=null,chunks=[],recordedBlob=null,objectUrl=null,recordingContext=null;
+let stream=null,recorder=null,chunks=[],recordedBlob=null,objectUrl=null,recordingContext=null,levelContext=null,levelFrame=null,folderHandle=null,folderTimer=null,seenWavs=new Set();
 const api='http://127.0.0.1:8765';
 function status(s){$('status').textContent=s}
 function encodeWav(audioBuffer){
@@ -69,7 +69,7 @@ async function listMics(){
 }
 $('start').onclick=async()=>{
  try{
-  stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:$('mic').value?{exact:$('mic').value}:undefined,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+  stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:$('mic').value?{exact:$('mic').value}:undefined,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});\n  startLevelMeter(stream);
   await listMics();
   chunks=[];recorder=new MediaRecorder(stream);
   recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
@@ -87,7 +87,7 @@ $('start').onclick=async()=>{
       $('recording').textContent='Recorded and converted to PCM WAV · '+(recordedBlob.size/1024).toFixed(1)+' KB. Ready to convert.';
       $('convert').disabled=!$('reference').files.length;
     }).catch(e=>{recordedBlob=null;$('recording').textContent='Could not decode microphone recording: '+e.message+' Try Chrome and record again.';$('convert').disabled=true;})
-    .finally(()=>{stream?.getTracks().forEach(t=>t.stop());stream=null});
+    .finally(()=>{stream?.getTracks().forEach(t=>t.stop());stream=null;stopLevelMeter();if($('autoConvert').checked&&recordedBlob&&$('reference').files.length)setTimeout(()=>$('convert').click(),100)});
   };
   recorder.start();$('start').disabled=true;$('stop').disabled=false;$('recording').textContent='Recording… speak now.';
  }catch(e){status('Microphone error: '+e.message)}
