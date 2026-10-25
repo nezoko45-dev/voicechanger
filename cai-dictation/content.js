@@ -24,18 +24,35 @@
   function setText(el,text){el.focus();if(el.isContentEditable||el.getAttribute('contenteditable')==='true'){el.textContent=text;el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}))}else{const setter=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),'value')?.set;setter?setter.call(el,text):el.value=text;el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}));try{el.setSelectionRange(text.length,text.length)}catch{}}el.dispatchEvent(new Event('change',{bubbles:true}))}
   function sendButton(el){
     const visible=e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'};
-    const meta=b=>[b.getAttribute('aria-label'),b.title,b.innerText,b.textContent,b.getAttribute('data-testid'),b.getAttribute('data-action'),b.getAttribute('type')].join(' ').replace(/\s+/g,' ').trim().toLowerCase();
+    const meta=b=>[b.getAttribute('aria-label'),b.title,b.innerText,b.textContent,b.getAttribute('data-testid'),b.getAttribute('data-action'),b.getAttribute('type')].join(' ').replace(/\\s+/g,' ').trim().toLowerCase();
     const enabled=b=>!b.disabled&&b.getAttribute('aria-disabled')!=='true'&&visible(b);
     const isComment=b=>/comment|post comment/i.test(meta(b)+' '+(b.closest('form')?.innerText||'').slice(0,180).toLowerCase());
     const isDangerous=b=>/video|generator|generate video|image|create|voice|play|audio|record|microphone|attach|emoji|sticker|gift|menu|more|regenerate|refresh|retry|like|share/i.test(meta(b));
     let node=el;
     for(let depth=0;node&&depth<5;depth++,node=node.parentElement){
-      const buttons=[...node.querySelectorAll('button,[role="button"]')].filter(enabled);
-      const match=buttons.find(b=>!isComment(b)&&!isDangerous(b)&&/(^|\b)(send|submit|send message|send-message|submit-message)(\b|$)/i.test(meta(b)));
-      if(match)return match;
+      const buttons=[...node.querySelectorAll('button,[role="button"],input[type="submit"]')].filter(enabled);
+      const labelled=buttons.find(b=>!isComment(b)&&!isDangerous(b)&&/(^|\\b)(send|submit|send message|send-message|submit-message)(\\b|$)/i.test(meta(b)));
+      if(labelled)return labelled;
     }
-    // Never guess among unlabeled icon buttons: Talkie's Video Generator is also an icon control.
-    // If no identifiable Send control exists, leave the message in the composer for manual sending.
+    // Talkie desktop chat: the paper-plane icon sits at the right edge of the same
+    // rounded composer row. Select only a right-adjacent icon in that row, never
+    // a generic icon elsewhere on the page (such as Video Generator).
+    if(location.hostname==='www.talkie-ai.com'||location.hostname==='talkie-ai.com'){
+      let parent=el;
+      for(let depth=0;parent&&depth<4;depth++,parent=parent.parentElement){
+        const er=el.getBoundingClientRect();
+        const candidates=[...parent.querySelectorAll('button,[role="button"],input[type="submit"]')]
+          .filter(enabled)
+          .filter(b=>b!==el&&!isComment(b)&&!isDangerous(b))
+          .map(b=>({b,r:b.getBoundingClientRect(),label:meta(b)}))
+          .filter(x=>x.r.left>=er.right-8&&Math.abs((x.r.top+x.r.bottom)/2-(er.top+er.bottom)/2)<Math.max(36,er.height))
+          .filter(x=>!x.label||/^(button|submit)$/i.test(x.label))
+          .filter(x=>!!x.b.querySelector('svg'))
+          .sort((a,b)=>a.r.left-b.r.left);
+        if(candidates.length)return candidates[0].b;
+      }
+    }
+    // Never guess among unlabeled icon buttons outside the actual composer row.
     return null;
   }
   function replyPlayButtons(){
