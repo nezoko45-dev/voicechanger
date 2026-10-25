@@ -107,18 +107,12 @@ async function normalizeWavFile(file){
   return new File([pcm],cleanName,{type:'audio/wav'});
  }finally{await ctx.close().catch(()=>{})}
 }
-$('reference').onchange=async()=>{
+$('reference').onchange=()=>{
  const ref=$('reference').files[0];
- $('convert').disabled=!(ref||recordedBlob);
- if(!ref)return;
- if(!/\.wav$/i.test(ref.name)){status('Please choose a .wav reference file.');return}
- if(conversionBusy){status('A conversion is already running. Wait for it to finish, then choose the WAV again.');return}
- try{
-  status('Reading and normalizing '+ref.name+' into standard PCM WAV…');
-  const normalized=await normalizeWavFile(ref);
-  // Automatically convert the selected WAV as source, using the same normalized WAV as reference.
-  await convertFile(normalized,normalized);
- }catch(e){status('Could not read/convert selected WAV: '+e.message+' Try opening the file in an audio player to verify it is valid.')}
+ if(!ref){$('convert').disabled=true;return}
+ if(!/\.wav$/i.test(ref.name)){status('Please choose a .wav reference file.');$('convert').disabled=true;return}
+ $('convert').disabled=!recordedBlob;
+ status('Reference voice selected: '+ref.name+'. Record your voice, then convert the recording.');
 };
 async function convertFile(sourceFile,referenceFile){
  if(conversionBusy)return;
@@ -147,8 +141,8 @@ async function convertFile(sourceFile,referenceFile){
 $('convert').onclick=async()=>{
  const ref=$('reference').files[0];
  if(recordedBlob&&ref){await convertFile(new File([recordedBlob],'microphone.wav',{type:'audio/wav'}),ref);return}
- if(ref){await convertFile(ref,ref);return}
- status('Choose a reference WAV first.');
+ if(!ref){status('Choose your reference WAV first.');return}
+ status('Record your own voice first, then click Convert recording. The reference WAV is not the source audio.');
 };
 
 function startLevelMeter(mediaStream){
