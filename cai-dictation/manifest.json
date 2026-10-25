@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Character.AI Voice Dictation",
+  "version": "1.0.0",
+  "description": "Dictate speech into Character.AI's message box and initialize a repeat-after-me instruction.",
+  "permissions": [
+    "activeTab"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://character.ai/*",
+        "https://*.character.ai/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
