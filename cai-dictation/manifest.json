@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "description": "Dictate speech into Character.AI's message box and initialize a repeat-after-me instruction.",
   "permissions": [
-    "activeTab"
+    "activeTab",
+    "on-device-speech-recognition"
   ],
   "action": {
     "default_popup": "popup.html"
