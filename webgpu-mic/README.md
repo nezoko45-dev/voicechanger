@@ -21,7 +21,7 @@ If no successful Actions build artifact is available yet, the workflow may still
 
 ## Included files
 
-- `index.html`: browser UI with microphone selection, PCM WAV recording, reference WAV selection, engine selection, conversion, playback and download.
+- `index.html`: browser UI with microphone selection, PCM WAV recording, reference WAV selection, batch conversion, playback/download, plus an experimental chunk-based live conversion mode and output-device selector.
 - `server.py`: local FastAPI backend, also serves the browser UI so the user only launches one app.
 - `requirements.txt`: conversion and packaging dependencies.
 - `build_exe_locally.bat`: optional local PyInstaller build.
@@ -31,5 +31,9 @@ If no successful Actions build artifact is available yet, the workflow may still
 ## WebGPU status
 
 **The complete converter does not yet run in WebGPU.** The EXE bundles and runs the local VoiceClonNX runtime; the browser checks WebGPU availability and the model probe tests session creation for an individual ONNX file. A successful session is not proof of end-to-end conversion. Browser-side WebGPU support still requires an engine pipeline to be ported and validated.
+
+## Experimental live conversion
+
+The **Start live conversion** control sends approximately 2.5-second microphone chunks to `/live-convert`, keeps the selected VoiceClonNX engine loaded between chunks, and plays converted chunks to the chosen output device when supported. This is a chunked workaround around the library file-in/file-out API, **not true streaming inference**. Expect noticeable latency, pauses/gaps, and possible artifacts; conversion may fall behind real time depending on engine and PC. It is not yet validated as a reliable VRChat microphone replacement. WebGPU is still not used for conversion.
 
 The API binds to loopback (`127.0.0.1`) only. Do not expose it to the public internet. Use voice samples you own or are authorized to use.
