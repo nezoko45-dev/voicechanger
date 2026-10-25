@@ -40,6 +40,7 @@
 <script>
 const $=id=>document.getElementById(id);
 let stream=null,recorder=null,chunks=[],recordedBlob=null,objectUrl=null,recordingContext=null,levelContext=null,levelFrame=null,folderHandle=null,folderTimer=null,seenWavs=new Set(),conversionBusy=false;
+let liveStream=null,liveContext=null,liveProcessor=null,liveMute=null,liveOutputNode=null,liveActive=false,liveSamples=[],liveBusy=false,livePending=[],liveNextTime=0;
 const api='http://127.0.0.1:8765';
 function status(s){$('status').textContent=s}
 function encodeWav(audioBuffer){
@@ -163,7 +164,95 @@ $('watchFolder').onclick=async()=>{try{if(!window.showDirectoryPicker)throw Erro
 $('stopWatching').onclick=()=>{if(folderTimer)clearInterval(folderTimer);folderTimer=null;folderHandle=null;$('watchFolder').disabled=false;$('stopWatching').disabled=true;$('folderStatus').textContent='Folder watch stopped.'};
 
 navigator.mediaDevices?.addEventListener?.('devicechange',listMics);
-listMics();check();
+navigator.mediaDevices?.addEventListener?.('devicechange',listOutputDevices);
+
+async function listOutputDevices(){
+  try{
+    const devices=await navigator.mediaDevices.enumerateDevices();
+    const outputs=devices.filter(d=>d.kind==='audiooutput');
+    const old=$('outputDevice').value;
+    $('outputDevice').replaceChildren(new Option('Default output',''),...outputs.map((d,i)=>new Option(d.label||'Output '+(i+1),d.deviceId)));
+    if(outputs.some(d=>d.deviceId===old))$('outputDevice').value=old;
+  }catch(e){$('liveStatus').textContent='Could not list output devices: '+e.message}
+}
+function floatSamplesToWav(samples,rate){
+  const buf=new ArrayBuffer(44+samples.length*2),v=new DataView(buf);
+  const write=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))};
+  write(0,'RIFF');v.setUint32(4,36+samples.length*2,true);write(8,'WAVE');write(12,'fmt ');
+  v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,rate,true);
+  v.setUint32(28,rate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);write(36,'data');v.setUint32(40,samples.length*2,true);
+  for(let i=0,p=44;i<samples.length;i++,p+=2){const s=Math.max(-1,Math.min(1,samples[i]));v.setInt16(p,s<0?s*32768:s*32767,true)}
+  return new Blob([buf],{type:'audio/wav'});
+}
+async function sendLiveChunk(samples){
+  const ref=$('reference').files[0];if(!ref||!liveActive)return;
+  const source=floatSamplesToWav(samples,liveContext.sampleRate);
+  const form=new FormData();form.append('source_audio',source,'live-chunk.wav');form.append('reference_audio',ref,ref.name);form.append('engine',$('engine').value);
+  try{
+    const response=await fetch(api+'/live-convert',{method:'POST',body:form});
+    if(!response.ok){let msg='HTTP '+response.status;try{msg=(await response.json()).detail||msg}catch{}throw Error(msg)}
+    const converted=await response.arrayBuffer();if(!liveActive)return;
+    const audio=await liveContext.decodeAudioData(converted);
+    const node=liveContext.createBufferSource();node.buffer=audio;node.connect(liveOutputNode);
+    const when=Math.max(liveContext.currentTime+0.04,liveNextTime);node.start(when);liveNextTime=when+audio.duration;
+    $('liveStatus').textContent='Live conversion running · '+audio.duration.toFixed(2)+' s converted per chunk. Processing delay depends on your PC and engine.';
+  }catch(e){$('liveStatus').textContent='Live conversion error: '+e.message+' · Stop and retry after checking the backend.'}
+}
+$('liveStart').onclick=async()=>{
+  if(liveActive)return;
+  if(!$('reference').files.length){$('liveStatus').textContent='Choose your reference WAV first.';return}
+  try{
+    liveStream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:$('mic').value?{exact:$('mic').value}:undefined,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    liveContext=new (window.AudioContext||window.webkitAudioContext)();
+    await liveContext.resume();
+    liveOutputNode=liveContext.createMediaStreamDestination();
+    const audioEl=$('liveOutput');audioEl.srcObject=liveOutputNode.stream;
+    if($('outputDevice').value&&typeof audioEl.setSinkId==='function')await audioEl.setSinkId($('outputDevice').value);
+    await audioEl.play();
+    const source=liveContext.createMediaStreamSource(liveStream);
+    liveProcessor=liveContext.createScriptProcessor(4096,1,1);
+    liveMute=liveContext.createGain();liveMute.gain.value=0;
+    liveSamples=[];liveBusy=false;livePending=[];liveNextTime=liveContext.currentTime;liveActive=true;
+    const samplesPerChunk=Math.round(liveContext.sampleRate*2.5);
+    liveProcessor.onaudioprocess=e=>{
+      if(!liveActive)return;
+      const input=e.inputBuffer.getChannelData(0);
+      for(let i=0;i<input.length;i++)liveSamples.push(input[i]);
+      if(liveSamples.length>=samplesPerChunk){
+        const packet=Float32Array.from(liveSamples.splice(0,samplesPerChunk));
+        if(livePending.length<2)livePending.push(packet);
+        if(!liveBusy)processLiveQueue();
+      }
+    };
+    source.connect(liveProcessor);liveProcessor.connect(liveMute);liveMute.connect(liveContext.destination);
+    $('liveStart').disabled=true;$('liveStop').disabled=false;
+    $('liveStatus').textContent='Microphone captured. Preparing first converted chunk… first use may take longer while the model loads.';
+  }catch(e){$('liveStatus').textContent='Could not start live conversion: '+e.message;stopLiveConversion()}
+};
+async function processLiveQueue(){
+  if(liveBusy||!liveActive||!livePending.length)return;
+  liveBusy=true;
+  try{while(liveActive&&livePending.length){const packet=livePending.shift();await sendLiveChunk(packet)}}
+  finally{liveBusy=false;if(liveActive&&livePending.length)processLiveQueue()}
+}
+function stopLiveConversion(){
+  liveActive=false;livePending=[];liveSamples=[];
+  if(liveProcessor){liveProcessor.onaudioprocess=null;try{liveProcessor.disconnect()}catch{}liveProcessor=null}
+  if(liveMute){try{liveMute.disconnect()}catch{}liveMute=null}
+  if(liveStream){liveStream.getTracks().forEach(t=>t.stop());liveStream=null}
+  if(liveContext){liveContext.close().catch(()=>{});liveContext=null}
+  liveOutputNode=null;$('liveOutput').srcObject=null;
+  $('liveStart').disabled=false;$('liveStop').disabled=true;
+  $('liveStatus').textContent='Live conversion stopped.';
+}
+$('liveStop').onclick=stopLiveConversion;
+$('outputDevice').onchange=async()=>{
+  const audio=$('liveOutput');
+  if(typeof audio.setSinkId==='function'){try{await audio.setSinkId($('outputDevice').value);$('liveStatus').textContent='Output device updated.'}catch(e){$('liveStatus').textContent='Could not select output device: '+e.message}}
+  else $('liveStatus').textContent='This browser does not support selecting an audio output device; using the default output.';
+};
+
+listMics();listOutputDevices();check();
 </script>
 </body>
 </html>
