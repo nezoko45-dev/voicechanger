@@ -27,7 +27,8 @@
     const meta=b=>[b.getAttribute('aria-label'),b.title,b.innerText,b.textContent,b.getAttribute('data-testid'),b.getAttribute('data-action'),b.getAttribute('type')].join(' ').replace(/\s+/g,' ').trim().toLowerCase();
     const enabled=b=>!b.disabled&&b.getAttribute('aria-disabled')!=='true'&&visible(b);
     const isComment=b=>/comment|post comment/i.test(meta(b)+' '+(b.closest('form')?.innerText||'').slice(0,180).toLowerCase());
-    const isDangerous=b=>/video|generator|generate video|image generation|create image|voice|play|audio|record|microphone|attach|emoji|sticker|gift|menu|more|regenerate|refresh|retry|like|share/i.test(meta(b));
+    const isDangerous=b=>/video|generator|image generation|create image|voice|play|audio|record|microphone|attach|emoji|sticker|gift|menu|more|regenerate|refresh|retry|like|share/i.test(meta(b));
+    // Keep the accessible-label route for Character.AI and older Talkie layouts.
     let node=el;
     for(let depth=0;node&&depth<5;depth++,node=node.parentElement){
       const buttons=[...node.querySelectorAll('button,[role="button"],input[type="submit"]')].filter(enabled);
@@ -36,21 +37,29 @@
     }
     if(location.hostname==='www.talkie-ai.com'||location.hostname==='talkie-ai.com'){
       const er=el.getBoundingClientRect(),ey=(er.top+er.bottom)/2;
-      // Talkie's composer is a single rounded row: lightbulb on the left,
-      // image icon near the right, then the paper-plane at the far right.
-      // Restrict fallback to compact click targets overlapping the editor's row
-      // and choose the rightmost icon, never the toolbar above the composer.
+      // Current Talkie composer uses a paper-plane icon with no Send label.
+      // Find the icon-only click target at the far right of the same input row.
       const candidates=[...document.querySelectorAll('button,[role="button"],[tabindex],a')]
         .filter(enabled)
         .filter(b=>b!==el&&!isComment(b)&&!isDangerous(b))
         .map(b=>({b,r:b.getBoundingClientRect(),label:meta(b)}))
-        .filter(x=>Math.abs((x.r.top+x.r.bottom)/2-ey)<=Math.max(34,er.height*0.85))
-        .filter(x=>x.r.width<=90&&x.r.height<=90)
-        .filter(x=>x.r.right>=er.right-100&&x.r.left<=er.right+25)
+        .filter(x=>Math.abs((x.r.top+x.r.bottom)/2-ey)<=Math.max(32,er.height*0.8))
+        .filter(x=>x.r.width<=64&&x.r.height<=64)
+        .filter(x=>x.r.right>=er.right-75&&x.r.left<=er.right+18)
         .filter(x=>!x.label||/^(button|submit)$/i.test(x.label))
         .filter(x=>!!x.b.querySelector('svg')||!!x.b.querySelector('[data-icon]'))
         .sort((a,b)=>b.r.right-a.r.right);
       if(candidates.length)return candidates[0].b;
+      // Some builds put the click handler on a non-button wrapper around the SVG.
+      const icons=[...document.querySelectorAll('svg')].filter(visible).map(svg=>{
+        const r=svg.getBoundingClientRect(),cy=(r.top+r.bottom)/2;
+        if(Math.abs(cy-ey)>Math.max(30,er.height*0.7)||r.right<er.right-65||r.left>er.right+10)return null;
+        let target=svg.closest('button,[role="button"],[tabindex],a');
+        if(!target){let p=svg;for(let i=0;i<3&&p.parentElement;i++,p=p.parentElement){if(getComputedStyle(p).cursor==='pointer'){target=p;break}}}
+        if(!target||!visible(target)||isDangerous(target)||isComment(target))return null;
+        return {target,r:target.getBoundingClientRect()};
+      }).filter(Boolean).sort((a,b)=>b.r.right-a.r.right);
+      if(icons.length)return icons[0].target;
     }
     return null;
   }
