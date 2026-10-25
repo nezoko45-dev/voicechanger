@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VoiceClonNX Mic · WebGPU experiment</title>
+<style>
+:root{color-scheme:dark;font:16px system-ui,sans-serif;background:#10131a;color:#f4f6fb}body{max-width:760px;margin:36px auto;padding:0 18px}h1{font-size:1.8rem}p{color:#b9c2d4;line-height:1.5}.panel{background:#1b2130;border:1px solid #30394d;border-radius:14px;padding:18px;margin:16px 0}label{display:block;font-weight:650;margin:12px 0 6px}input,button{font:inherit}input[type=file]{max-width:100%}button{border:0;border-radius:9px;padding:10px 14px;margin:8px 8px 0 0;background:#9bb8ff;color:#111827;font-weight:700;cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}.muted{font-size:.9rem;color:#9da9be}#status{white-space:pre-wrap;overflow-wrap:anywhere}audio{width:100%;margin-top:12px}.pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#293449;font-size:.85rem}
+</style>
+</head>
+<body>
+<h1>VoiceClonNX microphone converter</h1>
+<p>Record a short microphone sample, choose a WAV voice reference, and convert locally through the VoiceClonNX service.</p>
+<div class="panel">
+  <h2>Runtime check</h2>
+  <p id="gpu" class="pill">Checking WebGPU…</p>
+  <p class="muted">WebGPU availability is reported separately. The current VoiceClonNX Python backend performs conversion; this page does not claim that its model is running in WebGPU.</p>
+  <p id="backend" class="muted">Checking local backend…</p>
+</div>
+<div class="panel">
+  <h2>1 · Record microphone audio</h2>
+  <label for="mic">Microphone</label><select id="mic" aria-label="Microphone"></select>
+  <div><button id="start">Start recording</button><button id="stop" disabled>Stop recording</button></div>
+  <p id="recording" class="muted">No recording yet.</p><label><input id="autoConvert" type="checkbox" checked> Automatically convert when I stop recording</label><p>Live microphone level</p><meter id="micLevel" min="0" max="1" value="0" style="width:100%;height:20px"></meter><audio id="sourcePreview" controls hidden></audio>
+</div>
+<div class="panel">
+  <h2>Live voice conversion (experimental)</h2>
+  <p class="muted">Converts short microphone chunks through VoiceClonNX and plays converted chunks. This is not native streaming inference: expect latency, gaps, or artifacts, especially on CPU. Select a reference WAV first.</p>
+  <label for="outputDevice">Converted voice output device</label><select id="outputDevice"><option value="">Default output</option></select>
+  <button id="liveStart" type="button">Start live conversion</button><button id="liveStop" type="button" disabled>Stop live conversion</button>
+  <p id="liveStatus" class="muted">Live conversion is off.</p><audio id="liveOutput" autoplay playsinline hidden></audio>
+</div>
+<div class="panel">
+  <h2>2 · Select your reference WAV</h2>
+  <label for="reference">Reference voice (.wav)</label><input id="reference" type="file" accept=".wav,audio/wav">
+  <p class="muted">Choose the voice you want to sound like. This WAV is only the reference; your microphone recording (or a source WAV in folder watch) is what gets converted.</p>
+</div>
+<div class="panel">
+  <h2>3 · Convert</h2>
+  <label for="engine">VoiceClonNX engine</label>
+  <select id="engine"><option value="facodec">FACodec (recommended)</option><option value="openvoice">OpenVoice V2</option><option value="knnvc">kNN-VC</option><option value="chatterbox">Chatterbox</option></select>
+  <div><button id="convert" disabled>Convert recording</button></div><p class="muted">Folder automation: choose a folder of WAV files below. New WAV files will be converted automatically while this page stays open.</p><button id="watchFolder" type="button">Choose WAV folder to watch</button><button id="stopWatching" type="button" disabled>Stop folder watch</button><p id="folderStatus" class="muted">No folder selected.</p><ul id="folderQueue"></ul>
+  <p id="status" role="status">Record audio and choose a reference WAV to begin.</p>
+  <audio id="resultAudio" controls hidden></audio>
+  <p><a id="download" hidden download="voiceclonnx-converted.wav">Download converted WAV</a></p>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+let stream=null,recorder=null,chunks=[],recordedBlob=null,objectUrl=null,recordingContext=null,levelContext=null,levelFrame=null,folderHandle=null,folderTimer=null,seenWavs=new Set(),conversionBusy=false;
+let liveStream=null,liveContext=null,liveProcessor=null,liveMute=null,liveOutputNode=null,liveActive=false,liveSamples=[],liveBusy=false,livePending=[],liveNextTime=0;
+const api='http://127.0.0.1:8765';
+function status(s){$('status').textContent=s}
+function encodeWav(audioBuffer){
+ const channels=audioBuffer.numberOfChannels,rate=audioBuffer.sampleRate,frames=audioBuffer.length;
+ const pcm=new ArrayBuffer(44+frames*channels*2),view=new DataView(pcm);
+ const write=(offset,str)=>{for(let i=0;i<str.length;i++)view.setUint8(offset+i,str.charCodeAt(i))};
+ write(0,'RIFF');view.setUint32(4,36+frames*channels*2,true);write(8,'WAVE');write(12,'fmt ');
+ view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,channels,true);
+ view.setUint32(24,rate,true);view.setUint32(28,rate*channels*2,true);view.setUint16(32,channels*2,true);view.setUint16(34,16,true);
+ write(36,'data');view.setUint32(40,frames*channels*2,true);
+ const data=Array.from({length:channels},(_,ch)=>audioBuffer.getChannelData(ch));let p=44;
+ for(let i=0;i<frames;i++)for(let ch=0;ch<channels;ch++){const s=Math.max(-1,Math.min(1,data[ch][i]));view.setInt16(p,s<0?s*32768:s*32767,true);p+=2}
+ return new Blob([pcm],{type:'audio/wav'});
+}
+
+async function check(){
+  $('gpu').textContent=('gpu' in navigator && navigator.gpu)?'WebGPU available (not yet used for conversion)':'WebGPU unavailable in this browser/device';
+  try{const r=await fetch(api+'/health');if(!r.ok)throw Error('HTTP '+r.status);const d=await r.json();$('backend').textContent=d.ok?'VoiceClonNX backend connected · '+api+' · engines: '+(d.engines||[]).join(', '):'Backend did not report ready';}
+  catch(e){$('backend').textContent='Backend unavailable. Run start_voiceclonnx.bat or start_backend.bat, then retry.'}
+}
+async function listMics(){
+  try{
+    const devices=await navigator.mediaDevices.enumerateDevices();
+    const mics=devices.filter(d=>d.kind==='audioinput');
+    $('mic').replaceChildren(...mics.map((d,i)=>{const o=document.createElement('option');o.value=d.deviceId;o.textContent=d.label||'Microphone '+(i+1);return o}));
+  }catch(e){$('recording').textContent='Microphone list unavailable: '+e.message}
+}
+$('start').onclick=async()=>{
+ try{
+  stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:$('mic').value?{exact:$('mic').value}:undefined,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+  startLevelMeter(stream);
+  await listMics();
+  chunks=[];recorder=new MediaRecorder(stream);
+  recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+  recorder.onstop=()=>{
+    const captured=new Blob(chunks,{type:recorder.mimeType||'audio/webm'});
+    $('recording').textContent='Preparing a WAV file for VoiceClonNX…';
+    captured.arrayBuffer().then(async bytes=>{
+      const Ctx=window.AudioContext||window.webkitAudioContext;
+      recordingContext=new Ctx();
+      const decoded=await recordingContext.decodeAudioData(bytes);
+      recordedBlob=encodeWav(decoded);
+      await recordingContext.close();recordingContext=null;
+      if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(recordedBlob);
+      $('sourcePreview').src=objectUrl;$('sourcePreview').hidden=false;
+      $('recording').textContent='Recorded and converted to PCM WAV · '+(recordedBlob.size/1024).toFixed(1)+' KB. Ready to convert.';
+      $('convert').disabled=!$('reference').files.length;
+    }).catch(e=>{recordedBlob=null;$('recording').textContent='Could not decode microphone recording: '+e.message+' Try Chrome and record again.';$('convert').disabled=true;})
+    .finally(()=>{stream?.getTracks().forEach(t=>t.stop());stream=null;stopLevelMeter();if($('autoConvert').checked&&recordedBlob&&$('reference').files.length)setTimeout(()=>$('convert').click(),100)});
+  };
+  recorder.start();$('start').disabled=true;$('stop').disabled=false;$('recording').textContent='Recording… speak now.';
+ }catch(e){status('Microphone error: '+e.message)}
+};
+$('stop').onclick=()=>{if(recorder&&recorder.state!=='inactive')recorder.stop();$('start').disabled=false;$('stop').disabled=true};
+async function normalizeWavFile(file){
+ // Re-decode/re-encode to a simple PCM16 WAV so unusual WAV encodings don't fail in the backend.
+ const bytes=await file.arrayBuffer();
+ const Ctx=window.AudioContext||window.webkitAudioContext;
+ if(!Ctx)throw Error('This browser cannot decode audio files.');
+ const ctx=new Ctx();
+ try{
+  const decoded=await ctx.decodeAudioData(bytes.slice(0));
+  const pcm=encodeWav(decoded);
+  const cleanName=file.name.replace(/\.wav$/i,'')+'.wav';
+  return new File([pcm],cleanName,{type:'audio/wav'});
+ }finally{await ctx.close().catch(()=>{})}
+}
+$('reference').onchange=()=>{
+ const ref=$('reference').files[0];
+ if(!ref){$('convert').disabled=true;return}
+ if(!/\.wav$/i.test(ref.name)){status('Please choose a .wav reference file.');$('convert').disabled=true;return}
+ $('convert').disabled=!recordedBlob;
+ status('Reference voice selected: '+ref.name+'. Record your voice, then convert the recording.');
+};
+async function convertFile(sourceFile,referenceFile){
+ if(conversionBusy)return;
+ if(!sourceFile||!referenceFile)return;
+ if(!/\.wav$/i.test(sourceFile.name)||!/\.wav$/i.test(referenceFile.name)){status('Please choose valid WAV files.');return}
+ conversionBusy=true;$('convert').disabled=true;
+ status('Converting '+sourceFile.name+' using '+referenceFile.name+' as the reference… the first run may download model files.');
+ const form=new FormData();
+ form.append('source_audio',sourceFile,sourceFile.name);
+ form.append('reference_audio',referenceFile,referenceFile.name);
+ form.append('engine',$('engine').value);form.append('quantized','false');
+ try{
+  const r=await fetch(api+'/convert',{method:'POST',body:form});
+  if(!r.ok){let msg='HTTP '+r.status;try{const d=await r.json();msg=d.detail||msg}catch{}throw Error(msg)}
+  const blob=await r.blob();const url=URL.createObjectURL(blob);
+  $('resultAudio').src=url;$('resultAudio').hidden=false;
+  $('download').href=url;
+  $('download').download=sourceFile.name.replace(/\.wav$/i,'')+'-converted.wav';
+  $('download').textContent='Download '+$('download').download;
+  $('download').hidden=false;
+  const a=document.createElement('a');a.href=url;a.download=$('download').download;a.click();
+  status('Conversion finished. Your original WAV was not changed; the converted copy was downloaded. WebGPU is not used by this conversion yet.');
+ }catch(e){status('Conversion failed: '+e.message+'\\nCheck that the local VoiceClonNX backend is running and supports this WAV file.')}
+ finally{conversionBusy=false;$('convert').disabled=!($('reference').files.length||recordedBlob)}
+}
+$('convert').onclick=async()=>{
+ const ref=$('reference').files[0];
+ if(recordedBlob&&ref){await convertFile(new File([recordedBlob],'microphone.wav',{type:'audio/wav'}),ref);return}
+ if(!ref){status('Choose your reference WAV first.');return}
+ status('Record your own voice first, then click Convert recording. The reference WAV is not the source audio.');
+};
+
+function startLevelMeter(mediaStream){
+ try{levelContext=new (window.AudioContext||window.webkitAudioContext)();const src=levelContext.createMediaStreamSource(mediaStream),an=levelContext.createAnalyser();an.fftSize=512;src.connect(an);const data=new Uint8Array(an.frequencyBinCount);const draw=()=>{an.getByteTimeDomainData(data);let sum=0;for(const v of data){const n=(v-128)/128;sum+=n*n}$('micLevel').value=Math.min(1,Math.sqrt(sum/data.length)*3);levelFrame=requestAnimationFrame(draw)};draw()}catch(e){$('recording').textContent='Live level meter unavailable: '+e.message}
+}
+function stopLevelMeter(){if(levelFrame)cancelAnimationFrame(levelFrame);levelFrame=null;$('micLevel').value=0;if(levelContext){levelContext.close().catch(()=>{});levelContext=null}}
+async function convertWavFile(file){
+ const ref=$('reference').files[0];if(!ref)throw Error('Choose your reference WAV first.');
+ const form=new FormData();form.append('source_audio',file,file.name);form.append('reference_audio',ref,ref.name);form.append('engine',$('engine').value);form.append('quantized','false');
+ const r=await fetch(api+'/convert',{method:'POST',body:form});if(!r.ok){let msg='HTTP '+r.status;try{msg=(await r.json()).detail||msg}catch{}throw Error(msg)}
+ const blob=await r.blob();const outName=file.name.replace(/\.wav$/i,'')+'-converted.wav';const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=outName;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),60000);return outName;
+}
+async function pollFolder(){
+ if(!folderHandle)return;
+ try{for await(const [name,handle] of folderHandle.entries()){if(handle.kind!=='file'||!name.toLowerCase().endsWith('.wav')||name.toLowerCase().endsWith('-converted.wav')||seenWavs.has(name))continue;const file=await handle.getFile();if(Date.now()-file.lastModified<1500)continue;seenWavs.add(name);const li=document.createElement('li');li.textContent=name+': converting…';$('folderQueue').prepend(li);try{const out=await convertWavFile(file);li.textContent=name+' → downloaded '+out}catch(e){li.textContent=name+': failed — '+e.message;seenWavs.delete(name)}}}catch(e){$('folderStatus').textContent='Folder watch error: '+e.message}
+}
+$('watchFolder').onclick=async()=>{try{if(!window.showDirectoryPicker)throw Error('Folder watching requires a recent Chrome/Edge browser.');folderHandle=await window.showDirectoryPicker({mode:'read'});seenWavs.clear();$('folderStatus').textContent='Watching selected folder for new WAV files. Keep this page open.';$('watchFolder').disabled=true;$('stopWatching').disabled=false;await pollFolder();folderTimer=setInterval(pollFolder,2000)}catch(e){$('folderStatus').textContent='Could not start folder watch: '+e.message}};
+$('stopWatching').onclick=()=>{if(folderTimer)clearInterval(folderTimer);folderTimer=null;folderHandle=null;$('watchFolder').disabled=false;$('stopWatching').disabled=true;$('folderStatus').textContent='Folder watch stopped.'};
+
+navigator.mediaDevices?.addEventListener?.('devicechange',listMics);
+navigator.mediaDevices?.addEventListener?.('devicechange',listOutputDevices);
+
+async function listOutputDevices(){
+  try{
+    const devices=await navigator.mediaDevices.enumerateDevices();
+    const outputs=devices.filter(d=>d.kind==='audiooutput');
+    const old=$('outputDevice').value;
+    $('outputDevice').replaceChildren(new Option('Default output',''),...outputs.map((d,i)=>new Option(d.label||'Output '+(i+1),d.deviceId)));
+    if(outputs.some(d=>d.deviceId===old))$('outputDevice').value=old;
+  }catch(e){$('liveStatus').textContent='Could not list output devices: '+e.message}
+}
+function floatSamplesToWav(samples,rate){
+  const buf=new ArrayBuffer(44+samples.length*2),v=new DataView(buf);
+  const write=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))};
+  write(0,'RIFF');v.setUint32(4,36+samples.length*2,true);write(8,'WAVE');write(12,'fmt ');
+  v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,rate,true);
+  v.setUint32(28,rate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);write(36,'data');v.setUint32(40,samples.length*2,true);
+  for(let i=0,p=44;i<samples.length;i++,p+=2){const s=Math.max(-1,Math.min(1,samples[i]));v.setInt16(p,s<0?s*32768:s*32767,true)}
+  return new Blob([buf],{type:'audio/wav'});
+}
+async function sendLiveChunk(samples){
+  const ref=$('reference').files[0];if(!ref||!liveActive)return;
+  const source=floatSamplesToWav(samples,liveContext.sampleRate);
+  const form=new FormData();form.append('source_audio',source,'live-chunk.wav');form.append('reference_audio',ref,ref.name);form.append('engine',$('engine').value);
+  try{
+    const response=await fetch(api+'/live-convert',{method:'POST',body:form});
+    if(!response.ok){let msg='HTTP '+response.status;try{msg=(await response.json()).detail||msg}catch{}throw Error(msg)}
+    const converted=await response.arrayBuffer();if(!liveActive)return;
+    const audio=await liveContext.decodeAudioData(converted);
+    const node=liveContext.createBufferSource();node.buffer=audio;node.connect(liveOutputNode);
+    const when=Math.max(liveContext.currentTime+0.04,liveNextTime);node.start(when);liveNextTime=when+audio.duration;
+    $('liveStatus').textContent='Live conversion running · '+audio.duration.toFixed(2)+' s converted per chunk. Processing delay depends on your PC and engine.';
+  }catch(e){$('liveStatus').textContent='Live conversion error: '+e.message+' · Stop and retry after checking the backend.'}
+}
+$('liveStart').onclick=async()=>{
+  if(liveActive)return;
+  if(!$('reference').files.length){$('liveStatus').textContent='Choose your reference WAV first.';return}
+  try{
+    liveStream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:$('mic').value?{exact:$('mic').value}:undefined,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    liveContext=new (window.AudioContext||window.webkitAudioContext)();
+    await liveContext.resume();
+    liveOutputNode=liveContext.createMediaStreamDestination();
+    const audioEl=$('liveOutput');audioEl.srcObject=liveOutputNode.stream;
+    if($('outputDevice').value&&typeof audioEl.setSinkId==='function')await audioEl.setSinkId($('outputDevice').value);
+    await audioEl.play();
+    const source=liveContext.createMediaStreamSource(liveStream);
+    liveProcessor=liveContext.createScriptProcessor(4096,1,1);
+    liveMute=liveContext.createGain();liveMute.gain.value=0;
+    liveSamples=[];liveBusy=false;livePending=[];liveNextTime=liveContext.currentTime;liveActive=true;
+    const samplesPerChunk=Math.round(liveContext.sampleRate*2.5);
+    liveProcessor.onaudioprocess=e=>{
+      if(!liveActive)return;
+      const input=e.inputBuffer.getChannelData(0);
+      for(let i=0;i<input.length;i++)liveSamples.push(input[i]);
+      if(liveSamples.length>=samplesPerChunk){
+        const packet=Float32Array.from(liveSamples.splice(0,samplesPerChunk));
+        if(livePending.length<2)livePending.push(packet);
+        if(!liveBusy)processLiveQueue();
+      }
+    };
+    source.connect(liveProcessor);liveProcessor.connect(liveMute);liveMute.connect(liveContext.destination);
+    $('liveStart').disabled=true;$('liveStop').disabled=false;
+    $('liveStatus').textContent='Microphone captured. Preparing first converted chunk… first use may take longer while the model loads.';
+  }catch(e){$('liveStatus').textContent='Could not start live conversion: '+e.message;stopLiveConversion()}
+};
+async function processLiveQueue(){
+  if(liveBusy||!liveActive||!livePending.length)return;
+  liveBusy=true;
+  try{while(liveActive&&livePending.length){const packet=livePending.shift();await sendLiveChunk(packet)}}
+  finally{liveBusy=false;if(liveActive&&livePending.length)processLiveQueue()}
+}
+function stopLiveConversion(){
+  liveActive=false;livePending=[];liveSamples=[];
+  if(liveProcessor){liveProcessor.onaudioprocess=null;try{liveProcessor.disconnect()}catch{}liveProcessor=null}
+  if(liveMute){try{liveMute.disconnect()}catch{}liveMute=null}
+  if(liveStream){liveStream.getTracks().forEach(t=>t.stop());liveStream=null}
+  if(liveContext){liveContext.close().catch(()=>{});liveContext=null}
+  liveOutputNode=null;$('liveOutput').srcObject=null;
+  $('liveStart').disabled=false;$('liveStop').disabled=true;
+  $('liveStatus').textContent='Live conversion stopped.';
+}
+$('liveStop').onclick=stopLiveConversion;
+$('outputDevice').onchange=async()=>{
+  const audio=$('liveOutput');
+  if(typeof audio.setSinkId==='function'){try{await audio.setSinkId($('outputDevice').value);$('liveStatus').textContent='Output device updated.'}catch(e){$('liveStatus').textContent='Could not select output device: '+e.message}}
+  else $('liveStatus').textContent='This browser does not support selecting an audio output device; using the default output.';
+};
+
+listMics();listOutputDevices();check();
+</script>
+</body>
+</html>
