@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Talkie + Character.AI Voice Dictation",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Dictate into Talkie or Character.AI, automatically restart speech recognition, and play new replies when supported.",
   "permissions": [
     "activeTab"
