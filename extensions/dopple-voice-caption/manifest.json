@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Dopple Voice Caption",
+  "version": "2.0.0",
+  "description": "Reads Dopple.ai character replies aloud with a selectable female-leaning browser voice and on-screen captions.",
+  "permissions": ["activeTab"],
+  "host_permissions": ["https://dopple.ai/*", "https://www.dopple.ai/*"],
+  "action": { "default_popup": "popup.html", "default_title": "Dopple Voice Caption" },
+  "content_scripts": [{
+    "matches": ["https://dopple.ai/*", "https://www.dopple.ai/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle"
+  }]
+}
