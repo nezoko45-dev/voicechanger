@@ -38,21 +38,34 @@
     let finished=false,observer=null,timeout=null,checkTimer=null;
     let candidate=null,lastReplyText='',stableSince=0;
     const cleanup=()=>{if(observer)observer.disconnect();if(timeout)clearTimeout(timeout);if(checkTimer)clearTimeout(checkTimer)};
-    function generationStillActive(){
-      const controls=[...document.querySelectorAll('button,[role="button"]')];
-      return controls.some(btn=>{
-        const label=[btn.getAttribute('aria-label'),btn.getAttribute('title'),btn.getAttribute('data-testid'),btn.innerText,btn.textContent].join(' ').replace(/\s+/g,' ').trim().toLowerCase();
-        return /stop generating|stop response|stop generation|cancel response|generating response/.test(label);
-      });
+    function replyRegion(button){
+      let node=button;
+      for(let i=0;i<8&&node.parentElement;i++){
+        node=node.parentElement;
+        const text=(node.innerText||node.textContent||'').replace(/\\s+/g,' ').trim();
+        if(/voice recorder/i.test(text)&&node.querySelectorAll('button,[role="button"]').length>=1)return node;
+      }
+      return button.parentElement||button;
+    }
+    function generationStillActive(button){
+      const region=replyRegion(button);
+      const text=(region.innerText||region.textContent||'').replace(/\\s+/g,' ').trim();
+      // Character.AI often shows a "..." placeholder and a retry/refresh control while composing.
+      const body=text.replace(/voice recorder/ig,'').replace(/c\\.ai/ig,'').trim();
+      if(!body||/^(?:[.\\u2026\\u22ef\\s]|loading|thinking)+$/i.test(body))return true;
+      if(/(?:^|\\s)(?:\\.{3,}|\\u2026|\\u22ef)(?:\\s|$)/.test(body)&&body.replace(/[.\\u2026\\u22ef\\s]/g,'').length<4)return true;
+      const controls=[...region.querySelectorAll('button,[role="button"]')];
+      if(controls.some(btn=>{
+        const label=[btn.getAttribute('aria-label'),btn.getAttribute('title'),btn.getAttribute('data-testid')].join(' ').toLowerCase();
+        return /stop generating|stop response|stop generation|cancel response|regenerate|retry|refresh|loading/.test(label);
+      }))return true;
+      // Also catch an unlabeled refresh/retry icon while the placeholder is still visible.
+      if(/^(?:[.\\u2026\\u22ef\\s]|loading|thinking)+$/i.test(body)&&controls.length>1)return true;
+      return false;
     }
     function replyText(button){
-      let node=button;
-      for(let i=0;i<6&&node.parentElement;i++){
-        node=node.parentElement;
-        const text=(node.innerText||node.textContent||'').replace(/\s+/g,' ').trim();
-        if(text.length>15&&(/voice recorder/i.test(text)||node.querySelector('[data-message-id],[data-testid*="message"]')))return text;
-      }
-      return (button.parentElement?.innerText||button.parentElement?.textContent||'').replace(/\s+/g,' ').trim();
+      const region=replyRegion(button);
+      return (region.innerText||region.textContent||'').replace(/\\s+/g,' ').trim();
     }
     const checkReady=()=>{
       if(finished)return;
@@ -64,7 +77,7 @@
       const currentText=replyText(candidate);
       if(currentText!==lastReplyText){lastReplyText=currentText;stableSince=Date.now()}
       const stableLongEnough=stableSince>0&&Date.now()-stableSince>=2500;
-      if(!generationStillActive()&&stableLongEnough){
+      if(!generationStillActive(candidate)&&stableLongEnough){
         finished=true;cleanup();
         setTimeout(()=>{
           if(candidate.isConnected){candidate.click();showStatus("Reply finished generating — clicked its blue audio play button.")}
