@@ -1,8 +1,7 @@
 (() => {
   if (window.__caiDictationInstalled) return;
   window.__caiDictationInstalled = true;
-  let recognition = null, listening = false, restartTimer = null, commandSent = false;
-  const COMMAND = "Repeat each word I say exactly as I say it. Do not add commentary, explanations, or extra words. Just repeat my words.";
+  let recognition = null, listening = false, restartTimer = null;
   const selectors = [
     'textarea[placeholder]',
     '[contenteditable="true"][role="textbox"]',
@@ -35,7 +34,7 @@
     } else {
       const start = el.selectionStart ?? el.value.length, end = el.selectionEnd ?? el.value.length;
       const before = el.value.slice(0, start), after = el.value.slice(end);
-      const spacer = before && !/\s$/.test(before) ? ' ' : '';
+      const spacer = before && !/\\s$/.test(before) ? ' ' : '';
       const next = before + spacer + text + after;
       const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')?.set;
       if (setter) setter.call(el, next); else el.value = next;
@@ -44,26 +43,6 @@
       try { el.setSelectionRange(pos,pos); } catch {}
     }
     el.dispatchEvent(new Event('change', {bubbles:true}));
-  }
-  function findSendButton(el) {
-    const form = el.closest('form') || el.parentElement?.parentElement?.parentElement;
-    const candidates = [...(form || document).querySelectorAll('button')];
-    return candidates.find(b => {
-      const label = [b.getAttribute('aria-label'), b.getAttribute('title'), b.innerText].join(' ').toLowerCase();
-      return !b.disabled && (/send|submit|message/.test(label) || b.querySelector('svg'));
-    });
-  }
-  async function sendCommandOnce() {
-    if (commandSent) return true;
-    const el = composer();
-    if (!el) return false;
-    setComposerText(el, COMMAND);
-    await new Promise(r => setTimeout(r, 350));
-    const button = findSendButton(el);
-    if (button) button.click();
-    else el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true}));
-    commandSent = true;
-    return true;
   }
   function stop() {
     listening = false;
@@ -77,8 +56,6 @@
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) return {ok:false,message:'Speech recognition is unavailable in this Chrome context.'};
     if (!composer()) return {ok:false,message:'I could not find the chat message box. Open a chat and try again.'};
-    const sent = await sendCommandOnce();
-    if (!sent) return {ok:false,message:'Could not place the repeat instruction in the chat.'};
     if (listening) return {ok:true,message:'Already listening. Speak into your microphone.'};
     listening = true;
     function beginSession() {
@@ -93,7 +70,7 @@
           const transcript = event.results[i][0]?.transcript?.trim();
           if (!transcript) continue;
           const el = composer();
-          if (el) setComposerText(el, transcript);
+          if (el) setComposerText(el, 'repeat ' + transcript);
         }
       };
       recognition.onerror = event => {
@@ -110,8 +87,8 @@
       catch { if (listening) restartTimer = setTimeout(beginSession, 800); }
     }
     beginSession();
-    showStatus('Listening. Speak normally; recognized phrases are inserted into the message box, not auto-sent.');
-    return {ok:true,message:'Listening. The repeat instruction was sent once.'};
+    showStatus('Listening. Each recognized dictation starts with “repeat”. Phrases are not auto-sent.');
+    return {ok:true,message:'Listening. “repeat” will be added to the beginning of each recognized dictation.'};
   }
   function showStatus(message) {
     let el=document.getElementById('__cai_dictation_status');
