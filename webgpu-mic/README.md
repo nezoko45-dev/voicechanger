@@ -26,7 +26,7 @@ If you want to start the parts separately, use `start_backend.bat` and `start_ui
 
 **Actual voice conversion currently runs in the local Python VoiceClonNX backend, not in browser WebGPU.** The page checks whether the browser exposes WebGPU, and `model-probe.html` tests whether ONNX Runtime Web can create a session for a selected model. Neither is an end-to-end WebGPU conversion yet.
 
-VoiceClonNX engines are multi-stage pipelines with preprocessing and potentially multiple ONNX models. A WebGPU port requires validating all required models, operators, tensor shapes, preprocessing, and output parity. See the upstream [VoiceClonNX README](https://github.com/TigreGotico/voiceclonnx) for engine and runtime details. citeturn763989search0turn763989search1
+VoiceClonNX engines are multi-stage pipelines with preprocessing and potentially multiple ONNX models. A WebGPU port requires validating all required models, operators, tensor shapes, preprocessing, and output parity. See the upstream [VoiceClonNX README](https://github.com/TigreGotico/voiceclonnx) for engine and runtime details.
 
 ## Troubleshooting
 
