@@ -1,21 +1,39 @@
-# VoiceClonNX Mic + WebGPU experiment
+# VoiceClonNX microphone converter (experimental)
 
-## Current branch status
-- `index.html`: microphone selector, recording, reference WAV, local VoiceClonNX conversion, playback/download.
-- Microphone audio is decoded by the browser and exported as PCM WAV before being sent to the local backend. This avoids sending the usual MediaRecorder WebM/Opus file to an API that expects WAV input.
+This folder now contains a complete **local microphone → reference WAV → converted WAV** workflow, plus a WebGPU compatibility probe.
+
+## Windows quick start
+
+1. Install **Python 3.10 or newer** and make sure the Python launcher (`py`) is available.
+2. Open this folder in the repository checkout.
+3. Double-click `start_voiceclonnx.bat`. It opens a local backend window and a local UI window.
+4. In Chrome, choose your microphone, record a short clip, select your reference WAV, and click **Convert recording**.
+5. The first backend launch installs the Python packages. The first conversion downloads the selected engine's ONNX model files from Hugging Face and can take a while.
+
+If you want to start the parts separately, use `start_backend.bat` and `start_ui.bat`.
+
+## Included files
+
+- `index.html`: microphone selection, recording, PCM WAV encoding, reference WAV selection, engine selection, conversion request, playback, and download.
+- `server.py`: local FastAPI bridge on `127.0.0.1:8765`. It accepts a single reference WAV or two reference clips.
+- `requirements.txt`: backend dependencies, including `voiceclonnx`.
+- `start_voiceclonnx.bat`: one-click launcher for both windows.
+- `start_backend.bat`: creates a local virtual environment, installs requirements, and runs the backend.
+- `start_ui.bat`: serves the page on `http://127.0.0.1:8000`.
 - `model-probe.html`: experimental ONNX Runtime WebGPU session-compatibility probe for one local ONNX model at a time.
 
-## Run
-1. Start the existing VoiceClonNX local backend from the `girl-voice` extension project (it must listen on `127.0.0.1:8765`).
-2. Serve this folder from localhost (microphone access requires a secure context such as localhost).
-3. Open `index.html`, choose a microphone, record a short clip, select your reference WAV, and click Convert.
-4. To investigate browser-side inference, open `model-probe.html` from localhost and select an ONNX model file from an engine's model set. The probe loads ONNX Runtime Web from a CDN, but the selected model bytes remain in the browser.
+## WebGPU status — important
 
-## What is and is not implemented
-- The current conversion still runs through the local Python VoiceClonNX backend. WebGPU is **not yet** used for actual voice conversion.
-- `model-probe.html` only tests whether ONNX Runtime Web can create a WebGPU session for a selected model and reports input/output names. It does not execute inference or convert audio.
-- VoiceClonNX engines are multi-stage pipelines; a successful session for one ONNX file is not proof that the entire engine can run in the browser. Every model, tensor shape, preprocessing step, unsupported operator, and numerical result must be validated before porting an engine.
-- The microphone page duplicates the selected reference WAV into the two reference slots required by the current local API. For best results, the backend should be updated to accept a single reference file directly or the UI should collect two separate reference clips.
-- Browser microphone access works on localhost or another secure context. Model downloads for the local Python backend may still require internet access.
+**Actual voice conversion currently runs in the local Python VoiceClonNX backend, not in browser WebGPU.** The page checks whether the browser exposes WebGPU, and `model-probe.html` tests whether ONNX Runtime Web can create a session for a selected model. Neither is an end-to-end WebGPU conversion yet.
 
-Use only voices you own or are authorized to use. Do not expose the local backend port to the public internet.
+VoiceClonNX engines are multi-stage pipelines with preprocessing and potentially multiple ONNX models. A WebGPU port requires validating all required models, operators, tensor shapes, preprocessing, and output parity. See the upstream [VoiceClonNX README](https://github.com/TigreGotico/voiceclonnx) for engine and runtime details. citeturn763989search0turn763989search1
+
+## Troubleshooting
+
+- **Backend unavailable:** leave the backend command window open and check that `http://127.0.0.1:8765/health` returns JSON.
+- **Microphone permission:** open the page at `http://127.0.0.1:8000`, not as a `file://` URL.
+- **First conversion takes a long time:** the selected engine's model files may need to download. Keep the backend window open.
+- **Package installation fails:** confirm Python 3.10+ is installed and internet access is available for initial package/model downloads.
+- **Model probe:** serve this folder on localhost, open `model-probe.html`, and choose a compatible `.onnx` file. A successful session creation alone does not prove that inference or the full voice-conversion pipeline works.
+
+The local API binds to loopback only. Do not expose port 8765 to the public internet. Use only voice references you own or have permission to use.
