@@ -34,25 +34,28 @@
       const labelled=buttons.find(b=>!isComment(b)&&!isDangerous(b)&&/(^|\\b)(send|submit|send message|send-message|submit-message)(\\b|$)/i.test(meta(b)));
       if(labelled)return labelled;
     }
-    // Talkie desktop chat: the paper-plane icon sits at the right edge of the same
-    // rounded composer row. Select only a right-adjacent icon in that row, never
-    // a generic icon elsewhere on the page (such as Video Generator).
     if(location.hostname==='www.talkie-ai.com'||location.hostname==='talkie-ai.com'){
-      let parent=el;
-      for(let depth=0;parent&&depth<4;depth++,parent=parent.parentElement){
-        const er=el.getBoundingClientRect();
-        const candidates=[...parent.querySelectorAll('button,[role="button"],input[type="submit"]')]
-          .filter(enabled)
-          .filter(b=>b!==el&&!isComment(b)&&!isDangerous(b))
+      const er=el.getBoundingClientRect();
+      // The editable area can span underneath Talkie's paper-plane button, so
+      // locate the nearest compact ancestor containing both the editor and icon.
+      node=el.parentElement;
+      for(let depth=0;node&&depth<5;depth++,node=node.parentElement){
+        const nr=node.getBoundingClientRect();
+        if(nr.height>150||nr.width>900)continue;
+        const candidates=[...node.querySelectorAll('button,[role="button"],input[type="submit"]')]
+          .filter(enabled).filter(b=>b!==el&&!isComment(b)&&!isDangerous(b))
           .map(b=>({b,r:b.getBoundingClientRect(),label:meta(b)}))
-          .filter(x=>x.r.left>=er.right-8&&Math.abs((x.r.top+x.r.bottom)/2-(er.top+er.bottom)/2)<Math.max(36,er.height))
+          .filter(x=>Math.abs((x.r.top+x.r.bottom)/2-(er.top+er.bottom)/2)<Math.max(40,er.height))
           .filter(x=>!x.label||/^(button|submit)$/i.test(x.label))
-          .filter(x=>!!x.b.querySelector('svg'))
-          .sort((a,b)=>a.r.left-b.r.left);
-        if(candidates.length)return candidates[0].b;
+          .filter(x=>!!x.b.querySelector('svg')||!!x.b.querySelector('[data-icon]'))
+          .sort((a,b)=>b.r.right-a.r.right);
+        if(candidates.length){
+          // In the compact composer row, the rightmost non-labelled icon is the
+          // paper-plane send control shown beside the text caret.
+          return candidates[0].b;
+        }
       }
     }
-    // Never guess among unlabeled icon buttons outside the actual composer row.
     return null;
   }
   function replyPlayButtons(){
