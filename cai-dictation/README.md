@@ -7,7 +7,7 @@ A Manifest V3 Chrome extension using Chrome's Web Speech API to dictate into the
 - Each new dictated message starts with the word `repeat`.
 - Automatically clicks Send after about 1.2 seconds without recognized speech.
 - When Chrome ends or times out a recognition session, the extension automatically starts a fresh session. Retries use a short backoff if Chrome refuses to restart immediately.
-- Watches for clicks on Character.AI reply voice playback controls. If playback does not appear to start after about 2.2 seconds, it retries once; if the control looks stuck in a playing state, it toggles the control off and back on once.
+- Watches for clicks on the exact **Voice** playback button beneath individual Character.AI replies. If playback is not detectable after about 2.2 seconds, it toggles that button off and back on once.
 - Click **Stop dictation** to stop listening.
 
 ## Install/update
