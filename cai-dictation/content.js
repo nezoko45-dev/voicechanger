@@ -89,7 +89,18 @@
   }
   function sendAndPlayReply(el){
     const send=sendButton(el);
-    if(!send){showStatus('Silence detected, but Send was not found. Please send manually.');return}
+    if(!send){
+      // Talkie's paper-plane is not consistently exposed as a discoverable button.
+      // Fall back to the chat composer keyboard behavior instead of reporting failure.
+      // Enter sends in the chat composer; Shift+Enter is the newline shortcut.
+      el.focus();
+      const eventInit={key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true};
+      el.dispatchEvent(new KeyboardEvent('keydown',eventInit));
+      el.dispatchEvent(new KeyboardEvent('keypress',eventInit));
+      el.dispatchEvent(new KeyboardEvent('keyup',eventInit));
+      showStatus('Send icon not exposed to the extension — tried Enter in the Talkie composer.');
+      return;
+    }
     const previous=new Set(replyPlayButtons());
     let finished=false,observer=null,timeout=null,checkTimer=null;
     let candidate=null,lastReplyText='',stableSince=0;
