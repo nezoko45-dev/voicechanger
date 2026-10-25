@@ -24,37 +24,41 @@
   function setText(el,text){el.focus();if(el.isContentEditable||el.getAttribute('contenteditable')==='true'){el.textContent=text;el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}))}else{const setter=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),'value')?.set;setter?setter.call(el,text):el.value=text;el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}));try{el.setSelectionRange(text.length,text.length)}catch{}}el.dispatchEvent(new Event('change',{bubbles:true}))}
   function sendButton(el){
     const visible=e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'};
-    const meta=b=>[b.getAttribute('aria-label'),b.title,b.innerText,b.textContent,b.getAttribute('data-testid'),b.getAttribute('data-action'),b.getAttribute('type')].join(' ').replace(/\\s+/g,' ').trim().toLowerCase();
+    const meta=b=>[b.getAttribute('aria-label'),b.title,b.innerText,b.textContent,b.getAttribute('data-testid'),b.getAttribute('data-action'),b.getAttribute('type')].join(' ').replace(/\s+/g,' ').trim().toLowerCase();
     const enabled=b=>!b.disabled&&b.getAttribute('aria-disabled')!=='true'&&visible(b);
     const isComment=b=>/comment|post comment/i.test(meta(b)+' '+(b.closest('form')?.innerText||'').slice(0,180).toLowerCase());
     const isDangerous=b=>/video|generator|generate video|image|create|voice|play|audio|record|microphone|attach|emoji|sticker|gift|menu|more|regenerate|refresh|retry|like|share/i.test(meta(b));
     let node=el;
     for(let depth=0;node&&depth<5;depth++,node=node.parentElement){
       const buttons=[...node.querySelectorAll('button,[role="button"],input[type="submit"]')].filter(enabled);
-      const labelled=buttons.find(b=>!isComment(b)&&!isDangerous(b)&&/(^|\\b)(send|submit|send message|send-message|submit-message)(\\b|$)/i.test(meta(b)));
+      const labelled=buttons.find(b=>!isComment(b)&&!isDangerous(b)&&/(^|\b)(send|submit|send message|send-message|submit-message)(\b|$)/i.test(meta(b)));
       if(labelled)return labelled;
     }
     if(location.hostname==='www.talkie-ai.com'||location.hostname==='talkie-ai.com'){
-      const er=el.getBoundingClientRect();
-      // The editable area can span underneath Talkie's paper-plane button, so
-      // locate the nearest compact ancestor containing both the editor and icon.
-      node=el.parentElement;
-      for(let depth=0;node&&depth<5;depth++,node=node.parentElement){
-        const nr=node.getBoundingClientRect();
-        if(nr.height>150||nr.width>900)continue;
-        const candidates=[...node.querySelectorAll('button,[role="button"],input[type="submit"]')]
-          .filter(enabled).filter(b=>b!==el&&!isComment(b)&&!isDangerous(b))
-          .map(b=>({b,r:b.getBoundingClientRect(),label:meta(b)}))
-          .filter(x=>Math.abs((x.r.top+x.r.bottom)/2-(er.top+er.bottom)/2)<Math.max(40,er.height))
-          .filter(x=>!x.label||/^(button|submit)$/i.test(x.label))
-          .filter(x=>!!x.b.querySelector('svg')||!!x.b.querySelector('[data-icon]'))
-          .sort((a,b)=>b.r.right-a.r.right);
-        if(candidates.length){
-          // In the compact composer row, the rightmost non-labelled icon is the
-          // paper-plane send control shown beside the text caret.
-          return candidates[0].b;
+      const er=el.getBoundingClientRect(),ey=(er.top+er.bottom)/2;
+      // Talkie's paper-plane may be a styled div around an SVG rather than a button.
+      // Search only the immediate horizontal neighborhood of the editor, then click
+      // its nearest clickable ancestor. This avoids unrelated toolbar icons elsewhere.
+      const svgNodes=[...document.querySelectorAll('svg')].filter(visible).map(svg=>{
+        let clickable=svg.closest('button,[role="button"],[tabindex],a');
+        if(!clickable){
+          let p=svg;
+          for(let i=0;i<3&&p.parentElement;i++,p=p.parentElement){
+            const style=getComputedStyle(p);
+            if(style.cursor==='pointer'){clickable=p;break}
+          }
         }
-      }
+        if(!clickable)return null;
+        const r=clickable.getBoundingClientRect(),label=meta(clickable);
+        if(!enabled(clickable)||isComment(clickable)||isDangerous(clickable))return null;
+        const cy=(r.top+r.bottom)/2;
+        if(Math.abs(cy-ey)>Math.max(45,er.height*1.2))return null;
+        // Paper-plane is beside/overlapping the right side of the chat input.
+        if(r.right<er.right-55||r.left>er.right+120)return null;
+        if(label&&!/^(button|submit)$/i.test(label))return null;
+        return {clickable,r,dist:Math.abs(cy-ey)+Math.abs(r.right-er.right)*0.35};
+      }).filter(Boolean).sort((a,b)=>a.dist-b.dist);
+      if(svgNodes.length)return svgNodes[0].clickable;
     }
     return null;
   }
