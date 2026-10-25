@@ -23,11 +23,11 @@
   function read(el){return el.isContentEditable?el.textContent.trim():(el.value||'').trim()}
   function setText(el,text){el.focus();if(el.isContentEditable||el.getAttribute('contenteditable')==='true'){el.textContent=text;el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}))}else{const setter=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),'value')?.set;setter?setter.call(el,text):el.value=text;el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}));try{el.setSelectionRange(text.length,text.length)}catch{}}el.dispatchEvent(new Event('change',{bubbles:true}))}
   function sendButton(el){
-    const visible=e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'};
+    const visible=e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'&&s.visibility!=='collapse'};
     const meta=b=>[b.getAttribute('aria-label'),b.title,b.innerText,b.textContent,b.getAttribute('data-testid'),b.getAttribute('data-action'),b.getAttribute('type')].join(' ').replace(/\s+/g,' ').trim().toLowerCase();
     const enabled=b=>!b.disabled&&b.getAttribute('aria-disabled')!=='true'&&visible(b);
     const isComment=b=>/comment|post comment/i.test(meta(b)+' '+(b.closest('form')?.innerText||'').slice(0,180).toLowerCase());
-    const isDangerous=b=>/video|generator|generate video|image|create|voice|play|audio|record|microphone|attach|emoji|sticker|gift|menu|more|regenerate|refresh|retry|like|share/i.test(meta(b));
+    const isDangerous=b=>/video|generator|generate video|image generation|create image|voice|play|audio|record|microphone|attach|emoji|sticker|gift|menu|more|regenerate|refresh|retry|like|share/i.test(meta(b));
     let node=el;
     for(let depth=0;node&&depth<5;depth++,node=node.parentElement){
       const buttons=[...node.querySelectorAll('button,[role="button"],input[type="submit"]')].filter(enabled);
@@ -36,29 +36,21 @@
     }
     if(location.hostname==='www.talkie-ai.com'||location.hostname==='talkie-ai.com'){
       const er=el.getBoundingClientRect(),ey=(er.top+er.bottom)/2;
-      // Talkie's paper-plane may be a styled div around an SVG rather than a button.
-      // Search only the immediate horizontal neighborhood of the editor, then click
-      // its nearest clickable ancestor. This avoids unrelated toolbar icons elsewhere.
-      const svgNodes=[...document.querySelectorAll('svg')].filter(visible).map(svg=>{
-        let clickable=svg.closest('button,[role="button"],[tabindex],a');
-        if(!clickable){
-          let p=svg;
-          for(let i=0;i<3&&p.parentElement;i++,p=p.parentElement){
-            const style=getComputedStyle(p);
-            if(style.cursor==='pointer'){clickable=p;break}
-          }
-        }
-        if(!clickable)return null;
-        const r=clickable.getBoundingClientRect(),label=meta(clickable);
-        if(!enabled(clickable)||isComment(clickable)||isDangerous(clickable))return null;
-        const cy=(r.top+r.bottom)/2;
-        if(Math.abs(cy-ey)>Math.max(45,er.height*1.2))return null;
-        // Paper-plane is beside/overlapping the right side of the chat input.
-        if(r.right<er.right-55||r.left>er.right+120)return null;
-        if(label&&!/^(button|submit)$/i.test(label))return null;
-        return {clickable,r,dist:Math.abs(cy-ey)+Math.abs(r.right-er.right)*0.35};
-      }).filter(Boolean).sort((a,b)=>a.dist-b.dist);
-      if(svgNodes.length)return svgNodes[0].clickable;
+      // Talkie's composer is a single rounded row: lightbulb on the left,
+      // image icon near the right, then the paper-plane at the far right.
+      // Restrict fallback to compact click targets overlapping the editor's row
+      // and choose the rightmost icon, never the toolbar above the composer.
+      const candidates=[...document.querySelectorAll('button,[role="button"],[tabindex],a')]
+        .filter(enabled)
+        .filter(b=>b!==el&&!isComment(b)&&!isDangerous(b))
+        .map(b=>({b,r:b.getBoundingClientRect(),label:meta(b)}))
+        .filter(x=>Math.abs((x.r.top+x.r.bottom)/2-ey)<=Math.max(34,er.height*0.85))
+        .filter(x=>x.r.width<=90&&x.r.height<=90)
+        .filter(x=>x.r.right>=er.right-100&&x.r.left<=er.right+25)
+        .filter(x=>!x.label||/^(button|submit)$/i.test(x.label))
+        .filter(x=>!!x.b.querySelector('svg')||!!x.b.querySelector('[data-icon]'))
+        .sort((a,b)=>b.r.right-a.r.right);
+      if(candidates.length)return candidates[0].b;
     }
     return null;
   }
