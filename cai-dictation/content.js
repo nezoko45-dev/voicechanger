@@ -22,7 +22,43 @@
   }
   function read(el){return el.isContentEditable?el.textContent.trim():(el.value||'').trim()}
   function setText(el,text){el.focus();if(el.isContentEditable||el.getAttribute('contenteditable')==='true'){el.textContent=text;el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}))}else{const setter=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),'value')?.set;setter?setter.call(el,text):el.value=text;el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}));try{el.setSelectionRange(text.length,text.length)}catch{}}el.dispatchEvent(new Event('change',{bubbles:true}))}
-  function sendButton(el){const scope=el.closest('form')||el.parentElement?.parentElement?.parentElement||document;return[...scope.querySelectorAll('button')].find(b=>!b.disabled&&b.getAttribute('aria-disabled')!=='true'&&/send|submit|send-message|submit-message/i.test([b.getAttribute('aria-label'),b.title,b.innerText,b.getAttribute('data-testid')].join(' ')))}
+  function sendButton(el){
+    const visible=e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'};
+    const meta=b=>[b.getAttribute('aria-label'),b.title,b.innerText,b.textContent,b.getAttribute('data-testid'),b.getAttribute('data-action'),b.getAttribute('type')].join(' ').replace(/\\s+/g,' ').trim().toLowerCase();
+    const enabled=b=>!b.disabled&&b.getAttribute('aria-disabled')!=='true'&&visible(b);
+    const isComment=b=>/comment|post comment/i.test(meta(b)+' '+(b.closest('form')?.innerText||'').slice(0,180).toLowerCase());
+    // Walk upward from the chosen message box to find its local composer toolbar.
+    let node=el, pools=[];
+    for(let depth=0;node&&depth<7;depth++,node=node.parentElement){
+      const buttons=[...node.querySelectorAll('button,[role="button"]')].filter(enabled);
+      if(buttons.length)pools.push({node,buttons,depth});
+      if(node.tagName==='FORM')break;
+    }
+    // Strong labels win, but avoid buttons belonging to comment areas.
+    for(const pool of pools){
+      const match=pool.buttons.find(b=>!isComment(b)&&/(^|\\b)(send|submit|send message|send-message|submit-message)(\\b|$)/i.test(meta(b)));
+      if(match)return match;
+    }
+    // Talkie may use an icon-only send button without accessible text. Prefer the
+    // enabled icon button closest to the message composer, excluding audio/player controls.
+    for(const pool of pools){
+      const candidates=pool.buttons.filter(b=>{
+        if(isComment(b))return false;
+        const label=meta(b);
+        if(/voice|play|audio|record|microphone|attach|image|emoji|sticker|gift|menu|more|regenerate|refresh|retry|like|share/i.test(label))return false;
+        const svg=b.querySelector('svg');
+        const hasIcon=!!(svg&&svg.querySelector('path,polygon,polyline,line'));
+        return hasIcon||label==='submit'||label==='send';
+      });
+      if(candidates.length){
+        const withText=candidates.find(b=>/send|submit/i.test(meta(b)));
+        if(withText)return withText;
+        // In a composer toolbar, the final eligible icon button is commonly Send.
+        if(pool.depth<=4)return candidates[candidates.length-1];
+      }
+    }
+    return null;
+  }
   function replyPlayButtons(){
     const main=document.querySelector('main,[role="main"]')||document;
     return [...main.querySelectorAll('button,[role="button"]')].filter(btn=>{
