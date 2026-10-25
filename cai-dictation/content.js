@@ -1,180 +1,20 @@
 (() => {
   if (window.__caiDictationInstalled) return;
   window.__caiDictationInstalled = true;
-
-  let recognition = null, listening = false, restartTimer = null, sendTimer = null;
-  const SILENCE_TO_SEND_MS = 1200;
-  const selectors = [
-    'textarea[placeholder]',
-    '[contenteditable="true"][role="textbox"]',
-    '[contenteditable="true"]',
-    'textarea'
-  ];
-
-  function composer() {
-    for (const selector of selectors) {
-      const nodes = [...document.querySelectorAll(selector)];
-      const node = nodes.reverse().find(el => {
-        const r = el.getBoundingClientRect(), s = getComputedStyle(el);
-        return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && !el.disabled && !el.readOnly;
-      });
-      if (node) return node;
-    }
-    return null;
-  }
-
-  function setComposerText(el, text) {
-    el.focus();
-    if (el.isContentEditable || el.getAttribute('contenteditable') === 'true') {
-      el.textContent = text;
-      el.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertText', data:text}));
-    } else {
-      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')?.set;
-      if (setter) setter.call(el, text); else el.value = text;
-      el.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertText', data:text}));
-      try { el.setSelectionRange(text.length, text.length); } catch {}
-    }
-    el.dispatchEvent(new Event('change', {bubbles:true}));
-  }
-
-  function findSendButton(el) {
-    const form = el.closest('form') || el.parentElement?.parentElement?.parentElement;
-    const candidates = [...(form || document).querySelectorAll('button')];
-    return candidates.find(b => {
-      if (b.disabled || b.getAttribute('aria-disabled') === 'true') return false;
-      const label = [b.getAttribute('aria-label'), b.getAttribute('title'), b.innerText, b.getAttribute('data-testid')].join(' ').toLowerCase();
-      return /send|submit|send-message|submit-message/.test(label);
-    });
-  }
-
-  function sendAfterSilence() {
-    if (sendTimer) clearTimeout(sendTimer);
-    sendTimer = setTimeout(() => {
-      sendTimer = null;
-      const el = composer();
-      if (!el) { showStatus('Could not find the message box to send.'); return; }
-      const content = el.isContentEditable ? el.textContent.trim() : (el.value || '').trim();
-      if (!content) return;
-      const button = findSendButton(el);
-      if (button) {
-        button.click();
-        showStatus('Silence detected — message sent.');
-      } else {
-        showStatus('Silence detected, but the Send button was not found. Please send manually.');
-      }
-    }, SILENCE_TO_SEND_MS);
-  }
-
-  function stop() {
-    listening = false;
-    if (restartTimer) clearTimeout(restartTimer);
-    if (sendTimer) clearTimeout(sendTimer);
-    restartTimer = sendTimer = null;
-    if (recognition) {
-      recognition.onend = null;
-      try { recognition.stop(); } catch {}
-    }
-    recognition = null;
-    showStatus('Dictation stopped.');
-    return {ok:true,message:'Dictation stopped.'};
-  }
-
-  async function prepareLocalRecognition(SpeechRecognition, lang) {
-    if (!('processLocally' in SpeechRecognition.prototype)) {
-      throw new Error('This Chrome version does not support on-device speech recognition. Update Chrome to a version that supports local speech recognition.');
-    }
-    if (typeof SpeechRecognition.available !== 'function' || typeof SpeechRecognition.install !== 'function') {
-      throw new Error('Chrome local speech recognition is unavailable. Update Chrome and try again.');
-    }
-    const options = {langs:[lang], processLocally:true};
-    let availability = await SpeechRecognition.available(options);
-    if (availability === 'available') return;
-    if (availability === 'downloadable' || availability === 'downloading') {
-      showStatus('Preparing the local speech model for ' + lang + '…');
-      const installed = await SpeechRecognition.install(options);
-      if (installed) {
-        availability = await SpeechRecognition.available(options);
-        if (availability === 'available') return;
-      }
-    }
-    throw new Error('Chrome could not prepare the offline speech model for ' + lang + '. Check your connection once to download the language pack, then try again.');
-  }
-
-  async function start() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return {ok:false,message:'Speech recognition is unavailable in this Chrome context.'};
-    if (!composer()) return {ok:false,message:'I could not find the chat message box. Open a chat and try again.'};
-    if (listening) return {ok:true,message:'Already listening using local speech recognition.'};
-
-    const lang = navigator.language || 'en-US';
-    showStatus('Checking the offline speech model…');
-    try {
-      await prepareLocalRecognition(SpeechRecognition, lang);
-    } catch (error) {
-      showStatus(error.message || 'Could not start local speech recognition.');
-      return {ok:false,message:error.message || 'Could not start local speech recognition.'};
-    }
-
-    listening = true;
-    function beginSession() {
-      if (!listening) return;
-      recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = false;
-      recognition.lang = lang;
-      recognition.processLocally = true;
-
-      recognition.onresult = event => {
-        for (let i=event.resultIndex;i<event.results.length;i++) {
-          if (!event.results[i].isFinal) continue;
-          const transcript = event.results[i][0]?.transcript?.trim();
-          if (!transcript) continue;
-          const el = composer();
-          if (el) {
-            const existing = el.isContentEditable ? el.textContent.trim() : (el.value || '').trim();
-            const draft = existing ? existing + ' ' + transcript : 'repeat ' + transcript;
-            setComposerText(el, draft);
-            sendAfterSilence();
-          }
-        }
-      };
-      recognition.onerror = event => {
-        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-          listening = false;
-          if (sendTimer) clearTimeout(sendTimer);
-          showStatus('Microphone permission was denied. Allow microphone access in Chrome.');
-        } else if (event.error === 'language-not-supported') {
-          listening = false;
-          showStatus('The offline speech model for ' + lang + ' is not installed. Check Chrome language-pack support.');
-        } else if (event.error === 'network') {
-          showStatus('Local recognition reported a network error. The speech model may not be ready; stop and start again.');
-        }
-      };
-      recognition.onend = () => {
-        recognition = null;
-        if (listening) restartTimer = setTimeout(beginSession, 400);
-      };
-      try { recognition.start(); }
-      catch { if (listening) restartTimer = setTimeout(beginSession, 800); }
-    }
-
-    beginSession();
-    showStatus('Listening with local/offline speech recognition. Starts each message with “repeat” and sends after 1.2 seconds of silence.');
-    return {ok:true,message:'Local speech recognition started. The language pack must be installed on this computer.'};
-  }
-
-  function showStatus(message) {
-    let el=document.getElementById('__cai_dictation_status');
-    if (!el) {
-      el=document.createElement('div'); el.id='__cai_dictation_status';
-      Object.assign(el.style,{position:'fixed',zIndex:'2147483647',bottom:'14px',right:'14px',padding:'9px 12px',borderRadius:'10px',background:'#211b2a',color:'#fff',font:'13px system-ui',boxShadow:'0 4px 20px #0005',maxWidth:'340px'});
-      document.documentElement.appendChild(el);
-    }
-    el.textContent='🎙 '+message;
-  }
-
-  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    if (msg.action === 'START') { start().then(sendResponse); return true; }
-    if (msg.action === 'STOP') { sendResponse(stop()); return true; }
-  });
+  const API='http://127.0.0.1:8765', SILENCE_MS=1200, THRESHOLD=0.012;
+  let listening=false, stream=null, ctx=null, source=null, processor=null, mute=null;
+  let frames=[], preRoll=[], speaking=false, silenceMs=0, voiceMs=0, queue=[], busy=false;
+  const selectors=['textarea[placeholder]','[contenteditable="true"][role="textbox"]','[contenteditable="true"]','textarea'];
+  function composer(){for(const sel of selectors){const els=[...document.querySelectorAll(sel)];const el=els.reverse().find(e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&s.visibility!=='hidden'&&!e.disabled&&!e.readOnly});if(el)return el}return null}
+  function read(el){return el.isContentEditable?el.textContent.trim():(el.value||'').trim()}
+  function setText(el,text){el.focus();if(el.isContentEditable||el.getAttribute('contenteditable')==='true'){el.textContent=text;el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}))}else{const setter=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),'value')?.set;setter?setter.call(el,text):el.value=text;el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}));try{el.setSelectionRange(text.length,text.length)}catch{}}el.dispatchEvent(new Event('change',{bubbles:true}))}
+  function send(){const el=composer();if(!el||!read(el))return;const scope=el.closest('form')||el.parentElement?.parentElement?.parentElement||document;const btn=[...scope.querySelectorAll('button')].find(x=>!x.disabled&&x.getAttribute('aria-disabled')!=='true'&&/send|submit|send-message|submit-message/i.test([x.getAttribute('aria-label'),x.title,x.innerText,x.getAttribute('data-testid')].join(' ')));if(btn){btn.click();status('Transcribed locally and sent.')}else status('Text transcribed, but Send was not found; please send manually.')}
+  function status(s){let el=document.getElementById('__cai_dictation_status');if(!el){el=document.createElement('div');el.id='__cai_dictation_status';Object.assign(el.style,{position:'fixed',zIndex:'2147483647',bottom:'14px',right:'14px',padding:'9px 12px',borderRadius:'10px',background:'#211b2a',color:'#fff',font:'13px system-ui',boxShadow:'0 4px 20px #0005',maxWidth:'360px'});document.documentElement.appendChild(el)}el.textContent='🎙 '+s}
+  function wav(chunks,rate){const n=chunks.reduce((s,a)=>s+a.length,0),buf=new ArrayBuffer(44+n*2),v=new DataView(buf),write=(o,t)=>{for(let i=0;i<t.length;i++)v.setUint8(o+i,t.charCodeAt(i))};write(0,'RIFF');v.setUint32(4,36+n*2,true);write(8,'WAVE');write(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,rate,true);v.setUint32(28,rate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);write(36,'data');v.setUint32(40,n*2,true);let o=44;for(const a of chunks)for(const f of a){const s=Math.max(-1,Math.min(1,f));v.setInt16(o,s<0?s*32768:s*32767,true);o+=2}return new Blob([buf],{type:'audio/wav'})}
+  async function pumpQueue(){if(busy||!listening)return;busy=true;while(queue.length&&listening){const chunks=queue.shift();try{const form=new FormData();form.append('audio',wav(chunks,ctx.sampleRate),'speech.wav');status('Transcribing with local Whisper…');const res=await fetch(API+'/transcribe',{method:'POST',body:form});const data=await res.json();if(!res.ok)throw Error(data.error||'Transcription failed');const text=(data.text||'').trim();if(text&&listening){const el=composer();if(!el)throw Error('Open a Character.AI chat first');const old=read(el);setText(el,old?old+' '+text:'repeat '+text);setTimeout(()=>{if(listening)send()},150)}else status('No speech recognized; still listening.')}catch(e){if(listening)status('Local Whisper error: '+e.message)}}busy=false}
+  function audio(e){if(!listening)return;const input=e.inputBuffer.getChannelData(0),copy=new Float32Array(input);let sum=0;for(let i=0;i<input.length;i++)sum+=input[i]*input[i];const rms=Math.sqrt(sum/input.length),ms=input.length/ctx.sampleRate*1000;if(!speaking){preRoll.push(copy);while(preRoll.length>Math.ceil(300/ms))preRoll.shift();if(rms>=THRESHOLD){speaking=true;frames=preRoll.slice();preRoll=[];silenceMs=0;voiceMs=0;status('Speech detected — transcribing locally after pause.')}}if(speaking){frames.push(copy);if(rms>=THRESHOLD){voiceMs+=ms;silenceMs=0}else silenceMs+=ms;if(silenceMs>=SILENCE_MS){const utterance=frames;frames=[];speaking=false;silenceMs=0;preRoll=[];if(voiceMs>=250)queue.push(utterance);voiceMs=0;pumpQueue()}}}
+  async function start(){if(listening)return{ok:true,message:'Already listening to the Windows default microphone.'};if(!composer())return{ok:false,message:'Open a Character.AI chat first.'};try{const h=await fetch(API+'/health');if(!h.ok)throw Error();}catch{const m='Run start_local_transcriber.bat in the cai-dictation folder first.';status(m);return{ok:false,message:m}}try{stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});ctx=new AudioContext();source=ctx.createMediaStreamSource(stream);processor=ctx.createScriptProcessor(4096,1,1);mute=ctx.createGain();mute.gain.value=0;source.connect(processor);processor.connect(mute);mute.connect(ctx.destination);processor.onaudioprocess=audio;listening=true;await ctx.resume();status('Listening to Windows default microphone with local Whisper.');return{ok:true,message:'Listening to the default microphone; Whisper runs locally.'}}catch(e){cleanup();const m=e.name==='NotAllowedError'?'Allow microphone access for Character.AI in Chrome.':'Could not open default microphone: '+e.message;status(m);return{ok:false,message:m}}}
+  function cleanup(){if(processor){processor.onaudioprocess=null;try{processor.disconnect()}catch{}}if(source)try{source.disconnect()}catch{}if(mute)try{mute.disconnect()}catch{}if(stream)stream.getTracks().forEach(t=>t.stop());if(ctx)ctx.close().catch(()=>{});processor=source=mute=stream=ctx=null;frames=[];preRoll=[];queue=[];speaking=false;silenceMs=voiceMs=0}
+  function stop(){listening=false;cleanup();status('Dictation stopped.');return{ok:true,message:'Dictation stopped.'}}
+  chrome.runtime.onMessage.addListener((m,s,reply)=>{if(m.action==='START'){start().then(reply);return true}if(m.action==='STOP'){reply(stop());return true}});
 })();
