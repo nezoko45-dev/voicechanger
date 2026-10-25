@@ -1,17 +1,26 @@
 from __future__ import annotations
 
+import os
 import shutil
+import sys
 import tempfile
+import threading
+import webbrowser
 from pathlib import Path
 
 import numpy as np
 import soundfile as sf
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from starlette.background import BackgroundTask
 
-app = FastAPI(title="VoiceChanger VoiceClonNX bridge", version="1.2.0")
+def resource_path(name: str) -> Path:
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return base / name
+
+
+app = FastAPI(title="VoiceChanger VoiceClonNX bridge", version="1.3.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
@@ -23,6 +32,22 @@ app.add_middleware(
 ENGINES = {"facodec", "openvoice", "chatterbox", "triaan", "cosyvoice",
            "bicodec", "knnvc", "focalcodec", "lscodec", "rvc"}
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+
+
+@app.get("/", response_class=HTMLResponse)
+def home():
+    page = resource_path("index.html")
+    if not page.exists():
+        raise HTTPException(status_code=404, detail="index.html was not bundled with this app.")
+    return HTMLResponse(page.read_text(encoding="utf-8"))
+
+
+@app.get("/model-probe.html", response_class=HTMLResponse)
+def model_probe():
+    page = resource_path("model-probe.html")
+    if not page.exists():
+        raise HTTPException(status_code=404, detail="model-probe.html was not bundled with this app.")
+    return HTMLResponse(page.read_text(encoding="utf-8"))
 
 
 @app.get("/health")
@@ -128,4 +153,6 @@ async def convert(
 
 if __name__ == "__main__":
     import uvicorn
+    url = "http://127.0.0.1:8765/"
+    threading.Timer(1.5, lambda: webbrowser.open(url)).start()
     uvicorn.run(app, host="127.0.0.1", port=8765, log_level="info")
