@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Character.AI Voice Dictation",
-  "version": "1.2.0",
-  "description": "Dictate into Character.AI and automatically restart Chrome speech recognition after timeouts.",
+  "version": "1.3.0",
+  "description": "Dictate into Character.AI, restart speech recognition after timeouts, and recover stalled reply voice playback.",
   "permissions": [
     "activeTab"
   ],
