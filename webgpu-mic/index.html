@@ -112,6 +112,24 @@ $('convert').onclick=async()=>{
  }catch(e){status('Conversion failed: '+e.message+'\nCheck that the local VoiceClonNX backend is running and supports this recording format.')}
  finally{$('convert').disabled=!(recordedBlob&&$('reference').files.length)}
 };
+
+function startLevelMeter(mediaStream){
+ try{levelContext=new (window.AudioContext||window.webkitAudioContext)();const src=levelContext.createMediaStreamSource(mediaStream),an=levelContext.createAnalyser();an.fftSize=512;src.connect(an);const data=new Uint8Array(an.frequencyBinCount);const draw=()=>{an.getByteTimeDomainData(data);let sum=0;for(const v of data){const n=(v-128)/128;sum+=n*n}$('micLevel').value=Math.min(1,Math.sqrt(sum/data.length)*3);levelFrame=requestAnimationFrame(draw)};draw()}catch(e){$('recording').textContent='Live level meter unavailable: '+e.message}
+}
+function stopLevelMeter(){if(levelFrame)cancelAnimationFrame(levelFrame);levelFrame=null;$('micLevel').value=0;if(levelContext){levelContext.close().catch(()=>{});levelContext=null}}
+async function convertWavFile(file){
+ const ref=$('reference').files[0];if(!ref)throw Error('Choose your reference WAV first.');
+ const form=new FormData();form.append('source_audio',file,file.name);form.append('reference_audio',ref,ref.name);form.append('engine',$('engine').value);form.append('quantized','false');
+ const r=await fetch(api+'/convert',{method:'POST',body:form});if(!r.ok){let msg='HTTP '+r.status;try{msg=(await r.json()).detail||msg}catch{}throw Error(msg)}
+ const blob=await r.blob();const outName=file.name.replace(/\.wav$/i,'')+'-converted.wav';const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=outName;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),60000);return outName;
+}
+async function pollFolder(){
+ if(!folderHandle)return;
+ try{for await(const [name,handle] of folderHandle.entries()){if(handle.kind!=='file'||!name.toLowerCase().endsWith('.wav')||name.toLowerCase().endsWith('-converted.wav')||seenWavs.has(name))continue;const file=await handle.getFile();if(Date.now()-file.lastModified<1500)continue;seenWavs.add(name);const li=document.createElement('li');li.textContent=name+': converting…';$('folderQueue').prepend(li);try{const out=await convertWavFile(file);li.textContent=name+' → downloaded '+out}catch(e){li.textContent=name+': failed — '+e.message;seenWavs.delete(name)}}}catch(e){$('folderStatus').textContent='Folder watch error: '+e.message}
+}
+$('watchFolder').onclick=async()=>{try{if(!window.showDirectoryPicker)throw Error('Folder watching requires a recent Chrome/Edge browser.');folderHandle=await window.showDirectoryPicker({mode:'read'});seenWavs.clear();$('folderStatus').textContent='Watching selected folder for new WAV files. Keep this page open.';$('watchFolder').disabled=true;$('stopWatching').disabled=false;await pollFolder();folderTimer=setInterval(pollFolder,2000)}catch(e){$('folderStatus').textContent='Could not start folder watch: '+e.message}};
+$('stopWatching').onclick=()=>{if(folderTimer)clearInterval(folderTimer);folderTimer=null;folderHandle=null;$('watchFolder').disabled=false;$('stopWatching').disabled=true;$('folderStatus').textContent='Folder watch stopped.'};
+
 navigator.mediaDevices?.addEventListener?.('devicechange',listMics);
 listMics();check();
 </script>
