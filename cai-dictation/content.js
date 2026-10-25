@@ -10,18 +10,18 @@
   function sendButton(el){const scope=el.closest('form')||el.parentElement?.parentElement?.parentElement||document;return[...scope.querySelectorAll('button')].find(b=>!b.disabled&&b.getAttribute('aria-disabled')!=='true'&&/send|submit|send-message|submit-message/i.test([b.getAttribute('aria-label'),b.title,b.innerText,b.getAttribute('data-testid')].join(' ')))}
   function sendAfterSilence(){if(sendTimer)clearTimeout(sendTimer);sendTimer=setTimeout(()=>{sendTimer=null;const el=composer();if(!el||!read(el))return;const btn=sendButton(el);if(btn){btn.click();showStatus('Silence detected — message sent.')}else showStatus('Silence detected, but Send was not found. Please send manually.')},SILENCE_TO_SEND_MS)}
   function showStatus(message){let el=document.getElementById('__cai_dictation_status');if(!el){el=document.createElement('div');el.id='__cai_dictation_status';Object.assign(el.style,{position:'fixed',zIndex:'2147483647',bottom:'14px',right:'14px',padding:'9px 12px',borderRadius:'10px',background:'#211b2a',color:'#fff',font:'13px system-ui',boxShadow:'0 4px 20px #0005',maxWidth:'360px'});document.documentElement.appendChild(el)}el.textContent='🎙 '+message}
-  // Target the exact "Voice" playback control shown under individual Character.AI replies.
+  // Target only the visible "Voice" button in the Character.AI chat content,
+  // such as the one shown beneath a reply in a newly opened chat.
   let voiceRecoveryTimer=null,voiceRecoveryGeneration=0;
   function voiceButtonFrom(target){
     const btn=target instanceof Element?target.closest('button,[role="button"]'):null;
     if(!btn)return null;
-    const visibleText=(btn.innerText||btn.textContent||'').replace(/\\s+/g,' ').trim().toLowerCase();
-    const aria=(btn.getAttribute('aria-label')||'').replace(/\\s+/g,' ').trim().toLowerCase();
-    const title=(btn.getAttribute('title')||'').replace(/\\s+/g,' ').trim().toLowerCase();
-    const testId=(btn.getAttribute('data-testid')||'').toLowerCase();
-    // Match the visible Voice button, or a clearly equivalent accessible label.
-    if(visibleText==='voice'||aria==='voice'||title==='voice'||/reply.*voice|voice.*reply/.test(testId))return btn;
-    return null;
+    const visibleText=(btn.innerText||btn.textContent||'').replace(/\s+/g,' ').trim().toLowerCase();
+    if(visibleText!=='voice')return null;
+    // Ignore site navigation/header controls; prefer the button inside the chat's main content.
+    const main=document.querySelector('main,[role="main"]');
+    if(main&&!main.contains(btn))return null;
+    return btn;
   }
   function hasActiveMedia(){
     return [...document.querySelectorAll('audio,video')].some(m=>!m.paused&&!m.ended&&m.currentTime>0);
@@ -34,13 +34,12 @@
     voiceRecoveryTimer=setTimeout(()=>{
       voiceRecoveryTimer=null;
       if(attempt!==voiceRecoveryGeneration||!btn.isConnected||hasActiveMedia())return;
-      // Playback did not become detectable. Toggle the same reply's Voice control off,
-      // then back on once; never loop retries for the same click.
+      // If no audio started, toggle this exact Voice button off, then back on once.
       btn.click();
       setTimeout(()=>{
         if(attempt===voiceRecoveryGeneration&&btn.isConnected&&!hasActiveMedia()){
           btn.click();
-          showStatus('Character.AI reply voice did not start — toggled Voice off and back on.');
+          showStatus('Character.AI Voice button did not start playback — toggled off and back on.');
         }
       },350);
     },2200);
