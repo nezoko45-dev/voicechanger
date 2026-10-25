@@ -69,7 +69,8 @@ async function listMics(){
 }
 $('start').onclick=async()=>{
  try{
-  stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:$('mic').value?{exact:$('mic').value}:undefined,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});\n  startLevelMeter(stream);
+  stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:$('mic').value?{exact:$('mic').value}:undefined,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+  startLevelMeter(stream);
   await listMics();
   chunks=[];recorder=new MediaRecorder(stream);
   recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
@@ -97,14 +98,14 @@ $('reference').onchange=()=>{
  const ref=$('reference').files[0];
  $('convert').disabled=!(ref||recordedBlob);
  if(!ref)return;
- if(!/\\.wav$/i.test(ref.name)){status('Please choose a .wav reference file.');return}
+ if(!/\.wav$/i.test(ref.name)){status('Please choose a .wav reference file.');return}
  // Automatically convert the selected reference WAV as source audio, using itself as the voice reference.
  convertFile(ref,ref).catch(e=>status('Conversion failed: '+e.message));
 };
 async function convertFile(sourceFile,referenceFile){
  if(conversionBusy)return;
  if(!sourceFile||!referenceFile)return;
- if(!/\\.wav$/i.test(sourceFile.name)||!/\\.wav$/i.test(referenceFile.name)){status('Please choose valid WAV files.');return}
+ if(!/\.wav$/i.test(sourceFile.name)||!/\.wav$/i.test(referenceFile.name)){status('Please choose valid WAV files.');return}
  conversionBusy=true;$('convert').disabled=true;
  status('Converting '+sourceFile.name+' using '+referenceFile.name+' as the reference… the first run may download model files.');
  const form=new FormData();
@@ -117,7 +118,7 @@ async function convertFile(sourceFile,referenceFile){
   const blob=await r.blob();const url=URL.createObjectURL(blob);
   $('resultAudio').src=url;$('resultAudio').hidden=false;
   $('download').href=url;
-  $('download').download=sourceFile.name.replace(/\\.wav$/i,'')+'-converted.wav';
+  $('download').download=sourceFile.name.replace(/\.wav$/i,'')+'-converted.wav';
   $('download').textContent='Download '+$('download').download;
   $('download').hidden=false;
   const a=document.createElement('a');a.href=url;a.download=$('download').download;a.click();
