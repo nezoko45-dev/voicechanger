@@ -94,13 +94,31 @@ $('start').onclick=async()=>{
  }catch(e){status('Microphone error: '+e.message)}
 };
 $('stop').onclick=()=>{if(recorder&&recorder.state!=='inactive')recorder.stop();$('start').disabled=false;$('stop').disabled=true};
-$('reference').onchange=()=>{
+async function normalizeWavFile(file){
+ // Re-decode/re-encode to a simple PCM16 WAV so unusual WAV encodings don't fail in the backend.
+ const bytes=await file.arrayBuffer();
+ const Ctx=window.AudioContext||window.webkitAudioContext;
+ if(!Ctx)throw Error('This browser cannot decode audio files.');
+ const ctx=new Ctx();
+ try{
+  const decoded=await ctx.decodeAudioData(bytes.slice(0));
+  const pcm=encodeWav(decoded);
+  const cleanName=file.name.replace(/\.wav$/i,'')+'.wav';
+  return new File([pcm],cleanName,{type:'audio/wav'});
+ }finally{await ctx.close().catch(()=>{})}
+}
+$('reference').onchange=async()=>{
  const ref=$('reference').files[0];
  $('convert').disabled=!(ref||recordedBlob);
  if(!ref)return;
  if(!/\.wav$/i.test(ref.name)){status('Please choose a .wav reference file.');return}
- // Automatically convert the selected reference WAV as source audio, using itself as the voice reference.
- convertFile(ref,ref).catch(e=>status('Conversion failed: '+e.message));
+ if(conversionBusy){status('A conversion is already running. Wait for it to finish, then choose the WAV again.');return}
+ try{
+  status('Reading and normalizing '+ref.name+' into standard PCM WAV…');
+  const normalized=await normalizeWavFile(ref);
+  // Automatically convert the selected WAV as source, using the same normalized WAV as reference.
+  await convertFile(normalized,normalized);
+ }catch(e){status('Could not read/convert selected WAV: '+e.message+' Try opening the file in an audio player to verify it is valid.')}
 };
 async function convertFile(sourceFile,referenceFile){
  if(conversionBusy)return;
