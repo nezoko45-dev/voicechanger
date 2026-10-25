@@ -1,24 +1,21 @@
-# Character.AI Voice Dictation — Local Whisper
+# Character.AI Voice Dictation
 
-This extension captures the computer's **default microphone** with `getUserMedia()` and sends short WAV utterances to a Whisper model running on your own PC. It does not use Chrome's speech-recognition service. Transcription happens locally after the model has been downloaded.
+A Manifest V3 Chrome extension using Chrome's Web Speech API to dictate into the Character.AI composer.
 
-## One-time setup (Windows)
-1. Install Python 3.10 or newer from https://www.python.org/downloads/windows/ if it is not already installed. Enable the Python launcher.
-2. Open the `cai-dictation` folder from this repository.
-3. Double-click `start_local_transcriber.bat`. It creates a private `.venv`, installs dependencies, and downloads the `base.en` Whisper model on first launch. Keep the terminal open while dictating.
-4. In Chrome, open `chrome://extensions`, enable Developer mode, then **Load unpacked** and choose the `cai-dictation` folder. If already installed, click **Reload**.
-5. Refresh your Character.AI chat, allow microphone access, and click the extension icon → **Start dictation**.
+## Behavior
+- Click the extension icon and choose **Start dictation**.
+- Each new dictated message starts with the word `repeat`.
+- Automatically clicks Send after about 1.2 seconds without recognized speech.
+- When Chrome ends or times out a recognition session, the extension automatically starts a fresh session. Retries use a short backoff if Chrome refuses to restart immediately.
+- Click **Stop dictation** to stop listening.
 
-## How it behaves
-- Captures the Windows default input device (no device ID is specified).
-- Uses local voice-activity detection and waits for about 1.2 seconds of silence before transcribing.
-- Adds `repeat` at the start of a new message and automatically clicks Send after transcription.
-- Click **Stop dictation** to release the microphone.
-- After setup and model download, speech audio is sent only to the local service at `127.0.0.1`; the service binds to loopback, not your network interface.
+## Install/update
+1. Open `chrome://extensions` and enable Developer mode.
+2. Choose **Load unpacked** and select this `cai-dictation` folder, or click **Reload** if already installed.
+3. Refresh your Character.AI chat, allow microphone access, then click the extension icon → **Start dictation**.
 
 ## Notes
-- The local service must remain running while dictating. Close its terminal to stop it.
-- First install requires internet to download Python packages and the Whisper model. Subsequent transcription can run offline, provided the dependencies and model remain installed.
-- This version uses the English `base.en` model and CPU inference. Transcription speed depends on your PC.
-- Browser microphone permission still applies. This uses the operating system's default input selected by Windows/Chrome.
-- Character.AI may change its composer or Send button markup. Automatic sending has not been live-tested on your account.
+- Uses Chrome's speech-recognition service, not local Whisper; network requirements depend on Chrome's implementation.
+- Chrome generally uses the default input device for its recognition service; this extension does not directly select a microphone stream.
+- Automatic restarts help recover from timeouts but cannot guarantee uninterrupted operation if Chrome, the operating system, microphone permission, or the speech service prevents recognition.
+- Automatic sending skips transcript review. Character.AI may change its page structure, affecting the Send button.
