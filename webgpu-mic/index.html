@@ -24,6 +24,13 @@
   <p id="recording" class="muted">No recording yet.</p><label><input id="autoConvert" type="checkbox" checked> Automatically convert when I stop recording</label><p>Live microphone level</p><meter id="micLevel" min="0" max="1" value="0" style="width:100%;height:20px"></meter><audio id="sourcePreview" controls hidden></audio>
 </div>
 <div class="panel">
+  <h2>Live voice conversion (experimental)</h2>
+  <p class="muted">Converts short microphone chunks through VoiceClonNX and plays converted chunks. This is not native streaming inference: expect latency, gaps, or artifacts, especially on CPU. Select a reference WAV first.</p>
+  <label for="outputDevice">Converted voice output device</label><select id="outputDevice"><option value="">Default output</option></select>
+  <button id="liveStart" type="button">Start live conversion</button><button id="liveStop" type="button" disabled>Stop live conversion</button>
+  <p id="liveStatus" class="muted">Live conversion is off.</p><audio id="liveOutput" autoplay playsinline hidden></audio>
+</div>
+<div class="panel">
   <h2>2 · Select your reference WAV</h2>
   <label for="reference">Reference voice (.wav)</label><input id="reference" type="file" accept=".wav,audio/wav">
   <p class="muted">Choose the voice you want to sound like. This WAV is only the reference; your microphone recording (or a source WAV in folder watch) is what gets converted.</p>
