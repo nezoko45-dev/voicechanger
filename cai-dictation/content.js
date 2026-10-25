@@ -1,7 +1,8 @@
 (() => {
   if (window.__caiDictationInstalled) return;
   window.__caiDictationInstalled = true;
-  let recognition = null, listening = false, restartTimer = null;
+  let recognition = null, listening = false, restartTimer = null, sendTimer = null;
+  const SILENCE_TO_SEND_MS = 1200;
   const selectors = [
     'textarea[placeholder]',
     '[contenteditable="true"][role="textbox"]',
@@ -22,32 +23,47 @@
   function setComposerText(el, text) {
     el.focus();
     if (el.isContentEditable || el.getAttribute('contenteditable') === 'true') {
-      const selection = window.getSelection();
-      if (selection && selection.rangeCount) {
-        const range = selection.getRangeAt(0);
-        if (!el.contains(range.commonAncestorContainer)) {
-          range.selectNodeContents(el); range.collapse(false); selection.removeAllRanges(); selection.addRange(range);
-        }
-      }
-      document.execCommand('insertText', false, text);
-      if (!el.textContent.includes(text)) el.textContent = (el.textContent || '') + text;
-    } else {
-      const start = el.selectionStart ?? el.value.length, end = el.selectionEnd ?? el.value.length;
-      const before = el.value.slice(0, start), after = el.value.slice(end);
-      const spacer = before && !/\\s$/.test(before) ? ' ' : '';
-      const next = before + spacer + text + after;
-      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')?.set;
-      if (setter) setter.call(el, next); else el.value = next;
+      el.textContent = text;
       el.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertText', data:text}));
-      const pos = (before + spacer + text).length;
-      try { el.setSelectionRange(pos,pos); } catch {}
+    } else {
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')?.set;
+      if (setter) setter.call(el, text); else el.value = text;
+      el.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertText', data:text}));
+      try { el.setSelectionRange(text.length, text.length); } catch {}
     }
     el.dispatchEvent(new Event('change', {bubbles:true}));
+  }
+  function findSendButton(el) {
+    const form = el.closest('form') || el.parentElement?.parentElement?.parentElement;
+    const candidates = [...(form || document).querySelectorAll('button')];
+    return candidates.find(b => {
+      if (b.disabled || b.getAttribute('aria-disabled') === 'true') return false;
+      const label = [b.getAttribute('aria-label'), b.getAttribute('title'), b.innerText, b.getAttribute('data-testid')].join(' ').toLowerCase();
+      return /send|submit|send-message|submit-message/.test(label);
+    });
+  }
+  function sendAfterSilence() {
+    if (sendTimer) clearTimeout(sendTimer);
+    sendTimer = setTimeout(() => {
+      sendTimer = null;
+      const el = composer();
+      if (!el) { showStatus('Could not find the message box to send.'); return; }
+      const content = el.isContentEditable ? el.textContent.trim() : (el.value || '').trim();
+      if (!content) return;
+      const button = findSendButton(el);
+      if (button) {
+        button.click();
+        showStatus('Silence detected — message sent.');
+      } else {
+        showStatus('Silence detected, but the Send button was not found. Please send manually.');
+      }
+    }, SILENCE_TO_SEND_MS);
   }
   function stop() {
     listening = false;
     if (restartTimer) clearTimeout(restartTimer);
-    restartTimer = null;
+    if (sendTimer) clearTimeout(sendTimer);
+    restartTimer = sendTimer = null;
     if (recognition) { recognition.onend = null; try { recognition.stop(); } catch {} }
     recognition = null;
     return {ok:true,message:'Dictation stopped.'};
@@ -70,12 +86,18 @@
           const transcript = event.results[i][0]?.transcript?.trim();
           if (!transcript) continue;
           const el = composer();
-          if (el) setComposerText(el, 'repeat ' + transcript);
+          if (el) {
+            const existing = el.isContentEditable ? el.textContent.trim() : (el.value || '').trim();
+            const draft = existing ? existing + ' ' + transcript : 'repeat ' + transcript;
+            setComposerText(el, draft);
+            sendAfterSilence();
+          }
         }
       };
       recognition.onerror = event => {
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
           listening = false;
+          if (sendTimer) clearTimeout(sendTimer);
           showStatus('Microphone permission was denied. Allow microphone access in Chrome.');
         }
       };
@@ -87,8 +109,8 @@
       catch { if (listening) restartTimer = setTimeout(beginSession, 800); }
     }
     beginSession();
-    showStatus('Listening. Each recognized dictation starts with “repeat”. Phrases are not auto-sent.');
-    return {ok:true,message:'Listening. “repeat” will be added to the beginning of each recognized dictation.'};
+    showStatus('Listening. Dictation starts with “repeat” and sends after 1.2 seconds of silence.');
+    return {ok:true,message:'Listening. The message will send after 1.2 seconds of silence.'};
   }
   function showStatus(message) {
     let el=document.getElementById('__cai_dictation_status');
