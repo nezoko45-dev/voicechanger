@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Character.AI Voice Dictation",
-  "version": "1.3.0",
-  "description": "Dictate into Character.AI, restart speech recognition after timeouts, and recover stalled reply voice playback.",
+  "name": "Talkie + Character.AI Voice Dictation",
+  "version": "1.4.0",
+  "description": "Dictate into Talkie or Character.AI, automatically restart speech recognition, and play new replies when supported.",
   "permissions": [
     "activeTab"
   ],
@@ -13,7 +13,10 @@
     {
       "matches": [
         "https://character.ai/*",
-        "https://*.character.ai/*"
+        "https://*.character.ai/*",
+        "https://talkie-ai.com/*",
+        "https://www.talkie-ai.com/*",
+        "https://*.talkie-ai.com/*"
       ],
       "js": [
         "content.js"
