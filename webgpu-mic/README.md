@@ -1,39 +1,35 @@
-# VoiceClonNX microphone converter (experimental)
+# VoiceClonNX microphone converter
 
-This folder now contains a complete **local microphone → reference WAV → converted WAV** workflow, plus a WebGPU compatibility probe.
+## Run without installing Python (recommended)
 
-## Windows quick start
+A Windows one-file EXE build workflow is included.
 
-1. Install **Python 3.10 or newer** and make sure the Python launcher (`py`) is available.
-2. Open this folder in the repository checkout.
-3. Double-click `start_voiceclonnx.bat`. It opens a local backend window and a local UI window.
-4. In Chrome, choose your microphone, record a short clip, select your reference WAV, and click **Convert recording**.
-5. The first backend launch installs the Python packages. The first conversion downloads the selected engine's ONNX model files from Hugging Face and can take a while.
+1. Open the repository's [Actions page](https://github.com/nezoko45-dev/voicechanger/actions/workflows/build-voiceclonnx-exe.yml).
+2. Open the latest **Build VoiceClonNX Windows EXE** run on the feature branch.
+3. Wait for the build to finish, then download the **VoiceClonNX-Windows** artifact.
+4. Extract the ZIP and double-click **VoiceClonNX.exe**.
+5. The app opens its local browser UI at `http://127.0.0.1:8765`. Choose a microphone, record, choose your reference WAV, and convert.
+6. Keep the EXE console window open while using the app.
 
-If you want to start the parts separately, use `start_backend.bat` and `start_ui.bat`.
+The executable bundles the Python runtime and app dependencies, so end users do **not** need Python installed. The first conversion still needs internet access to download the selected engine's model weights. Model files are not embedded in the EXE, so the initial download can be large.
+
+If no successful Actions build artifact is available yet, the workflow may still be building or may have failed; do not assume the EXE has been produced until the artifact appears.
+
+## Build yourself (optional)
+
+`build_exe_locally.bat` builds the EXE on Windows, but building locally requires Python. This is only for developers; end users should use the prebuilt artifact.
 
 ## Included files
 
-- `index.html`: microphone selection, recording, PCM WAV encoding, reference WAV selection, engine selection, conversion request, playback, and download.
-- `server.py`: local FastAPI bridge on `127.0.0.1:8765`. It accepts a single reference WAV or two reference clips.
-- `requirements.txt`: backend dependencies, including `voiceclonnx`.
-- `start_voiceclonnx.bat`: one-click launcher for both windows.
-- `start_backend.bat`: creates a local virtual environment, installs requirements, and runs the backend.
-- `start_ui.bat`: serves the page on `http://127.0.0.1:8000`.
-- `model-probe.html`: experimental ONNX Runtime WebGPU session-compatibility probe for one local ONNX model at a time.
+- `index.html`: browser UI with microphone selection, PCM WAV recording, reference WAV selection, engine selection, conversion, playback and download.
+- `server.py`: local FastAPI backend, also serves the browser UI so the user only launches one app.
+- `requirements.txt`: conversion and packaging dependencies.
+- `build_exe_locally.bat`: optional local PyInstaller build.
+- `start_voiceclonnx.bat`, `start_backend.bat`, `start_ui.bat`: source-checkout developer launchers.
+- `model-probe.html`: experimental ONNX Runtime WebGPU session-compatibility probe.
 
-## WebGPU status — important
+## WebGPU status
 
-**Actual voice conversion currently runs in the local Python VoiceClonNX backend, not in browser WebGPU.** The page checks whether the browser exposes WebGPU, and `model-probe.html` tests whether ONNX Runtime Web can create a session for a selected model. Neither is an end-to-end WebGPU conversion yet.
+**The complete converter does not yet run in WebGPU.** The EXE bundles and runs the local VoiceClonNX runtime; the browser checks WebGPU availability and the model probe tests session creation for an individual ONNX file. A successful session is not proof of end-to-end conversion. Browser-side WebGPU support still requires an engine pipeline to be ported and validated.
 
-VoiceClonNX engines are multi-stage pipelines with preprocessing and potentially multiple ONNX models. A WebGPU port requires validating all required models, operators, tensor shapes, preprocessing, and output parity. See the upstream [VoiceClonNX README](https://github.com/TigreGotico/voiceclonnx) for engine and runtime details.
-
-## Troubleshooting
-
-- **Backend unavailable:** leave the backend command window open and check that `http://127.0.0.1:8765/health` returns JSON.
-- **Microphone permission:** open the page at `http://127.0.0.1:8000`, not as a `file://` URL.
-- **First conversion takes a long time:** the selected engine's model files may need to download. Keep the backend window open.
-- **Package installation fails:** confirm Python 3.10+ is installed and internet access is available for initial package/model downloads.
-- **Model probe:** serve this folder on localhost, open `model-probe.html`, and choose a compatible `.onnx` file. A successful session creation alone does not prove that inference or the full voice-conversion pipeline works.
-
-The local API binds to loopback only. Do not expose port 8765 to the public internet. Use only voice references you own or have permission to use.
+The API binds to loopback (`127.0.0.1`) only. Do not expose it to the public internet. Use voice samples you own or are authorized to use.
