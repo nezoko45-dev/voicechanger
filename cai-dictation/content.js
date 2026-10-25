@@ -1,6 +1,7 @@
 (() => {
-  if (window.__caiDictationInstalled) return;
-  window.__caiDictationInstalled = true;
+  const INSTALL_KEY = '__caiDictationInstalled_141';
+  if (window[INSTALL_KEY]) return;
+  window[INSTALL_KEY] = true;
   const SILENCE_TO_SEND_MS=1200;
   let recognition=null,listening=false,restartTimer=null,sendTimer=null,restartDelay=500,generation=0;
   const selectors=['textarea[placeholder]','[contenteditable="true"][role="textbox"]','[contenteditable="true"]','textarea','input[type="text"]'];
