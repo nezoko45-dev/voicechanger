@@ -3,8 +3,23 @@
   window.__caiDictationInstalled = true;
   const SILENCE_TO_SEND_MS=1200;
   let recognition=null,listening=false,restartTimer=null,sendTimer=null,restartDelay=500,generation=0;
-  const selectors=['textarea[placeholder]','[contenteditable="true"][role="textbox"]','[contenteditable="true"]','textarea'];
-  function composer(){for(const sel of selectors){const nodes=[...document.querySelectorAll(sel)];const el=nodes.reverse().find(e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&s.visibility!=='hidden'&&!e.disabled&&!e.readOnly});if(el)return el}return null}
+  const selectors=['textarea[placeholder]','[contenteditable="true"][role="textbox"]','[contenteditable="true"]','textarea','input[type="text"]'];
+  function composer(){
+    const visible=e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&s.visibility!=='hidden'&&s.display!=='none'&&!e.disabled&&!e.readOnly};
+    const all=[...new Set(selectors.flatMap(sel=>[...document.querySelectorAll(sel)]))].filter(visible);
+    const meta=e=>[e.getAttribute('placeholder'),e.getAttribute('aria-label'),e.getAttribute('data-placeholder'),e.getAttribute('name'),e.getAttribute('data-testid')].join(' ').toLowerCase();
+    // Prefer the actual chat/message composer, never a comment box or comment editor.
+    const isComment=e=>/comment|write a comment|add a comment|post comment/i.test(meta(e)+' '+(e.closest('form')?.innerText||'').slice(0,160).toLowerCase());
+    const isChat=e=>/(message|chat|say something|type here|send a message|talk|reply to character|enter message)/i.test(meta(e));
+    const preferred=all.filter(e=>!isComment(e)&&isChat(e)).sort((a,b)=>{
+      const score=e=>(e.isContentEditable?2:0)+(e.getAttribute('role')==='textbox'?2:0)+(/message|chat|say something|send a message/i.test(meta(e))?5:0);
+      return score(b)-score(a);
+    });
+    if(preferred.length)return preferred[0];
+    // Fallback only to a visible composer-like element, excluding comment fields.
+    const fallback=all.filter(e=>!isComment(e)&&!/(search|filter|comment|username|email|password)/i.test(meta(e)));
+    return fallback.length?fallback[fallback.length-1]:null;
+  }
   function read(el){return el.isContentEditable?el.textContent.trim():(el.value||'').trim()}
   function setText(el,text){el.focus();if(el.isContentEditable||el.getAttribute('contenteditable')==='true'){el.textContent=text;el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}))}else{const setter=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),'value')?.set;setter?setter.call(el,text):el.value=text;el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}));try{el.setSelectionRange(text.length,text.length)}catch{}}el.dispatchEvent(new Event('change',{bubbles:true}))}
   function sendButton(el){const scope=el.closest('form')||el.parentElement?.parentElement?.parentElement||document;return[...scope.querySelectorAll('button')].find(b=>!b.disabled&&b.getAttribute('aria-disabled')!=='true'&&/send|submit|send-message|submit-message/i.test([b.getAttribute('aria-label'),b.title,b.innerText,b.getAttribute('data-testid')].join(' ')))}
