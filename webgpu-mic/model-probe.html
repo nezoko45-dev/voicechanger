@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VoiceClonNX ONNX WebGPU model probe</title>
+<style>
+:root{color-scheme:dark;font:16px system-ui,sans-serif;background:#10131a;color:#f4f6fb}body{max-width:760px;margin:36px auto;padding:0 18px}h1{font-size:1.7rem}.panel{background:#1b2130;border:1px solid #30394d;border-radius:14px;padding:18px;margin:16px 0}p{color:#bac4d6;line-height:1.5}button{font:inherit;font-weight:700;background:#9bb8ff;color:#10131a;border:0;border-radius:8px;padding:10px 14px;cursor:pointer}button:disabled{opacity:.5}input{display:block;margin:12px 0;max-width:100%}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0b0e14;padding:12px;border-radius:8px;max-height:360px;overflow:auto}.muted{font-size:.9rem;color:#9da9be}
+</style>
+</head>
+<body>
+<h1>ONNX Runtime WebGPU model probe</h1>
+<p>This diagnostic tests whether a selected ONNX model can create an ONNX Runtime Web session with the WebGPU execution provider in this browser. It does not perform voice conversion and does not upload the model file.</p>
+<section class="panel">
+ <h2>1 · Browser support</h2><p id="gpu">Checking WebGPU…</p><p id="secure" class="muted"></p>
+</section>
+<section class="panel">
+ <h2>2 · Choose one ONNX model</h2>
+ <p>Pick a compatible model file from a VoiceClonNX engine. Some engines require multiple ONNX models and CPU-side audio preprocessing; passing this test alone does not mean the full engine can be ported.</p>
+ <input id="model" type="file" accept=".onnx,application/octet-stream">
+ <button id="test" disabled>Test WebGPU session</button>
+ <p id="status" role="status">Choose a model file to begin.</p><pre id="details" hidden></pre>
+</section>
+<script type="module">
+const $=id=>document.getElementById(id);
+let ort=null;
+$('gpu').textContent=('gpu' in navigator)?'WebGPU API is present.':'WebGPU API is not available in this browser/device.';
+$('secure').textContent='Secure context: '+(window.isSecureContext?'yes':'no')+'. Serve this page from localhost (not an ordinary file:// URL) for best compatibility.';
+$('model').onchange=()=>{$('test').disabled=!$('model').files.length};
+$('test').onclick=async()=>{
+ const file=$('model').files[0];if(!file)return;
+ $('test').disabled=true;$('details').hidden=true;$('status').textContent='Loading ONNX Runtime Web and creating a WebGPU session…';
+ try{
+  if(!('gpu' in navigator))throw Error('This browser does not expose WebGPU. Try a current Chrome build with WebGPU enabled.');
+  if(!ort){ort=await import('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/+esm');}
+  const bytes=await file.arrayBuffer();
+  const session=await ort.InferenceSession.create(bytes,{executionProviders:['webgpu'],graphOptimizationLevel:'all'});
+  const info={
+   model:file.name,
+   bytes:file.size,
+   executionProvider:'webgpu (session creation succeeded)',
+   inputNames:session.inputNames,
+   outputNames:session.outputNames,
+   inputMetadata:session.inputMetadata,
+   outputMetadata:session.outputMetadata,
+   note:'This test creates a session but does not run inference. It does not verify model outputs, operator numerical parity, audio preprocessing, or end-to-end voice conversion.'
+  };
+  $('details').textContent=JSON.stringify(info,null,2);$('details').hidden=false;
+  $('status').textContent='Session created successfully. Next, validate input tensors and run inference before attempting an engine port.';
+  await session.release();
+ }catch(e){$('status').textContent='WebGPU session failed: '+(e?.message||String(e));$('details').textContent='Failure does not necessarily mean the model is unusable: it may contain unsupported operators, use a custom op, require external weights, or exceed device memory.\n\n'+(e?.stack||'');$('details').hidden=false}
+ finally{$('test').disabled=!$('model').files.length}
+};
+</script>
+</body></html>
