@@ -26,7 +26,7 @@
 <div class="panel">
   <h2>2 · Select your reference WAV</h2>
   <label for="reference">Reference voice (.wav)</label><input id="reference" type="file" accept=".wav,audio/wav">
-  <p class="muted">Use a voice recording you own or have permission to use. For best results, choose clean speech without music or background noise.</p>
+  <p class="muted">Choose a WAV to use as the voice reference. The app will also convert that same WAV automatically, using it as both the source audio and the reference voice. A converted copy will be downloaded; your original file is unchanged.</p>
 </div>
 <div class="panel">
   <h2>3 · Convert</h2>
@@ -39,7 +39,7 @@
 </div>
 <script>
 const $=id=>document.getElementById(id);
-let stream=null,recorder=null,chunks=[],recordedBlob=null,objectUrl=null,recordingContext=null,levelContext=null,levelFrame=null,folderHandle=null,folderTimer=null,seenWavs=new Set();
+let stream=null,recorder=null,chunks=[],recordedBlob=null,objectUrl=null,recordingContext=null,levelContext=null,levelFrame=null,folderHandle=null,folderTimer=null,seenWavs=new Set(),conversionBusy=false;
 const api='http://127.0.0.1:8765';
 function status(s){$('status').textContent=s}
 function encodeWav(audioBuffer){
@@ -93,24 +93,43 @@ $('start').onclick=async()=>{
  }catch(e){status('Microphone error: '+e.message)}
 };
 $('stop').onclick=()=>{if(recorder&&recorder.state!=='inactive')recorder.stop();$('start').disabled=false;$('stop').disabled=true};
-$('reference').onchange=()=>{$('convert').disabled=!(recordedBlob&&$('reference').files.length)};
-$('convert').onclick=async()=>{
- const ref=$('reference').files[0];if(!recordedBlob||!ref)return;
- if(!/\.wav$/i.test(ref.name)){status('Please choose a .wav reference file.');return}
- $('convert').disabled=true;status('Converting locally… the first run may download model files.');
+$('reference').onchange=()=>{
+ const ref=$('reference').files[0];
+ $('convert').disabled=!(ref||recordedBlob);
+ if(!ref)return;
+ if(!/\\.wav$/i.test(ref.name)){status('Please choose a .wav reference file.');return}
+ // Automatically convert the selected reference WAV as source audio, using itself as the voice reference.
+ convertFile(ref,ref).catch(e=>status('Conversion failed: '+e.message));
+};
+async function convertFile(sourceFile,referenceFile){
+ if(conversionBusy)return;
+ if(!sourceFile||!referenceFile)return;
+ if(!/\\.wav$/i.test(sourceFile.name)||!/\\.wav$/i.test(referenceFile.name)){status('Please choose valid WAV files.');return}
+ conversionBusy=true;$('convert').disabled=true;
+ status('Converting '+sourceFile.name+' using '+referenceFile.name+' as the reference… the first run may download model files.');
  const form=new FormData();
- form.append('source_audio',recordedBlob,'microphone.wav');
- // The existing API accepts two reference files; duplicate the selected WAV for compatibility.
- form.append('reference_audio',ref,ref.name);
+ form.append('source_audio',sourceFile,sourceFile.name);
+ form.append('reference_audio',referenceFile,referenceFile.name);
  form.append('engine',$('engine').value);form.append('quantized','false');
  try{
   const r=await fetch(api+'/convert',{method:'POST',body:form});
   if(!r.ok){let msg='HTTP '+r.status;try{const d=await r.json();msg=d.detail||msg}catch{}throw Error(msg)}
   const blob=await r.blob();const url=URL.createObjectURL(blob);
-  $('resultAudio').src=url;$('resultAudio').hidden=false;$('download').href=url;$('download').hidden=false;
-  status('Conversion finished on the local VoiceClonNX backend. WebGPU is not used by this conversion yet. Play or download the output below.');
- }catch(e){status('Conversion failed: '+e.message+'\nCheck that the local VoiceClonNX backend is running and supports this recording format.')}
- finally{$('convert').disabled=!(recordedBlob&&$('reference').files.length)}
+  $('resultAudio').src=url;$('resultAudio').hidden=false;
+  $('download').href=url;
+  $('download').download=sourceFile.name.replace(/\\.wav$/i,'')+'-converted.wav';
+  $('download').textContent='Download '+$('download').download;
+  $('download').hidden=false;
+  const a=document.createElement('a');a.href=url;a.download=$('download').download;a.click();
+  status('Conversion finished. Your original WAV was not changed; the converted copy was downloaded. WebGPU is not used by this conversion yet.');
+ }catch(e){status('Conversion failed: '+e.message+'\\nCheck that the local VoiceClonNX backend is running and supports this WAV file.')}
+ finally{conversionBusy=false;$('convert').disabled=!($('reference').files.length||recordedBlob)}
+}
+$('convert').onclick=async()=>{
+ const ref=$('reference').files[0];
+ if(recordedBlob&&ref){await convertFile(new File([recordedBlob],'microphone.wav',{type:'audio/wav'}),ref);return}
+ if(ref){await convertFile(ref,ref);return}
+ status('Choose a reference WAV first.');
 };
 
 function startLevelMeter(mediaStream){
