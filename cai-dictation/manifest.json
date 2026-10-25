@@ -1,11 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Character.AI Voice Dictation",
-  "version": "1.0.0",
-  "description": "Dictate speech into Character.AI's message box and initialize a repeat-after-me instruction.",
+  "version": "1.1.0",
+  "description": "Local Whisper dictation using the Windows default microphone.",
   "permissions": [
-    "activeTab",
-    "on-device-speech-recognition"
+    "activeTab"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8765/*"
   ],
   "action": {
     "default_popup": "popup.html"
