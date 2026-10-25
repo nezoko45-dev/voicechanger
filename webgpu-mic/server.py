@@ -13,6 +13,7 @@ import soundfile as sf
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
+from starlette.concurrency import run_in_threadpool
 from starlette.background import BackgroundTask
 
 def resource_path(name: str) -> Path:
@@ -32,6 +33,17 @@ app.add_middleware(
 ENGINES = {"facodec", "openvoice", "chatterbox", "triaan", "cosyvoice",
            "bicodec", "knnvc", "focalcodec", "lscodec", "rvc"}
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+_CLONERS: dict[tuple[str, bool], object] = {}
+_CLONERS_LOCK = threading.Lock()
+
+
+def get_cloner(engine: str, quantized: bool):
+    key = (engine, quantized)
+    with _CLONERS_LOCK:
+        if key not in _CLONERS:
+            from voiceclonnx import VoiceCloner
+            _CLONERS[key] = VoiceCloner(engine=engine, quantized=quantized)
+        return _CLONERS[key]
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -149,6 +161,41 @@ async def convert(
         await source_audio.close()
         for upload in refs:
             await upload.close()
+
+
+@app.post("/live-convert")
+async def live_convert(
+    source_audio: UploadFile = File(...),
+    reference_audio: UploadFile = File(...),
+    engine: str = Form("facodec"),
+):
+    """Experimental chunk conversion for a live mic UI. This is still file-based VC per chunk."""
+    if engine not in ENGINES:
+        raise HTTPException(status_code=400, detail=f"Unsupported engine: {engine}")
+    temp_dir = Path(tempfile.mkdtemp(prefix="voicechanger-live-"))
+    source_path = temp_dir / "chunk.wav"
+    reference_path = temp_dir / "reference.wav"
+    output_path = temp_dir / "converted.wav"
+    try:
+        await save_upload(source_audio, source_path)
+        await save_upload(reference_audio, reference_path)
+        try:
+            cloner = await run_in_threadpool(get_cloner, engine, False)
+            await run_in_threadpool(cloner.clone_voice, str(source_path), str(reference_path), str(output_path))
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Live chunk conversion failed: {type(exc).__name__}: {exc}") from exc
+        if not output_path.exists() or output_path.stat().st_size == 0:
+            raise HTTPException(status_code=500, detail="VoiceClonNX did not produce converted audio for this chunk.")
+        return FileResponse(
+            output_path, media_type="audio/wav", filename="live-converted.wav",
+            background=BackgroundTask(lambda: shutil.rmtree(temp_dir, ignore_errors=True)),
+        )
+    except Exception:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
+    finally:
+        await source_audio.close()
+        await reference_audio.close()
 
 
 if __name__ == "__main__":
