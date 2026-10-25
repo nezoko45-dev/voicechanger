@@ -35,24 +35,50 @@
     const send=sendButton(el);
     if(!send){showStatus('Silence detected, but Send was not found. Please send manually.');return}
     const previous=new Set(replyPlayButtons());
-    let finished=false,observer=null,timeout=null;
-    const cleanup=()=>{if(observer)observer.disconnect();if(timeout)clearTimeout(timeout)};
-    const tryPlay=()=>{
-      if(finished)return false;
-      const button=replyPlayButtons().find(candidate=>!previous.has(candidate));
-      if(!button||!button.isConnected)return false;
-      finished=true;cleanup();
-      setTimeout(()=>{
-        if(button.isConnected){button.click();showStatus("Message sent — clicked the new reply's audio play button.")}
-      },250);
-      return true;
+    let finished=false,observer=null,timeout=null,checkTimer=null;
+    let candidate=null,lastReplyText='',stableSince=0;
+    const cleanup=()=>{if(observer)observer.disconnect();if(timeout)clearTimeout(timeout);if(checkTimer)clearTimeout(checkTimer)};
+    function generationStillActive(){
+      const controls=[...document.querySelectorAll('button,[role="button"]')];
+      return controls.some(btn=>{
+        const label=[btn.getAttribute('aria-label'),btn.getAttribute('title'),btn.getAttribute('data-testid'),btn.innerText,btn.textContent].join(' ').replace(/\s+/g,' ').trim().toLowerCase();
+        return /stop generating|stop response|stop generation|cancel response|generating response/.test(label);
+      });
+    }
+    function replyText(button){
+      let node=button;
+      for(let i=0;i<6&&node.parentElement;i++){
+        node=node.parentElement;
+        const text=(node.innerText||node.textContent||'').replace(/\s+/g,' ').trim();
+        if(text.length>15&&(/voice recorder/i.test(text)||node.querySelector('[data-message-id],[data-testid*="message"]')))return text;
+      }
+      return (button.parentElement?.innerText||button.parentElement?.textContent||'').replace(/\s+/g,' ').trim();
+    }
+    const checkReady=()=>{
+      if(finished)return;
+      if(!candidate||!candidate.isConnected){
+        candidate=replyPlayButtons().find(button=>!previous.has(button))||null;
+        lastReplyText='';stableSince=0;
+      }
+      if(!candidate){checkTimer=setTimeout(checkReady,500);return}
+      const currentText=replyText(candidate);
+      if(currentText!==lastReplyText){lastReplyText=currentText;stableSince=Date.now()}
+      const stableLongEnough=stableSince>0&&Date.now()-stableSince>=2500;
+      if(!generationStillActive()&&stableLongEnough){
+        finished=true;cleanup();
+        setTimeout(()=>{
+          if(candidate.isConnected){candidate.click();showStatus("Reply finished generating — clicked its blue audio play button.")}
+        },200);
+        return;
+      }
+      checkTimer=setTimeout(checkReady,500);
     };
-    observer=new MutationObserver(()=>tryPlay());
+    observer=new MutationObserver(()=>{if(!candidate||!candidate.isConnected)candidate=replyPlayButtons().find(button=>!previous.has(button))||null});
     observer.observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true});
-    timeout=setTimeout(()=>{if(finished)return;finished=true;cleanup();showStatus("Message sent, but the reply's blue play button was not detected.")},45000);
+    timeout=setTimeout(()=>{if(finished)return;finished=true;cleanup();showStatus("Message sent, but couldn't confirm generation finished or find the reply play button.")},120000);
     send.click();
-    showStatus("Message sent — waiting for the reply's blue play button…");
-    setTimeout(tryPlay,300);
+    showStatus("Message sent — waiting for the reply to finish generating before playing audio…");
+    checkTimer=setTimeout(checkReady,400);
   }
   function sendAfterSilence(){if(sendTimer)clearTimeout(sendTimer);sendTimer=setTimeout(()=>{sendTimer=null;const el=composer();if(!el||!read(el))return;sendAndPlayReply(el)},SILENCE_TO_SEND_MS)}
   function showStatus(message){let el=document.getElementById('__cai_dictation_status');if(!el){el=document.createElement('div');el.id='__cai_dictation_status';Object.assign(el.style,{position:'fixed',zIndex:'2147483647',bottom:'14px',right:'14px',padding:'9px 12px',borderRadius:'10px',background:'#211b2a',color:'#fff',font:'13px system-ui',boxShadow:'0 4px 20px #0005',maxWidth:'360px'});document.documentElement.appendChild(el)}el.textContent='🎙 '+message}
