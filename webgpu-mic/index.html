@@ -56,9 +56,9 @@ function encodeWav(audioBuffer){
 }
 
 async function check(){
-  $('gpu').textContent=('gpu' in navigator && navigator.gpu)?'WebGPU available (not used by current converter)':'WebGPU unavailable in this browser/device';
-  try{const r=await fetch(api+'/health');if(!r.ok)throw Error('HTTP '+r.status);const d=await r.json();$('backend').textContent=d.ok?'VoiceClonNX local backend connected at '+api:'Backend did not report ready';}
-  catch(e){$('backend').textContent='Local backend unavailable. Start the VoiceClonNX server on 127.0.0.1:8765 first.'}
+  $('gpu').textContent=('gpu' in navigator && navigator.gpu)?'WebGPU available (not yet used for conversion)':'WebGPU unavailable in this browser/device';
+  try{const r=await fetch(api+'/health');if(!r.ok)throw Error('HTTP '+r.status);const d=await r.json();$('backend').textContent=d.ok?'VoiceClonNX backend connected · '+api+' · engines: '+(d.engines||[]).join(', '):'Backend did not report ready';}
+  catch(e){$('backend').textContent='Backend unavailable. Run start_voiceclonnx.bat or start_backend.bat, then retry.'}
 }
 async function listMics(){
   try{
@@ -101,14 +101,14 @@ $('convert').onclick=async()=>{
  const form=new FormData();
  form.append('source_audio',recordedBlob,'microphone.wav');
  // The existing API accepts two reference files; duplicate the selected WAV for compatibility.
- form.append('reference_audio_1',ref,ref.name);form.append('reference_audio_2',ref,ref.name);
+ form.append('reference_audio',ref,ref.name);
  form.append('engine',$('engine').value);form.append('quantized','false');
  try{
   const r=await fetch(api+'/convert',{method:'POST',body:form});
   if(!r.ok){let msg='HTTP '+r.status;try{const d=await r.json();msg=d.detail||msg}catch{}throw Error(msg)}
   const blob=await r.blob();const url=URL.createObjectURL(blob);
   $('resultAudio').src=url;$('resultAudio').hidden=false;$('download').href=url;$('download').hidden=false;
-  status('Conversion finished. Play or download the output below.');
+  status('Conversion finished on the local VoiceClonNX backend. WebGPU is not used by this conversion yet. Play or download the output below.');
  }catch(e){status('Conversion failed: '+e.message+'\nCheck that the local VoiceClonNX backend is running and supports this recording format.')}
  finally{$('convert').disabled=!(recordedBlob&&$('reference').files.length)}
 };
