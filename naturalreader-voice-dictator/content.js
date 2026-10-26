@@ -255,7 +255,14 @@
     }
     try {
       if (!state.localWorker) {
-        state.localWorker = new Worker(chrome.runtime.getURL("whisper-worker.bundle.js"), { type: "module" });
+        // Fetch the packaged worker, then launch it from a Blob URL.
+        // This avoids Chrome rejecting a chrome-extension:// worker URL from the website origin.
+        const workerResponse = await fetch(chrome.runtime.getURL("whisper-worker.bundle.js"));
+        if (!workerResponse.ok) throw new Error("Couldn't fetch the packaged Whisper worker (" + workerResponse.status + "). Reload the updated extension.");
+        const workerSource = await workerResponse.text();
+        const workerBlobUrl = URL.createObjectURL(new Blob([workerSource], { type: "text/javascript" }));
+        state.localWorkerBlobUrl = workerBlobUrl;
+        state.localWorker = new Worker(workerBlobUrl, { type: "module" });
         state.localWorker.onmessage = async (event) => {
           const msg = event.data || {};
           if (msg.type === "status") status(msg.message || "Loading local Whisper…");
@@ -311,7 +318,7 @@
           }
         };
         state.localWorker.onerror = (e) => status("Whisper worker failed to load: " + (e.message || "check that the packaged runtime build finished."));
-        state.localWorker.postMessage({ type: "load", model: "onnx-community/whisper-tiny.en" });
+        state.localWorker.postMessage({ type: "load", model: "onnx-community/whisper-tiny.en", wasmPaths: chrome.runtime.getURL("assets/") });
         $("nrvd-start").disabled = true;
         $("nrvd-stop").disabled = false;
         status("Loading Whisper model for local WebGPU transcription. First run needs internet to cache model files…");
@@ -331,6 +338,8 @@
     state.localBusy = false;
     clearTimeout(state.timer);
     try { state.localProcessor?.disconnect(); } catch {}
+    if (state.localWorker) { state.localWorker.terminate(); state.localWorker = null; state.localReady = false; }
+    if (state.localWorkerBlobUrl) { URL.revokeObjectURL(state.localWorkerBlobUrl); state.localWorkerBlobUrl = null; }
     try { state.localContext?.close(); } catch {}
     state.localStream?.getTracks().forEach(track => track.stop());
     state.localProcessor = null;
