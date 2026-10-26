@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "NaturalReader Auto Voice Caption",
+  "version": "1.0.0",
+  "description": "Automatically play text entered in NaturalReader after a pause, then clear it after playback.",
+  "permissions": [],
+  "host_permissions": [
+    "https://www.naturalreaders.com/*",
+    "https://*.naturalreaders.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.naturalreaders.com/online/*",
+        "https://*.naturalreaders.com/online/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
