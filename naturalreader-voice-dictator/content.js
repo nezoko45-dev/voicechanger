@@ -72,34 +72,32 @@
     el.dispatchEvent(new Event("change", {bubbles:true}));
   }
   function pauseResumeButton(field) {
-    // Exact selector copied from NaturalReader's DevTools:
-    // <svg aria-label="read button play icon [reading bar]" ...>
-    const exact = document.querySelector(
-      'svg[aria-label="read button play icon [reading bar]"]'
-    );
-    if (exact && visible(exact) && !exact.closest("#nr-voice-dictator")) {
-      // Angular often attaches the click handler to a wrapping element rather
-      // than the SVG itself. Walk upward to the nearest interactive wrapper.
-      for (let p = exact; p && p !== document.body; p = p.parentElement) {
-        if (p.matches('button,[role="button"],[tabindex],[onclick]')) return p;
-        const r = p.getBoundingClientRect();
-        if (p !== exact && (r.width > 180 || r.height > 120)) break;
-      }
-      return exact;
+    // Prefer explicit accessible playback controls on TTSReader and TTSReader.
+    const candidates = [...document.querySelectorAll(
+      'button,[role="button"],[aria-label],[title],svg[aria-label]'
+    )].filter(el => visible(el) && !el.closest("#nr-voice-dictator"));
+    const score = (el) => {
+      const meta = [
+        el.getAttribute("aria-label"), el.getAttribute("title"),
+        el.getAttribute("data-testid"), el.innerText, el.textContent
+      ].join(" ").trim().toLowerCase();
+      let n = 0;
+      if (/play|resume|start reading|listen/.test(meta)) n += 10;
+      if (/pause|stop|next|previous|skip|export|download|generate mp3/.test(meta)) n -= 8;
+      if (el.matches("svg")) n -= 2;
+      if (el.matches("button,[role='button']")) n += 4;
+      const r = el.getBoundingClientRect();
+      if (r.width > 160 || r.height > 100) n -= 5;
+      if (field && el.contains(field)) n -= 20;
+      return n;
+    };
+    candidates.sort((a,b) => score(b)-score(a));
+    const best = candidates[0];
+    if (!best || score(best) < 8) return null;
+    if (best.matches("svg")) {
+      return best.closest('button,[role="button"],[tabindex],[onclick]') || best;
     }
-
-    // Fallback for NaturalReader variants that slightly change the accessible label.
-    const alt = [...document.querySelectorAll('svg[aria-label*="read button"][aria-label*="play icon"]')]
-      .find(el => visible(el) && !el.closest("#nr-voice-dictator"));
-    if (alt) {
-      for (let p = alt; p && p !== document.body; p = p.parentElement) {
-        if (p.matches('button,[role="button"],[tabindex],[onclick]')) return p;
-        const r = p.getBoundingClientRect();
-        if (p !== alt && (r.width > 180 || r.height > 120)) break;
-      }
-      return alt;
-    }
-    return null;
+    return best;
   }
 
   function activateButton(button) {
@@ -111,7 +109,7 @@
   }
   function insertTranscript(text) {
     const field = findField();
-    if (!field) { status("Dictation heard, but I couldn't find NaturalReader's text field. Open Add Text / Type or Paste Text."); return null; }
+    if (!field) { status("Dictation heard, but I couldn't find TTSReader's text editor. Open a document in the player first."); return null; }
     writeField(field, text);
     return field;
   }
@@ -122,41 +120,40 @@
 
   function watchPlaybackCompletion(field, expectedText, resumeMic = false) {
     if (!state.clearAfterPlayback) return;
-    const getPlayIcon = () => document.querySelector('svg[aria-label*="read button"][aria-label*="icon"]');
     let started = false;
     let finished = false;
-    const startedAt = Date.now();
+    const playState = () => {
+      const controls = [...document.querySelectorAll('button,[role="button"],[aria-label],[title]')]
+        .filter(el => visible(el) && !el.closest("#nr-voice-dictator"));
+      const labels = controls.map(el => [
+        el.getAttribute("aria-label"), el.getAttribute("title"), el.innerText
+      ].join(" ").toLowerCase()).join(" ");
+      return { playing: /pause|stop reading/.test(labels), ready: /play|resume|start reading/.test(labels) };
+    };
     const observer = new MutationObserver(() => {
-      const icon = getPlayIcon();
-      const label = (icon?.getAttribute("aria-label") || "").toLowerCase();
-      if (/pause|stop/.test(label)) started = true;
-      else if (started && /play/.test(label)) finished = true;
-      if (finished) {
-        observer.disconnect();
-        if (resumeMic) {
-          state.suppressRestart = false;
-          state.finalText = "";
-          state.lastSent = "";
-          start();
-        }
-        // Avoid deleting anything the user has typed since this dictation.
-        if (field.isConnected && fieldText(field).trim() === expectedText.trim()) {
-          writeField(field, "");
-          status("Playback finished; text field cleared.");
-        } else {
-          status("Playback finished; left the field unchanged because its text had changed.");
-        }
+      const p = playState();
+      if (p.playing) started = true;
+      else if (started && p.ready) finished = true;
+      if (!finished) return;
+      observer.disconnect();
+      if (resumeMic) {
+        state.suppressRestart = false;
+        state.finalText = "";
+        state.lastSent = "";
+        start();
       }
+      if (field.isConnected && fieldText(field).trim() === expectedText.trim()) {
+        writeField(field, "");
+        status("Playback finished; text field cleared.");
+      } else status("Playback finished; left the field unchanged because its text had changed.");
     });
     observer.observe(document.documentElement, {
       subtree: true, childList: true, attributes: true,
-      attributeFilter: ["aria-label", "class", "aria-pressed"]
+      attributeFilter: ["aria-label", "title", "class", "aria-pressed"]
     });
-    // Avoid leaving an observer running forever if this NaturalReader version
-    // doesn't expose playback state through accessible labels.
     setTimeout(() => {
       observer.disconnect();
-      if (!finished && started) status("Playback status changed, but completion wasn't detected; text was left in place.");
+      if (!finished) status("Couldn't confirm playback completion from the page controls; text was left in place.");
     }, 15 * 60 * 1000);
   }
 
@@ -165,23 +162,23 @@
     if (!state.autoPlay || !state.finalText.trim()) return;
     state.timer = setTimeout(() => {
       const field = findField();
-      if (!field) { status("Text entered, but the text field wasn't found for Play."); return; }
+      if (!field) { status("Text entered, but the text editor wasn't found for Play."); return; }
       const button = pauseResumeButton(field);
-      if (!button) { status("Text entered, but I couldn't confidently find the blue playback button. Click it manually; please keep the editor and button visible."); return; }
+      if (!button) { status("Text entered, but I couldn't confidently identify TTSReader's Play control. Please click Play manually and share its button label from DevTools so I can target it exactly."); return; }
       const spokenText = fieldText(field).trim();
       state.suppressRestart = true;
       if (state.recognition && state.listening) state.recognition.stop();
       activateButton(button);
-      status("Play clicked. Mic dictation is paused while NaturalReader speaks.");
+      status("Play clicked. Mic dictation is paused while TTSReader speaks.");
       watchPlaybackCompletion(field, spokenText, true);
     }, 1400);
   }
   function start(options = {}) {
-    if (!SpeechRecognition) { status("Speech recognition isn't available here. Try current Chrome on NaturalReader's Online Reader."); return; }
+    if (!SpeechRecognition) { status("Speech recognition isn't available here. Try the current version of Chrome on TTSReader Player."); return; }
     if (state.listening || state.suppressRestart) return;
     state.userStopped = false;
     const field = findField();
-    if (!field) { status("Open NaturalReader's Type or Paste Text editor first, then try again."); return; }
+    if (!field) { status("Open a TTSReader document/editor first, then try again."); return; }
     state.clearOnStart = $("nrvd-clear").checked;
     state.autoPlay = $("nrvd-play").checked;
     if (!options.keepSession) {
