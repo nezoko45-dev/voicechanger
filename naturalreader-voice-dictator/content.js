@@ -179,6 +179,7 @@
   function start(options = {}) {
     if (!SpeechRecognition) { status("Speech recognition isn't available here. Try current Chrome on NaturalReader's Online Reader."); return; }
     if (state.listening || state.suppressRestart) return;
+    state.userStopped = false;
     const field = findField();
     if (!field) { status("Open NaturalReader's Type or Paste Text editor first, then try again."); return; }
     state.clearOnStart = $("nrvd-clear").checked;
@@ -262,22 +263,6 @@
     status("Dictation stopped.");
   }
 
-  $("nrvd-start").disabled = false;
-      $("nrvd-stop").disabled = true;
-      if (!state.suppressRestart && state.finalText.trim()) schedulePlay();
-      if (!state.finalText.trim() && !state.suppressRestart) status("Stopped. No speech was captured.");
-    };
-    state.recognition = rec;
-    try { rec.start(); } catch (e) { status("Couldn't start microphone: " + e.message); }
-  }
-  function stop() {
-    clearTimeout(state.timer);
-    if (state.recognition && state.listening) state.recognition.stop();
-    state.listening = false;
-    $("nrvd-start").disabled = false;
-    $("nrvd-stop").disabled = true;
-    status("Dictation stopped.");
-  }
 
   $("nrvd-start").addEventListener("click", start);
   $("nrvd-stop").addEventListener("click", stop);
