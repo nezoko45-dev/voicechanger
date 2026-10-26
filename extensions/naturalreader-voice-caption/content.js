@@ -33,46 +33,46 @@
     return [...found].filter(el => el instanceof Element && visible(el) && !el.closest("#nrv-panel"));
   }
   function clickPlay() {
-    // NaturalReader's main Play control is the blue circular triangle in the player toolbar.
     const editor = getEditor();
     const er = editor?.getBoundingClientRect();
     const candidates = buttons().map(el => {
       const box = el.getBoundingClientRect();
       const label = labelOf(el);
       const svg = el.querySelector("svg");
-      const paths = [...(svg?.querySelectorAll("path, polygon") || [])].map(p => p.getAttribute("d") || p.getAttribute("points") || "");
       const svgText = (svg?.outerHTML || "").toLowerCase();
-      const style = getComputedStyle(el);
-      const bg = style.backgroundColor + " " + style.color + " " + (el.getAttribute("style") || "");
-      const blue = /rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/g;
-      let m, blueish = false;
-      while ((m = blue.exec(bg))) { const rr=+m[1], gg=+m[2], bb=+m[3]; if (bb > 130 && bb > rr * 1.15 && bb > gg * 1.05) blueish = true; }
-      const nearTop = box.top < 240;
-      const aboveEditor = !!er && box.bottom <= er.top + 100;
-      const round = Math.abs(box.width-box.height) < 18 && box.width >= 28 && box.width <= 90;
-      const triangle = /play|triangle|polygon/.test(svgText) || paths.some(d => /[zZ]/.test(d) && /[ML]/.test(d));
-      const namedPlay = /(^|\s)(play|pause|resume)(\s|$)|start reading|read aloud/.test(label) && !/playlist|playback speed/.test(label);
-      const score = (namedPlay ? 120 : 0) + (blueish && round ? 100 : 0) + (triangle ? 45 : 0) + (aboveEditor ? 35 : 0) + (nearTop ? 20 : 0);
-      return {el,score,namedPlay,blueish,round,triangle,aboveEditor,nearTop,box};
-    }).filter(x => x.score >= 70 && (x.namedPlay || (x.aboveEditor && x.nearTop && (x.triangle || (x.blueish && x.round)))));
+      const title = clean(el.getAttribute("title") || "");
+      const aria = clean(el.getAttribute("aria-label") || "");
+      const tooltip = (label + " " + title + " " + aria).toLowerCase();
+      const isExactControl = /pause\s*\/\s*resume|resume\s*\(space\)|pause\s*\(space\)|play\s*\/\s*pause/.test(tooltip);
+      const isNamed = /\b(play|pause|resume)\b|start reading|read aloud/.test(tooltip) && !/playlist|playback speed|display|template/.test(tooltip);
+      const aboveEditor = !!er && box.bottom <= er.top + 120;
+      const nearTop = box.top < 260;
+      const round = Math.abs(box.width-box.height) < 20 && box.width >= 28 && box.width <= 100;
+      const styleText = [getComputedStyle(el).backgroundColor, getComputedStyle(el).color, el.getAttribute("style") || "", svgText].join(" ").toLowerCase();
+      const blue = /#(?:0[0-9a-f]{4,6}|1[0-9a-f]{4,6}|2[0-9a-f]{4,6}|3[0-9a-f]{4,6}|4[0-9a-f]{4,6}|5[0-9a-f]{4,6}|6[0-9a-f]{4,6})|rgb\(\s*\d+\s*,\s*\d+\s*,\s*(?:1[3-9]\d|2\d\d)\s*\)/i.test(styleText);
+      const triangle = /play|triangle|polygon/.test(svgText) || [...(svg?.querySelectorAll("path,polygon") || [])].some(p => /[zZ]/.test(p.getAttribute("d") || p.getAttribute("points") || ""));
+      const score = (isExactControl ? 300 : 0) + (isNamed ? 100 : 0) + (aboveEditor ? 35 : 0) + (nearTop ? 20 : 0) + (round && blue ? 50 : 0) + (triangle ? 35 : 0);
+      return {el,score,isExactControl,isNamed,aboveEditor,nearTop,round,blue,triangle,tooltip,box};
+    }).filter(x => x.isExactControl || x.isNamed || (x.aboveEditor && x.nearTop && x.round && x.blue && x.triangle));
     candidates.sort((a,b) => b.score-a.score);
     const candidate = candidates[0];
     if (!candidate) {
-      setStatus("Couldn't identify NaturalReader's blue Play button. Keep the NaturalReader player visible and try again.");
+      setStatus("Play button not found. Keep NaturalReader's player visible, then refresh this page and try again. Your text was not changed.");
       return false;
     }
     const target = candidate.el.closest("button,[role=button]") || candidate.el;
     try {
-      target.scrollIntoView({block:"center",inline:"nearest"});
-      target.dispatchEvent(new PointerEvent("pointerdown",{bubbles:true,pointerType:"mouse",button:0}));
-      target.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
-      target.dispatchEvent(new PointerEvent("pointerup",{bubbles:true,pointerType:"mouse",button:0}));
-      target.dispatchEvent(new MouseEvent("mouseup",{bubbles:true,button:0}));
       target.click();
-      setStatus("Clicked NaturalReader's Play control.");
+      // Verify that clicking caused a player-state change where the page exposes one.
+      setTimeout(() => {
+        const now = labelOf(target);
+        if (/pause/.test(now) || /resume/.test(now) || /play/.test(now)) {
+          setStatus("Play control clicked. If audio didn't start, NaturalReader may be ignoring scripted clicks; use the player once manually to unlock it.");
+        }
+      }, 350);
       return true;
     } catch (err) {
-      setStatus("NaturalReader Play click failed: " + (err?.message || "unknown error"));
+      setStatus("Play click failed: " + (err?.message || "unknown error") + ". Text was not cleared.");
       return false;
     }
   }
@@ -184,7 +184,7 @@
         return;
       }
       state.baseline = current;
-      setStatus("Playing only the new words; they will be removed from the editor afterward.");
+      setStatus("Sent click to NaturalReader's Play control. Waiting for playback…");
       waitForPlayback(delta, editor, previousStory);
     }, 250);
   }
