@@ -3,7 +3,7 @@
   window.__naturalReaderDictatorLoaded = true;
 
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const state = { recognition: null, listening: false, suppressRestart: false, userStopped: false, restartTimer: null, finalText: "", sessionBase: "", sessionFinalText: "", timer: null, lastSent: "", autoPlay: true, clearOnStart: true, clearAfterPlayback: true, playbackPending: false, localWorker: null, localStream: null, localContext: null, localProcessor: null, localSamples: [], localBusy: false, localReady: false, localTranscript: "" };
+  const state = { recognition: null, listening: false, suppressRestart: false, userStopped: false, restartTimer: null, finalText: "", sessionBase: "", sessionFinalText: "", timer: null, lastSent: "", autoPlay: true, clearOnStart: true, clearAfterPlayback: true, playbackPending: false, localWorker: null, localStream: null, localContext: null, localProcessor: null, localSamples: [], localBusy: false, localReady: false, localTranscript: "", rotationTimer: null };
   const $ = (id) => document.getElementById(id);
 
   const panel = document.createElement("section");
@@ -11,12 +11,12 @@
   panel.innerHTML = `
     <div class="nrvd-head"><strong>Voice Dictator</strong><button id="nrvd-hide" title="Hide panel">−</button></div>
     <div class="nrvd-row"><button id="nrvd-start" type="button">🎙 Start dictation</button><button id="nrvd-stop" disabled>Stop</button></div>
-    <label><input id="nrvd-local" type="checkbox" checked> Local Whisper (WebGPU)</label>
+    <label><input id="nrvd-local" type="checkbox"> Local Whisper (optional)</label>
     <label><input id="nrvd-clear" type="checkbox" checked> Clear text field when starting</label>
     <label><input id="nrvd-play" type="checkbox" checked> Auto-press Play after a pause</label>
     <label><input id="nrvd-clear-after" type="checkbox" checked> Clear text after playback finishes</label>
     <div id="nrvd-status" role="status">Ready. Start dictation, then speak.</div>
-    <div class="nrvd-foot">Uses Chrome speech recognition. Microphone permission may be required.</div>
+    <div class="nrvd-foot">Uses Chrome speech recognition by default. Microphone permission may be required.</div>
   `;
   const style = document.createElement("style");
   style.textContent = `
@@ -444,7 +444,16 @@
       state.listening = true;
       $("nrvd-start").disabled = true;
       $("nrvd-stop").disabled = false;
-      status(options.keepSession ? "Recognition restarted. Keep speaking…" : "Listening… speak naturally.");
+      status(options.keepSession ? "Chrome speech recognition restarted. Keep speaking…" : "Listening with Chrome speech recognition…");
+      // Chrome may end long-running recognition sessions. Rotate it proactively
+      // every 4 minutes, well before typical service/session limits, preserving text.
+      clearTimeout(state.rotationTimer);
+      state.rotationTimer = setTimeout(() => {
+        if (state.recognition === rec && state.listening && !state.userStopped && !state.suppressRestart) {
+          status("Refreshing speech recognition before timeout…");
+          try { rec.stop(); } catch { start({ keepSession: true }); }
+        }
+      }, 4 * 60 * 1000);
     };
     rec.onresult = (event) => {
       if (state.suppressRestart || state.playbackPending) return;
@@ -486,6 +495,8 @@
         (err === "not-allowed" || err === "service-not-allowed" ? "Check microphone permission." : "Will retry if recognition ended unexpectedly."));
     };
     rec.onend = () => {
+      clearTimeout(state.rotationTimer);
+      state.rotationTimer = null;
       state.listening = false;
       if (state.suppressRestart) {
         $("nrvd-start").disabled = false;
@@ -519,6 +530,7 @@
   }
   function stop() {
     state.userStopped = true;
+    clearTimeout(state.rotationTimer);
     clearTimeout(state.timer);
     clearTimeout(state.restartTimer);
     if (state.recognition && state.listening) state.recognition.stop();
