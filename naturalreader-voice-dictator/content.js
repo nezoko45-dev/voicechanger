@@ -97,8 +97,25 @@
       if (button) {
         cleanup();
         activateButton(button);
-        status("Clicked Luvvoice Generate.");
+        status("Clicked Generate. Clearing the previous text for the next phrase…");
         state.finalText = "";
+        state.lastSent = "";
+        // Give the TTS site a moment to capture the submitted text, then clear
+        // the editor and start a fresh Chrome recognition session so old words
+        // are not reinserted from Chrome's cumulative result list.
+        setTimeout(() => {
+          if (!isLuvvoice() || state.userStopped) return;
+          const currentField = findField();
+          if (currentField) writeField(currentField, "");
+          state.sessionBase = "";
+          state.sessionFinalText = "";
+          state.finalText = "";
+          state.lastSent = "";
+          if (state.recognition && state.listening && !state.suppressRestart) {
+            status("Previous text cleared. Restarting Chrome recognition for the next phrase…");
+            try { state.recognition.stop(); } catch { start(); }
+          }
+        }, 1200);
         return;
       }
       if (Date.now() >= deadline) {
