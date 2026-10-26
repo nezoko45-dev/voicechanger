@@ -270,11 +270,11 @@
       // Chrome's result list is cumulative during a session; replace the session
       // snapshot with its finalized portion, then prepend text from earlier sessions.
       // This avoids dropping the beginning when resultIndex advances or changes.
-      state.sessionFinalText = finalized.join(" ").replace(/\\s+/g, " ").trim();
+      state.sessionFinalText = finalized.join(" ").replace(/\s+/g, " ").trim();
       const committed = [state.sessionBase, state.sessionFinalText]
-        .filter(Boolean).join(" ").replace(/\\s+/g, " ").trim();
-      const interim = interimParts.join(" ").replace(/\\s+/g, " ").trim();
-      const full = [committed, interim].filter(Boolean).join(" ").replace(/\\s+/g, " ").trim();
+        .filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+      const interim = interimParts.join(" ").replace(/\s+/g, " ").trim();
+      const full = [committed, interim].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
 
       if (full) {
         insertTranscript(full);
