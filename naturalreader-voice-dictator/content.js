@@ -13,6 +13,7 @@
     <div class="nrvd-row"><button id="nrvd-start">🎙 Start dictation</button><button id="nrvd-stop" disabled>Stop</button></div>
     <label><input id="nrvd-clear" type="checkbox" checked> Clear text field when starting</label>
     <label><input id="nrvd-play" type="checkbox" checked> Auto-press Play after a pause</label>
+    <label><input id="nrvd-clear-after" type="checkbox" checked> Clear text after playback finishes</label>
     <div id="nrvd-status" role="status">Ready. Start dictation, then speak.</div>
     <div class="nrvd-foot">Uses Chrome speech recognition. Microphone permission may be required.</div>
   `;
@@ -114,6 +115,45 @@
     writeField(field, text);
     return field;
   }
+  function fieldText(el) {
+    if (!el) return "";
+    return el.isContentEditable ? (el.innerText || el.textContent || "") : (el.value || "");
+  }
+
+  function watchPlaybackCompletion(field, expectedText) {
+    if (!state.clearAfterPlayback) return;
+    const getPlayIcon = () => document.querySelector('svg[aria-label*="read button"][aria-label*="icon"]');
+    let started = false;
+    let finished = false;
+    const startedAt = Date.now();
+    const observer = new MutationObserver(() => {
+      const icon = getPlayIcon();
+      const label = (icon?.getAttribute("aria-label") || "").toLowerCase();
+      if (/pause|stop/.test(label)) started = true;
+      else if (started && /play/.test(label)) finished = true;
+      if (finished) {
+        observer.disconnect();
+        // Avoid deleting anything the user has typed since this dictation.
+        if (field.isConnected && fieldText(field).trim() === expectedText.trim()) {
+          writeField(field, "");
+          status("Playback finished; text field cleared.");
+        } else {
+          status("Playback finished; left the field unchanged because its text had changed.");
+        }
+      }
+    });
+    observer.observe(document.documentElement, {
+      subtree: true, childList: true, attributes: true,
+      attributeFilter: ["aria-label", "class", "aria-pressed"]
+    });
+    // Avoid leaving an observer running forever if this NaturalReader version
+    // doesn't expose playback state through accessible labels.
+    setTimeout(() => {
+      observer.disconnect();
+      if (!finished && started) status("Playback status changed, but completion wasn't detected; text was left in place.");
+    }, 15 * 60 * 1000);
+  }
+
   function schedulePlay() {
     clearTimeout(state.timer);
     if (!state.autoPlay || !state.finalText.trim()) return;
@@ -122,8 +162,10 @@
       if (!field) { status("Text entered, but the text field wasn't found for Play."); return; }
       const button = pauseResumeButton(field);
       if (!button) { status("Text entered, but I couldn't confidently find the blue playback button. Click it manually; please keep the editor and button visible."); return; }
+      const spokenText = fieldText(field).trim();
       activateButton(button);
-      status("Click event sent to the blue toolbar control. Check whether playback actually starts.");
+      status("Click event sent to NaturalReader Play. Text will clear after playback finishes if its playback state is detectable.");
+      watchPlaybackCompletion(field, spokenText);
     }, 1400);
   }
   function start() {
@@ -179,6 +221,7 @@
   $("nrvd-start").addEventListener("click", start);
   $("nrvd-stop").addEventListener("click", stop);
   $("nrvd-play").addEventListener("change", e => state.autoPlay = e.target.checked);
+  $("nrvd-clear-after").addEventListener("change", e => state.clearAfterPlayback = e.target.checked);
   $("nrvd-hide").addEventListener("click", () => panel.classList.toggle("nrvd-min"));
   const observer = new MutationObserver(() => {
     if (!panel.isConnected && document.documentElement) document.documentElement.append(panel);
