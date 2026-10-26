@@ -233,6 +233,7 @@
     if (!field) { status("Open a TTSReader document/editor first, then try again."); return; }
     state.clearOnStart = $("nrvd-clear").checked;
     state.autoPlay = $("nrvd-play").checked;
+    state.clearAfterPlayback = $("nrvd-clear-after").checked;
     if (!options.keepSession) {
       state.finalText = "";
       state.lastSent = "";
