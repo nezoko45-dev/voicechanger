@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "NaturalReader Voice Dictator",
+  "version": "1.0.0",
+  "description": "Dictate into NaturalReader and optionally press Play after you pause speaking.",
+  "permissions": [],
+  "host_permissions": [
+    "https://www.naturalreaders.com/*",
+    "https://app.naturalreaders.com/*"
+  ],
+  "action": {
+    "default_title": "NaturalReader Voice Dictator",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.naturalreaders.com/online*",
+        "https://app.naturalreaders.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
