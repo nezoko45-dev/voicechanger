@@ -4,7 +4,7 @@ import { pipeline, env } from "@huggingface/transformers";
 // Float32Array samples; only model files are fetched (and cached) on first use.
 env.allowRemoteModels = true;
 env.allowLocalModels = false;
-env.useBrowserCache = true;
+env.useBrowserCache = true;\n// Load ONNX Runtime WebAssembly from files packaged with this extension.\nif (typeof chrome !== "undefined" && chrome.runtime?.getURL) {\n  env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL("assets/");\n}
 
 let transcriber = null;
 let loading = false;
