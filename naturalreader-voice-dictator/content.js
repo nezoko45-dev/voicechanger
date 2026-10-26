@@ -71,10 +71,6 @@
     el.dispatchEvent(new Event("change", {bubbles:true}));
   }
   function pauseResumeButton(field) {
-    if (!field) return null;
-    const fr = field.getBoundingClientRect();
-    // NaturalReader's playback control can be an icon-only button, so rank
-    // visible blue controls by their position near/above the text editor.
     const candidates = [...document.querySelectorAll(
       'button,[role="button"],[tabindex="0"],input[type="button"],input[type="submit"]'
     )].filter(visible).filter(el => !el.closest("#nr-voice-dictator"));
@@ -82,49 +78,54 @@
     for (const el of candidates) {
       if (el.disabled || el.getAttribute("aria-disabled") === "true") continue;
       const r = el.getBoundingClientRect();
-      if (r.width < 18 || r.height < 18 || r.width > 220 || r.height > 120) continue;
+      if (r.width < 22 || r.height < 22 || r.width > 180 || r.height > 100) continue;
       const label = [
         el.innerText, el.getAttribute("aria-label"), el.getAttribute("title"),
         el.getAttribute("data-testid")
       ].join(" ").toLowerCase().replace(/\s+/g, " ").trim();
-      if (/settings|voice|speed|download|upload|login|sign in|menu|close|clear|volume/.test(label)) continue;
+      if (/settings|voice|speed|download|upload|login|sign in|menu|close|clear|volume|undo|redo/.test(label)) continue;
 
-      const css = getComputedStyle(el);
-      const bg = css.backgroundColor;
-      const m = bg.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
-      let blue = 0;
-      if (m) {
-        const red = +m[1], green = +m[2], b = +m[3];
-        if (b > 100 && b > red * 1.15 && b > green * 1.05) blue = 14;
+      let score = 0;
+      // NaturalReader's control in the supplied screenshot is a circular blue
+      // button with a play-triangle icon in the top playback toolbar.
+      const styles = [el, ...[...el.querySelectorAll("*")].slice(0, 12)];
+      let blue = false;
+      for (const node of styles) {
+        const bg = getComputedStyle(node).backgroundColor;
+        const m = bg.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+        if (m && +m[3] > 100 && +m[3] > +m[1] * 1.15 && +m[3] > +m[2] * 1.05) blue = true;
       }
-      // Also inspect the button itself when the blue fill is on a child wrapper.
-      for (const child of [...el.querySelectorAll("*")].slice(0, 8)) {
-        const cbg = getComputedStyle(child).backgroundColor;
-        const cm = cbg.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
-        if (cm && +cm[3] > 100 && +cm[3] > +cm[1] * 1.15 && +cm[3] > +cm[2] * 1.05) blue = Math.max(blue, 10);
+      if (blue) score += 20;
+      if (/\bplay\b|resume|start reading/.test(label)) score += 18;
+      if (/\bpause\b/.test(label)) score += 4;
+      const svg = el.querySelector("svg");
+      if (svg) {
+        const svgText = [
+          svg.getAttribute("aria-label"), svg.getAttribute("class"),
+          ...[...svg.querySelectorAll("path,polygon")].slice(0, 4).map(n => n.getAttribute("d"))
+        ].join(" ").toLowerCase();
+        if (/play|triangle/.test(svgText)) score += 8;
+        // Common play glyph path has a triangular silhouette; treat unlabeled
+        // SVG controls in the top toolbar as possible playback controls.
+        if (!label && r.top < 130 && r.left > 90 && r.left < window.innerWidth - 90) score += 5;
       }
-
-      let score = blue;
-      if (/pause|resume|play|listen|read aloud|start reading/.test(label)) score += 5;
-      // The reported control sits above the text area; nearby controls score highest.
-      const horizontalOverlap = Math.max(0, Math.min(r.right, fr.right + 260) - Math.max(r.left, fr.left - 80));
-      if (horizontalOverlap > 0) score += 4;
-      const verticalGap = r.bottom <= fr.top ? fr.top - r.bottom :
-        (r.top >= fr.bottom ? r.top - fr.bottom : 0);
-      if (verticalGap < 180) score += 5 - verticalGap / 40;
-      if (r.bottom <= fr.top + 20) score += 5;
+      const radius = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
+      if (r.width / r.height > 0.75 && r.width / r.height < 1.3 && (radius > 12 || r.width <= 64)) score += 3;
+      if (r.top < 100) score += 5;
+      if (field) {
+        const fr = field.getBoundingClientRect();
+        const dy = Math.abs((r.top + r.height/2) - (fr.top + fr.height/2));
+        if (dy < 260) score += 2;
+      }
       if (score > bestScore) { best = el; bestScore = score; }
     }
-    // Require strong visual evidence of the blue playback control; don't claim success
-    // merely because an arbitrary nearby button was clicked.
-    return bestScore >= 16 ? best : null;
+    return bestScore >= 18 ? best : null;
   }
 
   function activateButton(button) {
     if (!button) return false;
     button.scrollIntoView({ block: "nearest", inline: "nearest" });
     button.focus({ preventScroll: true });
-    // Native click is the reliable path for React-backed controls.
     button.click();
     return true;
   }
@@ -143,7 +144,7 @@
       const button = pauseResumeButton(field);
       if (!button) { status("Text entered, but I couldn't confidently find the blue playback button. Click it manually; please keep the editor and button visible."); return; }
       activateButton(button);
-      status("Dictation entered; attempted to activate the blue playback control.");
+      status("Dictation entered; clicked the blue Play control.");
     }, 1400);
   }
   function start() {
