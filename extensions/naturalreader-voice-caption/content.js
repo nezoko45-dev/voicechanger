@@ -151,13 +151,20 @@
       waitForPlayback(delta, editor, current);
     }, 250);
   }
-  function queueText(delta, current) {
-    delta = clean(delta); current = clean(current);
-    if (!delta || state.running) return;
+  function queueText(_ignoredDelta, current) {
+    current = clean(current);
+    if (!current || state.running) return;
+    const baseline = state.baseline === null ? "" : state.baseline;
+    const delta = newDelta(baseline, current);
+    if (!delta) return;
     clearTimeout(state.timer);
     state.pendingText = delta;
-    setStatus("New text detected. Waiting for a pause…");
-    state.timer = setTimeout(() => processText(delta, current), state.silenceMs);
+    setStatus("Listening for a pause in your microphone…");
+    state.timer = setTimeout(() => {
+      const latestEditor = getEditor();
+      const latest = latestEditor ? textOf(latestEditor) : "";
+      if (latest && latest === current) processText(newDelta(baseline, latest), latest);
+    }, state.silenceMs);
   }
   function onEditorChange(e) {
     const el = e.target;
@@ -195,16 +202,19 @@
       // Dictation appends only this session's new words; it never seeds itself with the old story.
       const prior = state.baseline === null ? textOf(editor) : state.baseline;
       setEditorText(editor, clean(prior + " " + dictated));
-      if (interim.trim()) setStatus("Hearing: " + clean(interim));
-      if (finalText) queueText(finalText, textOf(editor));
+      if (dictated) {
+        // Restart the silence countdown on every recognition update, including interim mic speech.
+        clearTimeout(state.timer);
+        queueText("", textOf(editor));
+      }
     };
     recognition.onerror = event => setStatus("Dictation issue: " + event.error + ". You can type instead.");
     recognition.onend = () => {
       state.dictating = false;
       if (btn) btn.textContent = "🎙 Dictate";
       const current = getEditor();
-      if (current && textOf(current) && finalText) queueText(finalText, textOf(current));
-      setStatus("Dictation stopped. Waiting to play only the dictated words…");
+      if (current && textOf(current) && finalText) queueText("", textOf(current));
+      setStatus("Dictation stopped. Waiting for microphone silence before playback…");
     };
     recognition.start();
   }
