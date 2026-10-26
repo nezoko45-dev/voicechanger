@@ -2,63 +2,66 @@
   if (window.__naturalReaderAutoVoiceInstalled) return;
   window.__naturalReaderAutoVoiceInstalled = true;
 
-  const state = { enabled: true, silenceMs: 2200, timer: null, lastText: "", pendingText: "", running: false, cleared: false };
-  const clean = s => String(s || "").replace(/\\s+/g, " ").trim();
+  const state = { enabled: true, silenceMs: 2200, timer: null, lastText: "", running: false, recognition: null, dictating: false };
+  const clean = s => String(s || "").replace(/\s+/g, " ").trim();
   const visible = el => {
     if (!el || !el.isConnected) return false;
     const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
-    return r.width > 0 && r.height > 0 && cs.display !== "none" && cs.visibility !== "hidden";
+    return r.width > 0 && r.height > 0 && cs.display !== "none" && cs.visibility !== "hidden" && cs.opacity !== "0";
   };
   const textOf = el => clean(("value" in el ? el.value : el.innerText || el.textContent) || "");
+  const labelOf = el => clean([el.innerText, el.textContent, el.getAttribute("aria-label"), el.getAttribute("title"), el.getAttribute("data-testid"), el.getAttribute("data-tooltip"), el.getAttribute("aria-labelledby")].join(" ")).toLowerCase();
   function setStatus(s) { const el = document.querySelector("#nrv-status"); if (el) el.textContent = s; }
   function editors() {
-    return [...document.querySelectorAll('textarea,[contenteditable="true"],[role="textbox"],input:not([type="hidden"])')]
-      .filter(el => visible(el) && !el.closest("#nrv-panel") && !el.matches("#nrv-silence"));
-  }
-  function getEditor() {
-    const list = editors();
-    list.sort((a,b) => score(b)-score(a));
-    return list[0] || null;
+    return [...document.querySelectorAll('textarea,[contenteditable="true"],[role="textbox"],input:not([type="hidden"]):not([type="range"]):not([type="checkbox"])')]
+      .filter(el => visible(el) && !el.closest("#nrv-panel"));
   }
   function score(el) {
-    const hint = [el.getAttribute("placeholder"),el.getAttribute("aria-label"),el.getAttribute("data-placeholder"),el.getAttribute("data-testid"),el.className].join(" ").toLowerCase();
-    return (el.matches('textarea,[contenteditable="true"],[role="textbox"]') ? 3 : 0) + (/text|editor|document|content|type/i.test(hint) ? 3 : 0);
+    const hint = [el.getAttribute("placeholder"),el.getAttribute("aria-label"),el.getAttribute("data-placeholder"),el.getAttribute("data-testid"),typeof el.className === "string" ? el.className : ""].join(" ").toLowerCase();
+    return (el.matches('textarea,[contenteditable="true"],[role="textbox"]') ? 4 : 0) + (/text|editor|document|content|type|write|paste/i.test(hint) ? 5 : 0) + (el.getBoundingClientRect().width > 350 ? 1 : 0);
   }
-  function buttons() { return [...document.querySelectorAll('button,[role="button"]')].filter(el => visible(el) && !el.closest("#nrv-panel")); }
+  function getEditor() { return editors().sort((a,b) => score(b)-score(a))[0] || null; }
+  function buttons() {
+    return [...document.querySelectorAll('button,[role="button"],[data-testid*="play" i],[aria-label*="play" i],[title*="play" i]')]
+      .filter(el => visible(el) && !el.closest("#nrv-panel"));
+  }
   function clickPlay() {
-    const candidates = buttons().map(el => ({el, label:[el.innerText,el.getAttribute("aria-label"),el.getAttribute("title"),el.getAttribute("data-testid")].join(" ").toLowerCase()}));
-    const b = candidates.find(x => /^(play|listen|start reading|read aloud)(\\b|$)/.test(clean(x.label))) ||
-      candidates.find(x => /play|start reading|listen/.test(x.label) && !/replay|playlist|display|playback speed/.test(x.label));
+    const candidates = buttons().map(el => ({el, label:labelOf(el), box:el.getBoundingClientRect()}));
+    const exact = candidates.find(x => /^(play|listen|start reading|read aloud|play audio|resume reading)(\s|$)/i.test(x.label));
+    const byIcon = candidates.find(x => /play|listen|start reading|read aloud/.test(x.label) && !/replay|playlist|display|playback speed|play store|template/.test(x.label));
+    const b = exact || byIcon;
     if (!b) return false;
-    b.el.click(); return true;
+    b.el.click();
+    return true;
   }
-  function clearEditor() {
-    // Prefer NaturalReader's own clear-text control so its app state stays in sync.
-    const candidates = buttons().map(el => ({el,label:[el.innerText,el.getAttribute("aria-label"),el.getAttribute("title"),el.getAttribute("data-testid")].join(" ").toLowerCase()}));
-    const clear = candidates.find(x => /clear text|clear document|delete text|remove text/.test(x.label)) ||
-      candidates.find(x => /^(clear|delete text|clear all|^tx$)$/.test(clean(x.label)));
-    if (clear) { clear.el.click(); return true; }
-    const editor = getEditor();
+  function setEditorText(editor, text) {
     if (!editor) return false;
-    if ("value" in editor) {
-      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(editor), "value")?.set;
-      if (setter) setter.call(editor, ""); else editor.value = "";
+    editor.focus();
+    if (editor.isContentEditable || editor.getAttribute("contenteditable") === "true" || editor.getAttribute("role") === "textbox") {
+      editor.textContent = text;
+      editor.dispatchEvent(new InputEvent("input", {bubbles:true, inputType:"insertText", data:text}));
+    } else {
+      const proto = editor.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+      if (setter) setter.call(editor, text); else editor.value = text;
       editor.dispatchEvent(new Event("input", {bubbles:true}));
       editor.dispatchEvent(new Event("change", {bubbles:true}));
-    } else {
-      editor.focus();
-      editor.textContent = "";
-      editor.dispatchEvent(new InputEvent("input", {bubbles:true,inputType:"deleteContent"}));
     }
     return true;
   }
+  function clearEditor() {
+    const candidates = buttons().map(el => ({el,label:labelOf(el)}));
+    const clear = candidates.find(x => /clear text|clear document|delete text|remove text|clear all/.test(x.label)) ||
+      candidates.find(x => /^(clear|tx|delete)$/i.test(x.label));
+    if (clear) { clear.el.click(); return true; }
+    return setEditorText(getEditor(), "");
+  }
   function estimatePlaybackMs(text) {
-    const words = text.split(/\\s+/).filter(Boolean).length;
-    return Math.max(4000, Math.min(180000, words / 2.4 * 1000 + 3500));
+    const words = text.split(/\s+/).filter(Boolean).length;
+    return Math.max(4500, Math.min(180000, words / 2.3 * 1000 + 3000));
   }
   function waitForPlayback(text) {
-    const started = Date.now();
-    const maxWait = estimatePlaybackMs(text);
+    const started = Date.now(), maxWait = estimatePlaybackMs(text);
     let sawPlaying = false;
     const timer = setInterval(() => {
       const audio = [...document.querySelectorAll("audio,video")];
@@ -70,61 +73,100 @@
           const ok = clearEditor();
           state.lastText = "";
           state.running = false;
-          setStatus(ok ? "Playback finished; text cleared. Ready for more." : "Playback likely finished, but I couldn't find the clear-text control.");
+          setStatus(ok ? "Playback finished; text cleared. Ready to dictate or type again." : "Playback timer ended; couldn't clear the editor.");
         }
       }
-    }, 700);
+    }, 500);
   }
   function processText(text) {
     text = clean(text);
     if (!state.enabled || state.running || text.length < 2 || text === state.lastText) return;
     state.running = true;
     state.lastText = text;
-    setStatus("Text paused. Starting NaturalReader playback…");
+    setStatus("Text detected. Looking for NaturalReader's Play control…");
     setTimeout(() => {
-      const current = getEditor();
-      if (!state.enabled || !current || textOf(current) !== text) { state.running = false; setStatus("Text changed; waiting for you to finish."); return; }
-      if (!clickPlay()) { state.running = false; setStatus("Couldn't find NaturalReader's Play button. Text was kept."); return; }
-      setStatus("Playing audio… text will clear when playback finishes.");
+      if (!state.enabled) { state.running = false; return; }
+      const editor = getEditor();
+      if (!editor || textOf(editor) !== text) { state.running = false; setStatus("Text changed; waiting for a pause."); return; }
+      if (!clickPlay()) { state.running = false; setStatus("Couldn't find Play. Your text is safe—press Play now or click NaturalReader's Play button."); return; }
+      setStatus("Play clicked. Text will clear after playback.");
       waitForPlayback(text);
-    }, 300);
+    }, 250);
+  }
+  function queueText(text) {
+    text = clean(text);
+    if (!text || state.running) return;
+    clearTimeout(state.timer);
+    setStatus("Text detected. Waiting for a pause…");
+    state.timer = setTimeout(() => processText(text), state.silenceMs);
   }
   function onEditorChange(e) {
     const el = e.target;
     if (!el || el.closest?.("#nrv-panel") || !el.matches?.('textarea,[contenteditable="true"],[role="textbox"],input')) return;
     const text = textOf(el);
-    if (!text) return;
-    state.lastText = state.running ? state.lastText : "";
-    clearTimeout(state.timer);
-    setStatus("Typing/dictation detected. Waiting for a pause…");
-    state.timer = setTimeout(() => processText(textOf(el)), state.silenceMs);
+    if (text) queueText(text);
+  }
+  function startDictation() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { setStatus("Chrome dictation isn't available here. Use Windows voice typing (Win+H) in the NaturalReader text box."); return; }
+    if (state.dictating && state.recognition) { state.recognition.stop(); return; }
+    const editor = getEditor();
+    if (!editor) { setStatus("Open NaturalReader's Add Text editor first, then tap Dictate."); return; }
+    const recognition = new SR();
+    state.recognition = recognition;
+    recognition.lang = "en-US";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    let finalText = textOf(editor);
+    state.dictating = true;
+    const btn = document.querySelector("#nrv-dictate");
+    if (btn) btn.textContent = "Stop dictation";
+    setStatus("Listening… speak now. Dictation uses Chrome's speech recognition.");
+    recognition.onresult = event => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = clean(event.results[i][0].transcript);
+        if (event.results[i].isFinal) finalText = clean(finalText + " " + transcript);
+        else interim += " " + transcript;
+      }
+      setEditorText(editor, clean(finalText + " " + interim));
+      if (interim.trim()) setStatus("Hearing: " + clean(interim));
+      if (finalText) queueText(finalText);
+    };
+    recognition.onerror = event => setStatus("Dictation issue: " + event.error + ". You can type instead.");
+    recognition.onend = () => {
+      state.dictating = false;
+      if (btn) btn.textContent = "🎙 Dictate";
+      const current = getEditor();
+      if (current && textOf(current)) queueText(textOf(current));
+      setStatus("Dictation stopped. Waiting to play the captured text…");
+    };
+    recognition.start();
   }
   function buildPanel() {
     if (document.querySelector("#nrv-panel")) return;
     const p = document.createElement("section");
     p.id = "nrv-panel";
-    Object.assign(p.style,{position:"fixed",right:"14px",bottom:"14px",zIndex:"2147483647",width:"260px",padding:"12px",borderRadius:"12px",background:"#171827",color:"#fff",font:"13px system-ui,sans-serif",boxShadow:"0 8px 30px #0008"});
-    p.innerHTML = '<div style="font-weight:750;font-size:14px;margin-bottom:8px">NaturalReader Auto</div><label style="display:flex;align-items:center;gap:7px"><input id="nrv-enabled" type="checkbox" checked> Auto-play after silence</label><label style="display:block;margin-top:8px">Pause before Play <span id="nrv-ms-label">2.2 sec</span><input id="nrv-silence" type="range" min="800" max="5000" step="200" value="2200" style="width:100%"></label><div style="font-size:12px;color:#cbd5e1;margin-top:8px;line-height:1.4">After audio finishes, the text is cleared so you can dictate or enter more.</div><div id="nrv-status" style="margin-top:8px;color:#cbd5e1;line-height:1.35">Ready. Enter or dictate text into NaturalReader.</div><button id="nrv-play-now" style="margin-top:8px;width:100%;border:0;border-radius:7px;padding:7px;background:#4f46e5;color:white;font-weight:650;cursor:pointer">Play now</button>';
+    Object.assign(p.style,{position:"fixed",right:"14px",bottom:"14px",zIndex:"2147483647",width:"280px",boxSizing:"border-box",padding:"12px",borderRadius:"12px",background:"#171827",color:"#fff",font:"13px system-ui,sans-serif",boxShadow:"0 8px 30px #0008"});
+    p.innerHTML = '<div style="font-weight:750;font-size:14px;margin-bottom:8px">NaturalReader Auto + Dictation</div><label style="display:flex;align-items:center;gap:7px"><input id="nrv-enabled" type="checkbox" checked> Auto-play after silence</label><label style="display:block;margin-top:8px">Pause before Play <span id="nrv-ms-label">2.2 sec</span><input id="nrv-silence" type="range" min="800" max="5000" step="200" value="2200" style="width:100%"></label><div style="display:flex;gap:6px;margin-top:8px"><button id="nrv-dictate" type="button">🎙 Dictate</button><button id="nrv-play-now" type="button">▶ Play now</button></div><div style="font-size:12px;color:#cbd5e1;margin-top:8px;line-height:1.4">After playback, the text clears so you can enter the next message.</div><div id="nrv-status" role="status" style="margin-top:8px;color:#cbd5e1;line-height:1.35">Ready. Open Add Text, then type or dictate.</div>';
     document.documentElement.appendChild(p);
+    p.querySelectorAll("button").forEach(b => Object.assign(b.style,{width:"50%",border:"0",borderRadius:"7px",padding:"8px 5px",background:"#4f46e5",color:"white",fontWeight:"650",cursor:"pointer"}));
     p.querySelector("#nrv-enabled").onchange = e => { state.enabled = e.target.checked; setStatus(state.enabled ? "Auto-play enabled." : "Auto-play paused."); };
     p.querySelector("#nrv-silence").oninput = e => { state.silenceMs = Number(e.target.value); p.querySelector("#nrv-ms-label").textContent = (state.silenceMs/1000).toFixed(1)+" sec"; };
-    p.querySelector("#nrv-play-now").onclick = () => { const e=getEditor(); if(e) processText(textOf(e)); else setStatus("Couldn't find the text editor."); };
+    p.querySelector("#nrv-dictate").onclick = startDictation;
+    p.querySelector("#nrv-play-now").onclick = () => { const e=getEditor(); if (!e || !textOf(e)) { setStatus("Couldn't find text. Open Add Text and enter a sentence first."); return; } if (!clickPlay()) { setStatus("Couldn't locate NaturalReader's Play button. Press its Play button manually."); return; } const text=textOf(e); state.running=true; state.lastText=text; setStatus("Play clicked. Waiting for playback to finish…"); waitForPlayback(text); };
     p.addEventListener("mousedown",e=>e.stopPropagation());
   }
   document.addEventListener("input", onEditorChange, true);
   document.addEventListener("change", onEditorChange, true);
   function init() {
     buildPanel();
-    setStatus("Ready. Enter or dictate text; Play starts after a pause.");
-    // Some editors dispatch programmatic changes that do not bubble as expected.
+    setStatus("Ready. Open Add Text, then type or dictate.");
     setInterval(() => {
       if (!state.enabled || state.running) return;
       const e = getEditor(), text = e ? textOf(e) : "";
-      if (text && text !== state.lastText) {
-        clearTimeout(state.timer);
-        state.timer = setTimeout(() => processText(textOf(e)), state.silenceMs);
-      }
-    }, 600);
+      if (text && text !== state.lastText) queueText(text);
+    }, 700);
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init, {once:true}); else init();
 })();
