@@ -71,49 +71,52 @@
     el.dispatchEvent(new Event("change", {bubbles:true}));
   }
   function pauseResumeButton(field) {
-    // Target the blue circular Play button BETWEEN the previous/undo and
-    // next/redo arrows in the top toolbar. Do not click the blue profile icon.
+    // NaturalReader often paints the blue Play circle using SVG fill, not the
+    // button's CSS background. Search toolbar controls and their SVG descendants.
     const nodes = [...document.querySelectorAll('button,[role="button"],[tabindex], [onclick], body *')]
       .filter(visible)
       .filter(el => !el.closest("#nr-voice-dictator"));
     let best = null, bestScore = -999;
+
+    function hasBluePaint(el) {
+      const nodesToCheck = [el, ...[...el.querySelectorAll("svg,circle,path,polygon,ellipse,rect")].slice(0, 24)];
+      for (const node of nodesToCheck) {
+        const style = getComputedStyle(node);
+        const paints = [style.backgroundColor, style.fill, style.color, node.getAttribute("fill"), node.getAttribute("style")].join(" ").toLowerCase();
+        const rgb = paints.match(/(?:rgb\\()?\\s*(\\d{1,3})[,\\s]+(\\d{1,3})[,\\s]+(\\d{1,3})\\)?/);
+        if (rgb && +rgb[3] > 100 && +rgb[3] > +rgb[1] * 1.15 && +rgb[3] > +rgb[2] * 1.05) return true;
+        if (/blue|#0[0-9a-f]{2,4}ff|#1[0-9a-f]{2,4}ff|#2563eb|#1677ff|#0d6efd/.test(paints)) return true;
+      }
+      return false;
+    }
+
     for (const el of nodes) {
       const r = el.getBoundingClientRect();
-      if (r.width < 28 || r.height < 28 || r.width > 80 || r.height > 80 || r.top > 85) continue;
-      if (r.left < 100 || r.left > 320) continue;
+      if (r.width < 28 || r.height < 28 || r.width > 100 || r.height > 100 || r.top > 100) continue;
       const ratio = r.width / r.height;
-      if (ratio < 0.78 || ratio > 1.25) continue;
+      if (ratio < 0.72 || ratio > 1.35) continue;
+      const label = [el.innerText, el.getAttribute("aria-label"), el.getAttribute("title"), el.getAttribute("data-testid")]
+        .join(" ").toLowerCase().replace(/\\s+/g, " ").trim();
+      if (/settings|voice|speed|download|upload|login|sign in|menu|close|clear|volume|undo|redo|profile|account/.test(label)) continue;
 
-      const bg = getComputedStyle(el).backgroundColor;
-      const m = bg.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
-      const isBlue = !!(m && +m[3] > 100 && +m[3] > +m[1] * 1.15 && +m[3] > +m[2] * 1.05);
-      if (!isBlue) continue;
-
-      const label = [
-        el.innerText, el.getAttribute("aria-label"), el.getAttribute("title"),
-        el.getAttribute("data-testid")
-      ].join(" ").toLowerCase().replace(/\s+/g, " ").trim();
-      if (/settings|voice|speed|download|upload|login|sign in|menu|close|clear|volume|undo|redo/.test(label)) continue;
-
+      const blue = hasBluePaint(el);
+      if (!blue) continue;
       let score = 30;
-      if (/\bplay\b|resume|start reading/.test(label)) score += 20;
-      const svg = el.querySelector("svg");
-      if (svg && !label) score += 3;
-      // Prefer the middle transport control; the avatar/profile circle is left
-      // of the previous arrow, while the Play button is between both arrows.
+      if (/\\bplay\\b|resume|start reading/.test(label)) score += 20;
+      if (!label && el.querySelector("svg")) score += 4;
+      // In the supplied screenshot the play circle is the central transport
+      // button between the two arrow controls, roughly x=200 in that viewport.
       const centerX = r.left + r.width / 2;
-      score += 10 - Math.abs(centerX - 200) / 12;
+      score += Math.max(0, 12 - Math.abs(centerX - window.innerWidth * 0.41) / 12);
       if (r.top < 70) score += 5;
       if (score > bestScore) { best = el; bestScore = score; }
     }
-    if (!best) return null;
 
-    // Return the closest real clickable ancestor in case the colored circle is
-    // a child icon inside a framework-controlled button.
+    if (!best) return null;
     for (let p = best; p && p !== document.body; p = p.parentElement) {
       if (p.matches('button,[role="button"],[tabindex],[onclick]')) return p;
       const r = p.getBoundingClientRect();
-      if (r.width > 100 || r.height > 100) break;
+      if (r.width > 120 || r.height > 120) break;
     }
     return best;
   }
