@@ -78,9 +78,9 @@
     const candidates = [...document.querySelectorAll('button,[role="button"],input[type="button"],input[type="submit"]')];
     return candidates.find(el => {
       if (!visible(el) || (!includeDisabled && (el.disabled || el.getAttribute("aria-disabled") === "true")) || el.closest("#nr-voice-dictator")) return false;
-      const label = [el.innerText, el.textContent, el.value, el.getAttribute("aria-label"), el.getAttribute("title")].join(" ").replace(/\\s+/g, " ").trim().toLowerCase();
-      const generateLabel = /\\bgenerate\\b/.test(label) && label.length < 100;
-      const generateClass = /bg-black/.test(String(el.className)) && /text-white/.test(String(el.className)) && /\\b(generate|speech|audio)\\b/.test(label);
+      const label = [el.innerText, el.textContent, el.value, el.getAttribute("aria-label"), el.getAttribute("title")].join(" ").replace(/\s+/g, " ").trim().toLowerCase();
+      const generateLabel = /\bgenerate\b/.test(label) && label.length < 100;
+      const generateClass = /bg-black/.test(String(el.className)) && /text-white/.test(String(el.className)) && /\b(generate|speech|audio)\b/.test(label);
       return generateLabel || generateClass;
     }) || null;
   }
@@ -377,7 +377,7 @@
             if (!state.listening || !msg.text) return;
             const chunk = msg.text.trim();
             if (chunk) {
-              state.localTranscript = [state.localTranscript, chunk].filter(Boolean).join(" ").replace(/\\s+/g, " ").trim();
+              state.localTranscript = [state.localTranscript, chunk].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
               state.finalText = state.localTranscript;
               insertTranscript(state.localTranscript);
               status("Local Whisper: " + chunk.slice(-100));
