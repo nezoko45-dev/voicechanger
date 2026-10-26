@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "TTSReader Voice Dictator",
-  "version": "1.0.0",
-  "description": "Dictate into TTSReader Player and optionally press Play after you pause speaking.",
+  "version": "1.1.0",
+  "description": "Dictate with local Whisper WebGPU into TTSReader Player and optionally press Play after a pause.",
   "permissions": [],
   "host_permissions": [
     "https://ttsreader.com/*",
@@ -24,6 +24,19 @@
         "content.js"
       ],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "whisper-worker.bundle.js",
+        "assets/*.wasm"
+      ],
+      "matches": [
+        "https://ttsreader.com/*",
+        "https://www.naturalreaders.com/*",
+        "https://app.naturalreaders.com/*"
+      ]
     }
   ]
 }
