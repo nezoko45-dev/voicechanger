@@ -26,11 +26,23 @@
       .filter(el => visible(el) && !el.closest("#nrv-panel"));
   }
   function clickPlay() {
-    const candidates = buttons().map(el => ({el, label:labelOf(el), box:el.getBoundingClientRect()}));
-    const exact = candidates.find(x => /^(play|listen|start reading|read aloud|play audio|resume reading)(\s|$)/i.test(x.label));
-    const byIcon = candidates.find(x => /play|listen|start reading|read aloud/.test(x.label) && !/replay|playlist|display|playback speed|play store|template/.test(x.label));
-    const b = exact || byIcon;
-    if (!b) return false;
+    const editor = getEditor();
+    const er = editor?.getBoundingClientRect();
+    const candidates = buttons().map(el => {
+      const label = labelOf(el), box = el.getBoundingClientRect();
+      const svg = el.querySelector("svg");
+      const svgInfo = svg ? [svg.getAttribute("class"), svg.innerHTML].join(" ").toLowerCase() : "";
+      const triangle = /play|triangle|polygon/.test(svgInfo) || !!el.querySelector('svg path[d*="M"]');
+      const isPlayLabel = /play|listen|start reading|read aloud|resume reading/.test(label) && !/replay|playlist|display|playback speed|play store|template/.test(label);
+      // Prefer NaturalReader's main Play control in the top toolbar above the TTS editor.
+      const aboveEditor = !!er && box.bottom <= er.top + 80;
+      const toolbar = !!el.closest('header,[role="toolbar"],[class*="toolbar" i],[class*="header" i]');
+      const score = (isPlayLabel ? 100 : 0) + (aboveEditor ? 35 : 0) + (toolbar ? 25 : 0) + (triangle ? 12 : 0) + (box.top < 180 ? 8 : 0);
+      return {el,label,box,score,isPlayLabel,aboveEditor,triangle};
+    }).filter(x => x.score > 0 && (x.isPlayLabel || (x.aboveEditor && x.triangle)));
+    candidates.sort((a,b) => b.score-a.score);
+    const b = candidates[0];
+    if (!b) { setStatus("Couldn't locate the top Play button above the TTS field. Text was kept."); return false; }
     b.el.click();
     return true;
   }
