@@ -23,14 +23,14 @@
   function getEditor() { return editors().sort((a,b) => score(b)-score(a))[0] || null; }
   function buttons() {
     const found = new Set(document.querySelectorAll('button,[role="button"],[data-testid*="play" i],[aria-label*="play" i],[title*="play" i]'));
-    // NaturalReader's top toolbar may render the icon inside an unlabelled clickable wrapper.
+    // Include clickable wrappers around unlabeled SVG icons, but only DOM elements.
     document.querySelectorAll("svg").forEach(svg => {
       let el = svg;
       for (let i = 0; i < 3 && el && el !== document.body; i++, el = el.parentElement) {
-        if (el.matches?.("button,[role=button]") || getComputedStyle(el).cursor === "pointer") found.add(el);
+        if (el instanceof Element && (el.matches("button,[role=button]") || getComputedStyle(el).cursor === "pointer")) found.add(el);
       }
     });
-    return [...found].filter(el => visible(el) && !el.closest("#nrv-panel"));
+    return [...found].filter(el => el instanceof Element && visible(el) && !el.closest("#nrv-panel"));
   }
   function clickPlay() {
     const editor = getEditor();
@@ -40,22 +40,25 @@
       const svg = el.querySelector("svg");
       const paths = [...(svg?.querySelectorAll("path") || [])].map(p => p.getAttribute("d") || "");
       const svgInfo = svg ? [svg.getAttribute("class"), svg.innerHTML].join(" ").toLowerCase() : "";
-      const triangle = /play|triangle/.test(svgInfo) || paths.some(d => /^M[^ ]*[\\s\\S]*(?:v|V)[^ ]*[\\s\\S]*(?:l|L)[^ ]*z$/i.test(d) || /M\s*\d[\s\S]*L\s*\d[\s\S]*L\s*\d[\s\S]*z/i.test(d));
+      const triangle = /play|triangle/.test(svgInfo) || paths.some(d => /z\s*$/i.test(d) && /M[\s\S]*L[\s\S]*L/.test(d));
       const isPlayLabel = /play|listen|start reading|read aloud|resume reading/.test(label) && !/replay|playlist|display|playback speed|play store|template/.test(label);
-      const style = getComputedStyle(el);
-      const blueCircle = /rgb\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)/.test(style.backgroundColor) &&
-        (style.borderRadius.includes("%") || parseFloat(style.borderRadius) >= Math.min(box.width,box.height)*0.35) &&
-        box.width >= 28 && box.width <= 70 && box.height >= 28 && box.height <= 70;
-      // Target the screenshot's blue circular Play control in the toolbar above the TTS field.
       const aboveEditor = !!er && box.bottom <= er.top + 80;
       const toolbar = !!el.closest('header,[role="toolbar"],[class*="toolbar" i],[class*="header" i]');
-      const score = (isPlayLabel ? 100 : 0) + (triangle ? 45 : 0) + (blueCircle ? 40 : 0) + (aboveEditor ? 35 : 0) + (toolbar ? 25 : 0) + (box.top < 180 ? 8 : 0);
-      return {el,label,box,score,isPlayLabel,aboveEditor,triangle,blueCircle};
+      const score = (isPlayLabel ? 100 : 0) + (triangle ? 45 : 0) + (aboveEditor ? 35 : 0) + (toolbar ? 25 : 0) + (box.top < 180 ? 8 : 0);
+      return {el,label,box,score,isPlayLabel,aboveEditor,triangle};
     }).filter(x => x.score > 0 && (x.isPlayLabel || (x.aboveEditor && x.triangle)));
     candidates.sort((a,b) => b.score-a.score);
-    const b = candidates[0];
-    if (!b) { setStatus("Couldn't locate the blue top Play button above the TTS field. Text was kept."); return false; }
-    b.el.click();
+    const candidate = candidates[0];
+    if (!candidate || !(candidate.el instanceof Element)) {
+      setStatus("Couldn't locate the blue top Play button above the TTS field. Text was kept.");
+      return false;
+    }
+    const target = candidate.el.closest("button,[role=button]") || candidate.el;
+    if (typeof target.click !== "function") {
+      setStatus("Found a possible Play icon, but it isn't clickable. Text was kept.");
+      return false;
+    }
+    target.click();
     return true;
   }
   function setEditorText(editor, text) {
