@@ -330,9 +330,18 @@
             status("Whisper ready (" + msg.device + "). Starting microphone…");
             try {
               state.localStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-              state.localContext = new AudioContext();
+              const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+              if (!AudioContextCtor) throw new Error("This browser does not support Web Audio. Update Chrome and try again.");
+              state.localContext = new AudioContextCtor();
+              await state.localContext.resume();
               const source = state.localContext.createMediaStreamSource(state.localStream);
-              state.localProcessor = state.localContext.createScriptProcessor(4096, 1, 1);
+              // ScriptProcessorNode is deprecated but still supported by desktop Chrome.
+              // Use the legacy alias where a browser exposes it instead.
+              const createProcessor = state.localContext.createScriptProcessor || state.localContext.createJavaScriptNode;
+              if (typeof createProcessor !== "function") {
+                throw new Error("Chrome did not provide an audio processing node. Update Chrome, reload the extension, and try again.");
+              }
+              state.localProcessor = createProcessor.call(state.localContext, 4096, 1, 1);
               state.localSamples = [];
               state.localProcessor.onaudioprocess = (e) => {
                 if (!state.listening || state.localBusy) return;
