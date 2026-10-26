@@ -71,14 +71,6 @@
 
   function speakQueued(sentence, id = ++sentenceId) {
     speechQueue = speechQueue.then(() => new Promise(resolve => {
-      // Refresh Chrome speech recognition before each read-aloud prompt to help long dictation sessions keep going.
-      if (running && recognition) {
-        try {
-          restarting = false;
-          recognition.stop();
-        } catch {}
-        await new Promise(resolve => setTimeout(resolve, 450));
-      }
       const utterance = new SpeechSynthesisUtterance(sentence);
       const voice = voices[Number($('voice').value)];
       if (voice) { utterance.voice = voice; utterance.lang = voice.lang; }
