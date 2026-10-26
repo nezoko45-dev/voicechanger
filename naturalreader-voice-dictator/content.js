@@ -84,7 +84,7 @@
       return generateLabel || generateClass;
     }) || null;
   }
-  function clickLuvvoiceGenerateWhenReady() {
+  function clickGenerateWhenReady() {
     const deadline = Date.now() + 30000;
     let timer = null;
     let observer = null;
@@ -93,7 +93,6 @@
       if (observer) observer.disconnect();
     };
     const attempt = () => {
-      if (!isLuvvoice()) { cleanup(); return; }
       const button = findGenerateButton(false);
       if (button) {
         cleanup();
@@ -104,7 +103,7 @@
       }
       if (Date.now() >= deadline) {
         cleanup();
-        status("Luvvoice Generate is still disabled or wasn't found. Finish entering text and check that the Generate button is enabled.");
+        status("Generate button is still disabled or wasn't found. Finish entering text and check that Generate is enabled.");
       }
     };
     // Some versions of Luvvoice render the button disabled until the editor updates.
@@ -249,8 +248,10 @@
       if (!field) { status("Text entered, but the text editor wasn't found for Play."); return; }
       const spokenText = fieldText(field).trim();
       if (!spokenText) return;
-      if (isLuvvoice()) {
-        clickLuvvoiceGenerateWhenReady();
+      // Some TTS sites expose a Generate button instead of a Play/Pause control.
+      // Prefer Generate whenever it exists, regardless of the site's hostname.
+      if (findGenerateButton(true)) {
+        clickGenerateWhenReady();
         return;
       }
       const button = pauseResumeButton(field);
