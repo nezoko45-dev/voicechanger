@@ -2,7 +2,7 @@
   if (window.__doppleVoiceCaptionInstalled) return;
   window.__doppleVoiceCaptionInstalled = true;
 
-  const state = { auto: true, lastText: "", voice: null, rate: 1, pitch: 1.12, observer: null, scanTimer: null };
+  const state = { auto: true, lastText: "", voice: null, rate: 1, pitch: 1.12, observer: null, scanTimer: null, pendingText: "" };
   const $ = (s, root=document) => root.querySelector(s);
   const clean = s => (s || "").replace(/\s+/g, " ").trim();
   const ignored = new Set(["read aloud", "copy", "regenerate", "edit", "like", "dislike", "share", "retry", "stop generating"]);
@@ -104,12 +104,32 @@
 
     return "";
   }
-  function readLatest() { const t = findLatestReply(); if (!t) { setStatus("Couldn't identify your latest message. Send a message first, then try Read latest."); return; } speak(t); }
+
+  function captureComposerText() {
+    const candidates = [...document.querySelectorAll('textarea,[contenteditable="true"],[role="textbox"]')].filter(el => isVisible(el) && !el.closest('#dvc-panel'));
+    candidates.sort((a,b) => {
+      const score = el => /message|chat|type/i.test([el.getAttribute('placeholder'),el.getAttribute('aria-label'),el.getAttribute('data-placeholder')].join(' ')) ? 2 : 0;
+      return score(b)-score(a);
+    });
+    const el = candidates[0];
+    return el ? clean(('value' in el ? el.value : el.innerText || el.textContent) || '') : '';
+  }
+  function queueOwnMessage(text) {
+    text = clean(text);
+    if (!state.auto || !text || text.length > 12000) return;
+    state.pendingText = text;
+    clearTimeout(state.scanTimer);
+    state.scanTimer = setTimeout(() => {
+      if (state.auto && state.pendingText && state.pendingText !== state.lastText) speak(state.pendingText);
+      state.pendingText = '';
+    }, 500);
+  }
+  function readLatest() { const t = captureComposerText() || findLatestReply(); if (!t) { setStatus("Type or send a message first."); return; } speak(t); }
   function buildPanel() {
     if ($("#dvc-panel")) return;
     const panel = document.createElement("section"); panel.id = "dvc-panel";
     Object.assign(panel.style,{position:"fixed",right:"14px",bottom:"14px",zIndex:"2147483647",width:"250px",padding:"12px",borderRadius:"14px",background:"#171827",color:"#f8fafc",font:"13px system-ui,sans-serif",boxShadow:"0 8px 30px #0008"});
-    panel.innerHTML = '<div style="font-weight:750;font-size:14px;margin-bottom:8px">Dopple Voice Caption</div><div style="display:flex;gap:6px"><button id="dvc-read">Read latest</button><button id="dvc-test">Test voice</button></div><label style="display:flex;align-items:center;gap:7px;margin-top:9px"><input id="dvc-auto" type="checkbox" checked> Auto-read my messages</label><label style="display:block;margin-top:8px">Voice<select id="dvc-voice" style="display:block;width:100%;margin-top:4px;padding:6px;border-radius:7px"></select></label><label style="display:block;margin-top:8px">Test caption text<input id="dvc-custom" value="Hi! I am ready to read your Dopple replies aloud." style="box-sizing:border-box;width:100%;margin-top:4px;padding:6px;border-radius:7px"></label><div style="display:flex;gap:6px;margin-top:8px"><button id="dvc-stop">Stop</button><button id="dvc-hide">Hide captions</button></div><div id="dvc-status" style="margin-top:8px;color:#cbd5e1;line-height:1.35">Ready. Click Read latest to test.</div>';
+    panel.innerHTML = '<div style="font-weight:750;font-size:14px;margin-bottom:8px">Dopple Voice Caption</div><div style="display:flex;gap:6px"><button id="dvc-read">Read latest</button><button id="dvc-test">Test voice</button></div><label style="display:flex;align-items:center;gap:7px;margin-top:9px"><input id="dvc-auto" type="checkbox" checked> Auto-read my messages</label><label style="display:block;margin-top:8px">Voice<select id="dvc-voice" style="display:block;width:100%;margin-top:4px;padding:6px;border-radius:7px"></select></label><label style="display:block;margin-top:8px">Test caption text<input id="dvc-custom" value="Hi! I am ready to read your messages aloud." style="box-sizing:border-box;width:100%;margin-top:4px;padding:6px;border-radius:7px"></label><div style="display:flex;gap:6px;margin-top:8px"><button id="dvc-stop">Stop</button><button id="dvc-hide">Hide captions</button></div><div id="dvc-status" style="margin-top:8px;color:#cbd5e1;line-height:1.35">Ready. Send a message to read it automatically.</div>';
     document.documentElement.appendChild(panel);
     panel.querySelectorAll("button").forEach(b=>Object.assign(b.style,{flex:"1",border:"0",borderRadius:"7px",padding:"7px 5px",background:"#4f46e5",color:"#fff",fontWeight:"650",cursor:"pointer"}));
     const select = $("#dvc-voice");
@@ -130,24 +150,33 @@
     $("#dvc-auto").onchange = e => { state.auto=e.target.checked; setStatus(state.auto?"Auto-read enabled.":"Auto-read disabled."); };
     panel.addEventListener("mousedown", e => e.stopPropagation());
   }
-  function scanForNewReply() {
-    if (!state.auto || speechSynthesis.speaking) return;
-    const t = findLatestReply();
-    if (t && t.length > 3 && t !== state.lastText) {
-      // Wait for Dopple's reply to finish changing before speaking it automatically.
-      clearTimeout(state.scanTimer);
-      state.scanTimer = setTimeout(() => {
-        const latest = findLatestReply();
-        if (state.auto && latest && latest !== state.lastText) speak(latest);
-      }, 1600);
-    }
-  }
+  function scanForNewReply() { /* Only user-submitted composer text is spoken. */ }
   function startObserver() {
     if (state.observer) state.observer.disconnect();
     state.observer = new MutationObserver(() => scanForNewReply());
     state.observer.observe(document.documentElement,{childList:true,subtree:true,characterData:true});
     setInterval(scanForNewReply,1800);
   }
+
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+    const el = e.target;
+    if (!el || el.closest?.('#dvc-panel') || !el.matches?.('textarea,[contenteditable="true"],[role="textbox"]')) return;
+    const text = clean(('value' in el ? el.value : el.innerText || el.textContent) || '');
+    if (text) queueOwnMessage(text);
+  }, true);
+  document.addEventListener('submit', () => {
+    const text = captureComposerText();
+    if (text) queueOwnMessage(text);
+  }, true);
+  document.addEventListener('click', e => {
+    const btn = e.target.closest?.('button,[role="button"]');
+    if (!btn || btn.closest('#dvc-panel')) return;
+    const label = [btn.innerText,btn.getAttribute('aria-label'),btn.getAttribute('title'),btn.getAttribute('data-testid')].join(' ').toLowerCase();
+    if (!/send|submit/.test(label)) return;
+    const text = captureComposerText();
+    if (text) queueOwnMessage(text);
+  }, true);
   document.addEventListener("mouseup", () => {
     const selected = clean(window.getSelection()?.toString());
     if (selected && selected.length > 1) {
@@ -168,7 +197,7 @@
     buildPanel();
     startObserver();
     speechSynthesis.getVoices();
-    setStatus("Ready. Auto-read will read your messages.");
+    setStatus("Ready. Send a message and it will be spoken automatically.");
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded",init,{once:true}); else init();
 })();
