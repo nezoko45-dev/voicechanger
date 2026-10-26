@@ -2,7 +2,7 @@
   if (window.__naturalReaderAutoVoiceInstalled) return;
   window.__naturalReaderAutoVoiceInstalled = true;
 
-  const state = { enabled: true, silenceMs: 2200, timer: null, lastText: "", running: false, recognition: null, dictating: false };
+  const state = { enabled: true, silenceMs: 2200, timer: null, lastText: "", running: false, recognition: null, dictating: false, baseline: null, pendingText: "", originalText: "" };
   const clean = s => String(s || "").replace(/\s+/g, " ").trim();
   const visible = el => {
     if (!el || !el.isConnected) return false;
@@ -87,7 +87,7 @@
     const words = text.split(/\s+/).filter(Boolean).length;
     return Math.max(4500, Math.min(180000, words / 2.3 * 1000 + 3000));
   }
-  function waitForPlayback(text) {
+  function waitForPlayback(text, editor, originalText) {
     const started = Date.now(), maxWait = estimatePlaybackMs(text);
     let sawPlaying = false;
     const timer = setInterval(() => {
@@ -96,42 +96,77 @@
       if (active) sawPlaying = true;
       if ((sawPlaying && audio.length && audio.every(a => a.paused || a.ended)) || Date.now()-started > maxWait) {
         clearInterval(timer);
-        if (state.enabled) {
-          const ok = clearEditor();
-          state.lastText = "";
-          state.running = false;
-          setStatus(ok ? "Playback finished; text cleared. Ready to dictate or type again." : "Playback timer ended; couldn't clear the editor.");
-        }
+        // Restore the existing story instead of deleting or re-pasting it as new speech.
+        if (editor && editor.isConnected) setEditorText(editor, originalText);
+        state.baseline = originalText;
+        state.lastText = "";
+        state.running = false;
+        setStatus("Finished playing only the new text. Previous text was preserved; ready for the next addition.");
       }
     }, 500);
   }
-  function processText(text) {
-    text = clean(text);
-    if (!state.enabled || state.running || text.length < 2 || text === state.lastText) return;
+  function newDelta(previous, current) {
+    previous = clean(previous); current = clean(current);
+    if (!previous) return current;
+    if (current === previous) return "";
+    if (current.startsWith(previous)) return clean(current.slice(previous.length));
+    // For edits in the middle, isolate the changed section rather than replaying the whole field.
+    let prefix = 0;
+    while (prefix < previous.length && prefix < current.length && previous[prefix] === current[prefix]) prefix++;
+    let suffix = 0;
+    while (suffix < previous.length-prefix && suffix < current.length-prefix &&
+      previous[previous.length-1-suffix] === current[current.length-1-suffix]) suffix++;
+    return clean(current.slice(prefix, current.length-suffix));
+  }
+  function processText(delta, expectedText) {
+    delta = clean(delta);
+    if (!state.enabled || state.running || delta.length < 2) return;
     state.running = true;
-    state.lastText = text;
-    setStatus("Text detected. Looking for NaturalReader's Play control…");
+    state.pendingText = delta;
+    setStatus("New text detected. Preparing just that addition for playback…");
     setTimeout(() => {
       if (!state.enabled) { state.running = false; return; }
       const editor = getEditor();
-      if (!editor || textOf(editor) !== text) { state.running = false; setStatus("Text changed; waiting for a pause."); return; }
-      if (!clickPlay()) { state.running = false; setStatus("Couldn't find Play. Your text is safe—press Play now or click NaturalReader's Play button."); return; }
-      setStatus("Play clicked. Text will clear after playback.");
-      waitForPlayback(text);
+      const current = editor ? textOf(editor) : "";
+      if (!editor || current !== expectedText) {
+        state.running = false;
+        setStatus("Text changed during the pause; waiting for the latest addition.");
+        return;
+      }
+      state.originalText = current;
+      // NaturalReader reads its editor contents, so temporarily put only the new words there.
+      if (!setEditorText(editor, delta)) {
+        state.running = false;
+        setStatus("Couldn't prepare the new text. Your original text was kept.");
+        return;
+      }
+      if (!clickPlay()) {
+        setEditorText(editor, current);
+        state.running = false;
+        setStatus("Couldn't find Play. Original text restored and kept safe.");
+        return;
+      }
+      state.baseline = current;
+      setStatus("Playing only the new text; the existing story will be restored afterward.");
+      waitForPlayback(delta, editor, current);
     }, 250);
   }
-  function queueText(text) {
-    text = clean(text);
-    if (!text || state.running) return;
+  function queueText(delta, current) {
+    delta = clean(delta); current = clean(current);
+    if (!delta || state.running) return;
     clearTimeout(state.timer);
-    setStatus("Text detected. Waiting for a pause…");
-    state.timer = setTimeout(() => processText(text), state.silenceMs);
+    state.pendingText = delta;
+    setStatus("New text detected. Waiting for a pause…");
+    state.timer = setTimeout(() => processText(delta, current), state.silenceMs);
   }
   function onEditorChange(e) {
     const el = e.target;
     if (!el || el.closest?.("#nrv-panel") || !el.matches?.('textarea,[contenteditable="true"],[role="textbox"],input')) return;
-    const text = textOf(el);
-    if (text) queueText(text);
+    const current = textOf(el);
+    if (!current) return;
+    if (state.baseline === null) { state.baseline = current; return; }
+    const delta = newDelta(state.baseline, current);
+    if (delta) queueText(delta, current);
   }
   function startDictation() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -144,7 +179,7 @@
     recognition.lang = "en-US";
     recognition.continuous = true;
     recognition.interimResults = true;
-    let finalText = textOf(editor);
+    let finalText = "";
     state.dictating = true;
     const btn = document.querySelector("#nrv-dictate");
     if (btn) btn.textContent = "Stop dictation";
@@ -156,17 +191,20 @@
         if (event.results[i].isFinal) finalText = clean(finalText + " " + transcript);
         else interim += " " + transcript;
       }
-      setEditorText(editor, clean(finalText + " " + interim));
+      const dictated = clean(finalText + " " + interim);
+      // Dictation appends only this session's new words; it never seeds itself with the old story.
+      const prior = state.baseline === null ? textOf(editor) : state.baseline;
+      setEditorText(editor, clean(prior + " " + dictated));
       if (interim.trim()) setStatus("Hearing: " + clean(interim));
-      if (finalText) queueText(finalText);
+      if (finalText) queueText(finalText, textOf(editor));
     };
     recognition.onerror = event => setStatus("Dictation issue: " + event.error + ". You can type instead.");
     recognition.onend = () => {
       state.dictating = false;
       if (btn) btn.textContent = "🎙 Dictate";
       const current = getEditor();
-      if (current && textOf(current)) queueText(textOf(current));
-      setStatus("Dictation stopped. Waiting to play the captured text…");
+      if (current && textOf(current) && finalText) queueText(finalText, textOf(current));
+      setStatus("Dictation stopped. Waiting to play only the dictated words…");
     };
     recognition.start();
   }
@@ -181,7 +219,7 @@
     p.querySelector("#nrv-enabled").onchange = e => { state.enabled = e.target.checked; setStatus(state.enabled ? "Auto-play enabled." : "Auto-play paused."); };
     p.querySelector("#nrv-silence").oninput = e => { state.silenceMs = Number(e.target.value); p.querySelector("#nrv-ms-label").textContent = (state.silenceMs/1000).toFixed(1)+" sec"; };
     p.querySelector("#nrv-dictate").onclick = startDictation;
-    p.querySelector("#nrv-play-now").onclick = () => { const e=getEditor(); if (!e || !textOf(e)) { setStatus("Couldn't find text. Open Add Text and enter a sentence first."); return; } if (!clickPlay()) { setStatus("Couldn't locate NaturalReader's Play button. Press its Play button manually."); return; } const text=textOf(e); state.running=true; state.lastText=text; setStatus("Play clicked. Waiting for playback to finish…"); waitForPlayback(text); };
+    p.querySelector("#nrv-play-now").onclick = () => { const e=getEditor(); if (!e || !textOf(e)) { setStatus("Couldn't find text. Open Add Text and enter a sentence first."); return; } const current=textOf(e); const delta=state.baseline === null ? current : newDelta(state.baseline,current); if (!delta) { setStatus("No new text to play. Add a new sentence first."); return; } processText(delta,current); };
     p.addEventListener("mousedown",e=>e.stopPropagation());
   }
   document.addEventListener("input", onEditorChange, true);
@@ -192,7 +230,10 @@
     setInterval(() => {
       if (!state.enabled || state.running) return;
       const e = getEditor(), text = e ? textOf(e) : "";
-      if (text && text !== state.lastText) queueText(text);
+      if (!text) return;
+      if (state.baseline === null) { state.baseline = text; return; }
+      const delta = newDelta(state.baseline, text);
+      if (delta) queueText(delta, text);
     }, 700);
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init, {once:true}); else init();
