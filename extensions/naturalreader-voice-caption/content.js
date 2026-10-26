@@ -2,7 +2,7 @@
   if (window.__naturalReaderAutoVoiceInstalled) return;
   window.__naturalReaderAutoVoiceInstalled = true;
 
-  const state = { enabled: true, silenceMs: 2200, timer: null, lastText: "", running: false, cleared: false };
+  const state = { enabled: true, silenceMs: 2200, timer: null, lastText: "", pendingText: "", running: false, cleared: false };
   const clean = s => String(s || "").replace(/\\s+/g, " ").trim();
   const visible = el => {
     if (!el || !el.isConnected) return false;
