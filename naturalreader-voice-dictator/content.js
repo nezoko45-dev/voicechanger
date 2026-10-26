@@ -10,7 +10,8 @@
   panel.id = "nr-voice-dictator";
   panel.innerHTML = `
     <div class="nrvd-head"><strong>Voice Dictator</strong><button id="nrvd-hide" title="Hide panel">−</button></div>
-    <div class="nrvd-row"><button id="nrvd-start">🎙 Start dictation</button><button id="nrvd-stop" disabled>Stop</button></div>\n    <label><input id="nrvd-local" type="checkbox" checked> Local Whisper (WebGPU)</label>
+    <div class="nrvd-row"><button id="nrvd-start">🎙 Start dictation</button><button id="nrvd-stop" disabled>Stop</button></div>
+    <label><input id="nrvd-local" type="checkbox" checked> Local Whisper (WebGPU)</label>
     <label><input id="nrvd-clear" type="checkbox" checked> Clear text field when starting</label>
     <label><input id="nrvd-play" type="checkbox" checked> Auto-press Play after a pause</label>
     <label><input id="nrvd-clear-after" type="checkbox" checked> Clear text after playback finishes</label>
@@ -283,7 +284,10 @@
                 state.localWorker.postMessage({ type: "transcribe", audio, samplingRate: 16000 }, [audio.buffer]);
               };
               source.connect(state.localProcessor);
-              const silentGain = state.localContext.createGain();\n              silentGain.gain.value = 0;\n              state.localProcessor.connect(silentGain);\n              silentGain.connect(state.localContext.destination);
+              const silentGain = state.localContext.createGain();
+              silentGain.gain.value = 0;
+              state.localProcessor.connect(silentGain);
+              silentGain.connect(state.localContext.destination);
               state.listening = true;
               $("nrvd-start").disabled = true;
               $("nrvd-stop").disabled = false;
@@ -337,7 +341,8 @@
     status("Local Whisper dictation stopped.");
   }
 
-  function start(options = {}) {\n    if ($("nrvd-local")?.checked) { startLocal(options); return; }
+  function start(options = {}) {
+    if ($("nrvd-local")?.checked) { startLocal(options); return; }
     if (!SpeechRecognition) { status("Speech recognition isn't available here. Try the current version of Chrome on TTSReader Player."); return; }
     if (state.listening || state.suppressRestart) return;
     state.userStopped = false;
@@ -448,7 +453,8 @@
   }
 
 
-  $("nrvd-start").addEventListener("click", start);\n  $("nrvd-local").addEventListener("change", e => { if (state.localStream || state.localContext) stopLocal(); else if (state.listening) stop(); status(e.target.checked ? "Local Whisper selected. First run loads the model into browser cache." : "Chrome speech recognition selected."); });
+  $("nrvd-start").addEventListener("click", start);
+  $("nrvd-local").addEventListener("change", e => { if (state.localStream || state.localContext) stopLocal(); else if (state.listening) stop(); status(e.target.checked ? "Local Whisper selected. First run loads the model into browser cache." : "Chrome speech recognition selected."); });
   $("nrvd-stop").addEventListener("click", stop);
   $("nrvd-play").addEventListener("change", e => state.autoPlay = e.target.checked);
   $("nrvd-clear-after").addEventListener("change", e => state.clearAfterPlayback = e.target.checked);
