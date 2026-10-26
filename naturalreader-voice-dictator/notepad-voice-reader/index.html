@@ -29,6 +29,8 @@
   let pending = '';
   let lastFinalIndex = 0;
   let restartTimer = null;
+  // Serialize Notepad clipboard writes, but never pause speech recognition while TTS is playing.
+  let outputQueue = Promise.resolve();
   const BRIDGE = 'http://127.0.0.1:8765/sentence';
 
   function loadVoices() {
@@ -71,18 +73,22 @@
     status('Sent to Notepad and reading aloud: ' + sentence);
   }
 
-  async function handleText(text) {
+  function queueSentence(sentence) {
+    // Keep each clipboard paste in order while allowing recognition to continue immediately.
+    outputQueue = outputQueue
+      .then(() => sendToNotepad(sentence))
+      .catch(error => { status('Could not reach Notepad bridge. Start bridge.ps1, then try again. ' + error.message); });
+  }
+
+  function handleText(text) {
     pending = (pending + ' ' + text).replace(/\s+/g, ' ').trim();
-    // Keep punctuation with each sentence. Also support common end punctuation.
+    // Send finished sentences to the output queue without waiting for audio playback.
     const pattern = /(.+?[.!?]+(?:["'”’)]*)?)(?=\s|$)/g;
     let match;
     let consumed = 0;
     while ((match = pattern.exec(pending)) !== null) {
       const sentence = match[1].trim();
-      if (sentence) {
-        try { await sendToNotepad(sentence); }
-        catch (error) { status('Could not reach Notepad bridge. Start bridge.ps1, then try again. ' + error.message); }
-      }
+      if (sentence) queueSentence(sentence);
       consumed = pattern.lastIndex;
     }
     if (consumed > 0) pending = pending.slice(consumed).trim();
@@ -102,7 +108,7 @@
         if (event.results[i].isFinal) finalChunk += ' ' + (event.results[i][0]?.transcript || '');
       }
       finalChunk = finalChunk.trim();
-      if (finalChunk) await handleText(finalChunk);
+      if (finalChunk) handleText(finalChunk);
     };
     rec.onerror = event => { if (event.error !== 'no-speech' && event.error !== 'aborted') status('Speech recognition error: ' + event.error); };
     rec.onend = () => {
