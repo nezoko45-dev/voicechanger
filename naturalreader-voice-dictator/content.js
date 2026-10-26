@@ -252,11 +252,10 @@
     };
     rec.onresult = (event) => {
       if (state.suppressRestart || state.playbackPending) return;
-      // Chrome's result list contains the complete set of hypotheses for this session.
-      // Rebuild the transcript from every result each time; using only resultIndex can
-      // accidentally drop earlier words when Chrome revises a partial hypothesis.
-      let finalParts = [];
-      let interimParts = [];
+      // Build one complete transcript snapshot from all results Chrome currently exposes.
+      // Only finalized text is committed for playback; interim text is displayed as a preview.
+      const finalParts = [];
+      const interimParts = [];
       for (let i = 0; i < event.results.length; i++) {
         const phrase = (event.results[i][0]?.transcript || "").trim();
         if (!phrase) continue;
@@ -264,16 +263,19 @@
         else interimParts.push(phrase);
       }
       const sessionFinal = finalParts.join(" ").replace(/\s+/g, " ").trim();
-      state.finalText = [state.sessionBase, sessionFinal].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+      const committed = [state.sessionBase, sessionFinal].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
       const interim = interimParts.join(" ").replace(/\s+/g, " ").trim();
-      const full = [state.finalText, interim].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+      const full = [committed, interim].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
       if (full) {
-        const target = insertTranscript(full);
-        status("Hearing: " + full.slice(-110));
-        // Reset the quiet-period timer whenever Chrome updates either final or interim text.
-        // This keeps the complete accumulated sentence in the editor until speech pauses.
-        if (full) schedulePlay();
-        if (target) state.lastSent = full;
+        insertTranscript(full);
+        status("Capturing sentence: " + full.slice(-110));
+        // Do not play while Chrome is still revising an interim hypothesis.
+        // Auto-play is scheduled only after finalized speech has arrived.
+        if (committed) {
+          state.finalText = committed;
+          schedulePlay();
+        }
+        state.lastSent = full;
       }
     };
     rec.onerror = (event) => {
