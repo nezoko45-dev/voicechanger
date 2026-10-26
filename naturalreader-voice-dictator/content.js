@@ -77,12 +77,24 @@
       'span[data-ws-show-if-state="isPlayingOn=false"] svg.flat-button-svg'
     );
     if (ttsPlaySvg && visible(ttsPlaySvg) && !ttsPlaySvg.closest("#nr-voice-dictator")) {
+      const stateWrapper = ttsPlaySvg.closest('span[data-ws-show-if-state="isPlayingOn=false"]');
       const wrapper = ttsPlaySvg.closest('button,[role="button"],[tabindex],[onclick]');
       if (wrapper && visible(wrapper)) return wrapper;
-      const stateWrapper = ttsPlaySvg.closest('span[data-ws-show-if-state="isPlayingOn=false"]');
       if (stateWrapper && visible(stateWrapper)) {
         const clickable = stateWrapper.closest('button,[role="button"],[tabindex],[onclick]');
         if (clickable && visible(clickable)) return clickable;
+        // Some web components use delegated click handlers on a span/div rather than a button.
+        // Prefer the explicit TTSReader idle-state wrapper before generic label matching.
+        return stateWrapper;
+      }
+      // If the state attribute is placed on a parent instead of the span, try the SVG's nearest
+      // non-layout parent, but never return a huge container.
+      for (let p = ttsPlaySvg.parentElement; p && p !== document.body; p = p.parentElement) {
+        const rect = p.getBoundingClientRect();
+        if (visible(p) && rect.width <= 160 && rect.height <= 100) {
+          if (p.matches('span,div,[tabindex],[onclick],[role="button"],button')) return p;
+        }
+        if (rect.width > 180 || rect.height > 120) break;
       }
     }
 
