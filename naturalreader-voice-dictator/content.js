@@ -103,16 +103,48 @@
         // Give the TTS site a moment to capture the submitted text, then clear
         // the editor and start a fresh Chrome recognition session so old words
         // are not reinserted from Chrome's cumulative result list.
+        const submittedField = findField();
+        const clearSubmittedText = () => {
+          if (!isLuvvoice() || state.userStopped) return false;
+          // Reuse the exact editor that held the dictated phrase; a fresh selector
+          // can accidentally choose a different visible input after the page updates.
+          const target = submittedField && submittedField.isConnected ? submittedField : findField();
+          if (!target) return false;
+          writeField(target, "");
+          // React-controlled editors sometimes restore their previous value after
+          // the first input event. Verify and retry briefly until it stays empty.
+          if (fieldText(target).trim()) {
+            if (target.isContentEditable) {
+              target.focus();
+              target.replaceChildren();
+              target.dispatchEvent(new InputEvent("input", {bubbles:true, inputType:"deleteContentBackward", data:null}));
+              target.dispatchEvent(new Event("change", {bubbles:true}));
+            } else {
+              writeField(target, "");
+            }
+          }
+          return fieldText(target).trim() === "";
+        };
         setTimeout(() => {
           if (!isLuvvoice() || state.userStopped) return;
-          const currentField = findField();
-          if (currentField) writeField(currentField, "");
           state.sessionBase = "";
           state.sessionFinalText = "";
           state.finalText = "";
           state.lastSent = "";
+          const cleared = clearSubmittedText();
+          if (!cleared) {
+            // Retry while the SPA settles after generation.
+            let tries = 0;
+            const retry = setInterval(() => {
+              tries++;
+              if (clearSubmittedText() || tries >= 8) {
+                clearInterval(retry);
+                if (tries >= 8 && !cleared) status("Generated, but the page kept restoring the old text. Try clicking the text field once, then dictate again.");
+              }
+            }, 300);
+          }
           if (state.recognition && state.listening && !state.suppressRestart) {
-            status("Previous text cleared. Restarting Chrome recognition for the next phrase…");
+            status("Cleared previous text. Restarting Chrome recognition for the next phrase…");
             try { state.recognition.stop(); } catch { start(); }
           }
         }, 1200);
