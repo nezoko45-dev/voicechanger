@@ -70,33 +70,39 @@
     el.dispatchEvent(new InputEvent("input", {bubbles:true, inputType:"insertText", data:value}));
     el.dispatchEvent(new Event("change", {bubbles:true}));
   }
-  function playButton(field) {
+  function pauseResumeButton(field) {
     const fr = field?.getBoundingClientRect();
-    const buttons = [...document.querySelectorAll('button,[role="button"],input[type="button"],input[type="submit"]')].filter(visible).filter(el => !el.closest("#nr-voice-dictator"));
+    const buttons = [...document.querySelectorAll('button,[role="button"],input[type="button"],input[type="submit"]')]
+      .filter(visible)
+      .filter(el => !el.closest("#nr-voice-dictator"));
     let best = null, bestScore = -999;
     for (const el of buttons) {
       if (el.disabled || el.getAttribute("aria-disabled") === "true") continue;
-      const label = [el.innerText,el.getAttribute("aria-label"),el.getAttribute("title"),el.getAttribute("data-testid")].join(" ").toLowerCase().trim();
-      if (/pause|stop|settings|voice|speed|download|upload|login|sign in|menu|close|clear/.test(label)) continue;
+      const label = [
+        el.innerText, el.getAttribute("aria-label"), el.getAttribute("title"),
+        el.getAttribute("data-testid"), el.getAttribute("data-state")
+      ].join(" ").toLowerCase().replace(/\s+/g, " ").trim();
+      if (/stop|settings|voice|speed|download|upload|login|sign in|menu|close|clear/.test(label)) continue;
+
+      // Prefer the dedicated Pause/Resume toggle. If NaturalReader changes the
+      // accessible label according to playback state, prefer Resume over Pause
+      // so we don't accidentally stop audio that's already playing.
       let score = 0;
-      if (/^play$|play audio|start reading|listen|read aloud|^read$/.test(label)) score += 25;
-      else if (/play|listen|read/.test(label)) score += 12;
-      else if (!label && el.querySelector("svg")) score += 2;
+      if (/pause\s*[/|&-]\s*resume|resume\s*[/|&-]\s*pause|play\s*[/|&-]\s*pause/.test(label)) score += 40;
+      else if (/\bresume\b/.test(label)) score += 30;
+      else if (/\bplay\b|start reading|listen|read aloud/.test(label)) score += 18;
+      else if (/\bpause\b/.test(label)) score += 4;
+      else if (!label && el.querySelector("svg")) score += 1;
+
       const r = el.getBoundingClientRect();
-      const bg = getComputedStyle(el).backgroundColor;
-      if (/rgb\(\s*(\d+),\s*(\d+),\s*(\d+)\s*\)/.test(bg)) {
-        const m = bg.match(/rgb\(\s*(\d+),\s*(\d+),\s*(\d+)\s*\)/);
-        if (m && Number(m[3]) > Number(m[1]) && Number(m[3]) > Number(m[2])) score += 2;
-      }
       if (fr) {
-        const centerY = r.top + r.height/2, fieldCenterY = fr.top + fr.height/2;
-        const dy = Math.abs(centerY-fieldCenterY);
-        if (dy < 220) score += 5 - dy/60;
+        const dy = Math.abs((r.top + r.height / 2) - (fr.top + fr.height / 2));
+        if (dy < 260) score += 5 - dy / 70;
         if (r.left < fr.right + 400 && r.right > fr.left - 100) score += 2;
       }
       if (score > bestScore) { best = el; bestScore = score; }
     }
-    return bestScore >= 6 ? best : null;
+    return bestScore >= 10 ? best : null;
   }
   function insertTranscript(text) {
     const field = findField();
@@ -110,10 +116,10 @@
     state.timer = setTimeout(() => {
       const field = findField();
       if (!field) { status("Text entered, but the text field wasn't found for Play."); return; }
-      const button = playButton(field);
-      if (!button) { status("Text entered. Couldn't safely identify Play—click NaturalReader's Play button."); return; }
+      const button = pauseResumeButton(field);
+      if (!button) { status("Text entered. couldn't identify NaturalReader's Pause/Resume control—use it manually."); return; }
       button.click();
-      status("Dictation entered and Play clicked.");
+      status("Dictation entered and Pause/Resume control clicked.");
     }, 1400);
   }
   function start() {
