@@ -15,12 +15,15 @@ await build({
   assetNames: "assets/[name]-[hash]"
 });
 
-// Keep ONNX Runtime Web's WebAssembly backends beside the extension bundle.
+// Package ONNX Runtime's WASM binaries and its dynamically imported module loaders.
+// The .mjs files are required at runtime (for example ort-wasm-simd-threaded.jsep.mjs).
 const source = "node_modules/onnxruntime-web/dist";
 if (existsSync(source)) {
   await mkdir("assets", { recursive: true });
   for (const file of await readdir(source)) {
-    if (file.endsWith(".wasm")) await cp(`${source}/${file}`, `assets/${file}`);
+    if (file.endsWith(".wasm") || file.endsWith(".mjs") || file.endsWith(".js")) {
+      await cp(`${source}/${file}`, `assets/${file}`);
+    }
   }
 }
-console.log("Built whisper-worker.bundle.js and local WASM assets.");
+console.log("Built whisper-worker.bundle.js and packaged ONNX Runtime JS/WASM assets.");
