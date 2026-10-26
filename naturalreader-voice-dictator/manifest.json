@@ -1,13 +1,15 @@
 {
   "manifest_version": 3,
   "name": "TTSReader Voice Dictator",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Dictate with local Whisper WebGPU into TTSReader Player and optionally press Play after a pause.",
   "permissions": [],
   "host_permissions": [
     "https://ttsreader.com/*",
     "https://www.naturalreaders.com/*",
-    "https://app.naturalreaders.com/*"
+    "https://app.naturalreaders.com/*",
+    "https://luvvoice.com/*",
+    "https://www.luvvoice.com/*"
   ],
   "action": {
     "default_title": "NaturalReader Voice Dictator",
@@ -18,7 +20,9 @@
       "matches": [
         "https://ttsreader.com/player*",
         "https://www.naturalreaders.com/online*",
-        "https://app.naturalreaders.com/*"
+        "https://app.naturalreaders.com/*",
+        "https://luvvoice.com/*",
+        "https://www.luvvoice.com/*"
       ],
       "js": [
         "content.js"
@@ -35,7 +39,9 @@
       "matches": [
         "https://ttsreader.com/*",
         "https://www.naturalreaders.com/*",
-        "https://app.naturalreaders.com/*"
+        "https://app.naturalreaders.com/*",
+        "https://luvvoice.com/*",
+        "https://www.luvvoice.com/*"
       ]
     }
   ]
