@@ -1,0 +1,43 @@
+name: Build local Whisper runtime
+
+on:
+  push:
+    branches: [naturalreader-voice-dictator]
+    paths:
+      - "naturalreader-voice-dictator/whisper-worker.js"
+      - "naturalreader-voice-dictator/package.json"
+      - "naturalreader-voice-dictator/package-lock.json"
+      - "naturalreader-voice-dictator/build-whisper.mjs"
+      - "!naturalreader-voice-dictator/whisper-worker.bundle.js"
+      - "!naturalreader-voice-dictator/assets/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: naturalreader-voice-dictator
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: naturalreader-voice-dictator
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: naturalreader-voice-dictator/package.json
+      - run: npm install
+      - run: npm run build
+      - name: Commit packaged runtime
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add whisper-worker.bundle.js assets
+          if ! git diff --cached --quiet; then
+            git commit -m "Build packaged local Whisper runtime"
+            git push
+          fi
