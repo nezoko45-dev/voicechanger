@@ -131,8 +131,13 @@
     rec.lang = 'en-US';
     rec.continuous = true;
     rec.interimResults = true;
-    rec.onstart = () => { restarting = false; $('start').disabled = true; $('stop').disabled = false; status('Listening continuously. Text appears below and completed sentences are read aloud.'); };
-    rec.onresult = async event => {
+    rec.onstart = () => {
+      restarting = false;
+      $('start').disabled = true;
+      $('stop').disabled = false;
+      status('Listening. If Chrome asks for microphone access, allow it for this site and choose “Remember” if shown.');
+    };
+    rec.onresult = event => {
       let finalChunk = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         if (event.results[i].isFinal) finalChunk += ' ' + (event.results[i][0]?.transcript || '');
@@ -140,38 +145,67 @@
       finalChunk = finalChunk.trim();
       if (finalChunk) handleText(finalChunk);
     };
-    rec.onerror = event => { if (event.error !== 'no-speech' && event.error !== 'aborted') status('Speech recognition error: ' + event.error); };
+    rec.onerror = event => {
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        running = false;
+        clearTimeout(restartTimer);
+        $('start').disabled = false;
+        $('stop').disabled = true;
+        status('Microphone access was blocked. Allow Microphone for this site in Chrome’s address-bar site controls, then click Start dictation once.');
+      } else if (event.error === 'audio-capture') {
+        running = false;
+        clearTimeout(restartTimer);
+        $('start').disabled = false;
+        $('stop').disabled = true;
+        status('Chrome cannot access a microphone. Check Windows microphone settings and Chrome site permissions, then click Start dictation.');
+      } else if (event.error !== 'no-speech' && event.error !== 'aborted') {
+        status('Speech recognition error: ' + event.error);
+      }
+    };
     rec.onend = () => {
       if (!running) {
         $('start').disabled = false;
         $('stop').disabled = true;
         return;
       }
-      // Chrome can end a recognition session on its own. Restart the same
-      // recognizer instead of constructing a new one, which helps avoid
-      // repeated microphone permission prompts.
+      // Chrome may end a recognition session after silence or an internal timeout.
+      // Reuse this instance; never create a new one in the restart path.
       clearTimeout(restartTimer);
       restartTimer = setTimeout(() => {
         if (!running) return;
         try {
-          restarting = true;
           rec.start();
-        } catch (e) {
-          // If Chrome is still transitioning, retry this same recognizer once it settles.
+        } catch {
+          // A start exception can mean Chrome is still transitioning. Retry once.
           clearTimeout(restartTimer);
           restartTimer = setTimeout(() => {
             if (!running) return;
             try { rec.start(); }
-            catch { status('Speech recognition paused. Check microphone permission, then click Start dictation to resume.'); }
-          }, 700);
+            catch {
+              running = false;
+              $('start').disabled = false;
+              $('stop').disabled = true;
+              status('Chrome paused speech recognition. Click Start dictation to resume; microphone permission should not need to be granted again if Chrome has saved it.');
+            }
+          }, 900);
         }
-      }, 250);
+      }, 350);
     };
     return rec;
   }
 
-  $('start').onclick = () => {
+  $('start').onclick = async () => {
     if (running) return;
+    // Query permission when the browser supports it. This does not itself request access.
+    try {
+      if (navigator.permissions?.query) {
+        const permission = await navigator.permissions.query({ name: 'microphone' });
+        if (permission.state === 'denied') {
+          status('Microphone is blocked for this site. Open the lock/tune icon beside the address bar → Site settings → Microphone → Allow, then reload this page.');
+          return;
+        }
+      }
+    } catch { /* Some Chrome versions do not expose microphone permission queries. */ }
     running = true; pending = ''; restarting = false;
     clearTimeout(restartTimer);
     recognition = createRecognition();
