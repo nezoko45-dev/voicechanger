@@ -72,56 +72,26 @@
     el.dispatchEvent(new Event("change", {bubbles:true}));
   }
   function pauseResumeButton(field) {
-    // TTSReader Player exposes the idle Play control inside this state wrapper.
-    const ttsPlaySvg = document.querySelector(
-      'span[data-ws-show-if-state="isPlayingOn=false"] svg.flat-button-svg'
-    );
-    if (ttsPlaySvg && visible(ttsPlaySvg) && !ttsPlaySvg.closest("#nr-voice-dictator")) {
-      const stateWrapper = ttsPlaySvg.closest('span[data-ws-show-if-state="isPlayingOn=false"]');
-      const wrapper = ttsPlaySvg.closest('button,[role="button"],[tabindex],[onclick]');
-      if (wrapper && visible(wrapper)) return wrapper;
-      if (stateWrapper && visible(stateWrapper)) {
-        const clickable = stateWrapper.closest('button,[role="button"],[tabindex],[onclick]');
-        if (clickable && visible(clickable)) return clickable;
-        // Some web components use delegated click handlers on a span/div rather than a button.
-        // Prefer the explicit TTSReader idle-state wrapper before generic label matching.
-        return stateWrapper;
-      }
-      // If the state attribute is placed on a parent instead of the span, try the SVG's nearest
-      // non-layout parent, but never return a huge container.
-      for (let p = ttsPlaySvg.parentElement; p && p !== document.body; p = p.parentElement) {
-        const rect = p.getBoundingClientRect();
-        if (visible(p) && rect.width <= 160 && rect.height <= 100) {
-          if (p.matches('span,div,[tabindex],[onclick],[role="button"],button')) return p;
-        }
-        if (rect.width > 180 || rect.height > 120) break;
-      }
-    }
+    // Exact TTSReader Player control confirmed in DevTools:
+    // <button id="Play-btn" data-ws-onclick="togglePlay" title="Play / Pause" aria-label="Play / Pause">
+    const exact = document.querySelector('#Play-btn[data-ws-onclick="togglePlay"]');
+    if (exact && visible(exact) && !exact.closest("#nr-voice-dictator") && !exact.disabled) return exact;
 
-    // Fallback: score accessible Play controls without matching pause/stop/skip controls.
-    const candidates = [...document.querySelectorAll(
-      'button,[role="button"],[aria-label],[title],svg[aria-label]'
-    )].filter(el => visible(el) && !el.closest("#nr-voice-dictator"));
-    const score = (el) => {
-      const meta = [
-        el.getAttribute("aria-label"), el.getAttribute("title"),
-        el.getAttribute("data-testid"), el.innerText, el.textContent
-      ].join(" ").trim().toLowerCase();
-      let n = 0;
-      if (/play|resume|start reading|listen/.test(meta)) n += 10;
-      if (/pause|stop|next|previous|skip|export|download|generate mp3/.test(meta)) n -= 8;
-      if (el.matches("svg")) n -= 2;
-      if (el.matches("button,[role='button']")) n += 4;
-      const r = el.getBoundingClientRect();
-      if (r.width > 160 || r.height > 100) n -= 5;
-      if (field && el.contains(field)) n -= 20;
-      return n;
-    };
-    candidates.sort((a,b) => score(b)-score(a));
-    const best = candidates[0];
-    if (!best || score(best) < 8) return null;
-    if (best.matches("svg")) return best.closest('button,[role="button"],[tabindex],[onclick]') || best;
-    return best;
+    // Fallback for minor markup changes on TTSReader.
+    const byLabel = [...document.querySelectorAll('button,[role="button"]')].find(el => {
+      if (!visible(el) || el.disabled || el.closest("#nr-voice-dictator")) return false;
+      const label = [el.getAttribute("aria-label"), el.getAttribute("title"), el.id, el.getAttribute("data-ws-onclick")]
+        .join(" ").toLowerCase();
+      return /play-btn|play\s*\/\s*pause|toggleplay/.test(label);
+    });
+    if (byLabel) return byLabel;
+
+    // NaturalReader compatibility fallback.
+    const naturalReaderSvg = document.querySelector('svg[aria-label="read button play icon [reading bar]"]');
+    if (naturalReaderSvg && visible(naturalReaderSvg)) {
+      return naturalReaderSvg.closest('button,[role="button"],[tabindex],[onclick]') || naturalReaderSvg;
+    }
+    return null;
   }
 
   function activateButton(button) {
