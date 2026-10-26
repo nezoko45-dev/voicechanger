@@ -72,27 +72,34 @@
     el.dispatchEvent(new Event("change", {bubbles:true}));
   }
   function pauseResumeButton(field) {
-    // Exact TTSReader Player control confirmed in DevTools:
-    // <button id="Play-btn" data-ws-onclick="togglePlay" title="Play / Pause" aria-label="Play / Pause">
-    const exact = document.querySelector('#Play-btn[data-ws-onclick="togglePlay"]');
-    if (exact && visible(exact) && !exact.closest("#nr-voice-dictator") && !exact.disabled) return exact;
-
-    // Fallback for minor markup changes on TTSReader.
-    const byLabel = [...document.querySelectorAll('button,[role="button"]')].find(el => {
-      if (!visible(el) || el.disabled || el.closest("#nr-voice-dictator")) return false;
-      const label = [el.getAttribute("aria-label"), el.getAttribute("title"), el.id, el.getAttribute("data-ws-onclick")]
-        .join(" ").toLowerCase();
-      return /play-btn|play\s*\/\s*pause|toggleplay/.test(label);
-    });
-    if (byLabel) return byLabel;
-
-    // NaturalReader compatibility fallback.
-    const naturalReaderSvg = document.querySelector('svg[aria-label="read button play icon [reading bar]"]');
-    if (naturalReaderSvg && visible(naturalReaderSvg)) {
-      return naturalReaderSvg.closest('button,[role="button"],[tabindex],[onclick]') || naturalReaderSvg;
+    // TTSReader's toggle button changes between Play and Pause. Never click it
+    // if its accessible label/state says it is already playing.
+    const exact = document.querySelector('#Play-btn[data-ws-onclick="togglePlay"]') ||
+                  document.querySelector("#Play-btn");
+    if (exact && visible(exact) && !exact.closest("#nr-voice-dictator") && !exact.disabled) {
+      const label = [
+        exact.getAttribute("aria-label"), exact.getAttribute("title"),
+        exact.getAttribute("data-ws-onclick"), exact.innerText
+      ].join(" ").toLowerCase();
+      const playing = [...document.querySelectorAll('[data-ws-show-if-state="isPlayingOn=true"]')].some(el => {
+        if (!el.isConnected) return false;
+        for (let n=el;n&&n!==document.documentElement;n=n.parentElement) {
+          const s=getComputedStyle(n);
+          if (s.display==="none"||s.visibility==="hidden"||n.hidden) return false;
+        }
+        const r=nRect(el); return r.width>0&&r.height>0;
+      });
+      if (playing || /pause|stop/.test(label)) return null;
+      return exact;
     }
-    return null;
+    const fallback = [...document.querySelectorAll('button,[role="button"]')].find(el => {
+      if (!visible(el) || el.disabled || el.closest("#nr-voice-dictator")) return false;
+      const label=[el.getAttribute("aria-label"),el.getAttribute("title"),el.id,el.getAttribute("data-ws-onclick")].join(" ").toLowerCase();
+      return /play-btn|play\s*\/\s*pause|toggleplay/.test(label) && !/pause|stop/.test(label);
+    });
+    return fallback || null;
   }
+  function nRect(el) { return el.getBoundingClientRect(); }
 
   function activateButton(button) {
     if (!button) return false;
@@ -203,15 +210,19 @@
     state.timer = setTimeout(() => {
       const field = findField();
       if (!field) { status("Text entered, but the text editor wasn't found for Play."); return; }
-      const button = pauseResumeButton(field);
-      if (!button) { status("Text entered, but I couldn't confidently identify TTSReader's Play control. Please click Play manually and share its button label from DevTools so I can target it exactly."); return; }
       const spokenText = fieldText(field).trim();
       if (!spokenText) return;
+      const button = pauseResumeButton(field);
+      if (!button) {
+        // Already playing: don't toggle the button off. Wait for current audio to finish.
+        status("TTSReader is already playing; leaving playback running.");
+        return;
+      }
       state.playbackPending = true;
       state.suppressRestart = true;
       if (state.recognition && state.listening) state.recognition.stop();
       activateButton(button);
-      status("Play clicked. Mic dictation is paused while TTSReader speaks.");
+      status("Started TTSReader playback. Mic dictation is paused while it speaks.");
       watchPlaybackCompletion(field, spokenText, true);
     }, 2200);
   }
