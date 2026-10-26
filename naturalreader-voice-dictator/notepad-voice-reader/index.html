@@ -32,6 +32,8 @@
   let restartTimer = null;
   // Queue spoken sentences while recognition keeps running.
   let speechQueue = Promise.resolve();
+  let sentenceId = 0;
+  let latestSpokenId = 0;
 
   function loadVoices() {
     voices = synth.getVoices();
@@ -62,22 +64,38 @@
 
   function appendSentence(sentence) {
     const box = $('transcript');
+    const id = ++sentenceId;
     const separator = box.value && !/\\s$/.test(box.value) ? ' ' : '';
     box.value += separator + sentence + ' ';
     box.scrollTop = box.scrollHeight;
-    speakQueued(sentence);
-    status('Listening continuously · Read aloud: ' + sentence);
+    speakQueued(sentence, id);
+    status('Listening continuously · Queued for read-aloud: ' + sentence);
   }
 
-  function speakQueued(sentence) {
+  function speakQueued(sentence, id = ++sentenceId) {
     speechQueue = speechQueue.then(() => new Promise(resolve => {
       const utterance = new SpeechSynthesisUtterance(sentence);
       const voice = voices[Number($('voice').value)];
       if (voice) { utterance.voice = voice; utterance.lang = voice.lang; }
       utterance.rate = Number($('rate').value);
       utterance.pitch = Number($('pitch').value);
-      utterance.onend = resolve;
-      utterance.onerror = resolve;
+      const finish = () => {
+        // Delete only the text that was read, preserving newer dictation and manual edits.
+        if (id > latestSpokenId) {
+          latestSpokenId = id;
+          const box = $('transcript');
+          const value = box.value;
+          const position = value.indexOf(sentence);
+          if (position >= 0) {
+            const before = value.slice(0, position);
+            const after = value.slice(position + sentence.length);
+            box.value = (before + after).replace(/^\\s+/, '').replace(/\\s{2,}/g, ' ');
+          }
+        }
+        resolve();
+      };
+      utterance.onend = finish;
+      utterance.onerror = finish;
       synth.speak(utterance);
     })).catch(() => {});
   }
