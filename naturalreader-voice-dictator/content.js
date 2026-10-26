@@ -113,41 +113,75 @@
   }
 
   function watchPlaybackCompletion(field, expectedText, resumeMic = false) {
-    if (!state.clearAfterPlayback) return;
+    // TTSReader's Play/Pause label stays constant; its state wrappers change visibility.
     let started = false;
     let finished = false;
-    const playState = () => {
-      const controls = [...document.querySelectorAll('button,[role="button"],[aria-label],[title]')]
-        .filter(el => visible(el) && !el.closest("#nr-voice-dictator"));
-      const labels = controls.map(el => [
-        el.getAttribute("aria-label"), el.getAttribute("title"), el.innerText
-      ].join(" ").toLowerCase()).join(" ");
-      return { playing: /pause|stop reading/.test(labels), ready: /play|resume|start reading/.test(labels) };
+    let checks = 0;
+    const readState = () => {
+      const playingOn = [...document.querySelectorAll('[data-ws-show-if-state="isPlayingOn=true"]')].some(visible);
+      const playingOff = [...document.querySelectorAll('[data-ws-show-if-state="isPlayingOn=false"]')].some(visible);
+      const playButton = document.querySelector("#Play-btn");
+      const label = [
+        playButton?.getAttribute("aria-label"),
+        playButton?.getAttribute("title"),
+        playButton?.innerText
+      ].join(" ").toLowerCase();
+      return {
+        playing: playingOn || /pause|stop reading/.test(label),
+        ready: playingOff || /play|resume|start reading/.test(label)
+      };
     };
-    const observer = new MutationObserver(() => {
-      const p = playState();
-      if (p.playing) started = true;
-      else if (started && p.ready) finished = true;
-      if (!finished) return;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
       observer.disconnect();
+      clearInterval(pollTimer);
+      clearTimeout(timeoutTimer);
+
+      // Resume listening after every playback, regardless of the auto-clear setting.
       if (resumeMic) {
         state.suppressRestart = false;
         state.finalText = "";
         state.lastSent = "";
-        start();
       }
-      if (field.isConnected && fieldText(field).trim() === expectedText.trim()) {
+      if (state.clearAfterPlayback && field.isConnected && fieldText(field).trim() === expectedText.trim()) {
         writeField(field, "");
-        status("Playback finished; text field cleared.");
-      } else status("Playback finished; left the field unchanged because its text had changed.");
-    });
+        status("Playback finished; text cleared. Listening for the next phrase…");
+      } else {
+        status("Playback finished. Listening for the next phrase…");
+      }
+      if (resumeMic && !state.userStopped) start();
+    };
+    const check = () => {
+      checks++;
+      const p = readState();
+      if (p.playing) started = true;
+      // TTSReader may expose a very brief state change; require that playback was observed first.
+      if (started && p.ready) finish();
+      // If the player didn't expose a state transition at all, don't endlessly block dictation.
+      if (checks > 80 && !started) {
+        observer.disconnect();
+        clearInterval(pollTimer);
+        clearTimeout(timeoutTimer);
+        state.suppressRestart = false;
+        status("Couldn't detect TTSReader playback state. Mic listening will resume; text was left in place.");
+        if (resumeMic && !state.userStopped) start();
+      }
+    };
+    const observer = new MutationObserver(check);
     observer.observe(document.documentElement, {
       subtree: true, childList: true, attributes: true,
-      attributeFilter: ["aria-label", "title", "class", "aria-pressed"]
+      attributeFilter: ["aria-label", "title", "class", "aria-pressed", "style", "hidden"]
     });
-    setTimeout(() => {
+    const pollTimer = setInterval(check, 250);
+    const timeoutTimer = setTimeout(() => {
       observer.disconnect();
-      if (!finished) status("Couldn't confirm playback completion from the page controls; text was left in place.");
+      clearInterval(pollTimer);
+      if (!finished) {
+        state.suppressRestart = false;
+        status("Playback completion wasn't detected. Text was left in place; restarting dictation.");
+        if (resumeMic && !state.userStopped) start();
+      }
     }, 15 * 60 * 1000);
   }
 
