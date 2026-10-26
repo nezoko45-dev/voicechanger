@@ -3,7 +3,7 @@
   window.__naturalReaderDictatorLoaded = true;
 
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const state = { recognition: null, listening: false, finalText: "", timer: null, lastSent: "", autoPlay: true, clearOnStart: true, clearAfterPlayback: true };
+  const state = { recognition: null, listening: false, suppressRestart: false, finalText: "", timer: null, lastSent: "", autoPlay: true, clearOnStart: true, clearAfterPlayback: true };
   const $ = (id) => document.getElementById(id);
 
   const panel = document.createElement("section");
@@ -120,7 +120,7 @@
     return el.isContentEditable ? (el.innerText || el.textContent || "") : (el.value || "");
   }
 
-  function watchPlaybackCompletion(field, expectedText) {
+  function watchPlaybackCompletion(field, expectedText, resumeMic = false) {
     if (!state.clearAfterPlayback) return;
     const getPlayIcon = () => document.querySelector('svg[aria-label*="read button"][aria-label*="icon"]');
     let started = false;
@@ -133,6 +133,12 @@
       else if (started && /play/.test(label)) finished = true;
       if (finished) {
         observer.disconnect();
+        if (resumeMic) {
+          state.suppressRestart = false;
+          state.finalText = "";
+          state.lastSent = "";
+          start();
+        }
         // Avoid deleting anything the user has typed since this dictation.
         if (field.isConnected && fieldText(field).trim() === expectedText.trim()) {
           writeField(field, "");
@@ -163,9 +169,11 @@
       const button = pauseResumeButton(field);
       if (!button) { status("Text entered, but I couldn't confidently find the blue playback button. Click it manually; please keep the editor and button visible."); return; }
       const spokenText = fieldText(field).trim();
+      state.suppressRestart = true;
+      if (state.recognition && state.listening) state.recognition.stop();
       activateButton(button);
-      status("Click event sent to NaturalReader Play. Text will clear after playback finishes if its playback state is detectable.");
-      watchPlaybackCompletion(field, spokenText);
+      status("Play clicked. Mic dictation is paused while NaturalReader speaks.");
+      watchPlaybackCompletion(field, spokenText, true);
     }, 1400);
   }
   function start() {
@@ -203,8 +211,8 @@
       state.listening = false;
       $("nrvd-start").disabled = false;
       $("nrvd-stop").disabled = true;
-      if (state.finalText.trim()) schedulePlay();
-      if (!state.finalText.trim()) status("Stopped. No speech was captured.");
+      if (!state.suppressRestart && state.finalText.trim()) schedulePlay();
+      if (!state.finalText.trim() && !state.suppressRestart) status("Stopped. No speech was captured.");
     };
     state.recognition = rec;
     try { rec.start(); } catch (e) { status("Couldn't start microphone: " + e.message); }
