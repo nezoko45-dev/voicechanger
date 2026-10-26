@@ -33,46 +33,31 @@
     return [...found].filter(el => el instanceof Element && visible(el) && !el.closest("#nrv-panel"));
   }
   function clickPlay() {
-    const editor = getEditor();
-    const er = editor?.getBoundingClientRect();
-    const candidates = buttons().map(el => {
-      const box = el.getBoundingClientRect();
-      const label = labelOf(el);
-      const svg = el.querySelector("svg");
-      const svgText = (svg?.outerHTML || "").toLowerCase();
-      const title = clean(el.getAttribute("title") || "");
-      const aria = clean(el.getAttribute("aria-label") || "");
-      const tooltip = (label + " " + title + " " + aria).toLowerCase();
-      const isExactControl = /pause\s*\/\s*resume|resume\s*\(space\)|pause\s*\(space\)|play\s*\/\s*pause/.test(tooltip);
-      const isNamed = /\b(play|pause|resume)\b|start reading|read aloud/.test(tooltip) && !/playlist|playback speed|display|template/.test(tooltip);
-      const aboveEditor = !!er && box.bottom <= er.top + 120;
-      const nearTop = box.top < 260;
-      const round = Math.abs(box.width-box.height) < 20 && box.width >= 28 && box.width <= 100;
-      const styleText = [getComputedStyle(el).backgroundColor, getComputedStyle(el).color, el.getAttribute("style") || "", svgText].join(" ").toLowerCase();
-      const blue = /#(?:0[0-9a-f]{4,6}|1[0-9a-f]{4,6}|2[0-9a-f]{4,6}|3[0-9a-f]{4,6}|4[0-9a-f]{4,6}|5[0-9a-f]{4,6}|6[0-9a-f]{4,6})|rgb\(\s*\d+\s*,\s*\d+\s*,\s*(?:1[3-9]\d|2\d\d)\s*\)/i.test(styleText);
-      const triangle = /play|triangle|polygon/.test(svgText) || [...(svg?.querySelectorAll("path,polygon") || [])].some(p => /[zZ]/.test(p.getAttribute("d") || p.getAttribute("points") || ""));
-      const score = (isExactControl ? 300 : 0) + (isNamed ? 100 : 0) + (aboveEditor ? 35 : 0) + (nearTop ? 20 : 0) + (round && blue ? 50 : 0) + (triangle ? 35 : 0);
-      return {el,score,isExactControl,isNamed,aboveEditor,nearTop,round,blue,triangle,tooltip,box};
-    }).filter(x => x.isExactControl || x.isNamed || (x.aboveEditor && x.nearTop && x.round && x.blue && x.triangle));
-    candidates.sort((a,b) => b.score-a.score);
+    const all = [...document.querySelectorAll('button,[role="button"],input[type="button"],input[type="submit"]')]
+      .filter(el => visible(el) && !el.closest("#nrv-panel"));
+    const label = el => clean([el.innerText,el.textContent,el.getAttribute("aria-label"),el.getAttribute("title"),el.value].join(" ")).toLowerCase();
+    const candidates = all.map(el => {
+      const t = label(el);
+      const r = el.getBoundingClientRect();
+      let score = 0;
+      if (/convert to speech/.test(t)) score = 300;
+      else if (/generate speech|generate audio|generate/.test(t) && !/regenerate|image/.test(t)) score = 220;
+      else if (/^generate$/.test(t)) score = 200;
+      else if (/^play$|play audio|listen/.test(t)) score = 100;
+      if (r.width < 1 || r.height < 1) score = 0;
+      return {el,t,score};
+    }).filter(x => x.score > 0).sort((a,b)=>b.score-a.score);
     const candidate = candidates[0];
     if (!candidate) {
-      setStatus("Play button not found. Keep NaturalReader's player visible, then refresh this page and try again. Your text was not changed.");
+      setStatus("Couldn't find FreeTTS's Convert to Speech / Generate button. Select a voice and keep the editor visible.");
       return false;
     }
-    const target = candidate.el.closest("button,[role=button]") || candidate.el;
     try {
-      target.click();
-      // Verify that clicking caused a player-state change where the page exposes one.
-      setTimeout(() => {
-        const now = labelOf(target);
-        if (/pause/.test(now) || /resume/.test(now) || /play/.test(now)) {
-          setStatus("Play control clicked. If audio didn't start, NaturalReader may be ignoring scripted clicks; use the player once manually to unlock it.");
-        }
-      }, 350);
+      candidate.el.click();
+      setStatus("Clicked FreeTTS " + candidate.t + ". Waiting for generated audio…");
       return true;
     } catch (err) {
-      setStatus("Play click failed: " + (err?.message || "unknown error") + ". Text was not cleared.");
+      setStatus("FreeTTS Generate click failed: " + (err?.message || "unknown error"));
       return false;
     }
   }
@@ -104,7 +89,7 @@
       editor.focus();
       return true;
     } catch (err) {
-      setStatus("Couldn't update NaturalReader's text field: " + (err?.message || "unknown error"));
+      setStatus("Couldn't update FreeTTS text field: " + (err?.message || "unknown error"));
       return false;
     }
   }
@@ -120,24 +105,25 @@
     return Math.max(4500, Math.min(180000, words / 2.3 * 1000 + 3000));
   }
   function waitForPlayback(text, editor, originalText) {
-    const started = Date.now(), maxWait = estimatePlaybackMs(text);
-    let sawPlaying = false;
+    const started = Date.now(), maxWait = Math.max(90000, estimatePlaybackMs(text) + 60000);
+    let sawAudio = false, sawPlaying = false, quietTicks = 0;
     const timer = setInterval(() => {
       const audio = [...document.querySelectorAll("audio,video")];
-      const active = audio.some(a => !a.paused && !a.ended);
-      if (active) sawPlaying = true;
-      if ((sawPlaying && audio.length && audio.every(a => a.paused || a.ended)) || Date.now()-started > maxWait) {
+      if (audio.length) sawAudio = true;
+      const active = audio.some(a => !a.paused && !a.ended && a.readyState >= 2);
+      if (active) { sawPlaying = true; quietTicks = 0; }
+      else if (sawPlaying) quietTicks++;
+      const finished = sawPlaying && sawAudio && quietTicks >= 4 && audio.every(a => a.paused || a.ended);
+      if (finished || Date.now()-started > maxWait) {
         clearInterval(timer);
-        // Restore the existing story instead of deleting or re-pasting it as new speech.
         if (editor && editor.isConnected) {
-          // Remove the temporary spoken addition, then put the saved story back.
           setEditorText(editor, "");
-          setTimeout(() => { if (editor.isConnected) setEditorText(editor, originalText); }, 120);
+          setTimeout(() => { if (editor.isConnected) setEditorText(editor, originalText); }, 180);
         }
         state.baseline = originalText;
         state.lastText = "";
         state.running = false;
-        setStatus("Finished playing the new words. Temporary text cleared and the previous story restored.");
+        setStatus(finished ? "Finished FreeTTS playback. New words cleared; previous text restored." : "FreeTTS audio was not detected as playing to completion. Previous text restored; check the generated player.");
       }
     }, 500);
   }
@@ -171,7 +157,7 @@
       }
       const previousStory = state.baseline === null ? "" : state.baseline;
       state.originalText = current;
-      // NaturalReader reads its editor contents, so temporarily put only the new words there.
+      // FreeTTS reads its editor contents, so temporarily put only the new words there.
       if (!setEditorText(editor, delta)) {
         state.running = false;
         setStatus("Couldn't prepare the new text. Your original text was kept.");
@@ -184,7 +170,7 @@
         return;
       }
       state.baseline = current;
-      setStatus("Sent click to NaturalReader's Play control. Waiting for playback…");
+      setStatus("Sent click to FreeTTS Generate control. Waiting for playback…");
       waitForPlayback(delta, editor, previousStory);
     }, 250);
   }
@@ -214,10 +200,10 @@
   }
   function startDictation() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { setStatus("Chrome dictation isn't available here. Use Windows voice typing (Win+H) in the NaturalReader text box."); return; }
+    if (!SR) { setStatus("Chrome dictation isn't available here. Use Windows voice typing (Win+H) in the FreeTTS text box."); return; }
     if (state.dictating && state.recognition) { state.recognition.stop(); return; }
     const editor = getEditor();
-    if (!editor) { setStatus("Open NaturalReader's Add Text editor first, then tap Dictate."); return; }
+    if (!editor) { setStatus("Open FreeTTS text editor first, then tap Start mic."); return; }
     const recognition = new SR();
     state.recognition = recognition;
     recognition.lang = "en-US";
@@ -260,7 +246,7 @@
     const p = document.createElement("section");
     p.id = "nrv-panel";
     Object.assign(p.style,{position:"fixed",right:"14px",bottom:"14px",zIndex:"2147483647",width:"280px",boxSizing:"border-box",padding:"12px",borderRadius:"12px",background:"#171827",color:"#fff",font:"13px system-ui,sans-serif",boxShadow:"0 8px 30px #0008"});
-    p.innerHTML = '<div style="font-weight:750;font-size:14px;margin-bottom:8px">NaturalReader Voice Automation</div><label style="display:flex;align-items:center;gap:7px"><input id="nrv-enabled" type="checkbox" checked> Automation ON</label><label style="display:block;margin-top:8px">Mic silence before auto-play <span id="nrv-ms-label">2.2 sec</span><input id="nrv-silence" type="range" min="800" max="5000" step="200" value="2200" style="width:100%"></label><div style="display:flex;gap:6px;margin-top:8px"><button id="nrv-dictate" type="button">🎙 Start mic</button></div><div style="font-size:12px;color:#cbd5e1;margin-top:8px;line-height:1.4">When automation is ON, speech is detected, then NaturalReader automatically plays only the new words after microphone silence. No Play now button needed.</div><div id="nrv-status" role="status" style="margin-top:8px;color:#cbd5e1;line-height:1.35">Automation is ON. Start the microphone to begin.</div>';
+    p.innerHTML = '<div style="font-weight:750;font-size:14px;margin-bottom:8px">FreeTTS Voice Automation</div><label style="display:flex;align-items:center;gap:7px"><input id="nrv-enabled" type="checkbox" checked> Automation ON</label><label style="display:block;margin-top:8px">Mic silence before auto-play <span id="nrv-ms-label">2.2 sec</span><input id="nrv-silence" type="range" min="800" max="5000" step="200" value="2200" style="width:100%"></label><div style="display:flex;gap:6px;margin-top:8px"><button id="nrv-dictate" type="button">🎙 Start mic</button></div><div style="font-size:12px;color:#cbd5e1;margin-top:8px;line-height:1.4">When automation is ON, dictated words are sent to FreeTTS after microphone silence. FreeTTS generates audio automatically; no manual Generate click needed.</div><div id="nrv-status" role="status" style="margin-top:8px;color:#cbd5e1;line-height:1.35">Automation is ON. Start the microphone to begin.</div>';
     document.documentElement.appendChild(p);
     p.querySelectorAll("button").forEach(b => Object.assign(b.style,{width:"50%",border:"0",borderRadius:"7px",padding:"8px 5px",background:"#4f46e5",color:"white",fontWeight:"650",cursor:"pointer"}));
     p.querySelector("#nrv-enabled").onchange = e => {
