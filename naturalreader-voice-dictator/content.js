@@ -71,54 +71,34 @@
     el.dispatchEvent(new Event("change", {bubbles:true}));
   }
   function pauseResumeButton(field) {
-    // NaturalReader often paints the blue Play circle using SVG fill, not the
-    // button's CSS background. Search toolbar controls and their SVG descendants.
-    const nodes = [...document.querySelectorAll('button,[role="button"],[tabindex], [onclick], body *')]
-      .filter(visible)
-      .filter(el => !el.closest("#nr-voice-dictator"));
-    let best = null, bestScore = -999;
-
-    function hasBluePaint(el) {
-      const nodesToCheck = [el, ...[...el.querySelectorAll("svg,circle,path,polygon,ellipse,rect")].slice(0, 24)];
-      for (const node of nodesToCheck) {
-        const style = getComputedStyle(node);
-        const paints = [style.backgroundColor, style.fill, style.color, node.getAttribute("fill"), node.getAttribute("style")].join(" ").toLowerCase();
-        const rgb = paints.match(/(?:rgb\\()?\\s*(\\d{1,3})[,\\s]+(\\d{1,3})[,\\s]+(\\d{1,3})\\)?/);
-        if (rgb && +rgb[3] > 100 && +rgb[3] > +rgb[1] * 1.15 && +rgb[3] > +rgb[2] * 1.05) return true;
-        if (/blue|#0[0-9a-f]{2,4}ff|#1[0-9a-f]{2,4}ff|#2563eb|#1677ff|#0d6efd/.test(paints)) return true;
+    // Exact selector copied from NaturalReader's DevTools:
+    // <svg aria-label="read button play icon [reading bar]" ...>
+    const exact = document.querySelector(
+      'svg[aria-label="read button play icon [reading bar]"]'
+    );
+    if (exact && visible(exact) && !exact.closest("#nr-voice-dictator")) {
+      // Angular often attaches the click handler to a wrapping element rather
+      // than the SVG itself. Walk upward to the nearest interactive wrapper.
+      for (let p = exact; p && p !== document.body; p = p.parentElement) {
+        if (p.matches('button,[role="button"],[tabindex],[onclick]')) return p;
+        const r = p.getBoundingClientRect();
+        if (p !== exact && (r.width > 180 || r.height > 120)) break;
       }
-      return false;
+      return exact;
     }
 
-    for (const el of nodes) {
-      const r = el.getBoundingClientRect();
-      if (r.width < 28 || r.height < 28 || r.width > 100 || r.height > 100 || r.top > 100) continue;
-      const ratio = r.width / r.height;
-      if (ratio < 0.72 || ratio > 1.35) continue;
-      const label = [el.innerText, el.getAttribute("aria-label"), el.getAttribute("title"), el.getAttribute("data-testid")]
-        .join(" ").toLowerCase().replace(/\\s+/g, " ").trim();
-      if (/settings|voice|speed|download|upload|login|sign in|menu|close|clear|volume|undo|redo|profile|account/.test(label)) continue;
-
-      const blue = hasBluePaint(el);
-      if (!blue) continue;
-      let score = 30;
-      if (/\\bplay\\b|resume|start reading/.test(label)) score += 20;
-      if (!label && el.querySelector("svg")) score += 4;
-      // In the supplied screenshot the play circle is the central transport
-      // button between the two arrow controls, roughly x=200 in that viewport.
-      const centerX = r.left + r.width / 2;
-      score += Math.max(0, 12 - Math.abs(centerX - window.innerWidth * 0.41) / 12);
-      if (r.top < 70) score += 5;
-      if (score > bestScore) { best = el; bestScore = score; }
+    // Fallback for NaturalReader variants that slightly change the accessible label.
+    const alt = [...document.querySelectorAll('svg[aria-label*="read button"][aria-label*="play icon"]')]
+      .find(el => visible(el) && !el.closest("#nr-voice-dictator"));
+    if (alt) {
+      for (let p = alt; p && p !== document.body; p = p.parentElement) {
+        if (p.matches('button,[role="button"],[tabindex],[onclick]')) return p;
+        const r = p.getBoundingClientRect();
+        if (p !== alt && (r.width > 180 || r.height > 120)) break;
+      }
+      return alt;
     }
-
-    if (!best) return null;
-    for (let p = best; p && p !== document.body; p = p.parentElement) {
-      if (p.matches('button,[role="button"],[tabindex],[onclick]')) return p;
-      const r = p.getBoundingClientRect();
-      if (r.width > 120 || r.height > 120) break;
-    }
-    return best;
+    return null;
   }
 
   function activateButton(button) {
