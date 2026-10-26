@@ -29,23 +29,14 @@ self.onmessage = async (event) => {
       }
 
       loadingPromise = (async () => {
-        self.postMessage({ type: "status", message: "Loading local Whisper model (first run may take a while)…" });
-        try {
-          transcriber = await pipeline(
-            "automatic-speech-recognition",
-            model || "onnx-community/whisper-tiny.en",
-            { device: "webgpu", dtype: "q4" }
-          );
-          actualDevice = "webgpu";
-        } catch (gpuError) {
-          self.postMessage({ type: "status", message: "WebGPU unavailable; trying local WASM…" });
-          transcriber = await pipeline(
-            "automatic-speech-recognition",
-            model || "onnx-community/whisper-tiny.en",
-            { device: "wasm", dtype: "q8" }
-          );
-          actualDevice = "wasm";
-        }
+        self.postMessage({ type: "status", message: "Loading local Whisper on CPU (no experimental WebGPU setting needed)…" });
+        // Prefer the stable WASM CPU backend so users do not need unsafe/experimental WebGPU.
+        transcriber = await pipeline(
+          "automatic-speech-recognition",
+          model || "onnx-community/whisper-tiny.en",
+          { device: "wasm", dtype: "q8" }
+        );
+        actualDevice = "wasm";
       })();
 
       try {
