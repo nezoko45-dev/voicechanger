@@ -223,20 +223,29 @@
     const p = document.createElement("section");
     p.id = "nrv-panel";
     Object.assign(p.style,{position:"fixed",right:"14px",bottom:"14px",zIndex:"2147483647",width:"280px",boxSizing:"border-box",padding:"12px",borderRadius:"12px",background:"#171827",color:"#fff",font:"13px system-ui,sans-serif",boxShadow:"0 8px 30px #0008"});
-    p.innerHTML = '<div style="font-weight:750;font-size:14px;margin-bottom:8px">NaturalReader Auto + Dictation</div><label style="display:flex;align-items:center;gap:7px"><input id="nrv-enabled" type="checkbox" checked> Auto-play after silence</label><label style="display:block;margin-top:8px">Pause before Play <span id="nrv-ms-label">2.2 sec</span><input id="nrv-silence" type="range" min="800" max="5000" step="200" value="2200" style="width:100%"></label><div style="display:flex;gap:6px;margin-top:8px"><button id="nrv-dictate" type="button">🎙 Dictate</button><button id="nrv-play-now" type="button">▶ Play now</button></div><div style="font-size:12px;color:#cbd5e1;margin-top:8px;line-height:1.4">After playback, the text clears so you can enter the next message.</div><div id="nrv-status" role="status" style="margin-top:8px;color:#cbd5e1;line-height:1.35">Ready. Open Add Text, then type or dictate.</div>';
+    p.innerHTML = '<div style="font-weight:750;font-size:14px;margin-bottom:8px">NaturalReader Voice Automation</div><label style="display:flex;align-items:center;gap:7px"><input id="nrv-enabled" type="checkbox" checked> Automation ON</label><label style="display:block;margin-top:8px">Mic silence before auto-play <span id="nrv-ms-label">2.2 sec</span><input id="nrv-silence" type="range" min="800" max="5000" step="200" value="2200" style="width:100%"></label><div style="display:flex;gap:6px;margin-top:8px"><button id="nrv-dictate" type="button">🎙 Start mic</button></div><div style="font-size:12px;color:#cbd5e1;margin-top:8px;line-height:1.4">When automation is ON, speech is detected, then NaturalReader automatically plays only the new words after microphone silence. No Play now button needed.</div><div id="nrv-status" role="status" style="margin-top:8px;color:#cbd5e1;line-height:1.35">Automation is ON. Start the microphone to begin.</div>';
     document.documentElement.appendChild(p);
     p.querySelectorAll("button").forEach(b => Object.assign(b.style,{width:"50%",border:"0",borderRadius:"7px",padding:"8px 5px",background:"#4f46e5",color:"white",fontWeight:"650",cursor:"pointer"}));
-    p.querySelector("#nrv-enabled").onchange = e => { state.enabled = e.target.checked; setStatus(state.enabled ? "Auto-play enabled." : "Auto-play paused."); };
+    p.querySelector("#nrv-enabled").onchange = e => {
+      state.enabled = e.target.checked;
+      clearTimeout(state.timer);
+      if (!state.enabled) {
+        if (state.recognition && state.dictating) state.recognition.stop();
+        setStatus("Automation OFF. Microphone auto-play is paused.");
+      } else {
+        setStatus("Automation ON. Start the microphone to automatically play new speech after silence.");
+        if (!state.dictating) startDictation();
+      }
+    };
     p.querySelector("#nrv-silence").oninput = e => { state.silenceMs = Number(e.target.value); p.querySelector("#nrv-ms-label").textContent = (state.silenceMs/1000).toFixed(1)+" sec"; };
     p.querySelector("#nrv-dictate").onclick = startDictation;
-    p.querySelector("#nrv-play-now").onclick = () => { const e=getEditor(); if (!e || !textOf(e)) { setStatus("Couldn't find text. Open Add Text and enter a sentence first."); return; } const current=textOf(e); const delta=state.baseline === null ? current : newDelta(state.baseline,current); if (!delta) { setStatus("No new text to play. Add a new sentence first."); return; } processText(delta,current); };
     p.addEventListener("mousedown",e=>e.stopPropagation());
   }
   document.addEventListener("input", onEditorChange, true);
   document.addEventListener("change", onEditorChange, true);
   function init() {
     buildPanel();
-    setStatus("Ready. Open Add Text, then type or dictate.");
+    setStatus("Automation ON. Start the microphone to automatically play new speech after silence.");
     setInterval(() => {
       if (!state.enabled || state.running) return;
       const e = getEditor(), text = e ? textOf(e) : "";
