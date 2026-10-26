@@ -59,6 +59,14 @@
     clone.querySelectorAll("button,[role=button],svg,textarea,input,script,style,[aria-label],.dvc-control").forEach(n => n.remove());
     return clean(clone.innerText || clone.textContent || "");
   }
+  function isPageChrome(el, text) {
+    if (el.closest("footer,header,nav,[role=navigation],[role=contentinfo],#dvc-panel,#dvc-caption")) return true;
+    const t = clean(text).toLowerCase();
+    // Never read the site's copyright/footer branding as if it were a character reply.
+    if (/(©|copyright|all rights reserved|dopple labs)/i.test(t) && t.length < 260) return true;
+    if (/^(home|explore|messages|settings|privacy policy|terms of service|dopple labs)$/i.test(t)) return true;
+    return false;
+  }
   function findLatestReply() {
     const selectors = [
       '[data-message-author-role="assistant"]','[data-role="assistant"]','[data-author="assistant"]',
@@ -69,7 +77,7 @@
     const all = [];
     for (const sel of selectors) {
       document.querySelectorAll(sel).forEach(el => {
-        if (!isVisible(el) || looksLikeUser(el) || el.closest("#dvc-panel") || el.closest("#dvc-caption")) return;
+        if (!isVisible(el) || looksLikeUser(el) || isPageChrome(el, textFrom(el))) return;
         const t = textFrom(el);
         if (t.length < 2 || ignored.has(t.toLowerCase()) || /^(you|you:|assistant:?)$/i.test(t)) return;
         if (t.length > 12000) return;
@@ -101,9 +109,9 @@
     const root = document.querySelector("main,[role=main]") || document.body;
     const fallback = [];
     root.querySelectorAll("div,p,article,[role]").forEach(el => {
-      if (!isVisible(el) || el.closest("#dvc-panel") || el.closest("#dvc-caption") || looksLikeUser(el)) return;
+      if (!isVisible(el) || looksLikeUser(el)) return;
       const t = textFrom(el);
-      if (t.length < 12 || t.length > 3500 || ignored.has(t.toLowerCase())) return;
+      if (isPageChrome(el, t) || t.length < 12 || t.length > 3500 || ignored.has(t.toLowerCase())) return;
       if (/^(send|message|type a message|regenerate|copy|share|retry)$/i.test(t)) return;
       // Prefer compact message-sized elements, not page-wide containers.
       const r = el.getBoundingClientRect();
