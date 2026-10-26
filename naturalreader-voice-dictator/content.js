@@ -223,7 +223,7 @@
         status("Started playback for the new sentence.");
         watchPlaybackCompletion(field, spokenText, true);
       }
-    }, 2200);
+    }, 3800);
   }
   function start(options = {}) {
     if (!SpeechRecognition) { status("Speech recognition isn't available here. Try the current version of Chrome on TTSReader Player."); return; }
@@ -263,6 +263,8 @@
       if (full) {
         const target = insertTranscript(full);
         status("Hearing: " + full.slice(-110));
+        // Keep pushing the auto-play deadline forward while interim words are still arriving,
+        // so playback never interrupts a sentence that is actively being spoken.
         if (state.finalText.trim()) schedulePlay();
         if (target) state.lastSent = full;
       }
