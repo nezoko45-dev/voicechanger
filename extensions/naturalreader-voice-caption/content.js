@@ -33,48 +33,80 @@
     return [...found].filter(el => el instanceof Element && visible(el) && !el.closest("#nrv-panel"));
   }
   function clickPlay() {
+    // NaturalReader's main Play control is the blue circular triangle in the player toolbar.
     const editor = getEditor();
     const er = editor?.getBoundingClientRect();
     const candidates = buttons().map(el => {
-      const label = labelOf(el), box = el.getBoundingClientRect();
+      const box = el.getBoundingClientRect();
+      const label = labelOf(el);
       const svg = el.querySelector("svg");
-      const paths = [...(svg?.querySelectorAll("path") || [])].map(p => p.getAttribute("d") || "");
-      const svgInfo = svg ? [svg.getAttribute("class"), svg.innerHTML].join(" ").toLowerCase() : "";
-      const triangle = /play|triangle/.test(svgInfo) || paths.some(d => /z\s*$/i.test(d) && /M[\s\S]*L[\s\S]*L/.test(d));
-      const isPlayLabel = /play|listen|start reading|read aloud|resume reading/.test(label) && !/replay|playlist|display|playback speed|play store|template/.test(label);
-      const aboveEditor = !!er && box.bottom <= er.top + 80;
-      const toolbar = !!el.closest('header,[role="toolbar"],[class*="toolbar" i],[class*="header" i]');
-      const score = (isPlayLabel ? 100 : 0) + (triangle ? 45 : 0) + (aboveEditor ? 35 : 0) + (toolbar ? 25 : 0) + (box.top < 180 ? 8 : 0);
-      return {el,label,box,score,isPlayLabel,aboveEditor,triangle};
-    }).filter(x => x.score > 0 && (x.isPlayLabel || (x.aboveEditor && x.triangle)));
+      const paths = [...(svg?.querySelectorAll("path, polygon") || [])].map(p => p.getAttribute("d") || p.getAttribute("points") || "");
+      const svgText = (svg?.outerHTML || "").toLowerCase();
+      const style = getComputedStyle(el);
+      const bg = style.backgroundColor + " " + style.color + " " + (el.getAttribute("style") || "");
+      const blue = /rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/g;
+      let m, blueish = false;
+      while ((m = blue.exec(bg))) { const rr=+m[1], gg=+m[2], bb=+m[3]; if (bb > 130 && bb > rr * 1.15 && bb > gg * 1.05) blueish = true; }
+      const nearTop = box.top < 240;
+      const aboveEditor = !!er && box.bottom <= er.top + 100;
+      const round = Math.abs(box.width-box.height) < 18 && box.width >= 28 && box.width <= 90;
+      const triangle = /play|triangle|polygon/.test(svgText) || paths.some(d => /[zZ]/.test(d) && /[ML]/.test(d));
+      const namedPlay = /(^|\s)(play|pause|resume)(\s|$)|start reading|read aloud/.test(label) && !/playlist|playback speed/.test(label);
+      const score = (namedPlay ? 120 : 0) + (blueish && round ? 100 : 0) + (triangle ? 45 : 0) + (aboveEditor ? 35 : 0) + (nearTop ? 20 : 0);
+      return {el,score,namedPlay,blueish,round,triangle,aboveEditor,nearTop,box};
+    }).filter(x => x.score >= 70 && (x.namedPlay || (x.aboveEditor && x.nearTop && (x.triangle || (x.blueish && x.round)))));
     candidates.sort((a,b) => b.score-a.score);
     const candidate = candidates[0];
-    if (!candidate || !(candidate.el instanceof Element)) {
-      setStatus("Couldn't locate the blue top Play button above the TTS field. Text was kept.");
+    if (!candidate) {
+      setStatus("Couldn't identify NaturalReader's blue Play button. Keep the NaturalReader player visible and try again.");
       return false;
     }
     const target = candidate.el.closest("button,[role=button]") || candidate.el;
-    if (typeof target.click !== "function") {
-      setStatus("Found a possible Play icon, but it isn't clickable. Text was kept.");
+    try {
+      target.scrollIntoView({block:"center",inline:"nearest"});
+      target.dispatchEvent(new PointerEvent("pointerdown",{bubbles:true,pointerType:"mouse",button:0}));
+      target.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
+      target.dispatchEvent(new PointerEvent("pointerup",{bubbles:true,pointerType:"mouse",button:0}));
+      target.dispatchEvent(new MouseEvent("mouseup",{bubbles:true,button:0}));
+      target.click();
+      setStatus("Clicked NaturalReader's Play control.");
+      return true;
+    } catch (err) {
+      setStatus("NaturalReader Play click failed: " + (err?.message || "unknown error"));
       return false;
     }
-    target.click();
-    return true;
   }
   function setEditorText(editor, text) {
-    if (!editor) return false;
+    if (!editor || !editor.isConnected) return false;
+    const value = String(text ?? "");
     editor.focus();
-    if (editor.isContentEditable || editor.getAttribute("contenteditable") === "true" || editor.getAttribute("role") === "textbox") {
-      editor.textContent = text;
-      editor.dispatchEvent(new InputEvent("input", {bubbles:true, inputType:"insertText", data:text}));
-    } else {
-      const proto = editor.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-      const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
-      if (setter) setter.call(editor, text); else editor.value = text;
-      editor.dispatchEvent(new Event("input", {bubbles:true}));
-      editor.dispatchEvent(new Event("change", {bubbles:true}));
+    try {
+      if (editor.isContentEditable || editor.getAttribute("contenteditable") === "true" || editor.getAttribute("role") === "textbox") {
+        // Use the editing command first so framework-backed rich-text editors receive a real edit.
+        const selection = window.getSelection();
+        if (selection) {
+          const range = document.createRange();
+          range.selectNodeContents(editor);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+        const inserted = document.execCommand("insertText", false, value);
+        if (!inserted || textOf(editor) !== clean(value)) editor.textContent = value;
+        editor.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertReplacementText",data:value}));
+      } else {
+        const proto = editor.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(proto,"value")?.set;
+        if (setter) setter.call(editor,value); else editor.value = value;
+        editor.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertReplacementText",data:value}));
+        editor.dispatchEvent(new Event("change",{bubbles:true}));
+      }
+      editor.dispatchEvent(new Event("blur",{bubbles:true}));
+      editor.focus();
+      return true;
+    } catch (err) {
+      setStatus("Couldn't update NaturalReader's text field: " + (err?.message || "unknown error"));
+      return false;
     }
-    return true;
   }
   function clearEditor() {
     const candidates = buttons().map(el => ({el,label:labelOf(el)}));
@@ -97,11 +129,15 @@
       if ((sawPlaying && audio.length && audio.every(a => a.paused || a.ended)) || Date.now()-started > maxWait) {
         clearInterval(timer);
         // Restore the existing story instead of deleting or re-pasting it as new speech.
-        if (editor && editor.isConnected) setEditorText(editor, originalText);
+        if (editor && editor.isConnected) {
+          // Remove the temporary spoken addition, then put the saved story back.
+          setEditorText(editor, "");
+          setTimeout(() => { if (editor.isConnected) setEditorText(editor, originalText); }, 120);
+        }
         state.baseline = originalText;
         state.lastText = "";
         state.running = false;
-        setStatus("Finished playing only the new text. Previous text was preserved; ready for the next addition.");
+        setStatus("Finished playing the new words. Temporary text cleared and the previous story restored.");
       }
     }, 500);
   }
