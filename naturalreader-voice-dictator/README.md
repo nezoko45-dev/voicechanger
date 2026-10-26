@@ -14,11 +14,11 @@ A small Chrome Manifest V3 extension for NaturalReader Online Reader. It listens
 ## Options
 
 - **Clear text field when starting**: checked by default, so each new dictation starts fresh.
-- **Auto-press Play after a pause**: checked by default; waits about 1.4 seconds after recognized speech and attempts to click the reader's Play control.
+- **Auto-press Play after a pause**: checked by default; waits about 1.4 seconds after recognized speech and tries to activate the reader's Pause/Resume control.
 - **Stop** ends microphone dictation.
 
 ## Notes
 
 - Uses Chrome's built-in Web Speech recognition API; recognition availability and processing depend on Chrome and its speech service.
 - The extension does not upload audio to a separate server of its own.
-- NaturalReader's interface can change. If it can't confidently identify the text field or Play control, it reports that in the panel instead of clicking an unrelated control.
+- NaturalReader's interface can change. If it can't confidently identify the text field or Pause/Resume control, it reports that in the panel instead of clicking an unrelated control.
