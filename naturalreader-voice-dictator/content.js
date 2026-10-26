@@ -223,7 +223,7 @@
         status("Started playback for the new sentence.");
         watchPlaybackCompletion(field, spokenText, true);
       }
-    }, 3800);
+    }, 6000);
   }
   function start(options = {}) {
     if (!SpeechRecognition) { status("Speech recognition isn't available here. Try the current version of Chrome on TTSReader Player."); return; }
@@ -296,9 +296,12 @@
       }
       // Chrome can end a continuous recognition session after a silence or timeout.
       // Restart it automatically unless playback is in progress or the user stopped.
-      status("Recognition ended; restarting microphone listening…");
+      // Chrome may end a continuous recognition session mid-sentence. Do not interpret
+      // onend as a speech pause and do not trigger playback here; restart listening instead.
+      clearTimeout(state.timer);
+      status("Recognition session ended; reconnecting microphone without playing partial text…");
       clearTimeout(state.restartTimer);
-      state.restartTimer = setTimeout(() => start({ keepSession: true }), 500);
+      state.restartTimer = setTimeout(() => start({ keepSession: true }), 250);
     };
     try { rec.start(); }
     catch (e) {
