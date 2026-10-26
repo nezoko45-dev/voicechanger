@@ -3,7 +3,7 @@
   window.__naturalReaderDictatorLoaded = true;
 
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const state = { recognition: null, listening: false, suppressRestart: false, finalText: "", timer: null, lastSent: "", autoPlay: true, clearOnStart: true, clearAfterPlayback: true };
+  const state = { recognition: null, listening: false, suppressRestart: false, userStopped: false, restartTimer: null, finalText: "", timer: null, lastSent: "", autoPlay: true, clearOnStart: true, clearAfterPlayback: true };
   const $ = (id) => document.getElementById(id);
 
   const panel = document.createElement("section");
@@ -176,29 +176,39 @@
       watchPlaybackCompletion(field, spokenText, true);
     }, 1400);
   }
-  function start() {
+  function start(options = {}) {
     if (!SpeechRecognition) { status("Speech recognition isn't available here. Try current Chrome on NaturalReader's Online Reader."); return; }
-    if (state.listening) return;
+    if (state.listening || state.suppressRestart) return;
     const field = findField();
     if (!field) { status("Open NaturalReader's Type or Paste Text editor first, then try again."); return; }
     state.clearOnStart = $("nrvd-clear").checked;
     state.autoPlay = $("nrvd-play").checked;
-    state.finalText = "";
-    state.lastSent = "";
-    if (state.clearOnStart) writeField(field, "");
+    if (!options.keepSession) {
+      state.finalText = "";
+      state.lastSent = "";
+      if (state.clearOnStart) writeField(field, "");
+    }
     const rec = new SpeechRecognition();
     rec.lang = navigator.language || "en-US";
     rec.continuous = true;
     rec.interimResults = true;
-    rec.onstart = () => { state.listening = true; $("nrvd-start").disabled = true; $("nrvd-stop").disabled = false; status("Listening… speak naturally."); };
+    state.recognition = rec;
+    rec.onstart = () => {
+      state.listening = true;
+      $("nrvd-start").disabled = true;
+      $("nrvd-stop").disabled = false;
+      status(options.keepSession ? "Recognition restarted. Keep speaking…" : "Listening… speak naturally.");
+    };
     rec.onresult = (event) => {
       let interim = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const phrase = event.results[i][0].transcript;
-        if (event.results[i].isFinal) state.finalText += phrase;
-        else interim += phrase;
+        if (event.results[i].isFinal) {
+          const clean = phrase.trim();
+          if (clean) state.finalText += (state.finalText && !/\s$/.test(state.finalText) ? " " : "") + clean;
+        } else interim += phrase;
       }
-      const full = (state.finalText + interim).trim();
+      const full = (state.finalText + (interim ? " " + interim : "")).trim();
       if (full) {
         const target = insertTranscript(full);
         status("Hearing: " + full.slice(-110));
@@ -206,10 +216,53 @@
         if (target) state.lastSent = full;
       }
     };
-    rec.onerror = (event) => status("Speech recognition: " + (event.error || "error") + ". Check microphone permission.");
+    rec.onerror = (event) => {
+      const err = event.error || "error";
+      status("Speech recognition: " + err + ". " +
+        (err === "not-allowed" || err === "service-not-allowed" ? "Check microphone permission." : "Will retry if recognition ended unexpectedly."));
+    };
     rec.onend = () => {
       state.listening = false;
-      $("nrvd-start").disabled = false;
+      if (state.suppressRestart) {
+        $("nrvd-start").disabled = false;
+        $("nrvd-stop").disabled = true;
+        return;
+      }
+      if (state.userStopped) {
+        state.userStopped = false;
+        $("nrvd-start").disabled = false;
+        $("nrvd-stop").disabled = true;
+        if (state.finalText.trim()) schedulePlay();
+        else status("Stopped. No speech was captured.");
+        return;
+      }
+      // Chrome can end a continuous recognition session after a silence or timeout.
+      // Restart it automatically unless playback is in progress or the user stopped.
+      status("Recognition ended; restarting microphone listening…");
+      clearTimeout(state.restartTimer);
+      state.restartTimer = setTimeout(() => start({ keepSession: true }), 500);
+    };
+    try { rec.start(); }
+    catch (e) {
+      state.listening = false;
+      status("Couldn't start microphone: " + e.message + ". Retrying…");
+      clearTimeout(state.restartTimer);
+      state.restartTimer = setTimeout(() => start({ keepSession: true }), 1200);
+    }
+  }
+  function stop() {
+    state.userStopped = true;
+    clearTimeout(state.timer);
+    clearTimeout(state.restartTimer);
+    if (state.recognition && state.listening) state.recognition.stop();
+    state.listening = false;
+    state.suppressRestart = false;
+    $("nrvd-start").disabled = false;
+    $("nrvd-stop").disabled = true;
+    status("Dictation stopped.");
+  }
+
+  $("nrvd-start").disabled = false;
       $("nrvd-stop").disabled = true;
       if (!state.suppressRestart && state.finalText.trim()) schedulePlay();
       if (!state.finalText.trim() && !state.suppressRestart) status("Stopped. No speech was captured.");
