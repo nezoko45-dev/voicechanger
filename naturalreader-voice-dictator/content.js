@@ -55,10 +55,32 @@
     if (el.closest("form")) score -= 2;
     return score;
   }
+  function isLuvvoice() { return /(^|\\.)luvvoice\\.com$/i.test(location.hostname); }
   function findField() {
-    const all = [...document.querySelectorAll('textarea,input:not([type]),input[type="text"],[contenteditable="true"],[role="textbox"]')];
+    const selectors = isLuvvoice()
+      ? 'textarea,input:not([type]),input[type="text"],[contenteditable="true"],[role="textbox"],[data-placeholder]'
+      : 'textarea,input:not([type]),input[type="text"],[contenteditable="true"],[role="textbox"]';
+    const all = [...document.querySelectorAll(selectors)];
     all.sort((a,b) => fieldScore(b)-fieldScore(a));
-    return all[0] && fieldScore(all[0]) > 0 ? all[0] : null;
+    const preferred = all.find(el => fieldScore(el) > 0);
+    if (preferred) return preferred;
+    if (isLuvvoice()) {
+      // Luvvoice's main TTS editor can be a rich-text region without a descriptive label.
+      return all.filter(el => visible(el) && !el.closest("#nr-voice-dictator"))
+        .sort((a,b) => {
+          const ra=a.getBoundingClientRect(), rb=b.getBoundingClientRect();
+          return (rb.width*rb.height)-(ra.width*ra.height);
+        })[0] || null;
+    }
+    return null;
+  }
+  function findGenerateButton() {
+    const candidates = [...document.querySelectorAll('button,[role="button"],input[type="button"],input[type="submit"]')];
+    return candidates.find(el => {
+      if (!visible(el) || el.disabled || el.closest("#nr-voice-dictator")) return false;
+      const label = [el.innerText, el.textContent, el.value, el.getAttribute("aria-label"), el.getAttribute("title")].join(" ").trim().toLowerCase();
+      return /^generate(?:\\s+(?:speech|audio))?$/.test(label) || label === "generate";
+    }) || null;
   }
   function writeField(el, value) {
     el.focus();
@@ -195,6 +217,14 @@
       if (!field) { status("Text entered, but the text editor wasn't found for Play."); return; }
       const spokenText = fieldText(field).trim();
       if (!spokenText) return;
+      if (isLuvvoice()) {
+        const generate = findGenerateButton();
+        if (!generate) { status("Luvvoice Generate button wasn't found. Make sure the Text to Speech tab is open."); return; }
+        activateButton(generate);
+        status("Clicked Luvvoice Generate.");
+        state.finalText = "";
+        return;
+      }
       const button = pauseResumeButton(field);
       if (!button) { status("TTSReader Play/Pause button wasn't found."); return; }
       state.playbackPending = true;
