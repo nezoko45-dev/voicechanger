@@ -30,6 +30,7 @@
   let pending = '';
   let lastFinalIndex = 0;
   let restartTimer = null;
+  let sentencePauseTimer = null;
   // Queue spoken sentences while recognition keeps running.
   let speechQueue = Promise.resolve();
   let sentenceId = 0;
@@ -112,6 +113,15 @@
       consumed = pattern.lastIndex;
     }
     if (consumed > 0) pending = pending.slice(consumed).trim();
+    // Also read a phrase when the speaker pauses, even if they didn't say punctuation.
+    clearTimeout(sentencePauseTimer);
+    if (pending.trim()) {
+      sentencePauseTimer = setTimeout(() => {
+        const tail = pending.trim();
+        pending = '';
+        if (tail) appendSentence(tail);
+      }, 1100);
+    }
   }
 
   function createRecognition() {
@@ -155,7 +165,7 @@
     if (recognition) { try { recognition.start(); } catch (e) { running = false; status('Could not start recognition: ' + e.message); } }
   };
   $('stop').onclick = () => {
-    running = false; restarting = false; clearTimeout(restartTimer);
+    running = false; restarting = false; clearTimeout(restartTimer); clearTimeout(sentencePauseTimer);
     if (recognition) { try { recognition.stop(); } catch {} }
     recognition = null;
     if (pending.trim()) {
