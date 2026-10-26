@@ -33,33 +33,46 @@
     return [...found].filter(el => el instanceof Element && visible(el) && !el.closest("#nrv-panel"));
   }
   function clickPlay() {
-    const all = [...document.querySelectorAll('button,[role="button"],input[type="button"],input[type="submit"]')]
+    // Inspect actual HTML buttons first, then accessible button-like controls.
+    const selectors = [
+      "button",
+      'input[type="button"]',
+      'input[type="submit"]',
+      '[role="button"]',
+      '[aria-label]',
+      '[title]',
+      '[data-testid]'
+    ];
+    const all = [...new Set(selectors.flatMap(selector => [...document.querySelectorAll(selector)]))]
       .filter(el => visible(el) && !el.closest("#nrv-panel"));
-    const label = el => clean([el.innerText,el.textContent,el.getAttribute("aria-label"),el.getAttribute("title"),el.value].join(" ")).toLowerCase();
+    const label = el => clean([
+      el.innerText, el.textContent, el.getAttribute("aria-label"),
+      el.getAttribute("title"), el.getAttribute("data-testid"),
+      el.getAttribute("data-tooltip"), el.value
+    ].join(" ")).toLowerCase();
     const candidates = all.map(el => {
       const t = label(el);
-      const r = el.getBoundingClientRect();
+      const rect = el.getBoundingClientRect();
+      const isButton = el.matches('button,input[type="button"],input[type="submit"],[role="button"]');
       let score = 0;
-      if (/convert to speech/.test(t)) score = 300;
-      else if (/generate speech|generate audio|generate/.test(t) && !/regenerate|image/.test(t)) score = 220;
-      else if (/^generate$/.test(t)) score = 200;
-      else if (/^play$|play audio|listen/.test(t)) score = 100;
-      if (r.width < 1 || r.height < 1) score = 0;
-      return {el,t,score};
-    }).filter(x => x.score > 0).sort((a,b)=>b.score-a.score);
+      if (/^convert to speech$/.test(t)) score = 600;
+      else if (/convert to speech/.test(t) && isButton) score = 500;
+      else if (/generate speech|generate audio/.test(t) && isButton && !/regenerate|image/.test(t)) score = 300;
+      else if (/^generate$/.test(t) && isButton) score = 250;
+      else if (/^play$|play audio|listen/.test(t) && isButton) score = 100;
+      if (!isButton || rect.width < 1 || rect.height < 1) score = 0;
+      if (el.matches(":disabled,[aria-disabled='true']")) score = 0;
+      return { el, t, score };
+    }).filter(item => item.score > 0).sort((x,y) => y.score - x.score);
     const candidate = candidates[0];
     if (!candidate) {
-      setStatus("Couldn't find FreeTTS's Convert to Speech / Generate button. Select a voice and keep the editor visible.");
+      setStatus("Couldn't find an enabled HTML button labeled Convert to Speech. Make sure FreeTTS is loaded and a voice is selected.");
       return false;
     }
-    try {
-      candidate.el.click();
-      setStatus("Clicked FreeTTS " + candidate.t + ". Waiting for generated audio…");
-      return true;
-    } catch (err) {
-      setStatus("FreeTTS Generate click failed: " + (err?.message || "unknown error"));
-      return false;
-    }
+    candidate.el.scrollIntoView({ block: "center", inline: "nearest" });
+    candidate.el.click();
+    setStatus("Automatically clicked HTML button: " + (candidate.t || "Convert to Speech") + ". Waiting for generated audio…");
+    return true;
   }
   function setEditorText(editor, text) {
     if (!editor || !editor.isConnected) return false;
