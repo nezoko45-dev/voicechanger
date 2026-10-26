@@ -1,20 +1,26 @@
 {
   "manifest_version": 3,
-  "name": "NaturalReader Auto Voice Caption + Dictation",
+  "name": "FreeTTS Voice Automation",
   "version": "1.1.0",
-  "description": "Adds a dictation button, auto-plays text entered in NaturalReader after a pause, then clears it after playback.",
+  "description": "Dictates speech into FreeTTS and automatically generates and plays only new words after a pause.",
   "permissions": [],
   "host_permissions": [
-    "https://www.naturalreaders.com/*",
-    "https://*.naturalreaders.com/*"
+    "https://freetts.com/*",
+    "https://*.freetts.com/*",
+    "https://freetts.org/*",
+    "https://*.freetts.org/*"
   ],
   "content_scripts": [
     {
       "matches": [
-        "https://www.naturalreaders.com/*",
-        "https://*.naturalreaders.com/*"
+        "https://freetts.com/*",
+        "https://*.freetts.com/*",
+        "https://freetts.org/*",
+        "https://*.freetts.org/*"
       ],
-      "js": ["content.js"],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ]
