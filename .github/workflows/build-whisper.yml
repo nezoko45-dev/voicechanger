@@ -4,12 +4,11 @@ on:
   push:
     branches: [naturalreader-voice-dictator]
     paths:
+      - ".github/workflows/build-whisper.yml"
       - "naturalreader-voice-dictator/whisper-worker.js"
       - "naturalreader-voice-dictator/package.json"
       - "naturalreader-voice-dictator/package-lock.json"
       - "naturalreader-voice-dictator/build-whisper.mjs"
-      - "!naturalreader-voice-dictator/whisper-worker.bundle.js"
-      - "!naturalreader-voice-dictator/assets/**"
   workflow_dispatch:
 
 permissions:
@@ -25,11 +24,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install and bundle extension runtime
+          cache: npm
+          cache-dependency-path: naturalreader-voice-dictator/package.json
+      - name: Install dependencies
         working-directory: naturalreader-voice-dictator
+        run: npm install --no-audit --no-fund
+      - name: Build packaged runtime
+        working-directory: naturalreader-voice-dictator
+        run: npm run build
+      - name: Verify generated bundle
         run: |
-          npm install
-          npm run build
+          test -s naturalreader-voice-dictator/whisper-worker.bundle.js
+          test -d naturalreader-voice-dictator/assets
       - name: Commit packaged runtime
         run: |
           git config user.name "github-actions[bot]"
@@ -37,5 +43,5 @@ jobs:
           git add naturalreader-voice-dictator/whisper-worker.bundle.js naturalreader-voice-dictator/assets
           if ! git diff --cached --quiet; then
             git commit -m "Build packaged local Whisper runtime"
-            git push
+            git push origin naturalreader-voice-dictator
           fi
