@@ -163,16 +163,33 @@
     attempt();
   }
   function writeField(el, value) {
+    if (!el) return;
     el.focus();
     if (el.isContentEditable || el.getAttribute("role") === "textbox" && !("value" in el)) {
-      el.textContent = value;
+      // Rich-text editors often track their own selection/state; use the editing
+      // command when clearing, then update the DOM and notify the page framework.
+      if (value === "") {
+        try {
+          const selection = window.getSelection();
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          selection.removeAllRanges();
+          selection.addRange(range);
+          document.execCommand("delete", false);
+        } catch {}
+        el.replaceChildren();
+        el.textContent = "";
+      } else {
+        el.textContent = value;
+      }
     } else {
       const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
       const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
       if (setter) setter.call(el, value); else el.value = value;
     }
-    el.dispatchEvent(new InputEvent("input", {bubbles:true, inputType:"insertText", data:value}));
+    el.dispatchEvent(new InputEvent("input", {bubbles:true, composed:true, inputType:value === "" ? "deleteContentBackward" : "insertText", data:value || null}));
     el.dispatchEvent(new Event("change", {bubbles:true}));
+    el.dispatchEvent(new Event("blur", {bubbles:true}));
   }
   function pauseResumeButton(field) {
     const exact = document.querySelector('#Play-btn[data-ws-onclick="togglePlay"]') ||
