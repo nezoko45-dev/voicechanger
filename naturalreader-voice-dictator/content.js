@@ -72,7 +72,21 @@
     el.dispatchEvent(new Event("change", {bubbles:true}));
   }
   function pauseResumeButton(field) {
-    // Prefer explicit accessible playback controls on TTSReader and TTSReader.
+    // TTSReader Player exposes the idle Play control inside this state wrapper.
+    const ttsPlaySvg = document.querySelector(
+      'span[data-ws-show-if-state="isPlayingOn=false"] svg.flat-button-svg'
+    );
+    if (ttsPlaySvg && visible(ttsPlaySvg) && !ttsPlaySvg.closest("#nr-voice-dictator")) {
+      const wrapper = ttsPlaySvg.closest('button,[role="button"],[tabindex],[onclick]');
+      if (wrapper && visible(wrapper)) return wrapper;
+      const stateWrapper = ttsPlaySvg.closest('span[data-ws-show-if-state="isPlayingOn=false"]');
+      if (stateWrapper && visible(stateWrapper)) {
+        const clickable = stateWrapper.closest('button,[role="button"],[tabindex],[onclick]');
+        if (clickable && visible(clickable)) return clickable;
+      }
+    }
+
+    // Fallback: score accessible Play controls without matching pause/stop/skip controls.
     const candidates = [...document.querySelectorAll(
       'button,[role="button"],[aria-label],[title],svg[aria-label]'
     )].filter(el => visible(el) && !el.closest("#nr-voice-dictator"));
@@ -94,9 +108,7 @@
     candidates.sort((a,b) => score(b)-score(a));
     const best = candidates[0];
     if (!best || score(best) < 8) return null;
-    if (best.matches("svg")) {
-      return best.closest('button,[role="button"],[tabindex],[onclick]') || best;
-    }
+    if (best.matches("svg")) return best.closest('button,[role="button"],[tabindex],[onclick]') || best;
     return best;
   }
 
