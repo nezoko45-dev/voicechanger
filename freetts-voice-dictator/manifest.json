@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "FreeTTS Voice Dictator",
+  "version": "1.0.0",
+  "description": "Dictate into FreeTTS, replace old text automatically, and optionally generate speech after you pause.",
+  "permissions": [
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://freetts.com/*",
+    "https://www.freetts.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://freetts.com/*",
+        "https://www.freetts.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "FreeTTS Voice Dictator",
+    "default_popup": "popup.html"
+  }
+}
