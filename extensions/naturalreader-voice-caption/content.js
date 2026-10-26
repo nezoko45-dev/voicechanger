@@ -169,6 +169,7 @@
         setStatus("Text changed during the pause; waiting for the latest addition.");
         return;
       }
+      const previousStory = state.baseline === null ? "" : state.baseline;
       state.originalText = current;
       // NaturalReader reads its editor contents, so temporarily put only the new words there.
       if (!setEditorText(editor, delta)) {
@@ -183,8 +184,8 @@
         return;
       }
       state.baseline = current;
-      setStatus("Playing only the new text; the existing story will be restored afterward.");
-      waitForPlayback(delta, editor, current);
+      setStatus("Playing only the new words; they will be removed from the editor afterward.");
+      waitForPlayback(delta, editor, previousStory);
     }, 250);
   }
   function queueText(_ignoredDelta, current) {
