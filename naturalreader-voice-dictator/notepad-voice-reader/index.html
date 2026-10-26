@@ -142,18 +142,30 @@
     };
     rec.onerror = event => { if (event.error !== 'no-speech' && event.error !== 'aborted') status('Speech recognition error: ' + event.error); };
     rec.onend = () => {
-      if (running && !restarting) {
-        restarting = true;
-        status('Refreshing Chrome speech recognition…');
-        clearTimeout(restartTimer);
-        restartTimer = setTimeout(() => {
-          if (!running) return;
-          try { recognition = createRecognition(); recognition && recognition.start(); }
-          catch { setTimeout(() => { if (running) { try { recognition = createRecognition(); recognition && recognition.start(); } catch {} } }, 800); }
-        }, 350);
-      } else if (!running) {
-        $('start').disabled = false; $('stop').disabled = true;
+      if (!running) {
+        $('start').disabled = false;
+        $('stop').disabled = true;
+        return;
       }
+      // Chrome can end a recognition session on its own. Restart the same
+      // recognizer instead of constructing a new one, which helps avoid
+      // repeated microphone permission prompts.
+      clearTimeout(restartTimer);
+      restartTimer = setTimeout(() => {
+        if (!running) return;
+        try {
+          restarting = true;
+          rec.start();
+        } catch (e) {
+          // If Chrome is still transitioning, retry this same recognizer once it settles.
+          clearTimeout(restartTimer);
+          restartTimer = setTimeout(() => {
+            if (!running) return;
+            try { rec.start(); }
+            catch { status('Speech recognition paused. Check microphone permission, then click Start dictation to resume.'); }
+          }, 700);
+        }
+      }, 250);
     };
     return rec;
   }
@@ -161,6 +173,7 @@
   $('start').onclick = () => {
     if (running) return;
     running = true; pending = ''; restarting = false;
+    clearTimeout(restartTimer);
     recognition = createRecognition();
     if (recognition) { try { recognition.start(); } catch (e) { running = false; status('Could not start recognition: ' + e.message); } }
   };
