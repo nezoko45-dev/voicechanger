@@ -71,52 +71,51 @@
     el.dispatchEvent(new Event("change", {bubbles:true}));
   }
   function pauseResumeButton(field) {
-    // Find the actual blue circular control in NaturalReader's top playback bar.
-    // Some versions use a custom div rather than a native <button>.
+    // Target the blue circular Play button BETWEEN the previous/undo and
+    // next/redo arrows in the top toolbar. Do not click the blue profile icon.
     const nodes = [...document.querySelectorAll('button,[role="button"],[tabindex], [onclick], body *')]
       .filter(visible)
       .filter(el => !el.closest("#nr-voice-dictator"));
     let best = null, bestScore = -999;
     for (const el of nodes) {
       const r = el.getBoundingClientRect();
-      if (r.width < 24 || r.height < 24 || r.width > 100 || r.height > 100 || r.top > 125) continue;
+      if (r.width < 28 || r.height < 28 || r.width > 80 || r.height > 80 || r.top > 85) continue;
+      if (r.left < 100 || r.left > 320) continue;
       const ratio = r.width / r.height;
-      if (ratio < 0.72 || ratio > 1.35) continue;
+      if (ratio < 0.78 || ratio > 1.25) continue;
 
       const bg = getComputedStyle(el).backgroundColor;
       const m = bg.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
       const isBlue = !!(m && +m[3] > 100 && +m[3] > +m[1] * 1.15 && +m[3] > +m[2] * 1.05);
+      if (!isBlue) continue;
+
       const label = [
         el.innerText, el.getAttribute("aria-label"), el.getAttribute("title"),
         el.getAttribute("data-testid")
       ].join(" ").toLowerCase().replace(/\s+/g, " ").trim();
       if (/settings|voice|speed|download|upload|login|sign in|menu|close|clear|volume|undo|redo/.test(label)) continue;
 
-      let score = isBlue ? 30 : 0;
+      let score = 30;
       if (/\bplay\b|resume|start reading/.test(label)) score += 20;
-      if (/\bpause\b/.test(label)) score += 4;
-      if (r.top < 75) score += 5;
-      // The screenshot's play control is between Undo and Redo, around the
-      // central part of the top toolbar, not the leftmost avatar button.
-      if (r.left > 90 && r.left < Math.min(window.innerWidth - 80, 360)) score += 5;
       const svg = el.querySelector("svg");
-      if (svg && !label) score += 2;
-
-      if (isBlue && score > bestScore) { best = el; bestScore = score; }
+      if (svg && !label) score += 3;
+      // Prefer the middle transport control; the avatar/profile circle is left
+      // of the previous arrow, while the Play button is between both arrows.
+      const centerX = r.left + r.width / 2;
+      score += 10 - Math.abs(centerX - 200) / 12;
+      if (r.top < 70) score += 5;
+      if (score > bestScore) { best = el; bestScore = score; }
     }
     if (!best) return null;
 
-    // If the blue circle is an icon inside a clickable parent, click the
-    // nearest button-like ancestor, not just the decorative icon.
-    let clickable = best;
+    // Return the closest real clickable ancestor in case the colored circle is
+    // a child icon inside a framework-controlled button.
     for (let p = best; p && p !== document.body; p = p.parentElement) {
-      if (p.matches('button,[role="button"],[tabindex],[onclick]')) {
-        clickable = p;
-        break;
-      }
-      if (p !== best && p.getBoundingClientRect().width > 180) break;
+      if (p.matches('button,[role="button"],[tabindex],[onclick]')) return p;
+      const r = p.getBoundingClientRect();
+      if (r.width > 100 || r.height > 100) break;
     }
-    return clickable;
+    return best;
   }
 
   function activateButton(button) {
