@@ -74,13 +74,45 @@
     }
     return null;
   }
-  function findGenerateButton() {
+  function findGenerateButton(includeDisabled = false) {
     const candidates = [...document.querySelectorAll('button,[role="button"],input[type="button"],input[type="submit"]')];
     return candidates.find(el => {
-      if (!visible(el) || el.disabled || el.closest("#nr-voice-dictator")) return false;
-      const label = [el.innerText, el.textContent, el.value, el.getAttribute("aria-label"), el.getAttribute("title")].join(" ").trim().toLowerCase();
-      return /^generate(?:\\s+(?:speech|audio))?$/.test(label) || label === "generate";
+      if (!visible(el) || (!includeDisabled && (el.disabled || el.getAttribute("aria-disabled") === "true")) || el.closest("#nr-voice-dictator")) return false;
+      const label = [el.innerText, el.textContent, el.value, el.getAttribute("aria-label"), el.getAttribute("title")].join(" ").replace(/\\s+/g, " ").trim().toLowerCase();
+      const generateLabel = /\\bgenerate\\b/.test(label) && label.length < 100;
+      const generateClass = /bg-black/.test(String(el.className)) && /text-white/.test(String(el.className)) && /\\b(generate|speech|audio)\\b/.test(label);
+      return generateLabel || generateClass;
     }) || null;
+  }
+  function clickLuvvoiceGenerateWhenReady() {
+    const deadline = Date.now() + 30000;
+    let timer = null;
+    let observer = null;
+    const cleanup = () => {
+      if (timer) clearInterval(timer);
+      if (observer) observer.disconnect();
+    };
+    const attempt = () => {
+      if (!isLuvvoice()) { cleanup(); return; }
+      const button = findGenerateButton(false);
+      if (button) {
+        cleanup();
+        activateButton(button);
+        status("Clicked Luvvoice Generate.");
+        state.finalText = "";
+        return;
+      }
+      if (Date.now() >= deadline) {
+        cleanup();
+        status("Luvvoice Generate is still disabled or wasn't found. Finish entering text and check that the Generate button is enabled.");
+      }
+    };
+    // Some versions of Luvvoice render the button disabled until the editor updates.
+    // Watch React's DOM updates and retry without attempting to click a disabled button.
+    observer = new MutationObserver(attempt);
+    observer.observe(document.documentElement, {subtree:true, childList:true, attributes:true, attributeFilter:["disabled","aria-disabled","class"]});
+    timer = setInterval(attempt, 350);
+    attempt();
   }
   function writeField(el, value) {
     el.focus();
@@ -218,11 +250,7 @@
       const spokenText = fieldText(field).trim();
       if (!spokenText) return;
       if (isLuvvoice()) {
-        const generate = findGenerateButton();
-        if (!generate) { status("Luvvoice Generate button wasn't found. Make sure the Text to Speech tab is open."); return; }
-        activateButton(generate);
-        status("Clicked Luvvoice Generate.");
-        state.finalText = "";
+        clickLuvvoiceGenerateWhenReady();
         return;
       }
       const button = pauseResumeButton(field);
