@@ -71,55 +71,52 @@
     el.dispatchEvent(new Event("change", {bubbles:true}));
   }
   function pauseResumeButton(field) {
-    const candidates = [...document.querySelectorAll(
-      'button,[role="button"],[tabindex="0"],input[type="button"],input[type="submit"]'
-    )].filter(visible).filter(el => !el.closest("#nr-voice-dictator"));
+    // Find the actual blue circular control in NaturalReader's top playback bar.
+    // Some versions use a custom div rather than a native <button>.
+    const nodes = [...document.querySelectorAll('button,[role="button"],[tabindex], [onclick], body *')]
+      .filter(visible)
+      .filter(el => !el.closest("#nr-voice-dictator"));
     let best = null, bestScore = -999;
-    for (const el of candidates) {
-      if (el.disabled || el.getAttribute("aria-disabled") === "true") continue;
+    for (const el of nodes) {
       const r = el.getBoundingClientRect();
-      if (r.width < 22 || r.height < 22 || r.width > 180 || r.height > 100) continue;
+      if (r.width < 24 || r.height < 24 || r.width > 100 || r.height > 100 || r.top > 125) continue;
+      const ratio = r.width / r.height;
+      if (ratio < 0.72 || ratio > 1.35) continue;
+
+      const bg = getComputedStyle(el).backgroundColor;
+      const m = bg.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+      const isBlue = !!(m && +m[3] > 100 && +m[3] > +m[1] * 1.15 && +m[3] > +m[2] * 1.05);
       const label = [
         el.innerText, el.getAttribute("aria-label"), el.getAttribute("title"),
         el.getAttribute("data-testid")
       ].join(" ").toLowerCase().replace(/\s+/g, " ").trim();
       if (/settings|voice|speed|download|upload|login|sign in|menu|close|clear|volume|undo|redo/.test(label)) continue;
 
-      let score = 0;
-      // NaturalReader's control in the supplied screenshot is a circular blue
-      // button with a play-triangle icon in the top playback toolbar.
-      const styles = [el, ...[...el.querySelectorAll("*")].slice(0, 12)];
-      let blue = false;
-      for (const node of styles) {
-        const bg = getComputedStyle(node).backgroundColor;
-        const m = bg.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
-        if (m && +m[3] > 100 && +m[3] > +m[1] * 1.15 && +m[3] > +m[2] * 1.05) blue = true;
-      }
-      if (blue) score += 20;
-      if (/\bplay\b|resume|start reading/.test(label)) score += 18;
+      let score = isBlue ? 30 : 0;
+      if (/\bplay\b|resume|start reading/.test(label)) score += 20;
       if (/\bpause\b/.test(label)) score += 4;
+      if (r.top < 75) score += 5;
+      // The screenshot's play control is between Undo and Redo, around the
+      // central part of the top toolbar, not the leftmost avatar button.
+      if (r.left > 90 && r.left < Math.min(window.innerWidth - 80, 360)) score += 5;
       const svg = el.querySelector("svg");
-      if (svg) {
-        const svgText = [
-          svg.getAttribute("aria-label"), svg.getAttribute("class"),
-          ...[...svg.querySelectorAll("path,polygon")].slice(0, 4).map(n => n.getAttribute("d"))
-        ].join(" ").toLowerCase();
-        if (/play|triangle/.test(svgText)) score += 8;
-        // Common play glyph path has a triangular silhouette; treat unlabeled
-        // SVG controls in the top toolbar as possible playback controls.
-        if (!label && r.top < 130 && r.left > 90 && r.left < window.innerWidth - 90) score += 5;
-      }
-      const radius = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
-      if (r.width / r.height > 0.75 && r.width / r.height < 1.3 && (radius > 12 || r.width <= 64)) score += 3;
-      if (r.top < 100) score += 5;
-      if (field) {
-        const fr = field.getBoundingClientRect();
-        const dy = Math.abs((r.top + r.height/2) - (fr.top + fr.height/2));
-        if (dy < 260) score += 2;
-      }
-      if (score > bestScore) { best = el; bestScore = score; }
+      if (svg && !label) score += 2;
+
+      if (isBlue && score > bestScore) { best = el; bestScore = score; }
     }
-    return bestScore >= 18 ? best : null;
+    if (!best) return null;
+
+    // If the blue circle is an icon inside a clickable parent, click the
+    // nearest button-like ancestor, not just the decorative icon.
+    let clickable = best;
+    for (let p = best; p && p !== document.body; p = p.parentElement) {
+      if (p.matches('button,[role="button"],[tabindex],[onclick]')) {
+        clickable = p;
+        break;
+      }
+      if (p !== best && p.getBoundingClientRect().width > 180) break;
+    }
+    return clickable;
   }
 
   function activateButton(button) {
@@ -144,7 +141,7 @@
       const button = pauseResumeButton(field);
       if (!button) { status("Text entered, but I couldn't confidently find the blue playback button. Click it manually; please keep the editor and button visible."); return; }
       activateButton(button);
-      status("Dictation entered; clicked the blue Play control.");
+      status("Click event sent to the blue toolbar control. Check whether playback actually starts.");
     }, 1400);
   }
   function start() {
