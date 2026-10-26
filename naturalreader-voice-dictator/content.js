@@ -3,7 +3,7 @@
   window.__naturalReaderDictatorLoaded = true;
 
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const state = { recognition: null, listening: false, suppressRestart: false, userStopped: false, restartTimer: null, finalText: "", timer: null, lastSent: "", autoPlay: true, clearOnStart: true, clearAfterPlayback: true, playbackPending: false };
+  const state = { recognition: null, listening: false, suppressRestart: false, userStopped: false, restartTimer: null, finalText: "", sessionBase: "", timer: null, lastSent: "", autoPlay: true, clearOnStart: true, clearAfterPlayback: true, playbackPending: false };
   const $ = (id) => document.getElementById(id);
 
   const panel = document.createElement("section");
@@ -238,6 +238,7 @@
       state.lastSent = "";
       if (state.clearOnStart) writeField(field, "");
     }
+    state.sessionBase = options.keepSession ? state.finalText : "";
     const rec = new SpeechRecognition();
     rec.lang = navigator.language || "en-US";
     rec.continuous = true;
@@ -262,7 +263,8 @@
         if (event.results[i].isFinal) finalParts.push(phrase);
         else interimParts.push(phrase);
       }
-      state.finalText = finalParts.join(" ").replace(/\s+/g, " ").trim();
+      const sessionFinal = finalParts.join(" ").replace(/\s+/g, " ").trim();
+      state.finalText = [state.sessionBase, sessionFinal].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
       const interim = interimParts.join(" ").replace(/\s+/g, " ").trim();
       const full = [state.finalText, interim].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
       if (full) {
