@@ -3,14 +3,14 @@
   window.__naturalReaderDictatorLoaded = true;
 
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const state = { recognition: null, listening: false, suppressRestart: false, userStopped: false, restartTimer: null, finalText: "", sessionBase: "", sessionFinalText: "", timer: null, lastSent: "", autoPlay: true, clearOnStart: true, clearAfterPlayback: true, playbackPending: false };
+  const state = { recognition: null, listening: false, suppressRestart: false, userStopped: false, restartTimer: null, finalText: "", sessionBase: "", sessionFinalText: "", timer: null, lastSent: "", autoPlay: true, clearOnStart: true, clearAfterPlayback: true, playbackPending: false, localWorker: null, localStream: null, localContext: null, localProcessor: null, localSamples: [], localBusy: false, localReady: false, localTranscript: "" };
   const $ = (id) => document.getElementById(id);
 
   const panel = document.createElement("section");
   panel.id = "nr-voice-dictator";
   panel.innerHTML = `
     <div class="nrvd-head"><strong>Voice Dictator</strong><button id="nrvd-hide" title="Hide panel">−</button></div>
-    <div class="nrvd-row"><button id="nrvd-start">🎙 Start dictation</button><button id="nrvd-stop" disabled>Stop</button></div>
+    <div class="nrvd-row"><button id="nrvd-start">🎙 Start dictation</button><button id="nrvd-stop" disabled>Stop</button></div>\n    <label><input id="nrvd-local" type="checkbox" checked> Local Whisper (WebGPU)</label>
     <label><input id="nrvd-clear" type="checkbox" checked> Clear text field when starting</label>
     <label><input id="nrvd-play" type="checkbox" checked> Auto-press Play after a pause</label>
     <label><input id="nrvd-clear-after" type="checkbox" checked> Clear text after playback finishes</label>
@@ -225,7 +225,119 @@
       }
     }, 6000);
   }
-  function start(options = {}) {
+  function downsampleTo16k(input, inputRate) {
+    if (inputRate === 16000) return input;
+    const ratio = inputRate / 16000;
+    const length = Math.floor(input.length / ratio);
+    const output = new Float32Array(length);
+    for (let i = 0; i < length; i++) {
+      const start = Math.floor(i * ratio), end = Math.min(Math.floor((i + 1) * ratio), input.length);
+      let sum = 0, count = 0;
+      for (let j = start; j < end; j++) { sum += input[j]; count++; }
+      output[i] = count ? sum / count : 0;
+    }
+    return output;
+  }
+  async function startLocal(options = {}) {
+    if (state.listening || state.suppressRestart) return;
+    const field = findField();
+    if (!field) { status("Open a TTSReader text editor first, then try again."); return; }
+    state.userStopped = false;
+    state.clearOnStart = $("nrvd-clear").checked;
+    state.autoPlay = $("nrvd-play").checked;
+    state.clearAfterPlayback = $("nrvd-clear-after").checked;
+    if (!options.keepSession) {
+      state.finalText = "";
+      state.lastSent = "";
+      state.localTranscript = "";
+      if (state.clearOnStart) writeField(field, "");
+    }
+    try {
+      if (!state.localWorker) {
+        state.localWorker = new Worker(chrome.runtime.getURL("whisper-worker.bundle.js"), { type: "module" });
+        state.localWorker.onmessage = async (event) => {
+          const msg = event.data || {};
+          if (msg.type === "status") status(msg.message || "Loading local Whisper…");
+          if (msg.type === "error") { state.localBusy = false; status("Local Whisper error: " + msg.message); }
+          if (msg.type === "ready") {
+            state.localReady = true;
+            status("Whisper ready (" + msg.device + "). Starting microphone…");
+            try {
+              state.localStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+              state.localContext = new AudioContext();
+              const source = state.localContext.createMediaStreamSource(state.localStream);
+              state.localProcessor = state.localContext.createScriptProcessor(4096, 1, 1);
+              state.localSamples = [];
+              state.localProcessor.onaudioprocess = (e) => {
+                if (!state.listening || state.localBusy) return;
+                const data = e.inputBuffer.getChannelData(0);
+                state.localSamples.push(new Float32Array(data));
+                const total = state.localSamples.reduce((n, a) => n + a.length, 0);
+                if (total < state.localContext.sampleRate * 6) return;
+                state.localBusy = true;
+                const merged = new Float32Array(total);
+                let offset = 0;
+                for (const part of state.localSamples) { merged.set(part, offset); offset += part.length; }
+                state.localSamples = [];
+                const audio = downsampleTo16k(merged, state.localContext.sampleRate);
+                state.localWorker.postMessage({ type: "transcribe", audio, samplingRate: 16000 }, [audio.buffer]);
+              };
+              source.connect(state.localProcessor);
+              state.localProcessor.connect(state.localContext.destination);
+              state.listening = true;
+              $("nrvd-start").disabled = true;
+              $("nrvd-stop").disabled = false;
+              status("Listening with local Whisper on " + msg.device + "…");
+            } catch (err) {
+              state.listening = false;
+              status("Couldn't access microphone: " + (err.message || err));
+            }
+          }
+          if (msg.type === "transcript") {
+            state.localBusy = false;
+            if (!state.listening || !msg.text) return;
+            const chunk = msg.text.trim();
+            if (chunk) {
+              state.localTranscript = [state.localTranscript, chunk].filter(Boolean).join(" ").replace(/\\s+/g, " ").trim();
+              state.finalText = state.localTranscript;
+              insertTranscript(state.localTranscript);
+              status("Local Whisper: " + chunk.slice(-100));
+              schedulePlay();
+            }
+          }
+        };
+        state.localWorker.onerror = (e) => status("Whisper worker failed to load: " + (e.message || "check that the packaged runtime build finished."));
+        state.localWorker.postMessage({ type: "load", model: "onnx-community/whisper-tiny.en" });
+        $("nrvd-start").disabled = true;
+        $("nrvd-stop").disabled = false;
+        status("Loading Whisper model for local WebGPU transcription. First run needs internet to cache model files…");
+      } else if (state.localReady) {
+        // Reuse the already-loaded model without re-downloading it.
+        state.localWorker.onmessage({ data: { type: "ready", device: "webgpu" } });
+      }
+    } catch (err) {
+      status("Local Whisper couldn't start: " + (err.message || err));
+      $("nrvd-start").disabled = false;
+      $("nrvd-stop").disabled = true;
+    }
+  }
+  function stopLocal() {
+    state.userStopped = true;
+    state.listening = false;
+    state.localBusy = false;
+    clearTimeout(state.timer);
+    try { state.localProcessor?.disconnect(); } catch {}
+    try { state.localContext?.close(); } catch {}
+    state.localStream?.getTracks().forEach(track => track.stop());
+    state.localProcessor = null;
+    state.localContext = null;
+    state.localStream = null;
+    $("nrvd-start").disabled = false;
+    $("nrvd-stop").disabled = true;
+    status("Local Whisper dictation stopped.");
+  }
+
+  function start(options = {}) {\n    if ($("nrvd-local")?.checked) { startLocal(options); return; }
     if (!SpeechRecognition) { status("Speech recognition isn't available here. Try the current version of Chrome on TTSReader Player."); return; }
     if (state.listening || state.suppressRestart) return;
     state.userStopped = false;
@@ -336,7 +448,7 @@
   }
 
 
-  $("nrvd-start").addEventListener("click", start);
+  $("nrvd-start").addEventListener("click", start);\n  $("nrvd-local").addEventListener("change", e => { if (state.listening) stop(); status(e.target.checked ? "Local Whisper selected. First run loads the model into browser cache." : "Chrome speech recognition selected."); });
   $("nrvd-stop").addEventListener("click", stop);
   $("nrvd-play").addEventListener("change", e => state.autoPlay = e.target.checked);
   $("nrvd-clear-after").addEventListener("change", e => state.clearAfterPlayback = e.target.checked);
