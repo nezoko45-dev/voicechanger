@@ -63,11 +63,7 @@
   }
 
   function appendSentence(sentence) {
-    const box = $('transcript');
     const id = ++sentenceId;
-    const separator = box.value && !/\\s$/.test(box.value) ? ' ' : '';
-    box.value += separator + sentence + ' ';
-    box.scrollTop = box.scrollHeight;
     speakQueued(sentence, id);
     status('Listening continuously · Queued for read-aloud: ' + sentence);
   }
@@ -101,6 +97,10 @@
   }
 
   function handleText(text) {
+    const box = $('transcript');
+    const separator = box.value && !/\\s$/.test(box.value) ? ' ' : '';
+    box.value += separator + text;
+    box.scrollTop = box.scrollHeight;
     pending = (pending + ' ' + text).replace(/\s+/g, ' ').trim();
     // Send finished sentences to the output queue without waiting for audio playback.
     const pattern = /(.+?[.!?]+(?:["'”’)]*)?)(?=\s|$)/g;
