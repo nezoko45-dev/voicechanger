@@ -3,7 +3,7 @@
   window.__naturalReaderDictatorLoaded = true;
 
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const state = { recognition: null, listening: false, finalText: "", timer: null, lastSent: "", autoPlay: true, clearOnStart: true };
+  const state = { recognition: null, listening: false, finalText: "", timer: null, lastSent: "", autoPlay: true, clearOnStart: true, clearAfterPlayback: true };
   const $ = (id) => document.getElementById(id);
 
   const panel = document.createElement("section");
