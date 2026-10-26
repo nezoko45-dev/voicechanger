@@ -6,19 +6,18 @@ env.allowRemoteModels = true;
 env.allowLocalModels = false;
 env.useBrowserCache = true;
 
-// Use the extension-packaged ONNX Runtime WebAssembly files for the fallback.
-if (typeof chrome !== "undefined" && chrome.runtime?.getURL) {
-  env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL("assets/");
-}
+// The worker may be launched from a Blob URL, where chrome.runtime is unavailable.
+// The content script passes the packaged WASM directory in the load message.
 
 let transcriber = null;
 let loadingPromise = null;
 let actualDevice = "webgpu";
 
 self.onmessage = async (event) => {
-  const { type, audio, samplingRate, model } = event.data || {};
+  const { type, audio, samplingRate, model, wasmPaths } = event.data || {};
   try {
     if (type === "load") {
+      if (wasmPaths) env.backends.onnx.wasm.wasmPaths = wasmPaths;
       if (transcriber) {
         self.postMessage({ type: "ready", device: actualDevice });
         return;
