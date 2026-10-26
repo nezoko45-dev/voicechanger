@@ -10,7 +10,7 @@
   panel.id = "nr-voice-dictator";
   panel.innerHTML = `
     <div class="nrvd-head"><strong>Voice Dictator</strong><button id="nrvd-hide" title="Hide panel">−</button></div>
-    <div class="nrvd-row"><button id="nrvd-start">🎙 Start dictation</button><button id="nrvd-stop" disabled>Stop</button></div>
+    <div class="nrvd-row"><button id="nrvd-start" type="button">🎙 Start dictation</button><button id="nrvd-stop" disabled>Stop</button></div>
     <label><input id="nrvd-local" type="checkbox" checked> Local Whisper (WebGPU)</label>
     <label><input id="nrvd-clear" type="checkbox" checked> Clear text field when starting</label>
     <label><input id="nrvd-play" type="checkbox" checked> Auto-press Play after a pause</label>
@@ -21,7 +21,7 @@
   const style = document.createElement("style");
   style.textContent = `
     #nr-voice-dictator{position:fixed;z-index:2147483647;right:18px;bottom:18px;width:280px;background:#fff;color:#172033;border:1px solid #cbd5e1;border-radius:12px;box-shadow:0 8px 30px #0003;padding:12px;font:13px/1.4 system-ui,sans-serif}
-    #nr-voice-dictator *{box-sizing:border-box} #nr-voice-dictator .nrvd-head,#nr-voice-dictator .nrvd-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+    #nr-voice-dictator{pointer-events:auto;isolation:isolate} #nr-voice-dictator button{pointer-events:auto;touch-action:manipulation} #nr-voice-dictator *{box-sizing:border-box} #nr-voice-dictator .nrvd-head,#nr-voice-dictator .nrvd-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
     #nr-voice-dictator button{cursor:pointer;border:0;border-radius:7px;padding:8px 10px;background:#2563eb;color:white;font-weight:600}
     #nr-voice-dictator button:disabled{opacity:.45;cursor:default} #nr-voice-dictator #nrvd-hide{background:#e2e8f0;color:#172033;padding:2px 8px}
     #nr-voice-dictator label{display:block;margin:7px 0;color:#334155} #nr-voice-dictator label input{vertical-align:middle}
@@ -453,7 +453,20 @@
   }
 
 
-  $("nrvd-start").addEventListener("click", start);
+  $("nrvd-start").addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (state.listening || state.suppressRestart) return;
+    status("Starting dictation…");
+    try {
+      start();
+    } catch (error) {
+      state.listening = false;
+      $("nrvd-start").disabled = false;
+      $("nrvd-stop").disabled = true;
+      status("Couldn't start dictation: " + (error?.message || String(error)));
+    }
+  }, true);
   $("nrvd-local").addEventListener("change", e => { if (state.localStream || state.localContext) stopLocal(); else if (state.listening) stop(); status(e.target.checked ? "Local Whisper selected. First run loads the model into browser cache." : "Chrome speech recognition selected."); });
   $("nrvd-stop").addEventListener("click", stop);
   $("nrvd-play").addEventListener("change", e => state.autoPlay = e.target.checked);
