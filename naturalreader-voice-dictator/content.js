@@ -251,21 +251,26 @@
     };
     rec.onresult = (event) => {
       if (state.suppressRestart || state.playbackPending) return;
-      let interim = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const phrase = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          const clean = phrase.trim();
-          if (clean) state.finalText += (state.finalText && !/\s$/.test(state.finalText) ? " " : "") + clean;
-        } else interim += phrase;
+      // Chrome's result list contains the complete set of hypotheses for this session.
+      // Rebuild the transcript from every result each time; using only resultIndex can
+      // accidentally drop earlier words when Chrome revises a partial hypothesis.
+      let finalParts = [];
+      let interimParts = [];
+      for (let i = 0; i < event.results.length; i++) {
+        const phrase = (event.results[i][0]?.transcript || "").trim();
+        if (!phrase) continue;
+        if (event.results[i].isFinal) finalParts.push(phrase);
+        else interimParts.push(phrase);
       }
-      const full = (state.finalText + (interim ? " " + interim : "")).trim();
+      state.finalText = finalParts.join(" ").replace(/\s+/g, " ").trim();
+      const interim = interimParts.join(" ").replace(/\s+/g, " ").trim();
+      const full = [state.finalText, interim].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
       if (full) {
         const target = insertTranscript(full);
         status("Hearing: " + full.slice(-110));
-        // Keep pushing the auto-play deadline forward while interim words are still arriving,
-        // so playback never interrupts a sentence that is actively being spoken.
-        if (state.finalText.trim()) schedulePlay();
+        // Reset the quiet-period timer whenever Chrome updates either final or interim text.
+        // This keeps the complete accumulated sentence in the editor until speech pauses.
+        if (full) schedulePlay();
         if (target) state.lastSent = full;
       }
     };
