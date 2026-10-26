@@ -68,29 +68,26 @@
     return false;
   }
   function findLatestReply() {
+    // Read the user's own messages, not the character's replies.
     const selectors = [
-      '[data-message-author-role="assistant"]','[data-role="assistant"]','[data-author="assistant"]',
-      '[data-testid*="assistant" i]','[class*="assistant-message" i]','[class*="bot-message" i]',
-      '[class*="character-message" i]','[class*="ai-message" i]','[class*="message-content" i]',
-      '[class*="markdown" i]','main article','main [class*="message" i]','main [class*="chat" i]'
+      '[data-message-author-role="user"]','[data-role="user"]','[data-author="user"]',
+      '[data-testid*="user" i]','[class*="user-message" i]','[class*="message-user" i]',
+      '[class*="user-bubble" i]','[class*="from-user" i]','[class*="human-message" i]'
     ];
     const all = [];
     for (const sel of selectors) {
       document.querySelectorAll(sel).forEach(el => {
-        if (!isVisible(el) || looksLikeUser(el) || isPageChrome(el, textFrom(el))) return;
+        if (!isVisible(el) || isPageChrome(el, textFrom(el))) return;
+        const info = [el.getAttribute("data-message-author-role"),el.getAttribute("data-role"),el.getAttribute("data-author"),el.className].join(" ").toLowerCase();
+        if (!/user|human|from-user/.test(info)) return;
         const t = textFrom(el);
         if (t.length < 2 || ignored.has(t.toLowerCase()) || /^(you|you:|assistant:?)$/i.test(t)) return;
         if (t.length > 12000) return;
         all.push({el,t});
       });
     }
-    // Prefer explicit assistant-labelled nodes; otherwise take the most recent substantial
-    // non-user text block in the main chat area, excluding controls and navigation.
-    const explicit = all.filter(x => {
-      const s = [x.el.getAttribute("data-message-author-role"),x.el.getAttribute("data-role"),x.el.getAttribute("data-author"),x.el.className].join(" ").toLowerCase();
-      return /assistant|bot-message|character-message|ai-message/.test(s);
-    });
-    const pool = explicit.length ? explicit : all;
+    // Only use nodes explicitly marked as the user's own message.
+    const pool = all;
     pool.sort((a,b) => {
       if (a.el.contains(b.el)) return -1;
       if (b.el.contains(a.el)) return 1;
@@ -105,30 +102,14 @@
     const best = pool.sort((a,b) => (b.el.getBoundingClientRect().bottom || 0) - (a.el.getBoundingClientRect().bottom || 0))[0];
     if (best?.t) return best.t;
 
-    // Dopple may change its class names; fallback to visible text blocks in the chat area.
-    const root = document.querySelector("main,[role=main]") || document.body;
-    const fallback = [];
-    root.querySelectorAll("div,p,article,[role]").forEach(el => {
-      if (!isVisible(el) || looksLikeUser(el)) return;
-      const t = textFrom(el);
-      if (isPageChrome(el, t) || t.length < 12 || t.length > 3500 || ignored.has(t.toLowerCase())) return;
-      if (/^(send|message|type a message|regenerate|copy|share|retry)$/i.test(t)) return;
-      // Prefer compact message-sized elements, not page-wide containers.
-      const r = el.getBoundingClientRect();
-      if (r.width > window.innerWidth * 0.92 || r.height > window.innerHeight * 0.8) return;
-      const hasLongChild = [...el.children].some(child => clean(child.innerText || child.textContent).length > 80);
-      if (hasLongChild) return;
-      fallback.push({el,t,bottom:r.bottom});
-    });
-    fallback.sort((a,b) => b.bottom - a.bottom);
-    return fallback[0]?.t || "";
+    return "";
   }
-  function readLatest() { const t = findLatestReply(); if (!t) { setStatus("Couldn't identify a reply. Select its text and use Read selected text."); return; } speak(t); }
+  function readLatest() { const t = findLatestReply(); if (!t) { setStatus("Couldn't identify your latest message. Send a message first, then try Read latest."); return; } speak(t); }
   function buildPanel() {
     if ($("#dvc-panel")) return;
     const panel = document.createElement("section"); panel.id = "dvc-panel";
     Object.assign(panel.style,{position:"fixed",right:"14px",bottom:"14px",zIndex:"2147483647",width:"250px",padding:"12px",borderRadius:"14px",background:"#171827",color:"#f8fafc",font:"13px system-ui,sans-serif",boxShadow:"0 8px 30px #0008"});
-    panel.innerHTML = '<div style="font-weight:750;font-size:14px;margin-bottom:8px">Dopple Voice Caption</div><div style="display:flex;gap:6px"><button id="dvc-read">Read latest</button><button id="dvc-test">Test voice</button></div><label style="display:flex;align-items:center;gap:7px;margin-top:9px"><input id="dvc-auto" type="checkbox" checked> Auto-read new replies</label><label style="display:block;margin-top:8px">Voice<select id="dvc-voice" style="display:block;width:100%;margin-top:4px;padding:6px;border-radius:7px"></select></label><label style="display:block;margin-top:8px">Test caption text<input id="dvc-custom" value="Hi! I am ready to read your Dopple replies aloud." style="box-sizing:border-box;width:100%;margin-top:4px;padding:6px;border-radius:7px"></label><div style="display:flex;gap:6px;margin-top:8px"><button id="dvc-stop">Stop</button><button id="dvc-hide">Hide captions</button></div><div id="dvc-status" style="margin-top:8px;color:#cbd5e1;line-height:1.35">Ready. Click Read latest to test.</div>';
+    panel.innerHTML = '<div style="font-weight:750;font-size:14px;margin-bottom:8px">Dopple Voice Caption</div><div style="display:flex;gap:6px"><button id="dvc-read">Read latest</button><button id="dvc-test">Test voice</button></div><label style="display:flex;align-items:center;gap:7px;margin-top:9px"><input id="dvc-auto" type="checkbox" checked> Auto-read my messages</label><label style="display:block;margin-top:8px">Voice<select id="dvc-voice" style="display:block;width:100%;margin-top:4px;padding:6px;border-radius:7px"></select></label><label style="display:block;margin-top:8px">Test caption text<input id="dvc-custom" value="Hi! I am ready to read your Dopple replies aloud." style="box-sizing:border-box;width:100%;margin-top:4px;padding:6px;border-radius:7px"></label><div style="display:flex;gap:6px;margin-top:8px"><button id="dvc-stop">Stop</button><button id="dvc-hide">Hide captions</button></div><div id="dvc-status" style="margin-top:8px;color:#cbd5e1;line-height:1.35">Ready. Click Read latest to test.</div>';
     document.documentElement.appendChild(panel);
     panel.querySelectorAll("button").forEach(b=>Object.assign(b.style,{flex:"1",border:"0",borderRadius:"7px",padding:"7px 5px",background:"#4f46e5",color:"#fff",fontWeight:"650",cursor:"pointer"}));
     const select = $("#dvc-voice");
@@ -187,7 +168,7 @@
     buildPanel();
     startObserver();
     speechSynthesis.getVoices();
-    setStatus("Ready. Click Read latest or enable Auto-read.");
+    setStatus("Ready. Auto-read will read your messages.");
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded",init,{once:true}); else init();
 })();
