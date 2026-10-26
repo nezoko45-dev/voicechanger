@@ -71,38 +71,62 @@
     el.dispatchEvent(new Event("change", {bubbles:true}));
   }
   function pauseResumeButton(field) {
-    const fr = field?.getBoundingClientRect();
-    const buttons = [...document.querySelectorAll('button,[role="button"],input[type="button"],input[type="submit"]')]
-      .filter(visible)
-      .filter(el => !el.closest("#nr-voice-dictator"));
+    if (!field) return null;
+    const fr = field.getBoundingClientRect();
+    // NaturalReader's playback control can be an icon-only button, so rank
+    // visible blue controls by their position near/above the text editor.
+    const candidates = [...document.querySelectorAll(
+      'button,[role="button"],[tabindex="0"],input[type="button"],input[type="submit"]'
+    )].filter(visible).filter(el => !el.closest("#nr-voice-dictator"));
     let best = null, bestScore = -999;
-    for (const el of buttons) {
+    for (const el of candidates) {
       if (el.disabled || el.getAttribute("aria-disabled") === "true") continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < 18 || r.height < 18 || r.width > 220 || r.height > 120) continue;
       const label = [
         el.innerText, el.getAttribute("aria-label"), el.getAttribute("title"),
-        el.getAttribute("data-testid"), el.getAttribute("data-state")
+        el.getAttribute("data-testid")
       ].join(" ").toLowerCase().replace(/\s+/g, " ").trim();
-      if (/stop|settings|voice|speed|download|upload|login|sign in|menu|close|clear/.test(label)) continue;
+      if (/settings|voice|speed|download|upload|login|sign in|menu|close|clear|volume/.test(label)) continue;
 
-      // Prefer the dedicated Pause/Resume toggle. If NaturalReader changes the
-      // accessible label according to playback state, prefer Resume over Pause
-      // so we don't accidentally stop audio that's already playing.
-      let score = 0;
-      if (/pause\s*[/|&-]\s*resume|resume\s*[/|&-]\s*pause|play\s*[/|&-]\s*pause/.test(label)) score += 40;
-      else if (/\bresume\b/.test(label)) score += 30;
-      else if (/\bplay\b|start reading|listen|read aloud/.test(label)) score += 18;
-      else if (/\bpause\b/.test(label)) score += 4;
-      else if (!label && el.querySelector("svg")) score += 1;
-
-      const r = el.getBoundingClientRect();
-      if (fr) {
-        const dy = Math.abs((r.top + r.height / 2) - (fr.top + fr.height / 2));
-        if (dy < 260) score += 5 - dy / 70;
-        if (r.left < fr.right + 400 && r.right > fr.left - 100) score += 2;
+      const css = getComputedStyle(el);
+      const bg = css.backgroundColor;
+      const m = bg.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+      let blue = 0;
+      if (m) {
+        const red = +m[1], green = +m[2], b = +m[3];
+        if (b > 100 && b > red * 1.15 && b > green * 1.05) blue = 14;
       }
+      // Also inspect the button itself when the blue fill is on a child wrapper.
+      for (const child of [...el.querySelectorAll("*")].slice(0, 8)) {
+        const cbg = getComputedStyle(child).backgroundColor;
+        const cm = cbg.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+        if (cm && +cm[3] > 100 && +cm[3] > +cm[1] * 1.15 && +cm[3] > +cm[2] * 1.05) blue = Math.max(blue, 10);
+      }
+
+      let score = blue;
+      if (/pause|resume|play|listen|read aloud|start reading/.test(label)) score += 5;
+      // The reported control sits above the text area; nearby controls score highest.
+      const horizontalOverlap = Math.max(0, Math.min(r.right, fr.right + 260) - Math.max(r.left, fr.left - 80));
+      if (horizontalOverlap > 0) score += 4;
+      const verticalGap = r.bottom <= fr.top ? fr.top - r.bottom :
+        (r.top >= fr.bottom ? r.top - fr.bottom : 0);
+      if (verticalGap < 180) score += 5 - verticalGap / 40;
+      if (r.bottom <= fr.top + 20) score += 5;
       if (score > bestScore) { best = el; bestScore = score; }
     }
-    return bestScore >= 10 ? best : null;
+    // Require strong visual evidence of the blue playback control; don't claim success
+    // merely because an arbitrary nearby button was clicked.
+    return bestScore >= 16 ? best : null;
+  }
+
+  function activateButton(button) {
+    if (!button) return false;
+    button.scrollIntoView({ block: "nearest", inline: "nearest" });
+    button.focus({ preventScroll: true });
+    // Native click is the reliable path for React-backed controls.
+    button.click();
+    return true;
   }
   function insertTranscript(text) {
     const field = findField();
@@ -117,9 +141,9 @@
       const field = findField();
       if (!field) { status("Text entered, but the text field wasn't found for Play."); return; }
       const button = pauseResumeButton(field);
-      if (!button) { status("Text entered. couldn't identify NaturalReader's Pause/Resume control—use it manually."); return; }
-      button.click();
-      status("Dictation entered and Pause/Resume control clicked.");
+      if (!button) { status("Text entered, but I couldn't confidently find the blue playback button. Click it manually; please keep the editor and button visible."); return; }
+      activateButton(button);
+      status("Dictation entered; attempted to activate the blue playback control.");
     }, 1400);
   }
   function start() {
