@@ -3,7 +3,7 @@
   window.__naturalReaderDictatorLoaded = true;
 
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const state = { recognition: null, listening: false, suppressRestart: false, userStopped: false, restartTimer: null, finalText: "", sessionBase: "", timer: null, lastSent: "", autoPlay: true, clearOnStart: true, clearAfterPlayback: true, playbackPending: false };
+  const state = { recognition: null, listening: false, suppressRestart: false, userStopped: false, restartTimer: null, finalText: "", sessionBase: "", sessionFinalText: "", timer: null, lastSent: "", autoPlay: true, clearOnStart: true, clearAfterPlayback: true, playbackPending: false };
   const $ = (id) => document.getElementById(id);
 
   const panel = document.createElement("section");
@@ -239,6 +239,7 @@
       if (state.clearOnStart) writeField(field, "");
     }
     state.sessionBase = options.keepSession ? state.finalText : "";
+    state.sessionFinalText = "";
     const rec = new SpeechRecognition();
     rec.lang = navigator.language || "en-US";
     rec.continuous = true;
@@ -252,30 +253,36 @@
     };
     rec.onresult = (event) => {
       if (state.suppressRestart || state.playbackPending) return;
-      // Build one complete transcript snapshot from all results Chrome currently exposes.
-      // Only finalized text is committed for playback; interim text is displayed as a preview.
-      const finalParts = [];
+
+      // New strategy: treat Chrome's finalized recognition results as append-only
+      // chunks for this recognition session. Keep interim speech as a temporary
+      // preview so Chrome can revise it without deleting words already finalized.
+      const finalized = [];
       const interimParts = [];
       for (let i = 0; i < event.results.length; i++) {
         const phrase = (event.results[i][0]?.transcript || "").trim();
         if (!phrase) continue;
-        if (event.results[i].isFinal) finalParts.push(phrase);
+        if (event.results[i].isFinal) finalized.push(phrase);
         else interimParts.push(phrase);
       }
-      const sessionFinal = finalParts.join(" ").replace(/\s+/g, " ").trim();
-      const committed = [state.sessionBase, sessionFinal].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
-      const interim = interimParts.join(" ").replace(/\s+/g, " ").trim();
-      const full = [committed, interim].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+
+      // Chrome's result list is cumulative during a session; replace the session
+      // snapshot with its finalized portion, then prepend text from earlier sessions.
+      // This avoids dropping the beginning when resultIndex advances or changes.
+      state.sessionFinalText = finalized.join(" ").replace(/\\s+/g, " ").trim();
+      const committed = [state.sessionBase, state.sessionFinalText]
+        .filter(Boolean).join(" ").replace(/\\s+/g, " ").trim();
+      const interim = interimParts.join(" ").replace(/\\s+/g, " ").trim();
+      const full = [committed, interim].filter(Boolean).join(" ").replace(/\\s+/g, " ").trim();
+
       if (full) {
         insertTranscript(full);
-        status("Capturing sentence: " + full.slice(-110));
-        // Do not play while Chrome is still revising an interim hypothesis.
-        // Auto-play is scheduled only after finalized speech has arrived.
-        if (committed) {
-          state.finalText = committed;
-          schedulePlay();
-        }
+        status("Transcribing full phrase: " + full.slice(-110));
+        state.finalText = committed;
         state.lastSent = full;
+        // Reset the silence timer as speech continues, but only finalized words
+        // are eligible for playback; the preview never becomes the committed text.
+        if (committed) schedulePlay();
       }
     };
     rec.onerror = (event) => {
