@@ -150,7 +150,7 @@
       } else {
         status("Playback finished. Listening for the next phrase…");
       }
-      if (resumeMic && !state.userStopped) start();
+      if (resumeMic && !state.userStopped) setTimeout(() => start(), 450);
     };
     const check = () => {
       checks++;
@@ -165,7 +165,7 @@
         clearTimeout(timeoutTimer);
         state.suppressRestart = false;
         status("Couldn't detect TTSReader playback state. Mic listening will resume; text was left in place.");
-        if (resumeMic && !state.userStopped) start();
+        if (resumeMic && !state.userStopped) setTimeout(() => start(), 450);
       }
     };
     const observer = new MutationObserver(check);
@@ -180,7 +180,7 @@
       if (!finished) {
         state.suppressRestart = false;
         status("Playback completion wasn't detected. Text was left in place; restarting dictation.");
-        if (resumeMic && !state.userStopped) start();
+        if (resumeMic && !state.userStopped) setTimeout(() => start(), 450);
       }
     }, 15 * 60 * 1000);
   }
@@ -199,7 +199,7 @@
       activateButton(button);
       status("Play clicked. Mic dictation is paused while TTSReader speaks.");
       watchPlaybackCompletion(field, spokenText, true);
-    }, 1400);
+    }, 2200);
   }
   function start(options = {}) {
     if (!SpeechRecognition) { status("Speech recognition isn't available here. Try the current version of Chrome on TTSReader Player."); return; }
