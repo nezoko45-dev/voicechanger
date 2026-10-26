@@ -3,7 +3,7 @@
   window.__naturalReaderDictatorLoaded = true;
 
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const state = { recognition: null, listening: false, suppressRestart: false, userStopped: false, restartTimer: null, finalText: "", timer: null, lastSent: "", autoPlay: true, clearOnStart: true, clearAfterPlayback: true };
+  const state = { recognition: null, listening: false, suppressRestart: false, userStopped: false, restartTimer: null, finalText: "", timer: null, lastSent: "", autoPlay: true, clearOnStart: true, clearAfterPlayback: true, playbackPending: false };
   const $ = (id) => document.getElementById(id);
 
   const panel = document.createElement("section");
@@ -117,9 +117,18 @@
     let started = false;
     let finished = false;
     let checks = 0;
+    const reallyVisible = (el) => {
+      if (!el || !el.isConnected) return false;
+      for (let node = el; node && node !== document.documentElement; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (style.display === "none" || style.visibility === "hidden" || node.hidden) return false;
+      }
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
     const readState = () => {
-      const playingOn = [...document.querySelectorAll('[data-ws-show-if-state="isPlayingOn=true"]')].some(visible);
-      const playingOff = [...document.querySelectorAll('[data-ws-show-if-state="isPlayingOn=false"]')].some(visible);
+      const playingOn = [...document.querySelectorAll('[data-ws-show-if-state="isPlayingOn=true"]')].some(reallyVisible);
+      const playingOff = [...document.querySelectorAll('[data-ws-show-if-state="isPlayingOn=false"]')].some(reallyVisible);
       const playButton = document.querySelector("#Play-btn");
       const label = [
         playButton?.getAttribute("aria-label"),
@@ -134,6 +143,7 @@
     const finish = () => {
       if (finished) return;
       finished = true;
+      state.playbackPending = false;
       observer.disconnect();
       clearInterval(pollTimer);
       clearTimeout(timeoutTimer);
@@ -163,6 +173,7 @@
         observer.disconnect();
         clearInterval(pollTimer);
         clearTimeout(timeoutTimer);
+        state.playbackPending = false;
         state.suppressRestart = false;
         status("Couldn't detect TTSReader playback state. Mic listening will resume; text was left in place.");
         if (resumeMic && !state.userStopped) setTimeout(() => start(), 450);
@@ -178,6 +189,7 @@
       observer.disconnect();
       clearInterval(pollTimer);
       if (!finished) {
+        state.playbackPending = false;
         state.suppressRestart = false;
         status("Playback completion wasn't detected. Text was left in place; restarting dictation.");
         if (resumeMic && !state.userStopped) setTimeout(() => start(), 450);
@@ -187,13 +199,15 @@
 
   function schedulePlay() {
     clearTimeout(state.timer);
-    if (!state.autoPlay || !state.finalText.trim()) return;
+    if (!state.autoPlay || !state.finalText.trim() || state.playbackPending || state.suppressRestart) return;
     state.timer = setTimeout(() => {
       const field = findField();
       if (!field) { status("Text entered, but the text editor wasn't found for Play."); return; }
       const button = pauseResumeButton(field);
       if (!button) { status("Text entered, but I couldn't confidently identify TTSReader's Play control. Please click Play manually and share its button label from DevTools so I can target it exactly."); return; }
       const spokenText = fieldText(field).trim();
+      if (!spokenText) return;
+      state.playbackPending = true;
       state.suppressRestart = true;
       if (state.recognition && state.listening) state.recognition.stop();
       activateButton(button);
@@ -226,6 +240,7 @@
       status(options.keepSession ? "Recognition restarted. Keep speaking…" : "Listening… speak naturally.");
     };
     rec.onresult = (event) => {
+      if (state.suppressRestart || state.playbackPending) return;
       let interim = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const phrase = event.results[i][0].transcript;
