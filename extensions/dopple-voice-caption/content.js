@@ -46,9 +46,13 @@
     return r.width > 0 && r.height > 0 && s.display !== "none" && s.visibility !== "hidden";
   }
   function looksLikeUser(el) {
-    const info = [el.getAttribute("data-role"),el.getAttribute("role"),el.getAttribute("data-author"),el.className,el.parentElement?.className].join(" ").toLowerCase();
-    return /user-message|message-user|user-bubble|from-user|author-user|human-message/.test(info) ||
-      el.getAttribute("data-role") === "user" || el.getAttribute("data-author") === "user";
+    let node = el;
+    for (let i = 0; node && i < 5; i++, node = node.parentElement) {
+      const info = [node.getAttribute?.("data-role"),node.getAttribute?.("role"),node.getAttribute?.("data-author"),node.getAttribute?.("aria-label"),typeof node.className === "string" ? node.className : ""].join(" ").toLowerCase();
+      if (/user-message|message-user|user-bubble|from-user|author-user|human-message|user chat bubble/.test(info)) return true;
+      if (node.getAttribute?.("data-role") === "user" || node.getAttribute?.("data-author") === "user") return true;
+    }
+    return false;
   }
   function textFrom(el) {
     const clone = el.cloneNode(true);
@@ -90,7 +94,26 @@
       if (seen.has(item.t)) continue;
       seen.add(item.t);
     }
-    return pool.sort((a,b) => (b.el.getBoundingClientRect().bottom || 0) - (a.el.getBoundingClientRect().bottom || 0))[0]?.t || "";
+    const best = pool.sort((a,b) => (b.el.getBoundingClientRect().bottom || 0) - (a.el.getBoundingClientRect().bottom || 0))[0];
+    if (best?.t) return best.t;
+
+    // Dopple may change its class names; fallback to visible text blocks in the chat area.
+    const root = document.querySelector("main,[role=main]") || document.body;
+    const fallback = [];
+    root.querySelectorAll("div,p,article,[role]").forEach(el => {
+      if (!isVisible(el) || el.closest("#dvc-panel") || el.closest("#dvc-caption") || looksLikeUser(el)) return;
+      const t = textFrom(el);
+      if (t.length < 12 || t.length > 3500 || ignored.has(t.toLowerCase())) return;
+      if (/^(send|message|type a message|regenerate|copy|share|retry)$/i.test(t)) return;
+      // Prefer compact message-sized elements, not page-wide containers.
+      const r = el.getBoundingClientRect();
+      if (r.width > window.innerWidth * 0.92 || r.height > window.innerHeight * 0.8) return;
+      const hasLongChild = [...el.children].some(child => clean(child.innerText || child.textContent).length > 80);
+      if (hasLongChild) return;
+      fallback.push({el,t,bottom:r.bottom});
+    });
+    fallback.sort((a,b) => b.bottom - a.bottom);
+    return fallback[0]?.t || "";
   }
   function readLatest() { const t = findLatestReply(); if (!t) { setStatus("Couldn't identify a reply. Select its text and use Read selected text."); return; } speak(t); }
   function buildPanel() {
@@ -122,12 +145,12 @@
     if (!state.auto || speechSynthesis.speaking) return;
     const t = findLatestReply();
     if (t && t.length > 3 && t !== state.lastText) {
-      // Wait briefly for streaming replies to finish updating before speaking.
+      // Wait for Dopple's reply to finish changing before speaking it automatically.
       clearTimeout(state.scanTimer);
       state.scanTimer = setTimeout(() => {
         const latest = findLatestReply();
-        if (latest && latest !== state.lastText) speak(latest);
-      }, 1100);
+        if (state.auto && latest && latest !== state.lastText) speak(latest);
+      }, 1600);
     }
   }
   function startObserver() {
