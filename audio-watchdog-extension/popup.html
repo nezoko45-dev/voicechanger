@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Audio Watchdog</title>
+  <style>
+    :root{color-scheme:light dark;font:14px/1.45 system-ui,sans-serif}
+    body{width:290px;margin:0;padding:16px}
+    h1{font-size:18px;margin:0 0 4px}
+    p{margin:0 0 14px;opacity:.8}
+    .toggle{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid #8885;font-weight:600}
+    label.field{display:block;margin-top:14px}
+    label.field span{display:block;margin-bottom:6px}
+    input[type=number]{box-sizing:border-box;width:100%;padding:8px;border-radius:7px;border:1px solid #8888;background:transparent;color:inherit}
+    .note{font-size:12px;margin-top:14px;opacity:.72}
+    #status{font-size:12px;margin-top:10px;min-height:16px}
+  </style>
+</head>
+<body>
+  <h1>🔊 Audio Watchdog</h1>
+  <p>Automatically restart audio/video when playback gets stuck.</p>
+  <label class="toggle" for="enabled">Protection enabled <input id="enabled" type="checkbox"></label>
+  <label class="field"><span>Seconds without playback progress</span><input id="stallSeconds" type="number" min="4" max="60" step="1"></label>
+  <label class="field"><span>Cooldown between recovery attempts (seconds)</span><input id="cooldownSeconds" type="number" min="5" max="120" step="1"></label>
+  <div id="status" role="status"></div>
+  <div class="note">Works with standard HTML audio/video players. It cannot control custom Web Audio players or click site-specific buttons.</div>
+  <script src="popup.js"></script>
+</body>
+</html>
