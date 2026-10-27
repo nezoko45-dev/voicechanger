@@ -229,28 +229,57 @@
         $('stop').disabled = true;
         return;
       }
-      // Chrome may end a recognition session after silence or an internal timeout.
-      // Reuse this instance; never create a new one in the restart path.
+      // Chrome can silently end a long-running SpeechRecognition session. Create
+      // a fresh instance after each end and retry with a short backoff instead of
+      // giving up after one or two "already started" transition errors.
       clearTimeout(restartTimer);
       restartTimer = setTimeout(() => {
         if (!running) return;
+        const nextRecognition = createRecognition();
+        if (!nextRecognition) {
+          running = false;
+          $('start').disabled = false;
+          $('stop').disabled = true;
+          return;
+        }
+        recognition = nextRecognition;
         try {
-          rec.start();
-        } catch {
-          // A start exception can mean Chrome is still transitioning. Retry once.
+          nextRecognition.start();
+        } catch (error) {
           clearTimeout(restartTimer);
           restartTimer = setTimeout(() => {
             if (!running) return;
-            try { rec.start(); }
-            catch {
-              running = false;
-              $('start').disabled = false;
-              $('stop').disabled = true;
-              status('Chrome paused speech recognition. Click Start dictation to resume; microphone permission should not need to be granted again if Chrome has saved it.');
+            // Recreate again on retry; Chrome's native recognizer may still be
+            // releasing the previous session when start() first throws.
+            const retryRecognition = createRecognition();
+            if (!retryRecognition) return;
+            recognition = retryRecognition;
+            try {
+              retryRecognition.start();
+            } catch {
+              clearTimeout(restartTimer);
+              restartTimer = setTimeout(() => {
+                if (!running) return;
+                const finalRetry = createRecognition();
+                if (!finalRetry) return;
+                recognition = finalRetry;
+                try { finalRetry.start(); }
+                catch {
+                  status('Speech recognition is temporarily unavailable. Keeping dictation active and retrying shortly…');
+                  clearTimeout(restartTimer);
+                  restartTimer = setTimeout(() => {
+                    if (!running) return;
+                    const recovery = createRecognition();
+                    if (!recovery) return;
+                    recognition = recovery;
+                    try { recovery.start(); } catch { /* onend/retry loop will recover if possible */ }
+                  }, 1800);
+                }
+              }, 900);
             }
-          }, 900);
+          }, 700);
         }
-      }, 350);
+      }, 400);
     };
     return rec;
   }
