@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Audio Watchdog — Auto Restart",
-  "version": "1.0.0",
-  "description": "Detects stuck HTML audio/video playback and automatically pauses then resumes it.",
+  "version": "1.1.0",
+  "description": "Restarts the dictation page by clicking Stop then Start when read-aloud appears stuck.",
   "permissions": [
     "storage"
   ],
@@ -13,7 +13,7 @@
   "content_scripts": [
     {
       "matches": [
-        "<all_urls>"
+        "https://nezoko45-dev.github.io/voicechanger/*"
       ],
       "js": [
         "content.js"
