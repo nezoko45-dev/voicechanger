@@ -25,6 +25,7 @@
   const synth = window.speechSynthesis;
   let voices = [];
   let recognition = null;
+  let micKeepAlive = null;
   let running = false;
   let restarting = false;
   let pending = '';
@@ -266,6 +267,15 @@
         }
       }
     } catch { /* Some Chrome versions do not expose microphone permission queries. */ }
+    // Keep one microphone stream open for the whole dictation session. Chrome's
+    // SpeechRecognition service may internally end/restart after silence; the held
+    // stream prevents the page's recording indicator from flickering with each cycle.
+    try {
+      if (!micKeepAlive) micKeepAlive = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      status('Could not open the microphone: ' + (e.message || e) + '. Check Chrome site permissions.');
+      return;
+    }
     running = true; pending = ''; restarting = false;
     clearTimeout(restartTimer);
     recognition = createRecognition();
@@ -275,6 +285,10 @@
     running = false; restarting = false; clearTimeout(restartTimer); clearTimeout(sentencePauseTimer);
     if (recognition) { try { recognition.stop(); } catch {} }
     recognition = null;
+    if (micKeepAlive) {
+      try { micKeepAlive.getTracks().forEach(track => track.stop()); } catch {}
+      micKeepAlive = null;
+    }
     if (pending.trim()) {
       const tail = pending.trim(); pending = '';
       appendSentence(tail);
