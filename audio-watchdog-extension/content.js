@@ -10,6 +10,7 @@
   let lastTranscript = "";
   let lastStatus = "";
   let statusChangedAt = Date.now();
+  let synthesisBusySince = 0;
 
   const $ = id => document.getElementById(id);
   const now = () => Date.now();
@@ -43,7 +44,6 @@
     const status = $("status");
     if (status) status.textContent = "Audio Watchdog detected stalled read-aloud. Clicking Stop, then Start… " + reason;
 
-    // Click the app's real controls; Stop resets its recognition session.
     try { stop.click(); } catch (_) {}
     window.setTimeout(() => {
       try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (_) {}
@@ -51,6 +51,7 @@
         try { if (start && !start.disabled) start.click(); } catch (_) {}
         lastTextChange = now();
         lastTranscript = ($("transcript") || {}).value || "";
+        synthesisBusySince = 0;
         recoveryInProgress = false;
       }, 900);
     }, 300);
@@ -62,27 +63,45 @@
     const status = $("status");
     if (!transcript || !status) return;
 
+    const time = now();
     const text = transcript.value || "";
     if (text !== lastTranscript) {
       lastTranscript = text;
-      lastTextChange = now();
+      lastTextChange = time;
     }
 
     const statusText = status.textContent || "";
     if (statusText !== lastStatus) {
       lastStatus = statusText;
-      statusChangedAt = now();
+      statusChangedAt = time;
     }
 
-    if (!isRunning() || recoveryInProgress) return;
+    if (!isRunning() || recoveryInProgress) {
+      synthesisBusySince = 0;
+      return;
+    }
 
-    // Do NOT rely on speechSynthesis.speaking being false: a broken output stream
-    // can leave it stuck true. This page removes each phrase from the transcript
-    // after successful playback, so unchanged text + unchanged status is the signal.
     const threshold = Math.max(8, Number(settings.stallSeconds) || 20) * 1000;
-    const transcriptStale = !!text.trim() && now() - lastTextChange >= threshold;
+    const synth = window.speechSynthesis;
+    const synthesisBusy = !!(synth && (synth.speaking || synth.pending));
+    if (synthesisBusy) {
+      if (!synthesisBusySince) synthesisBusySince = time;
+    } else {
+      synthesisBusySince = 0;
+    }
+
+    // The app speaks short phrases. If synthesis stays busy continuously for
+    // 45 seconds, its output queue may be wedged even when the transcript is empty.
+    if (synthesisBusySince && time - synthesisBusySince >= 45000) {
+      restartApp("Speech synthesis stayed busy for 45 seconds.");
+      return;
+    }
+
+    // If a phrase remains in the text box and both text and status stop changing,
+    // assume the phrase failed to finish and reset the app.
+    const transcriptStale = !!text.trim() && time - lastTextChange >= threshold;
     const statusSuggestsActive = /listening|queued for read-aloud|read-aloud/i.test(statusText);
-    const statusStale = now() - statusChangedAt >= threshold;
+    const statusStale = time - statusChangedAt >= threshold;
     if (transcriptStale && statusSuggestsActive && statusStale) {
       restartApp("Text has not cleared and the page status has not changed.");
     }
