@@ -35,6 +35,27 @@
   let speechQueue = Promise.resolve();
   let sentenceId = 0;
   let latestSpokenId = 0;
+  let speechWatchdog = null;
+  let activeUtteranceStarted = false;
+  let speechRecoveryInProgress = false;
+
+  function clearSpeechWatchdog() {
+    clearTimeout(speechWatchdog);
+    speechWatchdog = null;
+  }
+
+  function recoverStuckReadAloud(reason) {
+    if (speechRecoveryInProgress) return;
+    speechRecoveryInProgress = true;
+    clearSpeechWatchdog();
+    // Use the page's Clear button as requested, then reset the speech engine/queue.
+    $('clear').click();
+    try { synth.cancel(); } catch {}
+    speechQueue = Promise.resolve();
+    activeUtteranceStarted = false;
+    status('Read-aloud audio appears to have stopped. Cleared the text and reset speech playback. ' + reason);
+    setTimeout(() => { speechRecoveryInProgress = false; }, 500);
+  }
 
   function loadVoices() {
     voices = synth.getVoices();
@@ -76,7 +97,12 @@
       if (voice) { utterance.voice = voice; utterance.lang = voice.lang; }
       utterance.rate = Number($('rate').value);
       utterance.pitch = Number($('pitch').value);
+      let finished = false;
       const finish = () => {
+        if (finished) return;
+        finished = true;
+        clearSpeechWatchdog();
+        activeUtteranceStarted = false;
         // Delete only the text that was read, preserving newer dictation and manual edits.
         if (id > latestSpokenId) {
           latestSpokenId = id;
@@ -91,8 +117,36 @@
         }
         resolve();
       };
+      activeUtteranceStarted = false;
+      clearSpeechWatchdog();
+      // If Chrome never starts speaking this queued item, treat it as a stalled read-aloud.
+      speechWatchdog = setTimeout(() => {
+        if (!finished && !activeUtteranceStarted) {
+          recoverStuckReadAloud('Chrome did not start the queued utterance.');
+          finished = true;
+          resolve();
+        }
+      }, 12000);
+      utterance.onstart = () => {
+        activeUtteranceStarted = true;
+        clearSpeechWatchdog();
+        // Approximate speech duration from text length, then allow a generous buffer.
+        const estimatedMs = Math.max(10000, (sentence.length / Math.max(0.7, Number($('rate').value))) * 180);
+        speechWatchdog = setTimeout(() => {
+          if (!finished) {
+            recoverStuckReadAloud('The utterance exceeded its expected playback time.');
+            finished = true;
+            resolve();
+          }
+        }, estimatedMs + 12000);
+      };
       utterance.onend = finish;
-      utterance.onerror = finish;
+      utterance.onerror = event => {
+        if (event.error && event.error !== 'canceled' && event.error !== 'interrupted') {
+          recoverStuckReadAloud('Speech engine error: ' + event.error + '.');
+        }
+        finish();
+      };
       synth.speak(utterance);
     })).catch(() => {});
   }
