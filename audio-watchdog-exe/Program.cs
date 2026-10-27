@@ -1,6 +1,4 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Windows.Automation;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
@@ -15,47 +13,47 @@ internal static class Program
     private static DateTime micLastHeard = DateTime.MinValue;
     private static DateTime outputLastHeard = DateTime.MinValue;
     private static DateTime lastRecovery = DateTime.MinValue;
-    private static volatile bool running = true;
     private static NotifyIcon? tray;
     private static WasapiCapture? mic;
     private static WasapiLoopbackCapture? loopback;
+    private static System.Windows.Forms.Timer? timer;
+    private static ApplicationContext? appContext;
 
     [STAThread]
     private static void Main()
     {
         ApplicationConfiguration.Initialize();
-        tray = new NotifyIcon
-        {
-            Icon = System.Drawing.SystemIcons.Information,
-            Text = "Audio Watchdog: monitoring",
-            Visible = true,
-            ContextMenuStrip = new ContextMenuStrip()
-        };
-        tray.ContextMenuStrip.Items.Add("Check status", null, (_, _) => Notify("Monitoring microphone and speaker levels."));
-        tray.ContextMenuStrip.Items.Add("Exit", null, (_, _) => { running = false; Application.Exit(); });
-        tray.ShowBalloonTip(3500, "Audio Watchdog started", "Speak into your microphone. If mic activity continues but Google read-aloud output stays silent, the webpage will be restarted.", ToolTipIcon.Info);
-
         try
         {
-            StartCapture();
-            while (running)
+            tray = new NotifyIcon
             {
-                Thread.Sleep(500);
-                Evaluate();
-            }
+                Icon = System.Drawing.SystemIcons.Information,
+                Text = "Audio Watchdog: monitoring",
+                Visible = true,
+                ContextMenuStrip = new ContextMenuStrip()
+            };
+            tray.ContextMenuStrip.Items.Add("Check status", null, (_, _) => Notify("Monitoring microphone and speaker levels."));
+            tray.ContextMenuStrip.Items.Add("Exit", null, (_, _) => Shutdown());
+            StartCapture();
+
+            timer = new System.Windows.Forms.Timer { Interval = 500 };
+            timer.Tick += (_, _) => Evaluate();
+            timer.Start();
+
+            appContext = new ApplicationContext();
+            tray.ShowBalloonTip(3500, "Audio Watchdog started",
+                "Running in the system tray. If your microphone is active but read-aloud audio stalls, the webpage will be restarted.",
+                ToolTipIcon.Info);
+            Application.Run(appContext);
         }
         catch (Exception ex)
         {
-            Notify("Audio Watchdog error: " + ex.Message);
-            Thread.Sleep(5000);
+            MessageBox.Show("Audio Watchdog could not start:\n\n" + ex,
+                "Audio Watchdog startup error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
         {
-            try { mic?.StopRecording(); } catch { }
-            try { loopback?.StopRecording(); } catch { }
-            mic?.Dispose();
-            loopback?.Dispose();
-            if (tray is not null) { tray.Visible = false; tray.Dispose(); }
+            Cleanup();
         }
     }
 
@@ -117,14 +115,9 @@ internal static class Program
         DateTime micHeard, outputHeard;
         lock (Gate) { m = micLevel; o = outputLevel; micHeard = micLastHeard; outputHeard = outputLastHeard; }
         var now = DateTime.UtcNow;
-
-        // Only recover when the microphone has recently contained speech-level audio,
-        // output has remained quiet, and a cooldown prevents repeated button clicking.
         bool userSpeaking = now - micHeard < TimeSpan.FromSeconds(4);
         bool outputSilent = now - outputHeard > TimeSpan.FromSeconds(16);
-        bool micHasActivity = m > 0.012;
-        bool outputIsQuiet = o < 0.004;
-        if (userSpeaking && micHasActivity && outputSilent && outputIsQuiet &&
+        if (userSpeaking && m > 0.012 && outputSilent && o < 0.004 &&
             now - lastRecovery > TimeSpan.FromSeconds(30))
         {
             lastRecovery = now;
@@ -132,7 +125,7 @@ internal static class Program
             bool success = RestartDictationButtons();
             Notify(success
                 ? "Clicked Stop and Start dictation to recover the page."
-                : "Could not find Stop/Start dictation buttons. Bring the dictation webpage to the foreground and ensure its buttons are visible.");
+                : "Could not find the page buttons. Keep the dictation webpage open in a normal Chrome or Edge window.");
         }
     }
 
@@ -149,29 +142,23 @@ internal static class Program
 
             foreach (var process in browsers)
             {
-                AutomationElement? root = null;
                 try
                 {
                     if (process.MainWindowHandle == IntPtr.Zero) continue;
-                    root = AutomationElement.FromHandle(process.MainWindowHandle);
+                    var root = AutomationElement.FromHandle(process.MainWindowHandle);
                     var stop = FindButton(root, "Stop");
+                    if (stop is null || !stop.TryGetCurrentPattern(InvokePattern.Pattern, out object stopPattern)) continue;
+                    ((InvokePattern)stopPattern).Invoke();
+                    Thread.Sleep(900);
+                    root = AutomationElement.FromHandle(process.MainWindowHandle);
                     var start = FindButton(root, "Start dictation");
-                    if (stop is null || start is null) continue;
-                    if (stop.TryGetCurrentPattern(InvokePattern.Pattern, out object stopPattern))
+                    if (start is not null && start.TryGetCurrentPattern(InvokePattern.Pattern, out object startPattern))
                     {
-                        ((InvokePattern)stopPattern).Invoke();
-                        Thread.Sleep(900);
-                        // Re-query the tree after the page changes its button states.
-                        root = AutomationElement.FromHandle(process.MainWindowHandle);
-                        start = FindButton(root, "Start dictation");
-                        if (start is not null && start.TryGetCurrentPattern(InvokePattern.Pattern, out object startPattern))
-                        {
-                            ((InvokePattern)startPattern).Invoke();
-                            return true;
-                        }
+                        ((InvokePattern)startPattern).Invoke();
+                        return true;
                     }
                 }
-                catch { /* Try another browser window. */ }
+                catch { }
             }
         }
         catch { }
@@ -188,10 +175,23 @@ internal static class Program
 
     private static void Notify(string message)
     {
-        try
-        {
-            if (tray is not null) tray.ShowBalloonTip(2500, "Audio Watchdog", message, ToolTipIcon.Info);
-        }
+        try { tray?.ShowBalloonTip(2500, "Audio Watchdog", message, ToolTipIcon.Info); }
         catch { }
+    }
+
+    private static void Shutdown()
+    {
+        timer?.Stop();
+        appContext?.ExitThread();
+    }
+
+    private static void Cleanup()
+    {
+        try { timer?.Stop(); timer?.Dispose(); } catch { }
+        try { mic?.StopRecording(); } catch { }
+        try { loopback?.StopRecording(); } catch { }
+        mic?.Dispose();
+        loopback?.Dispose();
+        if (tray is not null) { tray.Visible = false; tray.Dispose(); }
     }
 }
