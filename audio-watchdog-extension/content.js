@@ -2,20 +2,24 @@
   if (window.__audioWatchdogInstalled) return;
   window.__audioWatchdogInstalled = true;
 
-  const defaults = { enabled: true, stallSeconds: 8, cooldownSeconds: 15 };
+  const defaults = { enabled: true, stallSeconds: 12, cooldownSeconds: 20 };
   let settings = { ...defaults };
-  const state = new WeakMap();
+  let lastTextChange = Date.now();
+  let lastRecovery = 0;
+  let recoveryInProgress = false;
+  let lastTranscript = "";
+  let activeSince = 0;
+  let sawSpeechActivity = false;
+  let lastStatus = "";
+  let statusChangedAt = Date.now();
+
+  const $ = id => document.getElementById(id);
   const now = () => Date.now();
 
-  function loadSettings() {
-    try {
-      chrome.storage.local.get(defaults, result => {
-        if (!chrome.runtime.lastError && result) settings = { ...defaults, ...result };
-      });
-    } catch (_) {}
-  }
-  loadSettings();
   try {
+    chrome.storage.local.get(defaults, result => {
+      if (!chrome.runtime.lastError && result) settings = { ...defaults, ...result };
+    });
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== "local") return;
       for (const key of Object.keys(defaults)) {
@@ -24,57 +28,87 @@
     });
   } catch (_) {}
 
-  function restart(media, info) {
-    info.recovering = true;
-    info.lastRecovery = now();
-    const originalTime = media.currentTime;
-    try { media.pause(); } catch (_) {}
+  function isRunning() {
+    const start = $("start");
+    const stop = $("stop");
+    return !!(start && stop && start.disabled && !stop.disabled);
+  }
+
+  function restartApp(reason) {
+    if (recoveryInProgress || !settings.enabled || !isRunning()) return;
+    if (now() - lastRecovery < Math.max(10, Number(settings.cooldownSeconds) || 20) * 1000) return;
+    recoveryInProgress = true;
+    lastRecovery = now();
+
+    const stop = $("stop");
+    const start = $("start");
+    const status = $("status");
+    if (status) status.textContent = "Audio Watchdog detected stalled read-aloud. Clicking Stop, then Start… " + reason;
+
+    // Use the app's actual controls so its microphone-recognition state is reset too.
+    try { stop.click(); } catch (_) {}
     window.setTimeout(() => {
       try {
-        // Restore the playback position in case the site's player reset it.
-        if (Number.isFinite(originalTime) && Math.abs(media.currentTime - originalTime) > 1.5) {
-          media.currentTime = originalTime;
-        }
-        const result = media.play();
-        if (result && typeof result.catch === "function") result.catch(() => {});
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
       } catch (_) {}
-      info.recovering = false;
-      info.lastTime = media.currentTime;
-      info.lastProgress = now();
-    }, 350);
+      window.setTimeout(() => {
+        try {
+          if (start && !start.disabled) start.click();
+        } catch (_) {}
+        lastTextChange = now();
+        lastTranscript = ($("transcript") || {}).value || "";
+        sawSpeechActivity = false;
+        activeSince = 0;
+        recoveryInProgress = false;
+      }, 900);
+    }, 300);
   }
 
-  function check() {
-    if (!settings.enabled || document.visibilityState === "prerender") return;
-    const t = now();
-    document.querySelectorAll("audio, video").forEach(media => {
-      if (media.paused || media.ended || media.seeking || media.readyState < 2 || media.error) {
-        state.set(media, { lastTime: media.currentTime, lastProgress: t, lastRecovery: (state.get(media) || {}).lastRecovery || 0, recovering: false });
-        return;
+  function tick() {
+    if (!settings.enabled || location.hostname !== "nezoko45-dev.github.io") return;
+    const transcript = $("transcript");
+    const status = $("status");
+    if (!transcript || !status) return;
+
+    const text = transcript.value || "";
+    if (text !== lastTranscript) {
+      lastTranscript = text;
+      lastTextChange = now();
+      // A nonempty transcript indicates fresh recognized words that should be read and removed.
+      if (text.trim()) {
+        sawSpeechActivity = true;
+        if (!activeSince) activeSince = now();
+      } else {
+        sawSpeechActivity = false;
+        activeSince = 0;
       }
-      let info = state.get(media);
-      if (!info) {
-        info = { lastTime: media.currentTime, lastProgress: t, lastRecovery: 0, recovering: false };
-        state.set(media, info);
-        return;
-      }
-      if (info.recovering) return;
-      if (Math.abs(media.currentTime - info.lastTime) > 0.08) {
-        info.lastTime = media.currentTime;
-        info.lastProgress = t;
-        return;
-      }
-      const stalledFor = t - info.lastProgress;
-      const cooldownOver = t - info.lastRecovery >= Math.max(5, Number(settings.cooldownSeconds) || 15) * 1000;
-      if (stalledFor >= Math.max(4, Number(settings.stallSeconds) || 8) * 1000 && cooldownOver) {
-        restart(media, info);
-      }
-    });
+    }
+
+    const statusText = status.textContent || "";
+    if (statusText !== lastStatus) {
+      lastStatus = statusText;
+      statusChangedAt = now();
+    }
+
+    if (!isRunning() || recoveryInProgress) return;
+
+    const synth = window.speechSynthesis;
+    const speaking = !!(synth && (synth.speaking || synth.pending));
+    if (speaking) {
+      sawSpeechActivity = true;
+      return;
+    }
+
+    // The app normally removes each phrase after it is spoken. If text remains
+    // unchanged while the speech engine is idle, the read-aloud queue may be stuck.
+    const threshold = Math.max(6, Number(settings.stallSeconds) || 12) * 1000;
+    const transcriptStale = text.trim() && now() - lastTextChange >= threshold;
+    const statusSuggestsListening = /listening|queued for read-aloud/i.test(statusText);
+    const statusStale = now() - statusChangedAt >= threshold;
+    if (transcriptStale && statusSuggestsListening && statusStale) {
+      restartApp("Transcript stayed on the page while speech output was idle.");
+    }
   }
 
-  window.setInterval(check, 2000);
-  document.addEventListener("play", event => {
-    const media = event.target;
-    if (media instanceof HTMLMediaElement) state.set(media, { lastTime: media.currentTime, lastProgress: now(), lastRecovery: 0, recovering: false });
-  }, true);
+  window.setInterval(tick, 1500);
 })();
