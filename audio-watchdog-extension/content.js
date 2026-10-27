@@ -11,6 +11,8 @@
   let lastStatus = "";
   let statusChangedAt = Date.now();
   let synthesisBusySince = 0;
+  let speechPauseTimer = null;
+  let lastSpeechRecycle = 0;
 
   const $ = id => document.getElementById(id);
   const now = () => Date.now();
@@ -33,28 +35,40 @@
     return !!(start && stop && start.disabled && !stop.disabled);
   }
 
-  function restartApp(reason) {
+  function stopThenStart(reason, cancelSpeech, cooldownMs) {
     if (recoveryInProgress || !settings.enabled || !isRunning()) return;
-    if (now() - lastRecovery < Math.max(10, Number(settings.cooldownSeconds) || 20) * 1000) return;
+    const time = now();
+    if (time - lastRecovery < cooldownMs) return;
     recoveryInProgress = true;
-    lastRecovery = now();
+    lastRecovery = time;
 
     const stop = $("stop");
     const start = $("start");
     const status = $("status");
-    if (status) status.textContent = "Audio Watchdog detected stalled read-aloud. Clicking Stop, then Start… " + reason;
+    if (status) status.textContent = reason;
 
+    // Use the page's actual buttons, preserving the page's microphone-permission flow.
     try { stop.click(); } catch (_) {}
     window.setTimeout(() => {
-      try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (_) {}
+      if (cancelSpeech) {
+        try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (_) {}
+      }
       window.setTimeout(() => {
         try { if (start && !start.disabled) start.click(); } catch (_) {}
         lastTextChange = now();
         lastTranscript = ($("transcript") || {}).value || "";
         synthesisBusySince = 0;
         recoveryInProgress = false;
-      }, 900);
-    }, 300);
+      }, 700);
+    }, 250);
+  }
+
+  function recycleAfterSpeechPause() {
+    if (!settings.enabled || !isRunning() || recoveryInProgress) return;
+    // Short debounce after recognized text arrives: the recognition result is
+    // final text, so this approximates the user having finished that phrase.
+    stopThenStart("Audio Watchdog: speech detected. Restarting dictation after your pause…", false, 2500);
+    lastSpeechRecycle = now();
   }
 
   function tick() {
@@ -66,8 +80,17 @@
     const time = now();
     const text = transcript.value || "";
     if (text !== lastTranscript) {
+      const previous = lastTranscript;
       lastTranscript = text;
       lastTextChange = time;
+
+      // Only react when new text is appended/recognized, not when the reader
+      // deletes text after speaking it. Debounce so a continuous sentence doesn't
+      // cause repeated stop/start cycles.
+      if (text.trim() && text.length > previous.length && isRunning()) {
+        clearTimeout(speechPauseTimer);
+        speechPauseTimer = window.setTimeout(recycleAfterSpeechPause, 1800);
+      }
     }
 
     const statusText = status.textContent || "";
@@ -90,22 +113,21 @@
       synthesisBusySince = 0;
     }
 
-    // The app speaks short phrases. If synthesis stays busy continuously for
-    // 45 seconds, its output queue may be wedged even when the transcript is empty.
+    // Fallback watchdog for a speech queue that remains wedged.
     if (synthesisBusySince && time - synthesisBusySince >= 45000) {
-      restartApp("Speech synthesis stayed busy for 45 seconds.");
+      clearTimeout(speechPauseTimer);
+      stopThenStart("Audio Watchdog detected stuck speech. Clicking Stop, then Start…", true, Math.max(10000, Number(settings.cooldownSeconds) * 1000));
       return;
     }
 
-    // If a phrase remains in the text box and both text and status stop changing,
-    // assume the phrase failed to finish and reset the app.
     const transcriptStale = !!text.trim() && time - lastTextChange >= threshold;
     const statusSuggestsActive = /listening|queued for read-aloud|read-aloud/i.test(statusText);
     const statusStale = time - statusChangedAt >= threshold;
     if (transcriptStale && statusSuggestsActive && statusStale) {
-      restartApp("Text has not cleared and the page status has not changed.");
+      clearTimeout(speechPauseTimer);
+      stopThenStart("Audio Watchdog detected stalled read-aloud. Clicking Stop, then Start…", true, Math.max(10000, Number(settings.cooldownSeconds) * 1000));
     }
   }
 
-  window.setInterval(tick, 1500);
+  window.setInterval(tick, 500);
 })();
