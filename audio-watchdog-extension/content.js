@@ -2,14 +2,12 @@
   if (window.__audioWatchdogInstalled) return;
   window.__audioWatchdogInstalled = true;
 
-  const defaults = { enabled: true, stallSeconds: 12, cooldownSeconds: 20 };
+  const defaults = { enabled: true, stallSeconds: 20, cooldownSeconds: 20 };
   let settings = { ...defaults };
   let lastTextChange = Date.now();
   let lastRecovery = 0;
   let recoveryInProgress = false;
   let lastTranscript = "";
-  let activeSince = 0;
-  let sawSpeechActivity = false;
   let lastStatus = "";
   let statusChangedAt = Date.now();
 
@@ -45,20 +43,14 @@
     const status = $("status");
     if (status) status.textContent = "Audio Watchdog detected stalled read-aloud. Clicking Stop, then Start… " + reason;
 
-    // Use the app's actual controls so its microphone-recognition state is reset too.
+    // Click the app's real controls; Stop resets its recognition session.
     try { stop.click(); } catch (_) {}
     window.setTimeout(() => {
-      try {
-        if (window.speechSynthesis) window.speechSynthesis.cancel();
-      } catch (_) {}
+      try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (_) {}
       window.setTimeout(() => {
-        try {
-          if (start && !start.disabled) start.click();
-        } catch (_) {}
+        try { if (start && !start.disabled) start.click(); } catch (_) {}
         lastTextChange = now();
         lastTranscript = ($("transcript") || {}).value || "";
-        sawSpeechActivity = false;
-        activeSince = 0;
         recoveryInProgress = false;
       }, 900);
     }, 300);
@@ -74,14 +66,6 @@
     if (text !== lastTranscript) {
       lastTranscript = text;
       lastTextChange = now();
-      // A nonempty transcript indicates fresh recognized words that should be read and removed.
-      if (text.trim()) {
-        sawSpeechActivity = true;
-        if (!activeSince) activeSince = now();
-      } else {
-        sawSpeechActivity = false;
-        activeSince = 0;
-      }
     }
 
     const statusText = status.textContent || "";
@@ -92,21 +76,15 @@
 
     if (!isRunning() || recoveryInProgress) return;
 
-    const synth = window.speechSynthesis;
-    const speaking = !!(synth && (synth.speaking || synth.pending));
-    if (speaking) {
-      sawSpeechActivity = true;
-      return;
-    }
-
-    // The app normally removes each phrase after it is spoken. If text remains
-    // unchanged while the speech engine is idle, the read-aloud queue may be stuck.
-    const threshold = Math.max(6, Number(settings.stallSeconds) || 12) * 1000;
-    const transcriptStale = text.trim() && now() - lastTextChange >= threshold;
-    const statusSuggestsListening = /listening|queued for read-aloud/i.test(statusText);
+    // Do NOT rely on speechSynthesis.speaking being false: a broken output stream
+    // can leave it stuck true. This page removes each phrase from the transcript
+    // after successful playback, so unchanged text + unchanged status is the signal.
+    const threshold = Math.max(8, Number(settings.stallSeconds) || 20) * 1000;
+    const transcriptStale = !!text.trim() && now() - lastTextChange >= threshold;
+    const statusSuggestsActive = /listening|queued for read-aloud|read-aloud/i.test(statusText);
     const statusStale = now() - statusChangedAt >= threshold;
-    if (transcriptStale && statusSuggestsListening && statusStale) {
-      restartApp("Transcript stayed on the page while speech output was idle.");
+    if (transcriptStale && statusSuggestsActive && statusStale) {
+      restartApp("Text has not cleared and the page status has not changed.");
     }
   }
 
