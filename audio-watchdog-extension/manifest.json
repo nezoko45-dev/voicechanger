@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Audio Watchdog — Auto Restart",
+  "version": "1.0.0",
+  "description": "Detects stuck HTML audio/video playback and automatically pauses then resumes it.",
+  "permissions": [
+    "storage"
+  ],
+  "action": {
+    "default_title": "Audio Watchdog",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
