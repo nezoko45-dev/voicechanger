@@ -1,0 +1,31 @@
+name: Build Audio Watchdog EXE
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'audio-watchdog-exe/**'
+      - '.github/workflows/build-audio-watchdog.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publish self-contained Windows executable
+        run: dotnet publish audio-watchdog-exe/AudioWatchdog.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: AudioWatchdog-Windows-x64
+          path: publish/AudioWatchdog.exe
+          if-no-files-found: error
+          retention-days: 30
