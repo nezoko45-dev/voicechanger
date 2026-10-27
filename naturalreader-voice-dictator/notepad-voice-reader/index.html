@@ -48,13 +48,19 @@
     if (speechRecoveryInProgress) return;
     speechRecoveryInProgress = true;
     clearSpeechWatchdog();
-    // Use the page's Clear button as requested, then reset the speech engine/queue.
+    // Use Clear, then Stop and Start to recover both speech output and microphone recognition.
     $('clear').click();
+    try { $('stop').click(); } catch {}
     try { synth.cancel(); } catch {}
     speechQueue = Promise.resolve();
     activeUtteranceStarted = false;
-    status('Read-aloud audio appears to have stopped. Cleared the text and reset speech playback. ' + reason);
-    setTimeout(() => { speechRecoveryInProgress = false; }, 500);
+    status('Read-aloud appears stuck. Cleared text, stopped dictation, and restarting it now. ' + reason);
+    setTimeout(() => {
+      speechRecoveryInProgress = false;
+      if (!$('start').disabled) {
+        try { $('start').click(); } catch {}
+      }
+    }, 900);
   }
 
   function loadVoices() {
