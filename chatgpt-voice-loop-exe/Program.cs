@@ -329,11 +329,11 @@ internal sealed class MainForm : Form
     {
         try
         {
-            var elementWindow = AutomationTreeWalker.ControlViewWalker.GetParent(element);
+            var elementWindow = TreeWalker.ControlViewWalker.GetParent(element);
             while (elementWindow is not null)
             {
                 if (elementWindow.Equals(window)) return true;
-                elementWindow = AutomationTreeWalker.ControlViewWalker.GetParent(elementWindow);
+                elementWindow = TreeWalker.ControlViewWalker.GetParent(elementWindow);
             }
         }
         catch { }
