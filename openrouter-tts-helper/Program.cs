@@ -7,7 +7,7 @@ using System.Text.Json;
 using NAudio.Wave;
 
 const string Prefix = "http://127.0.0.1:32146/";
-const string AllowedOrigin = "http://127.0.0.1:32146";
+const string AllowedOrigin = "https://nezoko45-dev.github.io";
 const string PageUrl = "http://127.0.0.1:32146/";
 const string SpeechEndpoint = "https://openrouter.ai/api/v1/audio/speech";
 
