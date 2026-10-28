@@ -27,11 +27,15 @@ function createWindow() {
 app.whenReady().then(() => {
   // This is a packaged Electron app (file://), not a normal website with
   // Chrome's site-settings page. Grant Chromium's media permission here.
+  // Pre-grant Chromium microphone/audio-capture permissions for this local
+  // desktop app so users are not stuck at an Electron permission prompt.
+  // Do not call getUserMedia from the renderer; dictation uses SpeechRecognition.
+  const audioPermissions = new Set(['media', 'audioCapture']);
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
-    return permission === 'media';
+    return audioPermissions.has(permission);
   });
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
-    callback(permission === 'media');
+    callback(audioPermissions.has(permission));
   });
   ipcMain.handle('tts:speak', async (_event, data) => {
     const apiKey = String(data?.apiKey || '').trim();
