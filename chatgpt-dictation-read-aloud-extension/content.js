@@ -114,7 +114,7 @@
         el.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", bubbles: true }));
       }
       setStatus("Waiting for ChatGPT's reply…");
-      waitForReplyAndReadAloud();
+      waitForNewReplyThenReadAloud();
     }, 250);
   }
 
@@ -126,33 +126,45 @@
     return !!document.querySelector('button[data-testid="stop-button"],button[aria-label*="Stop generating" i],[data-testid="stop-button"]');
   }
 
-  async function waitForReplyAndReadAloud() {
-    // Don't wait for assistant message text: ChatGPT's DOM can change and
-    // the reply detector may fail even while the Read aloud control is present.
-    // Poll the visible page for the button and click it as soon as it appears.
+  async function waitForNewReplyThenReadAloud() {
     const started = Date.now();
     const timeoutMs = 120000;
+    let sawGeneration = false;
+    let lastReply = "";
+    let stableSince = 0;
     while (running && Date.now() - started < timeoutMs) {
-      const clicked = clickButtonByLabel(["Read aloud"]);
-      if (clicked) {
-        setStatus("Clicked Read aloud. Waiting before listening again…");
-        // Avoid inspecting reply text/audio; simply allow playback time based on
-        // the visible assistant response if available, then resume the mic.
-        const latest = assistantMessages().at(-1);
-        const replyText = latest?.innerText?.trim() || "";
-        const waitMs = Math.min(120000, Math.max(8000, (replyText.length / 14) * 1000 + 3000));
-        await new Promise(resolve => setTimeout(resolve, waitMs));
-        if (!running) return;
-        busy = false;
-        setStatus("Listening for your next dictation…");
-        scheduleRestart(700);
-        return;
+      const messages = assistantMessages();
+      const latest = messages.at(-1);
+      const latestText = latest?.innerText?.trim() || "";
+      const isGenerating = generating();
+      if (isGenerating) { sawGeneration = true; stableSince = 0; }
+      const isNewReply = messages.length > assistantCountBeforeSend ||
+        (latestText && latestText !== assistantTextBeforeSend);
+      if (isNewReply && latestText && !isGenerating && (sawGeneration || Date.now() - started > 1800)) {
+        if (latestText !== lastReply) {
+          lastReply = latestText;
+          stableSince = Date.now();
+        } else if (stableSince && Date.now() - stableSince >= 1200) {
+          try {
+            latest.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+            latest.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+          } catch {}
+          if (clickButtonByLabel(["Read aloud"], latest)) {
+            setStatus("Reading the new reply aloud…");
+            const waitMs = Math.min(120000, Math.max(8000, (latestText.length / 14) * 1000 + 3000));
+            await new Promise(resolve => setTimeout(resolve, waitMs));
+            if (!running) return;
+            busy = false;
+            setStatus("Listening for your next dictation…");
+            scheduleRestart(700);
+            return;
+          }
+        }
       }
-      await new Promise(resolve => setTimeout(resolve, 700));
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
-
     if (!running) return;
-    setStatus("Couldn't find Read aloud yet. Listening again.");
+    setStatus("Timed out waiting for the new reply. Listening again.");
     busy = false;
     scheduleRestart(1500);
   }
