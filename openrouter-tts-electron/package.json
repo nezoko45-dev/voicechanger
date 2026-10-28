@@ -1,0 +1,16 @@
+{
+  "name": "openrouter-tts-reader",
+  "version": "1.0.0",
+  "description": "OpenRouter TTS Reader desktop app with microphone dictation",
+  "main": "main.js",
+  "private": true,
+  "scripts": { "start": "electron .", "dist:win": "electron-builder --win portable" },
+  "devDependencies": { "electron": "^36.3.1", "electron-builder": "^26.0.12" },
+  "build": {
+    "appId": "dev.nezoko45.openrouterttsreader",
+    "productName": "OpenRouter TTS Reader",
+    "directories": { "output": "dist" },
+    "files": ["main.js", "preload.js", "index.html", "package.json"],
+    "win": { "target": ["portable"], "artifactName": "OpenRouterTTSReader-Setup.exe" }
+  }
+}
