@@ -98,21 +98,33 @@ internal sealed class MainForm : Form
                 // This avoids requiring Chrome to expose the contenteditable in its UIA tree.
                 ClickComposerArea(window);
                 Thread.Sleep(350);
-                composer = FindComposer(window) ?? TryGetFocusedElement();
+                composer = FindComposer(window);
+                if (composer is null)
+                {
+                    var focused = TryGetFocusedElement();
+                    if (focused is not null && IsWithinWindow(focused, window) &&
+                        IsTextEntryType(focused.Current.ControlType))
+                        composer = focused;
+                }
             }
-            if (composer is null)
+            if (composer is null || !IsWithinWindow(composer, window))
             {
-                status.Text = "Couldn't focus ChatGPT's composer. Maximize the ChatGPT Chrome window and make sure chatgpt.com is the active tab, then try again.";
+                status.Text = "Couldn't verify ChatGPT's message box. Click directly inside the 'Ask ChatGPT' composer at the bottom of the page, then press Start again. Make sure the ChatGPT tab is active.";
                 start.Enabled = true;
                 return;
             }
 
             try { composer.SetFocus(); } catch { }
+            Thread.Sleep(150);
+            var verifiedFocus = TryGetFocusedElement();
+            if (verifiedFocus is null || !IsWithinWindow(verifiedFocus, window))
+            {
+                status.Text = "ChatGPT's message box was found, but Windows could not verify focus. Click inside 'Ask ChatGPT' and press Start again.";
+                start.Enabled = true;
+                return;
+            }
             SendKeys.SendWait("^{END}");
             Thread.Sleep(150);
-            // Open Windows Voice Typing without sending Ctrl+Esc or other keys that steal focus.
-            // SendKeys does not reliably support the Windows key, so let the user invoke Win+H.
-            status.Text = "Composer focused. Press Win+H to start Windows Voice Typing, then speak.";
 
             active = true;
             stop.Enabled = true;
@@ -121,7 +133,7 @@ internal sealed class MainForm : Form
             lastComposerText = ReadValue(composer);
             lastTextChange = DateTime.UtcNow;
             timer.Start();
-            status.Text = "Dictation loop started. Windows Voice Typing should be open; speak into the ChatGPT text box. I'll send stable text and click Read aloud when the reply appears.";
+            status.Text = "Composer focus verified. Press Win+H, dictate into ChatGPT, and pause; the loop will send stable text and click Read aloud when a reply appears.";
         }
         catch (Exception ex)
         {
@@ -290,9 +302,9 @@ internal sealed class MainForm : Form
         {
             var focused = AutomationElement.FocusedElement;
             if (focused is null) return null;
-            var type = focused.Current.ControlType;
-            return IsTextEntryType(type) || type == ControlType.Custom ||
-                   type == ControlType.Pane ? focused : null;
+            // Do not treat a generic pane/custom element as the composer: this was
+            // allowing the loop to start even when Chrome had not focused text input.
+            return IsTextEntryType(focused.Current.ControlType) ? focused : null;
         }
         catch { return null; }
     }
@@ -317,12 +329,14 @@ internal sealed class MainForm : Form
 
     private static bool LooksLikeComposerName(string name) =>
         name.Contains("chat with chatgpt", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("ask chatgpt", StringComparison.OrdinalIgnoreCase) ||
         name.Contains("ask anything", StringComparison.OrdinalIgnoreCase) ||
         name.Contains("send a message", StringComparison.OrdinalIgnoreCase) ||
         name.Contains("message chatgpt", StringComparison.OrdinalIgnoreCase) ||
         name.Contains("message to chatgpt", StringComparison.OrdinalIgnoreCase) ||
         name.Contains("write a message", StringComparison.OrdinalIgnoreCase) ||
-        name.Contains("prompt", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("reply to chatgpt", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("prompt", StringComparison.OrdinalIgnoreCase) ||
         name.Equals("message", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsWithinWindow(AutomationElement element, AutomationElement window)
