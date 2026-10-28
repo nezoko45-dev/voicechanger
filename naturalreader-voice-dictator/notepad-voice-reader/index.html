@@ -5,15 +5,16 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>OpenAI Voice Dictation & Reader</title>
 <style>
-:root{color-scheme:light dark;font:16px system-ui}body{max-width:860px;margin:28px auto;padding:0 18px}h1{font-size:1.6rem}.muted{opacity:.8;line-height:1.5}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}button,input,select{font:inherit;padding:10px;border-radius:9px}button{cursor:pointer}button:disabled{opacity:.5}input[type=url]{width:min(100%,560px)}#status{padding:12px;border-radius:10px;background:color-mix(in srgb,CanvasText 8%,Canvas)}#log{border:1px solid color-mix(in srgb,CanvasText 20%,transparent);border-radius:12px;padding:14px;min-height:240px;max-height:50vh;overflow:auto;white-space:pre-wrap} .turn{padding:10px 0;border-bottom:1px solid color-mix(in srgb,CanvasText 15%,transparent)}.role{font-weight:700}label{display:flex;gap:8px;align-items:center;flex-wrap:wrap}small{opacity:.8}
+:root{color-scheme:light dark;font:16px system-ui}body{max-width:860px;margin:28px auto;padding:0 18px}h1{font-size:1.6rem}.muted{opacity:.8;line-height:1.5}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}button,input,select{font:inherit;padding:10px;border-radius:9px}button{cursor:pointer}button:disabled{opacity:.5}input[type=url],input[type=password]{width:min(100%,560px)}#status{padding:12px;border-radius:10px;background:color-mix(in srgb,CanvasText 8%,Canvas)}#log{border:1px solid color-mix(in srgb,CanvasText 20%,transparent);border-radius:12px;padding:14px;min-height:240px;max-height:50vh;overflow:auto;white-space:pre-wrap} .turn{padding:10px 0;border-bottom:1px solid color-mix(in srgb,CanvasText 15%,transparent)}.role{font-weight:700}label{display:flex;gap:8px;align-items:center;flex-wrap:wrap}small{opacity:.8}
 </style>
 </head>
 <body>
 <h1>OpenAI Voice Dictation & Reader</h1>
 <p class="muted">Speak naturally and the AI will answer out loud using OpenAI's real-time voice model. It handles pauses and turn-taking, so this page does not need to detect ChatGPT webpage buttons or use browser text-to-speech.</p>
 <div class="row"><button id="start">Start voice conversation</button><button id="stop" disabled>Stop</button><button id="clear">Clear transcript</button></div>
-<div class="row"><label for="endpoint">Secure voice backend URL</label><input id="endpoint" type="url" placeholder="https://your-backend.vercel.app/api/session" autocomplete="url"></div>
-<p class="muted"><small>Required once: deploy this repository's <code>api/session.js</code> on a serverless host and enter its URL. Do not paste your permanent OpenAI API key here; the backend keeps it secret.</small></p>
+<div class="row"><label for="apiKey">OpenAI API key</label><input id="apiKey" type="password" placeholder="Paste your sk-… API key" autocomplete="off"></div>
+<div class="row"><label for="endpoint">Secure token endpoint URL</label><input id="endpoint" type="url" placeholder="https://your-backend.vercel.app/api/session" autocomplete="url"></div>
+<p class="muted"><small>Your key is saved in this browser only (local storage), not written into the GitHub JavaScript file. The backend uses it to mint a short-lived voice token. Anyone with access to this browser profile can access the saved key; use a dedicated API key with usage limits. The backend must be deployed once.</small></p>
 <p id="status" role="status">Ready. Set the backend URL, then click Start voice conversation.</p>
 <section id="log" aria-live="polite" aria-label="Conversation transcript"></section>
 <audio id="remoteAudio" autoplay playsinline></audio>
@@ -24,6 +25,9 @@
   const log = $('log');
   const endpointInput = $('endpoint');
   endpointInput.value = localStorage.getItem('voiceReaderBackendUrl') || '';
+  const apiKeyInput = $('apiKey');
+  apiKeyInput.value = localStorage.getItem('voiceReaderOpenAIKey') || '';
+  apiKeyInput.addEventListener('input', () => localStorage.setItem('voiceReaderOpenAIKey', apiKeyInput.value.trim()));
   let pc = null;
   let micStream = null;
   let channel = null;
@@ -86,8 +90,14 @@
 
   async function start() {
     const endpoint = endpointInput.value.trim();
+    const apiKey = apiKeyInput.value.trim();
+    if (!apiKey) {
+      status('Paste your OpenAI API key first. It will be saved in this browser automatically.');
+      apiKeyInput.focus();
+      return;
+    }
     if (!endpoint) {
-      status('Enter the secure backend URL first. The backend must be deployed with OPENAI_API_KEY set as a server-side environment variable.');
+      status('Enter the deployed secure token endpoint URL first.');
       endpointInput.focus();
       return;
     }
@@ -118,14 +128,26 @@
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       status('Connecting to OpenAI Realtime voice…');
-      const response = await fetch(endpoint, {
+      const tokenResponse = await fetch(endpoint, {
         method:'POST',
-        headers:{'Content-Type':'application/sdp'},
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({apiKey})
+      });
+      if (!tokenResponse.ok) {
+        const detail = await tokenResponse.text();
+        throw new Error('Token backend returned ' + tokenResponse.status + ': ' + detail.slice(0,300));
+      }
+      const tokenData = await tokenResponse.json();
+      const ephemeralKey = tokenData.value;
+      if (!ephemeralKey) throw new Error('Backend did not return a short-lived token.');
+      const response = await fetch('https://api.openai.com/v1/realtime/calls', {
+        method:'POST',
+        headers:{'Authorization':'Bearer ' + ephemeralKey,'Content-Type':'application/sdp'},
         body:offer.sdp
       });
       if (!response.ok) {
         const detail = await response.text();
-        throw new Error('Backend returned ' + response.status + ': ' + detail.slice(0,300));
+        throw new Error('OpenAI voice connection returned ' + response.status + ': ' + detail.slice(0,300));
       }
       const answerSdp = await response.text();
       await pc.setRemoteDescription({type:'answer',sdp:answerSdp});
