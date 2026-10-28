@@ -77,6 +77,7 @@ static async Task HandleAsync(HttpListenerContext context, HttpClient client, Lo
     res.Headers["Vary"] = "Origin";
     res.Headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS";
     res.Headers["Access-Control-Allow-Headers"] = "Content-Type";
+    res.Headers["Access-Control-Allow-Private-Network"] = "true";
     res.Headers["Access-Control-Max-Age"] = "600";
     if (req.HttpMethod == "OPTIONS") { res.StatusCode = 204; res.Close(); return; }
     var path = req.Url?.AbsolutePath ?? "/";
