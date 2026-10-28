@@ -52,28 +52,55 @@ internal sealed class MainForm : Form
         try
         {
             recognizer?.Dispose();
-            recognizer = new SpeechRecognitionEngine();
+            var installed = SpeechRecognitionEngine.InstalledRecognizers();
+            if (installed.Count == 0)
+                throw new InvalidOperationException("No Windows SAPI speech recognizer is installed. Install a Windows speech recognition component and restart this app.");
+            var culture = System.Globalization.CultureInfo.CurrentUICulture;
+            var selected = installed.FirstOrDefault(r => r.Culture.Name.Equals(culture.Name, StringComparison.OrdinalIgnoreCase))
+                ?? installed.FirstOrDefault(r => r.Culture.TwoLetterISOLanguageName.Equals("en", StringComparison.OrdinalIgnoreCase))
+                ?? installed[0];
+            recognizer = new SpeechRecognitionEngine(selected);
             recognizer.LoadGrammar(new DictationGrammar());
             recognizer.SetInputToDefaultAudioDevice();
+            recognizer.AudioStateChanged += (_, e) => BeginInvoke(new Action(() =>
+            {
+                if (!IsDisposed && !busy)
+                    status.Text = e.AudioState == AudioState.Speech ? "Microphone audio detected — recognizing…" : "Listening (microphone quiet)…";
+            }));
+            recognizer.SpeechHypothesized += (_, e) =>
+            {
+                var partial = e.Result?.Text;
+                if (string.IsNullOrWhiteSpace(partial)) return;
+                BeginInvoke(new Action(() => { if (!busy) status.Text = "Recognizing: " + partial; }));
+            };
             recognizer.SpeechRecognized += (_, e) =>
             {
-                if (e.Result.Confidence < 0.48 || string.IsNullOrWhiteSpace(e.Result.Text)) return;
+                if (string.IsNullOrWhiteSpace(e.Result.Text)) return;
                 BeginInvoke(new Action(() =>
                 {
                     pending = (pending + " " + e.Result.Text).Trim();
                     lastSpeech = DateTime.Now;
-                    status.Text = "Hearing: " + pending;
+                    status.Text = "Recognized: " + pending;
                     silenceTimer.Stop(); silenceTimer.Start();
                 }));
             };
+            recognizer.SpeechRecognitionRejected += (_, _) => BeginInvoke(new Action(() =>
+            {
+                if (!busy && pending.Length == 0) status.Text = "Audio detected, but no words recognized. Check your Windows speech language and microphone.";
+            }));
+            recognizer.RecognizeCompleted += (_, e) => BeginInvoke(new Action(() =>
+            {
+                if (!e.Cancelled && e.Error is not null && !IsDisposed)
+                    status.Text = "Speech recognition stopped: " + e.Error.Message;
+            }));
             recognizer.RecognizeAsync(RecognizeMode.Multiple);
             start.Enabled = false; stop.Enabled = true;
-            status.Text = "Listening to your microphone…";
+            status.Text = "Listening with " + selected.Culture.DisplayName + " — speak into your microphone.";
         }
         catch (Exception ex)
         {
             status.Text = "Could not start Windows speech recognition: " + ex.Message;
-            MessageBox.Show(this, "Windows speech recognition could not start. Make sure a speech language is installed and configured.\n\n" + ex.Message, "ChatGPT Voice Loop");
+            MessageBox.Show(this, "Speech recognition could not start. Check Windows speech language support and microphone access.\n\n" + ex.Message, "ChatGPT Voice Loop");
         }
     }
 
