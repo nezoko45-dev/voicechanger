@@ -76,6 +76,9 @@
     return false;
   }
 
+  let assistantCountBeforeSend = 0;
+  let assistantTextBeforeSend = "";
+
   function sendMessage() {
     if (!running || busy) return;
     const text = (pendingFinal + " " + interim).replace(/\s+/g, " ").trim();
@@ -91,6 +94,8 @@
       scheduleRestart(2500);
       return;
     }
+    assistantCountBeforeSend = assistantMessages().length;
+    assistantTextBeforeSend = assistantMessages().at(-1)?.innerText?.trim() || "";
     setComposerText(el, text);
     setStatus("Sending your words…");
     setTimeout(() => {
@@ -116,40 +121,64 @@
 
   async function waitForReplyAndReadAloud() {
     const started = Date.now();
+    const overallTimeoutMs = 90000;
+    let responseSeenAt = 0;
     let previousText = "";
     let stableSince = 0;
-    while (running && Date.now() - started < 180000) {
-      await new Promise(resolve => setTimeout(resolve, 700));
+    let latest = null;
+
+    while (running && Date.now() - started < overallTimeoutMs) {
+      await new Promise(resolve => setTimeout(resolve, 500));
       const messages = assistantMessages();
-      const latest = messages[messages.length - 1];
+      latest = messages[messages.length - 1] || null;
       const text = latest?.innerText?.trim() || "";
-      if (text && text === previousText && !generating()) {
-        if (!stableSince) stableSince = Date.now();
-        if (Date.now() - stableSince > 2200) break;
-      } else {
-        previousText = text;
-        stableSince = 0;
+      const isNewReply = messages.length > assistantCountBeforeSend ||
+        (text.length > 0 && text !== assistantTextBeforeSend);
+
+      if (isNewReply && text) {
+        if (!responseSeenAt) responseSeenAt = Date.now();
+        if (text === previousText) {
+          if (!stableSince) stableSince = Date.now();
+        } else {
+          previousText = text;
+          stableSince = 0;
+        }
+        if (!generating() && stableSince && Date.now() - stableSince >= 1800) break;
+        // A stale/mismatched generation indicator must not block the loop forever.
+        if (stableSince && Date.now() - stableSince >= 5000) break;
+        if (responseSeenAt && Date.now() - responseSeenAt >= 45000) break;
+      } else if (Date.now() - started > 20000 && !generating()) {
+        setStatus("No new reply detected. Check that your message was sent.");
+        busy = false;
+        scheduleRestart(1800);
+        return;
       }
     }
+
     if (!running) return;
     const messages = assistantMessages();
-    const latest = messages[messages.length - 1];
-    if (!latest) {
-      setStatus("No reply detected; listening again.");
+    latest = messages[messages.length - 1] || null;
+    const latestText = latest?.innerText?.trim() || "";
+    const hasNewReply = messages.length > assistantCountBeforeSend ||
+      (latestText.length > 0 && latestText !== assistantTextBeforeSend);
+
+    if (!hasNewReply || !latest) {
+      setStatus("Reply timed out or wasn't detected. Listening again.");
       busy = false;
-      scheduleRestart(1200);
+      scheduleRestart(1500);
       return;
     }
+
     setStatus("Clicking Read aloud…");
     const clicked = clickButtonByLabel(["Read aloud"], latest) || clickButtonByLabel(["Read aloud"]);
     if (!clicked) {
-      setStatus("Reply received, but Read aloud wasn't found. Listening again.");
+      setStatus("Reply detected, but Read aloud wasn't found. Listening again.");
       busy = false;
-      scheduleRestart(2500);
+      scheduleRestart(2200);
       return;
     }
     setStatus("Reading reply aloud…");
-    await waitForReadAloudToFinish(latest.innerText || "");
+    await waitForReadAloudToFinish(latestText);
     if (!running) return;
     busy = false;
     setStatus("Listening for your next dictation…");
