@@ -22,7 +22,9 @@ jobs:
         with:
           dotnet-version: 8.0.x
       - name: Publish self-contained Windows executable
-        run: dotnet publish chatgpt-voice-loop-exe/ChatGPTVoiceLoop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
+        run: dotnet restore chatgpt-voice-loop-exe/ChatGPTVoiceLoop.csproj -r win-x64
+          dotnet build chatgpt-voice-loop-exe/ChatGPTVoiceLoop.csproj -c Release -r win-x64 --no-restore
+          dotnet publish chatgpt-voice-loop-exe/ChatGPTVoiceLoop.csproj -c Release -r win-x64 --no-restore --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
         with:
