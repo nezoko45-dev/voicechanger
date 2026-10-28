@@ -1,0 +1,61 @@
+<Window x:Class="OpenRouterTtsReader.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="OpenRouter TTS Reader" Height="760" Width="900" MinHeight="650" MinWidth="720"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <StackPanel Grid.Row="0" Margin="0,0,0,12">
+            <TextBlock Text="OpenRouter TTS Reader" FontSize="25" FontWeight="Bold"/>
+            <TextBlock Text="Native Windows app • local Windows speech recognition • OpenRouter-generated speech" Foreground="Gray" Margin="0,4,0,0"/>
+        </StackPanel>
+        <StackPanel Grid.Row="1" Margin="0,0,0,12">
+            <TextBlock Text="OpenRouter API key" FontWeight="SemiBold" Margin="0,0,0,5"/>
+            <PasswordBox x:Name="ApiKeyBox" Padding="9" FontSize="14"/>
+            <TextBlock Text="The key stays in memory for this session and is sent directly to OpenRouter. It is not saved to disk." Foreground="Gray" TextWrapping="Wrap" Margin="0,5,0,0"/>
+        </StackPanel>
+        <Grid Grid.Row="2" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="Speech model" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                <ComboBox x:Name="ModelBox" Padding="7" SelectionChanged="ModelBox_SelectionChanged">
+                    <ComboBoxItem Content="Grok Voice TTS 1.0" Tag="x-ai/grok-voice-tts-1.0" IsSelected="True"/>
+                    <ComboBoxItem Content="Mistral Voxtral Mini TTS" Tag="mistralai/voxtral-mini-tts-2603"/>
+                    <ComboBoxItem Content="Microsoft MAI Voice 2" Tag="microsoft/mai-voice-2"/>
+                </ComboBox>
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="Voice" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                <ComboBox x:Name="VoiceBox" Padding="7"/>
+            </StackPanel>
+        </Grid>
+        <WrapPanel Grid.Row="3" Margin="0,0,0,10" VerticalAlignment="Center">
+            <Button x:Name="StartDictationButton" Content="Start microphone dictation" Padding="12,8" Margin="0,0,8,8" Click="StartDictation_Click"/>
+            <Button x:Name="StopDictationButton" Content="Stop dictation" Padding="12,8" Margin="0,0,8,8" IsEnabled="False" Click="StopDictation_Click"/>
+            <CheckBox x:Name="AutoReadCheckBox" Content="Automatically read finished phrases" IsChecked="True" VerticalAlignment="Center" Margin="4,0,16,8"/>
+            <CheckBox x:Name="ClearAfterReadCheckBox" Content="Clear text after playback" IsChecked="True" VerticalAlignment="Center" Margin="0,0,0,8"/>
+        </WrapPanel>
+        <Grid Grid.Row="4" Margin="0,0,0,12">
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" Text="Dictation / text to read aloud" FontWeight="SemiBold" Margin="0,0,0,6"/>
+            <TextBox Grid.Row="1" x:Name="TextBoxInput" FontSize="15" Padding="10" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" SpellCheck.IsEnabled="True"/>
+        </Grid>
+        <WrapPanel Grid.Row="5" Margin="0,0,0,10">
+            <Button x:Name="SpeakButton" Content="Generate &amp; Read Aloud" Padding="14,9" Margin="0,0,8,0" Click="Speak_Click"/>
+            <Button x:Name="StopAudioButton" Content="Stop audio" Padding="14,9" Margin="0,0,8,0" IsEnabled="False" Click="StopAudio_Click"/>
+            <Button Content="Clear text" Padding="14,9" Click="Clear_Click"/>
+        </WrapPanel>
+        <Border Grid.Row="6" Background="{DynamicResource {x:Static SystemColors.ControlLightBrushKey}}" CornerRadius="8" Padding="10">
+            <TextBlock x:Name="StatusText" Text="Ready. Enter your API key, then start dictation or type text." TextWrapping="Wrap"/>
+        </Border>
+        <MediaElement x:Name="AudioPlayer" LoadedBehavior="Manual" UnloadedBehavior="Stop" MediaEnded="AudioPlayer_MediaEnded" MediaFailed="AudioPlayer_MediaFailed" Visibility="Collapsed"/>
+    </Grid>
+</Window>
