@@ -21,7 +21,8 @@
   <div><label for="voice">Voice</label><select id="voice"></select></div>
 </div>
 <label for="text">Text to read aloud</label>
-<textarea id="text" placeholder="Paste the ChatGPT response here…"></textarea>
+<textarea id="text" placeholder="Click here, then press Ctrl+V to paste a ChatGPT response…"></textarea>
+<div class="row"><button id="paste" type="button">Paste from Clipboard</button><small>Or click the text box and press Ctrl+V.</small></div>
 <div class="row"><button id="speak">Generate &amp; Read Aloud</button><button id="stop" disabled>Stop audio</button><button id="clear">Clear text</button></div>
 <p id="status" role="status">Start OpenRouterTTSHelper.exe, then paste a reply to read aloud.</p>
 <audio id="player" controls style="width:100%;margin-top:8px"></audio>
@@ -39,7 +40,7 @@
  function updateVoices(){voice.replaceChildren();for(const [id,label] of voices[model.value]){const o=document.createElement('option');o.value=id;o.textContent=label;voice.append(o)}}
  function cleanup(){if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=null}
  model.addEventListener('change',updateVoices);
- $('clear').addEventListener('click',()=>input.value='');
+ $('paste').addEventListener('click',async()=>{try{const clip=await navigator.clipboard.readText();if(!clip){status('Clipboard is empty. Copy the ChatGPT reply first, then try again.');return}input.value=clip;input.focus();input.dispatchEvent(new Event('input',{bubbles:true}));status('Pasted text from clipboard. Click Generate & Read Aloud when ready.')}catch(e){input.focus();status('Clipboard access was blocked by the browser. Click inside the text box and press Ctrl+V (or right-click and choose Paste).')}});\n $('clear').addEventListener('click',()=>input.value='');
  stop.addEventListener('click',()=>{player.pause();player.currentTime=0;status('Playback stopped.')});
  speak.addEventListener('click',async()=>{
   const text=input.value.trim();if(!text){status('Paste a reply first.');input.focus();return}
