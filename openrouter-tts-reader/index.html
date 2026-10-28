@@ -96,7 +96,8 @@
   if(dictationOn&&recognition){readingAudio=true;try{recognition.stop()}catch{}}
   status('Generating audio through OpenRouterTTSHelper.exe…');
   try{
-   if(!$('apiKey').value.trim())throw new Error('Enter your OpenRouter API key in the field above.');\n   if(device.value==='')throw new Error('Choose a Windows audio output device first.');
+   if(!$('apiKey').value.trim())throw new Error('Enter your OpenRouter API key in the field above.');
+   if(device.value==='')throw new Error('Choose a Windows audio output device first.');
    const response=await fetch('http://127.0.0.1:32146/api/speech',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:$('apiKey').value.trim(),model:model.value,input:value,voice:voice.value,response_format:'mp3',deviceNumber:Number(device.value)})});
    if(!response.ok){let detail=await response.text();try{detail=JSON.parse(detail).error||detail}catch{}throw new Error('Local helper returned HTTP '+response.status+': '+detail.slice(0,600))}
    const result=await response.json();if(!result.ok)throw new Error('The EXE did not start playback.');
