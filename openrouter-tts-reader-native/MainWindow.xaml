@@ -5,13 +5,8 @@
         WindowStartupLocation="CenterScreen">
     <Grid Margin="18">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <StackPanel Grid.Row="0" Margin="0,0,0,12">
             <TextBlock Text="OpenRouter TTS Reader" FontSize="25" FontWeight="Bold"/>
@@ -56,6 +51,6 @@
         <Border Grid.Row="6" Background="{DynamicResource {x:Static SystemColors.ControlLightBrushKey}}" CornerRadius="8" Padding="10">
             <TextBlock x:Name="StatusText" Text="Ready. Enter your API key, then start dictation or type text." TextWrapping="Wrap"/>
         </Border>
-        <MediaElement x:Name="AudioPlayer" LoadedBehavior="Manual" UnloadedBehavior="Stop" MediaEnded="AudioPlayer_MediaEnded" MediaFailed="AudioPlayer_MediaFailed" Visibility="Collapsed"/>
+        <MediaElement x:Name="AudioPlayer" Width="1" Height="1" Opacity="0" IsHitTestVisible="False" LoadedBehavior="Manual" UnloadedBehavior="Stop" MediaEnded="AudioPlayer_MediaEnded" MediaFailed="AudioPlayer_MediaFailed"/>
     </Grid>
 </Window>
