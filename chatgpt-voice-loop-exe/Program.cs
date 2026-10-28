@@ -36,6 +36,10 @@ internal sealed class MainForm : Form
     [StructLayout(LayoutKind.Sequential)]
     private struct RECT { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+    private const byte VK_LWIN = 0x5B;
+    private const byte VK_H = 0x48;
+    private const uint KEYEVENTF_KEYUP = 0x0002;
     [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
@@ -114,6 +118,15 @@ internal sealed class MainForm : Form
                 lastComposerText = "";
             }
 
+            // Start Windows Voice Typing (Win+H) in the focused ChatGPT composer.
+            // Chrome's page SpeechRecognition API cannot be started by an external UIA-only EXE
+            // without injecting page code or using an extension. Win+H is the no-install option.
+            if (composer is not null && IsWithinWindow(composer, window))
+            {
+                Thread.Sleep(150);
+                StartVoiceTyping();
+            }
+
             active = true;
             stop.Enabled = true;
             waitingForReply = false;
@@ -122,13 +135,21 @@ internal sealed class MainForm : Form
             timer.Start();
             status.Text = composer is null
                 ? "Loop running in fallback mode. ChatGPT's composer is not exposed to UI Automation, so the app clicked its usual location and will keep retrying detection. If dictation doesn't appear, use Win+H after Chrome is active."
-                : "Composer found. Press Win+H and dictate into ChatGPT; the loop will send stable text and click Read aloud when a reply appears.";
+                : "Windows Voice Typing opened in ChatGPT. Speak; after a 3-second pause, the app submits the text and clicks Read aloud for the reply.";
         }
         catch (Exception ex)
         {
             status.Text = "Start failed: " + ex.GetType().Name + ": " + ex.Message;
             start.Enabled = true;
         }
+    }
+
+    private static void StartVoiceTyping()
+    {
+        keybd_event(VK_LWIN, 0, 0, UIntPtr.Zero);
+        keybd_event(VK_H, 0, 0, UIntPtr.Zero);
+        keybd_event(VK_H, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+        keybd_event(VK_LWIN, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
     }
 
     private void StopLoop()
