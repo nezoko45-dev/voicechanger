@@ -1,0 +1,44 @@
+name: Build local Realtime token helper
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/local-realtime-token-helper
+    paths:
+      - "local-realtime-token-helper/**"
+      - ".github/workflows/build-local-token-helper.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Publish self-contained Windows executable
+        run: >-
+          dotnet publish local-realtime-token-helper/VoiceReaderLocalTokenHelper.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          --output artifacts/VoiceReaderLocalTokenHelper
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceReaderLocalTokenHelper-windows-x64
+          path: artifacts/VoiceReaderLocalTokenHelper/VoiceReaderLocalTokenHelper.exe
+          if-no-files-found: error
+          retention-days: 14
