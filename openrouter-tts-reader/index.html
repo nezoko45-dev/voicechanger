@@ -23,7 +23,8 @@
   <div><label for="voice">Voice</label><select id="voice"></select></div>
 </div>
 <label for="text">Text to read aloud</label>
-<textarea id="text" placeholder="Paste the ChatGPT response here…"></textarea>
+<textarea id="text" placeholder="Click here, then press Ctrl+V to paste a ChatGPT response…"></textarea>
+<div class="row"><button id="paste" type="button">Paste from Clipboard</button><small>Or click the text box and press Ctrl+V.</small></div>
 <div class="row">
   <button id="speak">Generate &amp; Read Aloud</button>
   <button id="stop" disabled>Stop audio</button>
@@ -62,7 +63,7 @@
     objectUrl = null;
   }
   model.addEventListener('change', updateVoices);
-  $('clear').addEventListener('click', () => { text.value = ''; });
+  $('paste').addEventListener('click', async () => {\n    try {\n      const clip = await navigator.clipboard.readText();\n      if (!clip) { status('Clipboard is empty. Copy the ChatGPT reply first, then try again.'); return; }\n      text.value = clip; text.focus(); text.dispatchEvent(new Event('input', { bubbles: true }));\n      status('Pasted text from clipboard. Click Generate & Read Aloud when ready.');\n    } catch (error) {\n      text.focus();\n      status('Clipboard access was blocked by the browser. Click inside the text box and press Ctrl+V (or right-click and choose Paste).');\n    }\n  });\n  $('clear').addEventListener('click', () => { text.value = ''; });
   stop.addEventListener('click', () => { player.pause(); player.currentTime = 0; status('Playback stopped.'); });
   speak.addEventListener('click', async () => {
     const apiKey = key.value.trim(), input = text.value.trim();
