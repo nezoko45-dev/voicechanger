@@ -10,7 +10,7 @@
     "appId": "dev.nezoko45.openrouterttsreader",
     "productName": "OpenRouter TTS Reader",
     "directories": { "output": "dist" },
-    "files": ["main.js", "preload.js", "index.html", "package.json"],
+    "files": ["main.js", "preload.js", "index.html", "windows-dictation.ps1", "package.json"],
     "win": { "target": ["portable"], "artifactName": "OpenRouterTTSReader-Setup.exe" }
   }
 }
