@@ -11,7 +11,10 @@
 <body>
 <h1>OpenRouter TTS Reader</h1>
 <p class="muted">Windows EXE + microphone dictation. The EXE generates and plays audio directly through the Windows output device you select below. Chrome handles microphone dictation and controls; audio does not play in the browser.</p>
-<div class="notice"><strong>First:</strong> Run <code>OpenRouterTTSHelper.exe</code>, enter your OpenRouter API key in its console, and keep that window open. Dictation uses Chrome's speech recognition.</div>
+<div class="notice"><strong>First:</strong> Run <code>OpenRouterTTSHelper.exe</code> and keep that window open. Enter your OpenRouter API key in the field below. Dictation uses Chrome's speech recognition.</div>
+<label for="apiKey">OpenRouter API key</label>
+<input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-or-…" style="box-sizing:border-box;width:100%;font:inherit;padding:10px;border-radius:9px">
+<p class="muted"><small>The key stays in this page's memory and is sent to your local helper only when you generate speech. It is not saved to GitHub or browser storage. Clear it before closing the page if using a shared computer.</small></p>
 <div class="grid">
 <div><label for="device">Windows audio output device (played by EXE)</label><select id="device"><option value="">Loading Windows devices…</option></select></div>
 <div><label for="model">Speech model</label><select id="model">
@@ -93,8 +96,8 @@
   if(dictationOn&&recognition){readingAudio=true;try{recognition.stop()}catch{}}
   status('Generating audio through OpenRouterTTSHelper.exe…');
   try{
-   if(device.value==='')throw new Error('Choose a Windows audio output device first.');
-   const response=await fetch('http://127.0.0.1:32146/api/speech',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:model.value,input:value,voice:voice.value,response_format:'mp3',deviceNumber:Number(device.value)})});
+   if(!$('apiKey').value.trim())throw new Error('Enter your OpenRouter API key in the field above.');\n   if(device.value==='')throw new Error('Choose a Windows audio output device first.');
+   const response=await fetch('http://127.0.0.1:32146/api/speech',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:$('apiKey').value.trim(),model:model.value,input:value,voice:voice.value,response_format:'mp3',deviceNumber:Number(device.value)})});
    if(!response.ok){let detail=await response.text();try{detail=JSON.parse(detail).error||detail}catch{}throw new Error('Local helper returned HTTP '+response.status+': '+detail.slice(0,600))}
    const result=await response.json();if(!result.ok)throw new Error('The EXE did not start playback.');
    lastSpoken=value;wasPlaying=true;stop.disabled=false;status((automatic?'Reading dictated phrase':'Speaking text')+' with '+voice.options[voice.selectedIndex].text+' through '+device.options[device.selectedIndex].text+'.');pollPlayback();
