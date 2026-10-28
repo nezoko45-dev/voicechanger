@@ -20,33 +20,35 @@ internal sealed class MainForm : Form
     private readonly Label status = new()
     {
         AutoSize = true,
-        MaximumSize = new System.Drawing.Size(520, 0),
-        Text = "Ready. Open ChatGPT in Chrome, with the chat visible."
+        MaximumSize = new System.Drawing.Size(540, 0),
+        Text = "Open ChatGPT in Chrome. Start focuses the message box and opens Windows voice typing (Win+H)."
     };
-    private readonly Button start = new() { Text = "Start ChatGPT voice", AutoSize = true };
+    private readonly Button start = new() { Text = "Start dictation loop", AutoSize = true };
     private readonly Button stop = new() { Text = "Stop", AutoSize = true, Enabled = false };
-    private readonly System.Windows.Forms.Timer timer = new() { Interval = 1500 };
+    private readonly System.Windows.Forms.Timer timer = new() { Interval = 1000 };
     private bool active;
+    private string lastComposerText = "";
+    private DateTime lastTextChange = DateTime.MinValue;
+    private bool waitingForReply;
+    private DateTime sendTime;
+    private bool clickedReadAloudForCurrentReply;
 
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
     public MainForm()
     {
-        Text = "ChatGPT Voice Loop — UI Automation";
-        Width = 600;
-        Height = 210;
+        Text = "ChatGPT Voice Loop — Dictation + Read Aloud";
+        Width = 620;
+        Height = 230;
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
 
         var layout = new FlowLayoutPanel
         {
-            Dock = DockStyle.Fill,
-            Padding = new Padding(14),
-            FlowDirection = FlowDirection.TopDown,
-            WrapContents = false,
-            AutoScroll = true
+            Dock = DockStyle.Fill, Padding = new Padding(14),
+            FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true
         };
         layout.Controls.Add(status);
         var buttons = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
@@ -56,15 +58,14 @@ internal sealed class MainForm : Form
         Controls.Add(layout);
 
         start.Click += Start_Click;
-        stop.Click += (_, _) => StopVoice();
-        timer.Tick += (_, _) => CheckChatGPT();
+        stop.Click += (_, _) => StopLoop();
+        timer.Tick += (_, _) => TickLoop();
         FormClosing += (_, _) => timer.Stop();
     }
 
     private void Start_Click(object? sender, EventArgs e)
     {
-        // Update the UI before attempting UI Automation so the click never appears to do nothing.
-        status.Text = "Start clicked. Looking for the ChatGPT Chrome window…";
+        status.Text = "Start clicked. Finding ChatGPT and its message box…";
         start.Enabled = false;
         Refresh();
         Application.DoEvents();
@@ -74,28 +75,40 @@ internal sealed class MainForm : Form
             var window = FindChatGPTWindow();
             if (window is null)
             {
-                status.Text = "Couldn't find a Chrome window titled ChatGPT. Click the ChatGPT tab in Chrome, then try Start again.";
+                status.Text = "ChatGPT Chrome window not found. Open chatgpt.com in Chrome and make that tab visible.";
                 start.Enabled = true;
                 return;
             }
 
             Activate(window);
-            Thread.Sleep(500);
+            Thread.Sleep(400);
             window = FindChatGPTWindow() ?? window;
-
-            var voice = FindVoiceControl(window);
-            if (voice is null)
+            var composer = FindComposer(window);
+            if (composer is null)
             {
-                status.Text = "Found ChatGPT, but Chrome doesn't expose a named Voice button to UI Automation. Try maximising Chrome and ensure the message composer is visible.";
+                status.Text = "Found ChatGPT, but UI Automation couldn't find the message text box. Click inside ChatGPT's composer once and try again.";
                 start.Enabled = true;
                 return;
             }
 
-            InvokeControl(voice);
+            composer.SetFocus();
+            SendKeys.SendWait("^{END}");
+            Thread.Sleep(150);
+            // Windows Voice Typing UI (Win+H), not Windows SAPI and not a synthetic David voice.
+            SendKeys.SendWait("^{ESC}");
+            SendKeys.SendWait("{ESC}");
+            SendKeys.SendWait("^{ESC}");
+            SendKeys.SendWait("{ESC}");
+            SendKeys.SendWait("{LWIN down}h{LWIN up}");
+
             active = true;
             stop.Enabled = true;
+            waitingForReply = false;
+            clickedReadAloudForCurrentReply = false;
+            lastComposerText = ReadValue(composer);
+            lastTextChange = DateTime.UtcNow;
             timer.Start();
-            status.Text = "Voice button activated. ChatGPT handles microphone recognition and spoken replies; this app does not use Windows speech synthesis or the David voice.";
+            status.Text = "Dictation loop started. Windows Voice Typing should be open; speak into the ChatGPT text box. I'll send stable text and click Read aloud when the reply appears.";
         }
         catch (Exception ex)
         {
@@ -104,84 +117,100 @@ internal sealed class MainForm : Form
         }
     }
 
-    private void StopVoice()
+    private void StopLoop()
     {
         timer.Stop();
         active = false;
+        waitingForReply = false;
         start.Enabled = true;
         stop.Enabled = false;
-        status.Text = "Stopped. Click Start ChatGPT voice to try again.";
+        status.Text = "Stopped. No Windows text-to-speech is used.";
     }
 
-    private void CheckChatGPT()
+    private void TickLoop()
     {
         if (!active) return;
         try
         {
             var window = FindChatGPTWindow();
-            if (window is null)
-            {
-                status.Text = "ChatGPT window not found. Open the chat in Chrome and click Start again.";
-                timer.Stop();
-                active = false;
-                start.Enabled = true;
-                stop.Enabled = false;
-                return;
-            }
+            if (window is null) { status.Text = "ChatGPT window not found; loop paused."; return; }
 
-            foreach (AutomationElement item in window.FindAll(TreeScope.Descendants, Condition.TrueCondition))
+            if (!waitingForReply)
             {
-                var name = SafeName(item);
-                if (name.Contains("end voice", StringComparison.OrdinalIgnoreCase) ||
-                    name.Contains("stop voice", StringComparison.OrdinalIgnoreCase) ||
-                    name.Contains("mute", StringComparison.OrdinalIgnoreCase))
+                var composer = FindComposer(window);
+                if (composer is not null)
                 {
-                    status.Text = "ChatGPT Voice appears active. Speak to ChatGPT directly; its own Voice Mode handles speech and replies.";
-                    return;
+                    var text = ReadValue(composer);
+                    if (!string.Equals(text, lastComposerText, StringComparison.Ordinal))
+                    {
+                        lastComposerText = text;
+                        lastTextChange = DateTime.UtcNow;
+                        status.Text = "Dictation detected. Waiting for you to finish speaking…";
+                    }
+                    else if (!string.IsNullOrWhiteSpace(text) &&
+                             DateTime.UtcNow - lastTextChange > TimeSpan.FromSeconds(3))
+                    {
+                        Activate(window);
+                        composer.SetFocus();
+                        SendKeys.SendWait("{ENTER}");
+                        waitingForReply = true;
+                        sendTime = DateTime.UtcNow;
+                        clickedReadAloudForCurrentReply = false;
+                        lastComposerText = "";
+                        status.Text = "Sent dictated text. Waiting for the AI reply…";
+                    }
                 }
             }
-            status.Text = "ChatGPT window is found. If Voice Mode didn't open, use the Voice button in ChatGPT and then click Stop here when finished.";
+            else if (DateTime.UtcNow - sendTime > TimeSpan.FromSeconds(2))
+            {
+                var readAloud = FindReadAloudButton(window);
+                if (readAloud is not null && !clickedReadAloudForCurrentReply)
+                {
+                    InvokeControl(readAloud);
+                    clickedReadAloudForCurrentReply = true;
+                    waitingForReply = false;
+                    lastComposerText = "";
+                    lastTextChange = DateTime.UtcNow;
+                    status.Text = "Clicked Read aloud for the reply. Speak again when playback finishes.";
+                }
+                else if (DateTime.UtcNow - sendTime > TimeSpan.FromSeconds(90))
+                {
+                    waitingForReply = false;
+                    status.Text = "Timed out waiting for Read aloud. The response may still be generating; you can keep dictating.";
+                }
+            }
         }
         catch (Exception ex)
         {
-            status.Text = "Monitoring UI Automation: " + ex.Message;
+            status.Text = "UI Automation issue: " + ex.Message;
         }
     }
 
     private static AutomationElement? FindChatGPTWindow()
     {
-        // First use actual Chrome processes and their top-level window handles.
         foreach (var process in Process.GetProcessesByName("chrome"))
         {
             try
             {
                 if (process.MainWindowHandle == IntPtr.Zero) continue;
-                var title = process.MainWindowTitle ?? "";
-                if (title.Contains("ChatGPT", StringComparison.OrdinalIgnoreCase))
-                {
-                    var element = AutomationElement.FromHandle(process.MainWindowHandle);
-                    if (element is not null) return element;
-                }
+                if ((process.MainWindowTitle ?? "").Contains("ChatGPT", StringComparison.OrdinalIgnoreCase))
+                    return AutomationElement.FromHandle(process.MainWindowHandle);
             }
             catch { }
         }
-
-        // Fallback to the UI Automation desktop tree, which handles Chrome title variations.
         try
         {
             var windows = AutomationElement.RootElement.FindAll(TreeScope.Children, Condition.TrueCondition);
             foreach (AutomationElement window in windows)
             {
-                var title = SafeName(window);
-                if (title.Contains("ChatGPT", StringComparison.OrdinalIgnoreCase))
+                if (SafeName(window).Contains("ChatGPT", StringComparison.OrdinalIgnoreCase))
                     return window;
                 try
                 {
                     var tabs = window.FindAll(TreeScope.Descendants,
                         new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.TabItem));
                     foreach (AutomationElement tab in tabs)
-                        if (SafeName(tab).Contains("ChatGPT", StringComparison.OrdinalIgnoreCase))
-                            return window;
+                        if (SafeName(tab).Contains("ChatGPT", StringComparison.OrdinalIgnoreCase)) return window;
                 }
                 catch { }
             }
@@ -190,44 +219,59 @@ internal sealed class MainForm : Form
         return null;
     }
 
-    private static void Activate(AutomationElement window)
+    private static AutomationElement? FindComposer(AutomationElement window)
     {
         try
         {
-            var handle = new IntPtr(window.Current.NativeWindowHandle);
-            if (handle != IntPtr.Zero)
-            {
-                ShowWindow(handle, 9);
-                SetForegroundWindow(handle);
-            }
-            window.SetFocus();
-        }
-        catch { }
-    }
-
-    private static AutomationElement? FindVoiceControl(AutomationElement window)
-    {
-        try
-        {
-            var elements = window.FindAll(TreeScope.Descendants, Condition.TrueCondition);
-            AutomationElement? fallback = null;
-            foreach (AutomationElement element in elements)
+            var edits = window.FindAll(TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit));
+            AutomationElement? candidate = null;
+            foreach (AutomationElement edit in edits)
             {
                 try
                 {
-                    if (!element.Current.IsEnabled || element.Current.IsOffscreen) continue;
-                    var name = SafeName(element);
-                    if (string.IsNullOrWhiteSpace(name)) continue;
+                    if (!edit.Current.IsEnabled || edit.Current.IsOffscreen) continue;
+                    var name = SafeName(edit);
+                    if (name.Contains("message", StringComparison.OrdinalIgnoreCase) ||
+                        name.Contains("prompt", StringComparison.OrdinalIgnoreCase))
+                        return edit;
+                    candidate = edit;
+                }
+                catch { }
+            }
+            if (candidate is not null) return candidate;
 
-                    if (name.Contains("start voice conversation", StringComparison.OrdinalIgnoreCase) ||
-                        name.Equals("voice mode", StringComparison.OrdinalIgnoreCase) ||
-                        name.Equals("start voice", StringComparison.OrdinalIgnoreCase))
-                        return element;
+            var docs = window.FindAll(TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Document));
+            foreach (AutomationElement doc in docs)
+            {
+                var name = SafeName(doc);
+                if (name.Contains("message", StringComparison.OrdinalIgnoreCase) ||
+                    name.Contains("prompt", StringComparison.OrdinalIgnoreCase))
+                    return doc;
+            }
+        }
+        catch { }
+        return null;
+    }
 
-                    if (element.Current.ControlType == ControlType.Button &&
-                        (name.Contains("voice", StringComparison.OrdinalIgnoreCase) ||
-                         name.Contains("microphone", StringComparison.OrdinalIgnoreCase)))
-                        fallback ??= element;
+    private static AutomationElement? FindReadAloudButton(AutomationElement window)
+    {
+        try
+        {
+            var buttons = window.FindAll(TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button));
+            AutomationElement? fallback = null;
+            foreach (AutomationElement button in buttons)
+            {
+                try
+                {
+                    if (!button.Current.IsEnabled || button.Current.IsOffscreen) continue;
+                    var name = SafeName(button);
+                    if (name.Contains("read aloud", StringComparison.OrdinalIgnoreCase) ||
+                        name.Contains("read response", StringComparison.OrdinalIgnoreCase))
+                        return button;
+                    if (name.Equals("listen", StringComparison.OrdinalIgnoreCase)) fallback ??= button;
                 }
                 catch { }
             }
@@ -236,16 +280,35 @@ internal sealed class MainForm : Form
         catch { return null; }
     }
 
+    private static string ReadValue(AutomationElement element)
+    {
+        try
+        {
+            if (element.TryGetCurrentPattern(ValuePattern.Pattern, out var value))
+                return ((ValuePattern)value).Current.Value ?? "";
+            if (element.TryGetCurrentPattern(TextPattern.Pattern, out var text))
+                return ((TextPattern)text).DocumentRange.GetText(-1) ?? "";
+        }
+        catch { }
+        return "";
+    }
+
+    private static void Activate(AutomationElement window)
+    {
+        try
+        {
+            var hwnd = new IntPtr(window.Current.NativeWindowHandle);
+            if (hwnd != IntPtr.Zero) { ShowWindow(hwnd, 9); SetForegroundWindow(hwnd); }
+            window.SetFocus();
+        }
+        catch { }
+    }
+
     private static void InvokeControl(AutomationElement element)
     {
         if (element.TryGetCurrentPattern(InvokePattern.Pattern, out var pattern))
         {
             ((InvokePattern)pattern).Invoke();
-            return;
-        }
-        if (element.TryGetCurrentPattern(SelectionItemPattern.Pattern, out var selection))
-        {
-            ((SelectionItemPattern)selection).Select();
             return;
         }
         element.SetFocus();
