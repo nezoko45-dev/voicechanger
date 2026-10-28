@@ -1,6 +1,4 @@
 using System.Diagnostics;
-using System.Speech.Recognition;
-using System.Speech.Synthesis;
 using System.Windows.Automation;
 using System.Windows.Forms;
 
@@ -18,238 +16,209 @@ internal static class Program
 
 internal sealed class MainForm : Form
 {
-    private readonly Label status = new() { AutoSize = true, Text = "Ready. Open ChatGPT in Chrome, then click Start." };
-    private readonly Button start = new() { Text = "Start listening", AutoSize = true };
+    private readonly Label status = new()
+    {
+        AutoSize = true,
+        MaximumSize = new System.Drawing.Size(500, 0),
+        Text = "Open ChatGPT in Chrome, sign in, and leave the chat visible."
+    };
+    private readonly Button start = new() { Text = "Start ChatGPT voice", AutoSize = true };
     private readonly Button stop = new() { Text = "Stop", AutoSize = true, Enabled = false };
-    private readonly CheckBox readInput = new() { Text = "Read my dictated words aloud before sending", Checked = true, AutoSize = true };
-    private readonly CheckBox readReply = new() { Text = "Read ChatGPT's reply aloud after sending", Checked = true, AutoSize = true };
-    private readonly SpeechSynthesizer speaker = new();
-    private SpeechRecognitionEngine? recognizer;
-    private readonly System.Windows.Forms.Timer silenceTimer = new() { Interval = 2400 };
-    private string pending = "";
-    private bool busy;
-    private DateTime lastSpeech = DateTime.MinValue;
+    private readonly System.Windows.Forms.Timer timer = new() { Interval = 1200 };
+    private bool active;
+    private bool clickedVoice;
 
     public MainForm()
     {
-        Text = "ChatGPT Voice Loop";
-        Width = 560; Height = 205;
+        Text = "ChatGPT Voice Loop — UI Automation";
+        Width = 560;
+        Height = 190;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
-        var layout = new FlowLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(14), FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true };
-        layout.Controls.Add(status); layout.Controls.Add(readInput); layout.Controls.Add(readReply);
+        var layout = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            Padding = new Padding(14),
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false,
+            AutoScroll = true
+        };
+        layout.Controls.Add(status);
         var buttons = new FlowLayoutPanel { AutoSize = true };
-        buttons.Controls.Add(start); buttons.Controls.Add(stop); layout.Controls.Add(buttons);
+        buttons.Controls.Add(start);
+        buttons.Controls.Add(stop);
+        layout.Controls.Add(buttons);
         Controls.Add(layout);
-        start.Click += (_, _) => StartListening();
-        stop.Click += (_, _) => StopListening();
-        silenceTimer.Tick += async (_, _) => await FlushIfQuiet();
-        FormClosing += (_, _) => { StopListening(); speaker.Dispose(); };
+
+        start.Click += (_, _) => StartVoice();
+        stop.Click += (_, _) => StopVoice();
+        timer.Tick += (_, _) => CheckChatGPT();
+        FormClosing += (_, _) => timer.Stop();
     }
 
-    private void StartListening()
+    private void StartVoice()
     {
+        var window = FindChatGPTWindow();
+        if (window is null)
+        {
+            status.Text = "ChatGPT window not found. Open chatgpt.com in Chrome and bring that tab to the foreground.";
+            return;
+        }
+
         try
         {
-            recognizer?.Dispose();
-            var installed = SpeechRecognitionEngine.InstalledRecognizers();
-            if (installed.Count == 0)
-                throw new InvalidOperationException("No Windows SAPI speech recognizer is installed. Install a Windows speech recognition component and restart this app.");
-            var culture = System.Globalization.CultureInfo.CurrentUICulture;
-            var selected = installed.FirstOrDefault(r => r.Culture.Name.Equals(culture.Name, StringComparison.OrdinalIgnoreCase))
-                ?? installed.FirstOrDefault(r => r.Culture.TwoLetterISOLanguageName.Equals("en", StringComparison.OrdinalIgnoreCase))
-                ?? installed[0];
-            recognizer = new SpeechRecognitionEngine(selected);
-            recognizer.LoadGrammar(new DictationGrammar());
-            recognizer.SetInputToDefaultAudioDevice();
-            recognizer.AudioStateChanged += (_, e) => BeginInvoke(new Action(() =>
+            window.SetFocus();
+            var voiceButton = FindVoiceButton(window);
+            if (voiceButton is null)
             {
-                if (!IsDisposed && !busy)
-                    status.Text = e.AudioState == AudioState.Speech ? "Microphone audio detected — recognizing…" : "Listening (microphone quiet)…";
-            }));
-            recognizer.SpeechHypothesized += (_, e) =>
-            {
-                var partial = e.Result?.Text;
-                if (string.IsNullOrWhiteSpace(partial)) return;
-                BeginInvoke(new Action(() => { if (!busy) status.Text = "Recognizing: " + partial; }));
-            };
-            recognizer.SpeechRecognized += (_, e) =>
-            {
-                if (string.IsNullOrWhiteSpace(e.Result.Text)) return;
-                BeginInvoke(new Action(() =>
-                {
-                    pending = (pending + " " + e.Result.Text).Trim();
-                    lastSpeech = DateTime.Now;
-                    status.Text = "Recognized: " + pending;
-                    silenceTimer.Stop(); silenceTimer.Start();
-                }));
-            };
-            recognizer.SpeechRecognitionRejected += (_, _) => BeginInvoke(new Action(() =>
-            {
-                if (!busy && pending.Length == 0) status.Text = "Audio detected, but no words recognized. Check your Windows speech language and microphone.";
-            }));
-            recognizer.RecognizeCompleted += (_, e) => BeginInvoke(new Action(() =>
-            {
-                if (!e.Cancelled && e.Error is not null && !IsDisposed)
-                    status.Text = "Speech recognition stopped: " + e.Error.Message;
-            }));
-            recognizer.RecognizeAsync(RecognizeMode.Multiple);
-            start.Enabled = false; stop.Enabled = true;
-            status.Text = "Listening with " + selected.Culture.DisplayName + " — speak into your microphone.";
+                status.Text = "ChatGPT is open, but UI Automation couldn't identify its Voice/microphone button. Make sure the chat composer is visible.";
+                return;
+            }
+
+            Click(voiceButton);
+            active = true;
+            clickedVoice = true;
+            start.Enabled = false;
+            stop.Enabled = true;
+            timer.Start();
+            status.Text = "Clicked ChatGPT's Voice button. Speak to ChatGPT; ChatGPT handles recognition and its spoken reply. No Windows/David voice is used.";
         }
         catch (Exception ex)
         {
-            status.Text = "Could not start Windows speech recognition: " + ex.Message;
-            MessageBox.Show(this, "Speech recognition could not start. Check Windows speech language support and microphone access.\n\n" + ex.Message, "ChatGPT Voice Loop");
+            status.Text = "Couldn't activate ChatGPT Voice: " + ex.Message;
         }
     }
 
-    private void StopListening()
+    private void StopVoice()
     {
-        silenceTimer.Stop();
-        try { recognizer?.RecognizeAsyncCancel(); recognizer?.Dispose(); } catch { }
-        recognizer = null;
-        start.Enabled = true; stop.Enabled = false;
-        status.Text = "Stopped.";
+        timer.Stop();
+        active = false;
+        clickedVoice = false;
+        start.Enabled = true;
+        stop.Enabled = false;
+        status.Text = "Stopped. Use ChatGPT's Voice button again when ready.";
     }
 
-    private async Task FlushIfQuiet()
+    private void CheckChatGPT()
     {
-        if (busy || pending.Length == 0 || (DateTime.Now - lastSpeech).TotalMilliseconds < 2100) return;
-        silenceTimer.Stop();
-        busy = true;
-        string text = pending;
-        pending = "";
-        try
+        if (!active) return;
+        var window = FindChatGPTWindow();
+        if (window is null)
         {
-            status.Text = "Preparing: " + text;
-            if (readInput.Checked) await Task.Run(() => speaker.Speak(text));
-            bool sent = await Task.Run(() => SendToChatGPT(text));
-            if (!sent)
-            {
-                status.Text = "Couldn't find ChatGPT's message box. Click its message field and try again.";
-                return;
-            }
-            status.Text = "Sent. Waiting for ChatGPT's reply…";
-            if (readReply.Checked)
-            {
-                string? reply = await WaitForReplyAndReadAloud();
-                status.Text = reply is null
-                    ? "Sent. Reply read-aloud control wasn't found; click Read aloud manually."
-                    : "Activated ChatGPT's Read aloud control.";
-            }
-            else status.Text = "Sent to ChatGPT.";
+            status.Text = "ChatGPT window not found. Voice loop is paused; bring the ChatGPT Chrome window back.";
+            return;
         }
-        catch (Exception ex) { status.Text = "Error: " + ex.Message; }
-        finally { busy = false; }
-    }
 
-    private static bool SendToChatGPT(string text)
-    {
-        var chrome = Process.GetProcessesByName("chrome").FirstOrDefault();
-        var edge = Process.GetProcessesByName("msedge").FirstOrDefault();
-        var root = AutomationElement.RootElement;
-        var windows = root.FindAll(TreeScope.Children, Condition.TrueCondition);
-        AutomationElement? targetWindow = null;
-        foreach (AutomationElement win in windows)
-        {
-            try
-            {
-                var title = win.Current.Name ?? "";
-                if ((title.Contains("ChatGPT", StringComparison.OrdinalIgnoreCase)) &&
-                    (title.Contains("Chrome", StringComparison.OrdinalIgnoreCase) || title.Contains("Microsoft Edge", StringComparison.OrdinalIgnoreCase) || chrome is not null || edge is not null))
-                { targetWindow = win; break; }
-            } catch { }
-        }
-        targetWindow ??= GetForegroundWindowElement();
-        if (targetWindow is null) return false;
-        var edit = FindComposer(targetWindow);
-        if (edit is null) return false;
         try
         {
-            if (edit.TryGetCurrentPattern(ValuePattern.Pattern, out object vp))
-                ((ValuePattern)vp).SetValue(text);
-            else
+            var buttons = window.FindAll(TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button));
+            foreach (AutomationElement button in buttons)
             {
-                edit.SetFocus();
-                Clipboard.SetText(text);
-                SendKeys.SendWait("^v");
+                var name = SafeName(button);
+                if (name.Contains("End voice", StringComparison.OrdinalIgnoreCase) ||
+                    name.Contains("Stop voice", StringComparison.OrdinalIgnoreCase))
+                {
+                    status.Text = "ChatGPT Voice is active. Speak naturally; ChatGPT handles the microphone and spoken responses.";
+                    return;
+                }
             }
-            edit.SetFocus();
-            SendKeys.SendWait("{ENTER}");
-            return true;
-        }
-        catch { return false; }
-    }
 
-    private static AutomationElement? GetForegroundWindowElement()
-    {
-        try
-        {
-            var focused = AutomationElement.FocusedElement;
-            var current = focused;
-            while (current is not null)
+            if (clickedVoice)
             {
-                if (current.Current.ControlType == ControlType.Window) return current;
-                current = TreeWalker.ControlViewWalker.GetParent(current);
+                status.Text = "Voice was activated. If ChatGPT returned to text chat, click Start ChatGPT voice again.";
+                clickedVoice = false;
             }
-        } catch { }
-        return null;
+        }
+        catch
+        {
+            // ChatGPT can rebuild its accessibility tree while switching voice states.
+        }
     }
 
-    private static AutomationElement? FindComposer(AutomationElement root)
+    private static AutomationElement? FindChatGPTWindow()
     {
         try
         {
-            var all = root.FindAll(TreeScope.Descendants, Condition.TrueCondition);
-            AutomationElement? fallback = null;
-            foreach (AutomationElement el in all)
+            var root = AutomationElement.RootElement;
+            var windows = root.FindAll(TreeScope.Children, Condition.TrueCondition);
+            foreach (AutomationElement window in windows)
             {
                 try
                 {
-                    var n = el.Current.Name ?? "";
-                    if (el.Current.IsOffscreen) continue;
-                    if (el.Current.ControlType == ControlType.Edit &&
-                        (n.Contains("message", StringComparison.OrdinalIgnoreCase) ||
-                         n.Contains("prompt", StringComparison.OrdinalIgnoreCase) ||
-                         n.Contains("ChatGPT", StringComparison.OrdinalIgnoreCase))) return el;
-                    if (el.Current.ControlType == ControlType.Edit && fallback is null) fallback = el;
-                } catch { }
-            }
-            return fallback;
-        } catch { return null; }
-    }
-
-    private async Task<string?> WaitForReplyAndReadAloud()
-    {
-        for (int i = 0; i < 120; i++)
-        {
-            await Task.Delay(1000);
-            if (!VisibleChatGPTWindowExists()) continue;
-            var root = GetForegroundWindowElement();
-            if (root is null) continue;
-            try
-            {
-                var buttons = root.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button));
-                foreach (AutomationElement b in buttons)
-                {
-                    var name = b.Current.Name ?? "";
-                    if (name.Contains("Read aloud", StringComparison.OrdinalIgnoreCase) ||
-                        name.Contains("Read Aloud", StringComparison.OrdinalIgnoreCase))
-                    {
-                        b.GetCurrentPattern(InvokePattern.Pattern);
-                        ((InvokePattern)b.GetCurrentPattern(InvokePattern.Pattern)).Invoke();
-                        return name;
-                    }
+                    var title = window.Current.Name ?? "";
+                    if (title.Contains("ChatGPT", StringComparison.OrdinalIgnoreCase) &&
+                        (title.Contains("Chrome", StringComparison.OrdinalIgnoreCase) ||
+                         title.Contains("Google Chrome", StringComparison.OrdinalIgnoreCase)))
+                        return window;
                 }
-            } catch { }
+                catch { }
+            }
+
+            // Some Chrome builds expose the tab title without the browser name.
+            foreach (AutomationElement window in windows)
+            {
+                try
+                {
+                    if ((window.Current.Name ?? "").Contains("ChatGPT", StringComparison.OrdinalIgnoreCase))
+                        return window;
+                }
+                catch { }
+            }
         }
+        catch { }
         return null;
     }
 
-    private static bool VisibleChatGPTWindowExists()
+    private static AutomationElement? FindVoiceButton(AutomationElement window)
     {
-        try { return GetForegroundWindowElement()?.Current.Name.Contains("ChatGPT", StringComparison.OrdinalIgnoreCase) == true; }
-        catch { return false; }
+        try
+        {
+            var buttons = window.FindAll(TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button));
+            AutomationElement? fallback = null;
+            foreach (AutomationElement button in buttons)
+            {
+                try
+                {
+                    if (button.Current.IsOffscreen || !button.Current.IsEnabled) continue;
+                    var name = SafeName(button);
+                    if (name.Contains("voice", StringComparison.OrdinalIgnoreCase) ||
+                        name.Contains("microphone", StringComparison.OrdinalIgnoreCase) ||
+                        name.Contains("start dictation", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (name.Contains("voice", StringComparison.OrdinalIgnoreCase) ||
+                            name.Contains("microphone", StringComparison.OrdinalIgnoreCase))
+                            return button;
+                        fallback ??= button;
+                    }
+                }
+                catch { }
+            }
+            return fallback;
+        }
+        catch { return null; }
+    }
+
+    private static string SafeName(AutomationElement element)
+    {
+        try { return element.Current.Name ?? ""; }
+        catch { return ""; }
+    }
+
+    private static void Click(AutomationElement element)
+    {
+        if (element.TryGetCurrentPattern(InvokePattern.Pattern, out var invoke))
+        {
+            ((InvokePattern)invoke).Invoke();
+            return;
+        }
+        if (element.TryGetCurrentPattern(SelectionItemPattern.Pattern, out var selection))
+        {
+            ((SelectionItemPattern)selection).Select();
+            return;
+        }
+        element.SetFocus();
+        SendKeys.SendWait("{ENTER}");
     }
 }
