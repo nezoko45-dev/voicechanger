@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenRouter TTS Reader</title>
+<style>
+:root{color-scheme:dark;font:15px system-ui;background:#111827;color:#f3f4f6}*{box-sizing:border-box}body{max-width:900px;margin:0 auto;padding:28px 22px}h1{font-size:27px;margin:0 0 8px}.muted{color:#aeb8ca;line-height:1.5}.panel{background:#1f2937;border:1px solid #374151;border-radius:14px;padding:18px;margin:16px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}label{display:block;font-weight:600;margin:12px 0 6px}input,select,textarea,button{font:inherit;border-radius:9px;padding:11px;border:1px solid #4b5563;background:#111827;color:#f9fafb;width:100%}textarea{min-height:190px;resize:vertical}button{cursor:pointer;background:#2563eb;border-color:#2563eb;font-weight:650}button.secondary{background:#374151;border-color:#4b5563}button:disabled{opacity:.5;cursor:wait}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}.actions button{width:auto;flex:1;min-width:130px}.inline{display:flex;align-items:center;gap:8px;margin:12px 0}.inline input{width:auto}.status{white-space:pre-wrap;background:#0b1220;border-radius:10px;padding:12px;color:#d1d5db;min-height:44px}small{color:#aeb8ca}
+</style>
+</head>
+<body>
+<h1>OpenRouter TTS Reader</h1>
+<p class="muted">Standalone Windows desktop app. No Chrome tab, local helper EXE, or GitHub Pages connection required. Your API key stays in app memory and is sent to OpenRouter only when you generate speech.</p>
+<section class="panel">
+<label for="apiKey">OpenRouter API key</label><input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-or-…">
+<div class="grid">
+<div><label for="model">Speech model</label><select id="model"><option value="x-ai/grok-voice-tts-1.0">Grok Voice TTS 1.0</option><option value="mistralai/voxtral-mini-tts-2603">Mistral Voxtral Mini TTS</option><option value="microsoft/mai-voice-2">Microsoft MAI Voice 2</option></select></div>
+<div><label for="voice">Voice</label><select id="voice"></select></div>
+<div><label for="device">Audio output device</label><select id="device"><option>Loading devices…</option></select></div>
+</div>
+<div class="actions"><button id="dictate" class="secondary">Start microphone dictation</button><button id="stopDictation" class="secondary">Stop dictation</button></div>
+<label for="text">Text to read aloud</label><textarea id="text" placeholder="Speak into your microphone or type/paste text here…"></textarea>
+<div class="inline"><input id="autoRead" type="checkbox" checked><label for="autoRead" style="margin:0;font-weight:500">Automatically read each finished phrase</label></div>
+<div class="inline"><input id="clearAfter" type="checkbox" checked><label for="clearAfter" style="margin:0;font-weight:500">Clear text after playback finishes</label></div>
+<div class="actions"><button id="speak">Generate &amp; Read Aloud</button><button id="stop" class="secondary">Stop audio</button><button id="clear" class="secondary">Clear text</button></div>
+</section>
+<div id="status" class="status" role="status">Ready. Enter your API key, choose a voice and output device, then dictate or type text.</div>
+<p class="muted"><small>Microphone dictation uses the speech recognition engine available in the installed Electron/Chromium build. Audio is played by the app and routed to the selected Windows output when supported.</small></p>
+<script>
+(() => {
+const $=id=>document.getElementById(id);
+const models={
+'x-ai/grok-voice-tts-1.0':[['eve','Eve — feminine'],['ara','Ara'],['rex','Rex'],['sal','Sal'],['leo','Leo']],
+'mistralai/voxtral-mini-tts-2603':[['en_paul_neutral','Paul — neutral English']],
+'microsoft/mai-voice-2':[['en-US-Harper:MAI-Voice-2','Harper — US English']]
+};
+let recognition=null, listening=false, speaking=false, finalText='', autoTimer=null, currentAudio=null, objectUrl=null;
+const status=s=>$('status').textContent=s;
+function fillVoices(){const el=$('voice');el.replaceChildren();for(const [v,label] of models[$('model').value]){const o=document.createElement('option');o.value=v;o.textContent=label;el.append(o)}}
+async function fillDevices(){
+ const el=$('device');el.replaceChildren();
+ try{
+  await navigator.mediaDevices.getUserMedia({audio:true}).then(s=>s.getTracks().forEach(t=>t.stop())).catch(()=>{});
+  const devices=await navigator.mediaDevices.enumerateDevices();
+  const outs=devices.filter(d=>d.kind==='audiooutput');
+  for(const d of outs){const o=document.createElement('option');o.value=d.deviceId;o.textContent=d.label||'Audio output';el.append(o)}
+  if(!outs.length){const o=document.createElement('option');o.value='default';o.textContent='System default';el.append(o)}
+ }catch{const o=document.createElement('option');o.value='default';o.textContent='System default';el.append(o)}
+}
+function scheduleRead(){clearTimeout(autoTimer);if($('autoRead').checked)autoTimer=setTimeout(()=>{const v=$('text').value.trim();if(v&&!speaking)startSpeech(v,true)},1400)}
+function finishPlayback(){speaking=false;$('stop').disabled=true;if($('clearAfter').checked){$('text').value='';finalText=''}status('Playback finished.'+(listening?' Listening for your next phrase.':''));if(listening&&recognition){try{recognition.start()}catch{}}}
+async function startSpeech(value,automatic=false){
+ if(!value||speaking)return;
+ clearTimeout(autoTimer);speaking=true;$('speak').disabled=true;$('stop').disabled=false;
+ if(listening&&recognition){try{recognition.stop()}catch{}}
+ status('Requesting speech from OpenRouter…');
+ try{
+  const result=await window.ttsApp.speak({apiKey:$('apiKey').value.trim(),model:$('model').value,input:value,voice:$('voice').value});
+  const bytes=Uint8Array.from(atob(result.data),c=>c.charCodeAt(0));
+  if(objectUrl)URL.revokeObjectURL(objectUrl);
+  objectUrl=URL.createObjectURL(new Blob([bytes],{type:result.mimeType||'audio/mpeg'}));
+  currentAudio=new Audio(objectUrl);
+  if($('device').value&&$('device').value!=='default'&&typeof currentAudio.setSinkId==='function'){try{await currentAudio.setSinkId($('device').value)}catch(e){status('Could not select that output; using default output. '+e.message)}}
+  currentAudio.onended=finishPlayback;currentAudio.onerror=()=>{speaking=false;$('stop').disabled=true;status('Audio playback failed. Try another output device.');if(listening&&recognition){try{recognition.start()}catch{}}};
+  await currentAudio.play();status((automatic?'Reading dictated phrase':'Playing generated speech')+' through '+$('device').selectedOptions[0].text+'.');
+ }catch(e){speaking=false;$('stop').disabled=true;status('Could not generate speech: '+(e.message||e));if(listening&&recognition){try{recognition.start()}catch{}}}
+ finally{$('speak').disabled=false}
+}
+$('model').addEventListener('change',fillVoices);
+$('speak').addEventListener('click',()=>startSpeech($('text').value.trim()));
+$('stop').addEventListener('click',()=>{if(currentAudio){currentAudio.pause();currentAudio.currentTime=0}speaking=false;$('stop').disabled=true;status('Playback stopped.');if(listening&&recognition){try{recognition.start()}catch{}}});
+$('clear').addEventListener('click',()=>{$('text').value='';finalText='';clearTimeout(autoTimer);status('Text cleared.')});
+$('text').addEventListener('input',scheduleRead);
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(SR){
+ recognition=new SR();recognition.continuous=true;recognition.interimResults=true;recognition.lang='en-US';
+ recognition.onstart=()=>status('Listening to your microphone…');
+ recognition.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal){finalText+=t+' ';scheduleRead()}else interim+=t}$('text').value=finalText+interim};
+ recognition.onerror=e=>{if(e.error!=='no-speech'&&e.error!=='aborted')status('Dictation error: '+e.error+'. Check microphone permission.')};
+ recognition.onend=()=>{if(listening&&!speaking)setTimeout(()=>{if(listening&&!speaking)try{recognition.start()}catch{}},350)};
+ $('dictate').addEventListener('click',()=>{listening=true;finalText=$('text').value.trim()?$('text').value.trimEnd()+' ':'';try{recognition.start()}catch(e){status('Could not start dictation: '+e.message)}});
+ $('stopDictation').addEventListener('click',()=>{listening=false;try{recognition.stop()}catch{};status('Dictation stopped.')});
+}else{$('dictate').disabled=true;status('Speech recognition is not available in this Electron build. Typed text-to-speech remains available.')}
+fillVoices();fillDevices();
+})();
+</script>
+</body></html>
