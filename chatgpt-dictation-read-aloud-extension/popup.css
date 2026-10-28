@@ -1,0 +1,12 @@
+* { box-sizing: border-box; }
+body { width: 300px; margin: 0; padding: 16px; color: #202124; font: 14px/1.4 system-ui, sans-serif; }
+h1 { font-size: 17px; margin: 0 0 8px; }
+p { margin: 8px 0 14px; color: #5f6368; }
+label { display: block; font-weight: 600; margin-bottom: 5px; }
+select { width: 100%; padding: 7px; border: 1px solid #c7c7c7; border-radius: 6px; background: white; }
+.buttons { display: flex; gap: 8px; margin: 14px 0; }
+button { flex: 1; padding: 9px 10px; border: 0; border-radius: 6px; background: #0b57d0; color: white; cursor: pointer; font-weight: 600; }
+button.secondary { background: #e8eaed; color: #202124; }
+button:disabled { opacity: .45; cursor: default; }
+#status { border-radius: 6px; padding: 8px; background: #f1f3f4; min-height: 34px; }
+.note { font-size: 12px; margin-bottom: 0; }
