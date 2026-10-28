@@ -33,8 +33,15 @@ internal sealed class MainForm : Form
     private DateTime sendTime;
     private bool clickedReadAloudForCurrentReply;
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+    [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] private static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
+    private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+    private const uint MOUSEEVENTF_LEFTUP = 0x0004;
 
     public MainForm()
     {
@@ -86,12 +93,21 @@ internal sealed class MainForm : Form
             var composer = FindComposer(window);
             if (composer is null)
             {
-                status.Text = "Couldn't locate the composer in Chrome's accessibility tree. Click directly inside ChatGPT's message box, then press Start again. If it still fails, this Chrome build is not exposing the editor to UI Automation.";
+                // Fallback: click the bottom-center of the ChatGPT content area,
+                // where the message composer normally sits, then query the focused element.
+                // This avoids requiring Chrome to expose the contenteditable in its UIA tree.
+                ClickComposerArea(window);
+                Thread.Sleep(350);
+                composer = FindComposer(window) ?? TryGetFocusedElement();
+            }
+            if (composer is null)
+            {
+                status.Text = "Couldn't focus ChatGPT's composer. Maximize the ChatGPT Chrome window and make sure chatgpt.com is the active tab, then try again.";
                 start.Enabled = true;
                 return;
             }
 
-            composer.SetFocus();
+            try { composer.SetFocus(); } catch { }
             SendKeys.SendWait("^{END}");
             Thread.Sleep(150);
             // Open Windows Voice Typing without sending Ctrl+Esc or other keys that steal focus.
@@ -266,6 +282,34 @@ internal sealed class MainForm : Form
         catch { }
 
         return null;
+    }
+
+    private static AutomationElement? TryGetFocusedElement()
+    {
+        try
+        {
+            var focused = AutomationElement.FocusedElement;
+            if (focused is null) return null;
+            var type = focused.Current.ControlType;
+            return IsTextEntryType(type) || type == ControlType.Custom ||
+                   type == ControlType.Pane ? focused : null;
+        }
+        catch { return null; }
+    }
+
+    private static void ClickComposerArea(AutomationElement window)
+    {
+        try
+        {
+            var hwnd = new IntPtr(window.Current.NativeWindowHandle);
+            if (hwnd == IntPtr.Zero || !GetWindowRect(hwnd, out var rect)) return;
+            int x = rect.Left + (rect.Right - rect.Left) / 2;
+            int y = rect.Bottom - Math.Min(115, Math.Max(70, (rect.Bottom - rect.Top) / 8));
+            SetCursorPos(x, y);
+            mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
+            mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
+        }
+        catch { }
     }
 
     private static bool IsTextEntryType(ControlType type) =>
