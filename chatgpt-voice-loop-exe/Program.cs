@@ -21,7 +21,7 @@ internal sealed class MainForm : Form
     {
         AutoSize = true,
         MaximumSize = new System.Drawing.Size(540, 0),
-        Text = "Open ChatGPT in Chrome. Start focuses the message box and opens Windows voice typing (Win+H)."
+        Text = "Open ChatGPT in Chrome. Start finds the message box and clicks ChatGPT’s dictation microphone."
     };
     private readonly Button start = new() { Text = "Start dictation loop", AutoSize = true };
     private readonly Button stop = new() { Text = "Stop", AutoSize = true, Enabled = false };
@@ -36,10 +36,6 @@ internal sealed class MainForm : Form
     [StructLayout(LayoutKind.Sequential)]
     private struct RECT { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
-    [DllImport("user32.dll")] private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
-    private const byte VK_LWIN = 0x5B;
-    private const byte VK_H = 0x48;
-    private const uint KEYEVENTF_KEYUP = 0x0002;
     [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
@@ -118,13 +114,18 @@ internal sealed class MainForm : Form
                 lastComposerText = "";
             }
 
-            // Start Windows Voice Typing (Win+H) in the focused ChatGPT composer.
-            // Chrome's page SpeechRecognition API cannot be started by an external UIA-only EXE
-            // without injecting page code or using an extension. Win+H is the no-install option.
+            // Prefer ChatGPT's own dictation microphone in the composer. Avoid the
+            // headphones/Voice Mode control because dictation should fill the text composer.
+            bool dictationStarted = false;
             if (composer is not null && IsWithinWindow(composer, window))
             {
                 Thread.Sleep(150);
-                StartVoiceTyping();
+                var dictationButton = FindDictationButton(window);
+                if (dictationButton is not null)
+                {
+                    InvokeControl(dictationButton);
+                    dictationStarted = true;
+                }
             }
 
             active = true;
@@ -134,22 +135,16 @@ internal sealed class MainForm : Form
             lastTextChange = DateTime.UtcNow;
             timer.Start();
             status.Text = composer is null
-                ? "Loop running in fallback mode. ChatGPT's composer is not exposed to UI Automation, so the app clicked its usual location and will keep retrying detection. If dictation doesn't appear, use Win+H after Chrome is active."
-                : "Windows Voice Typing opened in ChatGPT. Speak; after a 3-second pause, the app submits the text and clicks Read aloud for the reply.";
+                ? "Loop running in fallback mode. ChatGPT's composer is not exposed to UI Automation, so the app clicked its usual location and will keep retrying detection."
+                : dictationStarted
+                    ? "Clicked ChatGPT's dictation microphone. Speak; after a 3-second pause, the app submits the text and clicks Read aloud for the reply."
+                    : "Composer found, but ChatGPT's dictation microphone was not exposed to UI Automation. Click the microphone once manually; the loop will continue monitoring text.";
         }
         catch (Exception ex)
         {
             status.Text = "Start failed: " + ex.GetType().Name + ": " + ex.Message;
             start.Enabled = true;
         }
-    }
-
-    private static void StartVoiceTyping()
-    {
-        keybd_event(VK_LWIN, 0, 0, UIntPtr.Zero);
-        keybd_event(VK_H, 0, 0, UIntPtr.Zero);
-        keybd_event(VK_H, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-        keybd_event(VK_LWIN, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
     }
 
     private void StopLoop()
@@ -364,6 +359,36 @@ internal sealed class MainForm : Form
         catch { }
         return false;
     }
+    private static AutomationElement? FindDictationButton(AutomationElement window)
+    {
+        try
+        {
+            var buttons = window.FindAll(TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button));
+            foreach (AutomationElement button in buttons)
+            {
+                try
+                {
+                    if (!button.Current.IsEnabled || button.Current.IsOffscreen) continue;
+                    var name = SafeName(button);
+                    // Match dictation/microphone labels only, never Voice Mode.
+                    if (name.Contains("voice mode", StringComparison.OrdinalIgnoreCase) ||
+                        name.Contains("start voice", StringComparison.OrdinalIgnoreCase) ||
+                        name.Contains("stop voice", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (name.Contains("dictat", StringComparison.OrdinalIgnoreCase) ||
+                        name.Contains("microphone", StringComparison.OrdinalIgnoreCase) ||
+                        name.Equals("mic", StringComparison.OrdinalIgnoreCase) ||
+                        name.Contains("speech to text", StringComparison.OrdinalIgnoreCase))
+                        return button;
+                }
+                catch { }
+            }
+        }
+        catch { }
+        return null;
+    }
+
     private static AutomationElement? FindReadAloudButton(AutomationElement window)
     {
         try
