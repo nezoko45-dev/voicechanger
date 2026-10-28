@@ -1,0 +1,36 @@
+name: Build OpenRouter TTS Reader Electron
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/openrouter-api-tts-reader
+    paths:
+      - "openrouter-tts-electron/**"
+      - ".github/workflows/build-openrouter-tts-electron.yml"
+permissions:
+  contents: read
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: openrouter-tts-electron/package.json
+      - name: Install dependencies
+        working-directory: openrouter-tts-electron
+        run: npm install
+      - name: Build portable Windows app
+        working-directory: openrouter-tts-electron
+        run: npm run dist:win
+      - name: Upload Windows executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenRouterTTSReader-Electron-windows-x64
+          path: openrouter-tts-electron/dist/*.exe
+          if-no-files-found: error
+          retention-days: 14
