@@ -27,7 +27,8 @@ catch (HttpListenerException ex)
     return;
 }
 Console.WriteLine();
-Console.WriteLine($"Ready at {Prefix}api/speech");
+Console.WriteLine("Reader page URL: " + PageUrl);
+Console.WriteLine("Local helper endpoint: " + Prefix + "api/speech");
 Console.WriteLine("Opening the reader page in Chrome. Keep this window open while using dictation.");
 OpenChrome(PageUrl);
 var audioPlayer = new LocalAudioPlayer();
