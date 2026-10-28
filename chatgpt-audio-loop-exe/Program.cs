@@ -64,7 +64,7 @@ internal sealed class LoopForm : Form
             lastVoice = DateTime.UtcNow; lastAction = DateTime.MinValue; phase = 0; busy = false;
             start.Enabled = false; stop.Enabled = true; status.Text = "Monitoring microphone…"; timer.Start();
         }
-        catch (Exception ex) { MessageBox.Show("Could not open the default microphone. Check Windows microphone permissions.\n\n" + ex.Message); }
+        catch (Exception ex) { System.Windows.Forms.MessageBox.Show("Could not open the default microphone. Check Windows microphone permissions.\n\n" + ex.Message); }
     }
 
     private void TickLoop()
@@ -150,5 +150,5 @@ internal sealed class LoopForm : Form
 
 internal static class Program
 {
-    [STAThread] static void Main() { ApplicationConfiguration.Initialize(); Application.Run(new LoopForm()); }
+    [STAThread] static void Main() { ApplicationConfiguration.Initialize(); System.Windows.Forms.Application.Run(new LoopForm()); }
 }
