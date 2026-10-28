@@ -112,7 +112,30 @@
   });
   $('clear').addEventListener('click', () => { clearTimeout(autoReadTimer); text.value = ''; finalTranscript = ''; lastAutoReadText = ''; }); 
   text.addEventListener('input', () => { if (!suppressInput && $('autoRead').checked) scheduleAutoRead(); });
-  stop.addEventListener('click', () => { player.pause(); player.currentTime = 0; status('Playback stopped.'); });
+  function finishPlayback(message) {
+    stop.disabled = true;
+    if ($('clearAfterRead').checked) {
+      text.value = '';
+      finalTranscript = '';
+      lastAutoReadText = '';
+      clearTimeout(autoReadTimer);
+    }
+    readingAudio = false;
+    status(message);
+    if (dictationOn && recognition) {
+      dictate.disabled = true;
+      stopDictation.disabled = false;
+      setTimeout(() => { if (dictationOn && !readingAudio) { try { recognition.start(); } catch {} } }, 300);
+    } else {
+      dictate.disabled = false;
+      stopDictation.disabled = true;
+    }
+  }
+  stop.addEventListener('click', () => {
+    player.pause();
+    player.currentTime = 0;
+    finishPlayback('Playback stopped. Old text cleared; ready for your next sentence.');
+  });
   speak.addEventListener('click', () => startSpeech(text.value.trim(), false));
   async function startSpeech(input, automatic) {
     const apiKey = key.value.trim();
@@ -153,16 +176,7 @@
     }
   }
   player.addEventListener('ended', () => {
-    stop.disabled = true;
-    if ($('clearAfterRead').checked) {
-      text.value = '';
-      finalTranscript = '';
-      lastAutoReadText = '';
-      clearTimeout(autoReadTimer);
-    }
-    status('Finished reading. Old text cleared; ready for your next sentence.');
-    readingAudio = false;
-    if (dictationOn && recognition) { try { recognition.start(); } catch {} }
+    finishPlayback('Finished reading. Old text cleared; ready for your next sentence.');
   });
   window.addEventListener('beforeunload', cleanupUrl);
   updateVoices();
