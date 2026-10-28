@@ -59,7 +59,7 @@ internal sealed class LoopForm : Form
                     for (int i = 0; i + 1 < e.BytesRecorded; i += 2) { double s = BitConverter.ToInt16(e.Buffer, i) / 32768.0; sum += s * s; count++; }
                 if (count > 0) rms = Math.Sqrt(sum / count);
             };
-            capture.RecordingStopped += (_, e) => { if (e.Exception != null) BeginInvoke(() => status.Text = "Microphone error: " + e.Exception.Message); };
+            capture.RecordingStopped += (_, e) => { if (e.Exception != null) BeginInvoke(new Action(() => status.Text = "Microphone error: " + e.Exception.Message)); };
             capture.StartRecording();
             lastVoice = DateTime.UtcNow; lastAction = DateTime.MinValue; phase = 0; busy = false;
             start.Enabled = false; stop.Enabled = true; status.Text = "Monitoring microphone…"; timer.Start();
