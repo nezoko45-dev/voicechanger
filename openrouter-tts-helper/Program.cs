@@ -97,7 +97,8 @@ static async Task HandleAsync(HttpListenerContext context, HttpClient client, Lo
         using var doc = JsonDocument.Parse(body.ToArray());
         var root = doc.RootElement;
         string Get(string name) => root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
-        var apiKey = Get("apiKey").Trim();\n        var model = Get("model");
+        var apiKey = Get("apiKey").Trim();
+        var model = Get("model");
         var input = Get("input");
         var voice = Get("voice");
         var format = Get("response_format");
