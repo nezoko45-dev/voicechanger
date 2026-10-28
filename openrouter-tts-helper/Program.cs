@@ -11,6 +11,7 @@ Console.Title = "OpenRouter TTS Helper";
 Console.WriteLine("OpenRouter TTS Reader — local Windows helper");
 Console.WriteLine("Listens only on this PC at 127.0.0.1:32146.");
 Console.WriteLine("Your OpenRouter API key is held in memory and is not saved to disk.");
+Console.WriteLine("Reader tip: copy a ChatGPT reply, then use Paste from Clipboard or Ctrl+V on the reader page.");
 Console.Write("Paste OpenRouter API key (input hidden): ");
 var keyBuilder = new StringBuilder();
 while (true)
