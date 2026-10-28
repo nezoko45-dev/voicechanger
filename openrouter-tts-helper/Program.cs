@@ -1,120 +1,163 @@
 using System.Diagnostics;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 
-ApplicationConfiguration.Initialize();
-Application.Run(new ReaderForm());
+const string Prefix = "http://127.0.0.1:32146/";
+const string AllowedOrigin = "https://nezoko45-dev.github.io";
+const string PageUrl = "https://nezoko45-dev.github.io/voicechanger/openrouter-tts-reader/";
+const string SpeechEndpoint = "https://openrouter.ai/api/v1/audio/speech";
 
-sealed class ReaderForm : Form
+Console.Title = "OpenRouter TTS Helper";
+Console.WriteLine("OpenRouter TTS Helper — Chrome dictation + audio page");
+Console.WriteLine("The helper serves speech requests locally; Chrome handles microphone dictation and audio playback.");
+Console.WriteLine("Your OpenRouter API key stays in memory and is not saved to disk.");
+Console.Write("Paste OpenRouter API key (input hidden): ");
+var keyBuilder = new StringBuilder();
+while (true)
 {
-    private readonly TextBox apiKey = new() { UseSystemPasswordChar = true, PlaceholderText = "Paste OpenRouter API key (sk-or-…)", Dock = DockStyle.Top };
-    private readonly TextBox textBox = new() { Multiline = true, ScrollBars = ScrollBars.Vertical, AcceptsReturn = true, AcceptsTab = true, PlaceholderText = "Click here, then use Windows voice typing (Win+H) to dictate…", Font = new System.Drawing.Font("Segoe UI", 11), Dock = DockStyle.Fill };
-    private readonly ComboBox model = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
-    private readonly ComboBox voice = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220 };
-    private readonly Button dictateButton = new() { Text = "Prepare Dictation (Win+H)", AutoSize = true };\n    private readonly Button openPageButton = new() { Text = "Open GitHub Page Reader", AutoSize = true };
-    private readonly Button pasteButton = new() { Text = "Paste Text", AutoSize = true };
-    private readonly Button generateButton = new() { Text = "Generate & Play", AutoSize = true };
-    private readonly Button clearButton = new() { Text = "Clear Text", AutoSize = true };
-    private readonly Label status = new() { Text = "Click Start Dictation, then press Win+H to speak into the text box. Click Generate & Play to read it aloud.", AutoSize = true, MaximumSize = new System.Drawing.Size(780, 0) };
-    private static readonly HttpClient client = new() { Timeout = TimeSpan.FromMinutes(3) };
-    private static readonly Dictionary<string, (string Id, string Label)[]> Voices = new()
-    {
-        ["x-ai/grok-voice-tts-1.0"] = new[] { ("eve", "Eve — feminine"), ("ara", "Ara"), ("rex", "Rex"), ("sal", "Sal"), ("leo", "Leo") },
-        ["mistralai/voxtral-mini-tts-2603"] = new[] { ("en_paul_neutral", "Paul — neutral English") },
-        ["microsoft/mai-voice-2"] = new[] { ("en-US-Harper:MAI-Voice-2", "Harper — US English") }
-    };
+    var k = Console.ReadKey(intercept: true);
+    if (k.Key == ConsoleKey.Enter) break;
+    if (k.Key == ConsoleKey.Backspace) { if (keyBuilder.Length > 0) keyBuilder.Length--; continue; }
+    if (!char.IsControl(k.KeyChar)) keyBuilder.Append(k.KeyChar);
+}
+var apiKey = keyBuilder.ToString().Trim();
+Console.WriteLine();
+if (!apiKey.StartsWith("sk-or-", StringComparison.Ordinal) || apiKey.Length < 20)
+{
+    Console.WriteLine("That does not look like an OpenRouter API key. Close this window and try again.");
+    Console.WriteLine("Press Enter to exit.");
+    Console.ReadLine();
+    return;
+}
 
-    public ReaderForm()
-    {
-        Text = "OpenRouter TTS Reader";
-        Width = 880; Height = 700; MinimumSize = new System.Drawing.Size(650, 500);
-        StartPosition = FormStartPosition.CenterScreen;
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(16), ColumnCount = 1, RowCount = 6 };
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        Controls.Add(root);
-        root.Controls.Add(new Label { Text = "OpenRouter API key (kept in memory only)", AutoSize = true }, 0, 0);
-        root.Controls.Add(apiKey, 0, 1);
-        var options = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Padding = new Padding(0, 10, 0, 10) };
-        options.Controls.Add(new Label { Text = "Model:", AutoSize = true, Padding = new Padding(0, 7, 0, 0) });
-        options.Controls.Add(model); options.Controls.Add(new Label { Text = "Voice:", AutoSize = true, Padding = new Padding(8, 7, 0, 0) }); options.Controls.Add(voice);
-        root.Controls.Add(options, 0, 2);
-        root.Controls.Add(new Label { Text = "Speech transcript / text to read aloud", AutoSize = true, Padding = new Padding(0, 5, 0, 5) }, 0, 3);
-        root.Controls.Add(textBox, 0, 4);
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(0, 10, 0, 10) };
-        buttons.Controls.Add(openPageButton); buttons.Controls.Add(dictateButton); buttons.Controls.Add(pasteButton); buttons.Controls.Add(generateButton); buttons.Controls.Add(clearButton);
-        root.Controls.Add(buttons, 0, 5);
-        root.Controls.Add(status, 0, 6);
-        root.RowCount = 7; root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        foreach (var item in Voices.Keys) model.Items.Add(item);
-        model.SelectedIndex = 0; UpdateVoices(); model.SelectedIndexChanged += (_, _) => UpdateVoices();
-        openPageButton.Click += (_, _) => Process.Start(new ProcessStartInfo("https://nezoko45-dev.github.io/voicechanger/openrouter-tts-reader/") { UseShellExecute = true });\n        dictateButton.Click += (_, _) => PrepareDictation();
-        pasteButton.Click += (_, _) => PasteClipboard();
-        clearButton.Click += (_, _) => textBox.Clear();
-        generateButton.Click += async (_, _) => await GenerateAsync();
-    }
+using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(3) };
+using var listener = new HttpListener();
+listener.Prefixes.Add(Prefix);
+try { listener.Start(); }
+catch (HttpListenerException ex)
+{
+    Console.WriteLine($"Could not start local listener: {ex.Message}");
+    Console.WriteLine("Port 32146 may already be in use. Close any previous helper and retry.");
+    Console.ReadLine();
+    return;
+}
+Console.WriteLine();
+Console.WriteLine($"Ready at {Prefix}api/speech");
+Console.WriteLine("Opening the reader page in Chrome. Keep this window open while using dictation.");
+OpenChrome(PageUrl);
+while (listener.IsListening)
+{
+    HttpListenerContext context;
+    try { context = await listener.GetContextAsync(); }
+    catch (HttpListenerException) { break; }
+    catch (ObjectDisposedException) { break; }
+    _ = HandleAsync(context, client, apiKey);
+}
 
-    private void UpdateVoices()
+static void OpenChrome(string url)
+{
+    try
     {
-        voice.Items.Clear();
-        foreach (var item in Voices[model.SelectedItem?.ToString() ?? Voices.Keys.First()]) voice.Items.Add(new VoiceItem(item.Id, item.Label));
-        voice.DisplayMember = nameof(VoiceItem.Label);
-        if (voice.Items.Count > 0) voice.SelectedIndex = 0;
-    }
-
-    private void PrepareDictation()
-    {
-        textBox.Focus();
-        textBox.SelectionStart = textBox.TextLength;
-        status.Text = "Text box focused. Now press Windows key + H to start Windows Voice Typing; your speech will appear here as text.";
-    }
-
-    private void PasteClipboard()
-    {
-        try
+        var candidates = new[]
         {
-            if (!Clipboard.ContainsText()) { status.Text = "Clipboard has no text to paste."; return; }
-            textBox.Text = Clipboard.GetText(); textBox.Focus(); textBox.SelectionStart = textBox.TextLength;
-            status.Text = "Pasted text. Click Generate & Play when ready.";
-        }
-        catch (Exception ex) { status.Text = "Clipboard paste failed: " + ex.Message + " Try Ctrl+V in the text box."; }
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Google", "Chrome", "Application", "chrome.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Google", "Chrome", "Application", "chrome.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Google", "Chrome", "Application", "chrome.exe")
+        };
+        var chrome = candidates.FirstOrDefault(File.Exists);
+        if (chrome is not null) Process.Start(new ProcessStartInfo(chrome, url) { UseShellExecute = false });
+        else Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
     }
-
-    private async Task GenerateAsync()
+    catch (Exception ex)
     {
-        var key = apiKey.Text.Trim(); var input = textBox.Text.Trim();
-        if (!key.StartsWith("sk-or-", StringComparison.Ordinal) || key.Length < 20) { status.Text = "Paste your OpenRouter API key into the key field first."; apiKey.Focus(); return; }
-        if (string.IsNullOrWhiteSpace(input)) { status.Text = "Speak into the text box using Windows voice typing (Win+H), or type/paste text first."; textBox.Focus(); return; }
-        if (input.Length > 20000) { status.Text = "Text is too long. Split it into shorter replies (20,000 characters maximum)."; return; }
-        generateButton.Enabled = false; pasteButton.Enabled = false; dictateButton.Enabled = false;
-        try
-        {
-            status.Text = "Generating speech…";
-            var payload = JsonSerializer.Serialize(new { model = model.SelectedItem?.ToString(), input, voice = (voice.SelectedItem as VoiceItem)?.Id, response_format = "mp3" });
-            using var request = new HttpRequestMessage(HttpMethod.Post, "https://openrouter.ai/api/v1/audio/speech");
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
-            request.Headers.TryAddWithoutValidation("HTTP-Referer", "https://nezoko45-dev.github.io");
-            request.Headers.TryAddWithoutValidation("X-OpenRouter-Title", "OpenRouter TTS Reader");
-            request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
-            using var response = await client.SendAsync(request);
-            if (!response.IsSuccessStatusCode)
-            {
-                var detail = await response.Content.ReadAsStringAsync();
-                try { using var doc = JsonDocument.Parse(detail); if (doc.RootElement.TryGetProperty("error", out var err)) detail = err.ValueKind == JsonValueKind.Object && err.TryGetProperty("message", out var msg) ? msg.GetString() ?? detail : err.ToString(); } catch { }
-                status.Text = $"OpenRouter error {(int)response.StatusCode}: {detail}"; return;
-            }
-            var audio = await response.Content.ReadAsByteArrayAsync();
-            if (audio.Length == 0) { status.Text = "OpenRouter returned an empty audio file."; return; }
-            var file = Path.Combine(Path.GetTempPath(), "OpenRouterTTS-" + Guid.NewGuid().ToString("N") + ".mp3");
-            await File.WriteAllBytesAsync(file, audio);
-            Process.Start(new ProcessStartInfo(file) { UseShellExecute = true });
-            status.Text = "Speech generated and opened in your default audio player. Dictate or enter more text whenever ready.";
-        }
-        catch (Exception ex) { status.Text = "Could not generate speech: " + ex.Message; }
-        finally { generateButton.Enabled = true; pasteButton.Enabled = true; dictateButton.Enabled = true; }
+        Console.WriteLine($"Could not open Chrome automatically: {ex.Message}");
+        Console.WriteLine("Open this URL manually: " + url);
     }
+}
 
-    private sealed record VoiceItem(string Id, string Label) { public override string ToString() => Label; }
+static async Task HandleAsync(HttpListenerContext context, HttpClient client, string apiKey)
+{
+    var req = context.Request;
+    var res = context.Response;
+    res.Headers["Cache-Control"] = "no-store";
+    res.Headers["X-Content-Type-Options"] = "nosniff";
+    var origin = req.Headers["Origin"] ?? "";
+    if (origin != AllowedOrigin && origin != "http://127.0.0.1:32146" && origin != "http://localhost:32146")
+    {
+        await JsonAsync(res, 403, new { error = "This helper only accepts requests from the official voice reader page." });
+        return;
+    }
+    res.Headers["Access-Control-Allow-Origin"] = origin;
+    res.Headers["Vary"] = "Origin";
+    res.Headers["Access-Control-Allow-Methods"] = "POST, OPTIONS";
+    res.Headers["Access-Control-Allow-Headers"] = "Content-Type";
+    res.Headers["Access-Control-Max-Age"] = "600";
+    if (req.HttpMethod == "OPTIONS") { res.StatusCode = 204; res.Close(); return; }
+    if (req.HttpMethod != "POST" || req.Url?.AbsolutePath != "/api/speech")
+    {
+        await JsonAsync(res, 404, new { error = "Use POST /api/speech." });
+        return;
+    }
+    try
+    {
+        using var body = new MemoryStream();
+        await req.InputStream.CopyToAsync(body);
+        if (body.Length > 1_000_000) { await JsonAsync(res, 413, new { error = "Text request is too large." }); return; }
+        using var doc = JsonDocument.Parse(body.ToArray());
+        var root = doc.RootElement;
+        string Get(string name) => root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+        var model = Get("model");
+        var input = Get("input");
+        var voice = Get("voice");
+        var format = Get("response_format");
+        if (string.IsNullOrWhiteSpace(input)) { await JsonAsync(res, 400, new { error = "Text input is required." }); return; }
+        if (input.Length > 20000) { await JsonAsync(res, 413, new { error = "Text is too long. Please split it into shorter phrases." }); return; }
+        var allowedModels = new[] { "x-ai/grok-voice-tts-1.0", "mistralai/voxtral-mini-tts-2603", "microsoft/mai-voice-2" };
+        if (!allowedModels.Contains(model)) { await JsonAsync(res, 400, new { error = "Unsupported model selection." }); return; }
+        if (string.IsNullOrWhiteSpace(voice)) { await JsonAsync(res, 400, new { error = "Voice is required." }); return; }
+        var payload = JsonSerializer.Serialize(new { model, input, voice, response_format = string.IsNullOrWhiteSpace(format) ? "mp3" : format });
+        using var upstream = new HttpRequestMessage(HttpMethod.Post, SpeechEndpoint);
+        upstream.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        upstream.Headers.TryAddWithoutValidation("HTTP-Referer", AllowedOrigin);
+        upstream.Headers.TryAddWithoutValidation("X-OpenRouter-Title", "OpenRouter TTS Reader");
+        upstream.Content = new StringContent(payload, Encoding.UTF8, "application/json");
+        using var response = await client.SendAsync(upstream, HttpCompletionOption.ResponseHeadersRead);
+        if (!response.IsSuccessStatusCode)
+        {
+            var detail = await response.Content.ReadAsStringAsync();
+            string message = detail.Length > 1000 ? detail[..1000] : detail;
+            try { using var err = JsonDocument.Parse(detail); if (err.RootElement.TryGetProperty("error", out var e)) message = e.ValueKind == JsonValueKind.Object && e.TryGetProperty("message", out var m) ? m.GetString() ?? message : e.ToString(); } catch { }
+            await JsonAsync(res, (int)response.StatusCode, new { error = message });
+            return;
+        }
+        var audio = await response.Content.ReadAsByteArrayAsync();
+        if (audio.Length == 0) { await JsonAsync(res, 502, new { error = "OpenRouter returned an empty audio response." }); return; }
+        res.StatusCode = 200;
+        res.ContentType = response.Content.Headers.ContentType?.MediaType?.StartsWith("audio/") == true ? response.Content.Headers.ContentType.MediaType : "audio/mpeg";
+        res.ContentLength64 = audio.Length;
+        await res.OutputStream.WriteAsync(audio);
+        res.Close();
+    }
+    catch (JsonException) { await JsonAsync(res, 400, new { error = "Invalid JSON request." }); }
+    catch (TaskCanceledException) { await JsonAsync(res, 504, new { error = "OpenRouter request timed out." }); }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Request failed: {ex.Message}");
+        await JsonAsync(res, 500, new { error = "Could not generate audio. Check the helper console for details." });
+    }
+}
+static async Task JsonAsync(HttpListenerResponse res, int status, object body)
+{
+    try
+    {
+        res.StatusCode = status;
+        res.ContentType = "application/json; charset=utf-8";
+        var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(body));
+        res.ContentLength64 = bytes.Length;
+        await res.OutputStream.WriteAsync(bytes);
+    }
+    catch { }
+    finally { try { res.Close(); } catch { } }
 }
