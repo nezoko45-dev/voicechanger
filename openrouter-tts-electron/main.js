@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, session } = require('electron');
 const path = require('node:path');
+const { spawn } = require('node:child_process');
 
 const SPEECH_ENDPOINT = 'https://openrouter.ai/api/v1/audio/speech';
 const allowedModels = new Set([
@@ -8,6 +9,7 @@ const allowedModels = new Set([
   'microsoft/mai-voice-2'
 ]);
 let mainWindow;
+let dictationProcess = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -37,6 +39,56 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
     callback(audioPermissions.has(permission));
   });
+
+  ipcMain.handle('dictation:start', async () => {
+    if (process.platform !== 'win32') throw new Error('Windows-native offline dictation is supported in this Windows build only.');
+    if (dictationProcess) return { ok: true, alreadyRunning: true };
+    const scriptPath = path.join(__dirname, 'windows-dictation.ps1');
+    dictationProcess = spawn('powershell.exe', [
+      '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+      '-File', scriptPath
+    ], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdoutBuffer = '';
+    dictationProcess.stdout.setEncoding('utf8');
+    dictationProcess.stdout.on('data', chunk => {
+      stdoutBuffer += chunk;
+      const lines = stdoutBuffer.split(/\r?\n/);
+      stdoutBuffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const event = JSON.parse(line);
+          if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('dictation:event', event);
+        } catch {
+          if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('dictation:event', { type: 'error', message: 'Could not parse Windows speech recognition output.' });
+        }
+      }
+    });
+    let stderr = '';
+    dictationProcess.stderr.setEncoding('utf8');
+    dictationProcess.stderr.on('data', chunk => { stderr += chunk; });
+    dictationProcess.on('error', error => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('dictation:event', { type: 'error', message: error.message });
+      dictationProcess = null;
+    });
+    dictationProcess.on('close', code => {
+      if (code && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('dictation:event', {
+        type: 'error',
+        message: stderr.trim() || ('Windows speech recognition exited with code ' + code + '. Check that Windows Speech Recognition is installed and an English speech model is available.')
+      });
+      dictationProcess = null;
+    });
+    return { ok: true };
+  });
+  ipcMain.handle('dictation:stop', async () => {
+    if (dictationProcess) {
+      const child = dictationProcess;
+      dictationProcess = null;
+      try { child.kill(); } catch {}
+    }
+    return { ok: true };
+  });
+
   ipcMain.handle('tts:speak', async (_event, data) => {
     const apiKey = String(data?.apiKey || '').trim();
     const model = String(data?.model || '');
@@ -71,4 +123,5 @@ app.whenReady().then(() => {
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
+app.on('before-quit', () => { if (dictationProcess) { try { dictationProcess.kill(); } catch {} dictationProcess = null; } });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
