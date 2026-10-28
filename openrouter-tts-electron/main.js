@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, session } = require('electron');
 const path = require('node:path');
+const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 
 const SPEECH_ENDPOINT = 'https://openrouter.ai/api/v1/audio/speech';
@@ -43,7 +44,13 @@ app.whenReady().then(() => {
   ipcMain.handle('dictation:start', async () => {
     if (process.platform !== 'win32') throw new Error('Windows-native offline dictation is supported in this Windows build only.');
     if (dictationProcess) return { ok: true, alreadyRunning: true };
-    const scriptPath = path.join(__dirname, 'windows-dictation.ps1');
+    // PowerShell cannot execute a .ps1 directly from inside Electron's app.asar.
+    // Extract the bundled script to a real file in the app's writable userData folder.
+    const bundledScriptPath = path.join(__dirname, 'windows-dictation.ps1');
+    const scriptDirectory = path.join(app.getPath('userData'), 'dictation');
+    fs.mkdirSync(scriptDirectory, { recursive: true });
+    const scriptPath = path.join(scriptDirectory, 'windows-dictation.ps1');
+    fs.copyFileSync(bundledScriptPath, scriptPath);
     dictationProcess = spawn('powershell.exe', [
       '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
       '-File', scriptPath
