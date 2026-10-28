@@ -12,7 +12,7 @@ sealed class ReaderForm : Form
     private readonly TextBox textBox = new() { Multiline = true, ScrollBars = ScrollBars.Vertical, AcceptsReturn = true, AcceptsTab = true, PlaceholderText = "Click here, then use Windows voice typing (Win+H) to dictate…", Font = new System.Drawing.Font("Segoe UI", 11), Dock = DockStyle.Fill };
     private readonly ComboBox model = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
     private readonly ComboBox voice = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220 };
-    private readonly Button dictateButton = new() { Text = "Start Dictation (Win+H)", AutoSize = true };
+    private readonly Button dictateButton = new() { Text = "Prepare Dictation", AutoSize = true };
     private readonly Button pasteButton = new() { Text = "Paste Text", AutoSize = true };
     private readonly Button generateButton = new() { Text = "Generate & Play", AutoSize = true };
     private readonly Button clearButton = new() { Text = "Clear Text", AutoSize = true };
@@ -68,7 +68,7 @@ sealed class ReaderForm : Form
     {
         textBox.Focus();
         textBox.SelectionStart = textBox.TextLength;
-        status.Text = "Ready for dictation: press Windows key + H. Windows Voice Typing will transcribe your speech directly into this text box.";
+        status.Text = "Text box focused. Now press Windows key + H to start Windows Voice Typing; your speech will appear here as text.";
     }
 
     private void PasteClipboard()
