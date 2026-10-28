@@ -10,7 +10,7 @@
 </head>
 <body>
 <h1>OpenRouter TTS Reader</h1>
-<p class="muted">Paste a ChatGPT reply, choose a voice, and have OpenRouter generate the spoken audio. This is a text-to-speech reader, not a live microphone conversation.</p>
+<p class="muted">Use Chrome Speech Recognition for continuous microphone dictation, then read the recognized text aloud with your selected OpenRouter voice.</p>
 <div class="notice"><strong>API key privacy:</strong> Enter your OpenRouter key below. This page keeps it only in this tab's memory and does not save it. Requests go to OpenRouter. Don't use this on a shared or untrusted computer.</div>
 <label for="apiKey">OpenRouter API key</label>
 <input id="apiKey" type="password" autocomplete="off" placeholder="sk-or-v1-…" />
@@ -22,8 +22,8 @@
   </select></div>
   <div><label for="voice">Voice</label><select id="voice"></select></div>
 </div>
-<label for="text">Text to read aloud</label>
-<textarea id="text" placeholder="Click here, then press Ctrl+V to paste a ChatGPT response…"></textarea>
+<div class="row"><button id="dictate" type="button">Start Continuous Dictation</button><button id="stopDictation" type="button" disabled>Stop Dictation</button><small>Allow microphone access when Chrome asks. Requires Chrome speech recognition support and an internet connection.</small></div>\n<label for="text">Live speech transcript / text to read aloud</label>
+<textarea id="text" placeholder="Your recognized speech will appear here as you talk… You can also type or paste text."></textarea>
 <div class="row"><button id="paste" type="button">Paste from Clipboard</button><small>Or click the text box and press Ctrl+V.</small></div>
 <div class="row">
   <button id="speak">Generate &amp; Read Aloud</button>
@@ -37,7 +37,7 @@
 (() => {
   const $ = id => document.getElementById(id);
   const model = $('model'), voice = $('voice'), key = $('apiKey'), text = $('text');
-  const player = $('player'), speak = $('speak'), stop = $('stop');
+  const player = $('player'), speak = $('speak'), stop = $('stop');\n  const dictate = $('dictate'), stopDictation = $('stopDictation');\n  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;\n  let recognition = null, dictationOn = false, restarting = false, finalTranscript = '';
   let objectUrl = null;
   const voices = {
     'x-ai/grok-voice-tts-1.0': [
@@ -57,13 +57,13 @@
       option.value = id; option.textContent = label; voice.append(option);
     }
   }
-  function status(message) { $('status').textContent = message; }
+  function status(message) { $('status').textContent = message; }\n  if (SpeechRecognition) {\n    recognition = new SpeechRecognition(); recognition.continuous = true; recognition.interimResults = true; recognition.lang = 'en-US';\n    recognition.onstart = () => { restarting = false; dictate.disabled = true; stopDictation.disabled = false; status('Listening continuously. Speak naturally; recognized words will appear below.'); };\n    recognition.onresult = event => {\n      let interim = '';\n      for (let i = event.resultIndex; i < event.results.length; i++) {\n        const piece = event.results[i][0].transcript;\n        if (event.results[i].isFinal) finalTranscript += piece + ' '; else interim += piece;\n      }\n      text.value = finalTranscript + interim; text.dispatchEvent(new Event('input', { bubbles: true })); text.scrollTop = text.scrollHeight;\n    };\n    recognition.onerror = event => { if (event.error !== 'no-speech' && event.error !== 'aborted') status('Speech recognition error: ' + event.error + '. Check Chrome microphone permission.'); };\n    recognition.onend = () => {\n      if (dictationOn) {\n        restarting = true;\n        setTimeout(() => { if (dictationOn && recognition) { try { recognition.start(); } catch {} } }, 250);\n      } else { dictate.disabled = false; stopDictation.disabled = true; status('Dictation stopped. You can edit the transcript and click Generate & Read Aloud.'); }\n    };\n    dictate.addEventListener('click', () => { dictationOn = true; finalTranscript = text.value ? text.value.trimEnd() + ' ' : ''; try { recognition.start(); } catch (e) { status('Could not start Chrome Speech Recognition: ' + e.message); dictationOn = false; } });\n    stopDictation.addEventListener('click', () => { dictationOn = false; try { recognition.stop(); } catch {} });\n  } else { dictate.disabled = true; stopDictation.disabled = true; status('This browser does not support Web Speech Recognition. Open this page in Google Chrome.'); }
   function cleanupUrl() {
     if (objectUrl) URL.revokeObjectURL(objectUrl);
     objectUrl = null;
   }
   model.addEventListener('change', updateVoices);
-  $('paste').addEventListener('click', async () => {\n    try {\n      const clip = await navigator.clipboard.readText();\n      if (!clip) { status('Clipboard is empty. Copy the ChatGPT reply first, then try again.'); return; }\n      text.value = clip; text.focus(); text.dispatchEvent(new Event('input', { bubbles: true }));\n      status('Pasted text from clipboard. Click Generate & Read Aloud when ready.');\n    } catch (error) {\n      text.focus();\n      status('Clipboard access was blocked by the browser. Click inside the text box and press Ctrl+V (or right-click and choose Paste).');\n    }\n  });\n  $('clear').addEventListener('click', () => { text.value = ''; });
+  $('paste').addEventListener('click', async () => {\n    try {\n      const clip = await navigator.clipboard.readText();\n      if (!clip) { status('Clipboard is empty. Copy the ChatGPT reply first, then try again.'); return; }\n      text.value = clip; text.focus(); text.dispatchEvent(new Event('input', { bubbles: true }));\n      status('Pasted text from clipboard. Click Generate & Read Aloud when ready.');\n    } catch (error) {\n      text.focus();\n      status('Clipboard access was blocked by the browser. Click inside the text box and press Ctrl+V (or right-click and choose Paste).');\n    }\n  });\n  $('clear').addEventListener('click', () => { text.value = ''; finalTranscript = ''; });
   stop.addEventListener('click', () => { player.pause(); player.currentTime = 0; status('Playback stopped.'); });
   speak.addEventListener('click', async () => {
     const apiKey = key.value.trim(), input = text.value.trim();
