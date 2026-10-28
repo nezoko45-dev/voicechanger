@@ -25,14 +25,19 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  session.defaultSession.setPermissionRequestHandler((wc, permission, callback) => {
+  // This is a packaged Electron app (file://), not a normal website with
+  // Chrome's site-settings page. Grant Chromium's media permission here.
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
+    return permission === 'media';
+  });
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
     callback(permission === 'media');
   });
   ipcMain.handle('tts:speak', async (_event, data) => {
     const apiKey = String(data?.apiKey || '').trim();
     const model = String(data?.model || '');
     const input = String(data?.input || '').trim();
-    const voice = String(data?.voice || '').trim();
+    const voice = String(data?.voice || '');
     if (!apiKey.startsWith('sk-or-') || apiKey.length < 20) throw new Error('Enter a valid OpenRouter API key.');
     if (!allowedModels.has(model)) throw new Error('Choose a supported speech model.');
     if (!input) throw new Error('Enter text or dictate a phrase first.');
