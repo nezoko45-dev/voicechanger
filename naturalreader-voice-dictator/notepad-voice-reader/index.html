@@ -12,10 +12,9 @@
 <h1>OpenAI Voice Dictation & Reader</h1>
 <p class="muted">Speak naturally and the AI will answer out loud using OpenAI's real-time voice model. It handles pauses and turn-taking, so this page does not need to detect ChatGPT webpage buttons or use browser text-to-speech.</p>
 <div class="row"><button id="start">Start voice conversation</button><button id="stop" disabled>Stop</button><button id="clear">Clear transcript</button></div>
-<div class="row"><label for="apiKey">OpenAI API key</label><input id="apiKey" type="password" placeholder="Paste your sk-… API key" autocomplete="off"></div>
-<div class="row"><label for="endpoint">Secure token endpoint URL</label><input id="endpoint" type="url" placeholder="https://your-backend.vercel.app/api/session" autocomplete="url"></div>
-<p class="muted"><small>Your key is saved in this browser only (local storage), not written into the GitHub JavaScript file. The backend uses it to mint a short-lived voice token. Anyone with access to this browser profile can access the saved key; use a dedicated API key with usage limits. The backend must be deployed once.</small></p>
-<p id="status" role="status">Ready. Set the backend URL, then click Start voice conversation.</p>
+<p class="muted"><strong>Local helper required:</strong> Start VoiceReaderLocalTokenHelper.exe on your PC, enter your OpenAI API key in its console, and keep that window open. The key is not saved by this app.</p>
+<div class="row"><label for="endpoint">Local token endpoint</label><input id="endpoint" type="url" value="http://127.0.0.1:32145/api/session" autocomplete="off" readonly></div>
+<p id="status" role="status">Ready. Start the local helper, then click Start voice conversation.</p>
 <section id="log" aria-live="polite" aria-label="Conversation transcript"></section>
 <audio id="remoteAudio" autoplay playsinline></audio>
 <script>
@@ -24,10 +23,6 @@
   const status = message => $('status').textContent = message;
   const log = $('log');
   const endpointInput = $('endpoint');
-  endpointInput.value = localStorage.getItem('voiceReaderBackendUrl') || '';
-  const apiKeyInput = $('apiKey');
-  apiKeyInput.value = localStorage.getItem('voiceReaderOpenAIKey') || '';
-  apiKeyInput.addEventListener('input', () => localStorage.setItem('voiceReaderOpenAIKey', apiKeyInput.value.trim()));
   let pc = null;
   let micStream = null;
   let channel = null;
@@ -90,22 +85,14 @@
 
   async function start() {
     const endpoint = endpointInput.value.trim();
-    const apiKey = apiKeyInput.value.trim();
-    if (!apiKey) {
-      status('Paste your OpenAI API key first. It will be saved in this browser automatically.');
-      apiKeyInput.focus();
-      return;
-    }
     if (!endpoint) {
-      status('Enter the deployed secure token endpoint URL first.');
-      endpointInput.focus();
+      status('The local helper endpoint is missing. Reload this page and try again.');
       return;
     }
     try { new URL(endpoint); } catch {
       status('That backend URL is not valid. Paste the full HTTPS URL ending in /api/session.');
       return;
     }
-    localStorage.setItem('voiceReaderBackendUrl', endpoint);
     $('start').disabled = true;
     status('Requesting microphone access…');
     try {
@@ -131,7 +118,7 @@
       const tokenResponse = await fetch(endpoint, {
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({apiKey})
+        body:JSON.stringify({})
       });
       if (!tokenResponse.ok) {
         const detail = await tokenResponse.text();
@@ -154,7 +141,7 @@
       running = true;
       $('stop').disabled = false;
     } catch (error) {
-      status('Could not start: ' + (error?.message || error) + '. Check the backend URL, deployment, API key setting, and microphone permission.');
+      status('Could not start: ' + (error?.message || error) + '. Make sure VoiceReaderLocalTokenHelper.exe is running, your API key is valid, and microphone permission is allowed.');
       await stop(false);
     }
   }

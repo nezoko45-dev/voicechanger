@@ -1,19 +1,24 @@
 # OpenAI Realtime Voice Reader
 
-This GitHub Pages app uses OpenAI's Realtime API for speech-to-speech conversation, without detecting buttons on the ChatGPT website or using browser text-to-speech.
+This GitHub Pages app uses OpenAI's Realtime API for speech-to-speech conversation. It does not automate ChatGPT webpage buttons or use browser text-to-speech.
 
-## Setup
+## Setup without Vercel or Netlify
 
-GitHub Pages is static hosting, so it cannot run the token endpoint itself. Deploy `api/session.js` to Vercel (or another compatible serverless host) once.
+Use the local Windows token helper:
 
-1. Create a Vercel project from this repository, with the repository root as the project root, then deploy.
-2. Open the deployed function URL, `https://YOUR-VERCEL-DOMAIN/api/session`.
-3. Open the GitHub Pages reader. Paste the function URL into **Secure token endpoint URL** and paste your OpenAI API key into **OpenAI API key**.
-4. The API-key field saves the key automatically in this browser's local storage. It is not written into the GitHub JavaScript file.
-5. Click **Start voice conversation** and allow microphone access.
+1. Open the repository's **Actions** tab and select **Build local Realtime token helper**.
+2. Download the successful run's `VoiceReaderLocalTokenHelper-windows-x64` artifact and extract it.
+3. Run `VoiceReaderLocalTokenHelper.exe`, paste your OpenAI API key into its console prompt, and press Enter. The key is kept in memory by the helper and is not saved by the app.
+4. Keep the helper window open. It listens only on `127.0.0.1:32145`.
+5. Open the Voice Reader GitHub Pages page and click **Start voice conversation**. The page uses `http://127.0.0.1:32145/api/session` automatically.
+6. Allow microphone access.
 
-The serverless function exchanges the entered key for a short-lived Realtime client secret. The browser uses that short-lived token to establish WebRTC with OpenAI. The permanent key is sent over HTTPS to the token endpoint each time a voice session starts; the endpoint does not intentionally store or log it. Only use a backend you trust and a dedicated OpenAI API key with usage limits. Anyone with access to this browser profile can read the locally saved key, so clear the key field/local storage before sharing the browser profile.
+No Vercel or Netlify endpoint is needed. See `local-realtime-token-helper/README.md` for troubleshooting.
 
-## Voice and billing
+## Security and billing
 
-The API is configured with the OpenAI Realtime model and the `marin` voice. OpenAI API voices are not guaranteed to be identical to the voice selected in ChatGPT Voice Mode. API usage is billed separately from a ChatGPT subscription.
+The helper binds only to loopback and accepts browser requests from the official GitHub Pages origin. It does not save your key to disk or browser local storage. The console prompt is visible while typing, so do not screen-share it. Closing the helper clears the key from its process memory. Use a dedicated OpenAI API key with usage limits. OpenAI API usage is billed separately from a ChatGPT subscription.
+
+## Voice
+
+The API is configured to use the `gpt-realtime-2.1` model and the `marin` voice. API voices are not guaranteed to be identical to the voice selected in ChatGPT Voice Mode.
