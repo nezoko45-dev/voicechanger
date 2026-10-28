@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ChatGPT Dictation Loop</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <h1>ChatGPT Dictation Loop</h1>
+  <p id="hint">Open ChatGPT in this tab, then start the loop.</p>
+  <label for="silence">Send after silence</label>
+  <select id="silence">
+    <option value="1">1 second</option>
+    <option value="1.5">1.5 seconds</option>
+    <option value="2" selected>2 seconds</option>
+    <option value="3">3 seconds</option>
+    <option value="4">4 seconds</option>
+  </select>
+  <div class="buttons">
+    <button id="start">Start loop</button>
+    <button id="stop" class="secondary">Stop</button>
+  </div>
+  <div id="status" role="status">Stopped</div>
+  <p class="note">Keep ChatGPT open. Use a headset to prevent its spoken reply from being picked up by your microphone.</p>
+  <script src="popup.js"></script>
+</body>
+</html>
