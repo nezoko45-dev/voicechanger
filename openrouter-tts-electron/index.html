@@ -24,7 +24,7 @@
 <div class="actions"><button id="speak">Generate &amp; Read Aloud</button><button id="stop" class="secondary">Stop audio</button><button id="clear" class="secondary">Clear text</button></div>
 </section>
 <div id="status" class="status" role="status">Ready. Enter your API key, choose a voice and output device, then dictate or type text.</div>
-<p class="muted"><small>Microphone access is requested only when you press Start microphone dictation. Audio is played by the app and routed to the selected Windows output when supported.</small></p>
+<p class="muted"><small>This is a packaged Electron app, so there is no Chrome site-settings page. Microphone permission is handled by the app when you start dictation.</small></p>
 <script>
 (() => {
 const $=id=>document.getElementById(id);
@@ -33,20 +33,19 @@ const models={
 'mistralai/voxtral-mini-tts-2603':[['en_paul_neutral','Paul — neutral English']],
 'microsoft/mai-voice-2':[['en-US-Harper:MAI-Voice-2','Harper — US English']]
 };
-let recognition=null, listening=false, speaking=false, finalText='', autoTimer=null, currentAudio=null, objectUrl=null;
+let recognition=null, listening=false, speaking=false, finalText='', autoTimer=null, currentAudio=null, objectUrl=null, micStream=null;
 const status=s=>$('status').textContent=s;
 function fillVoices(){const el=$('voice');el.replaceChildren();for(const [v,label] of models[$('model').value]){const o=document.createElement('option');o.value=v;o.textContent=label;el.append(o)}}
 async function fillDevices(){
  const el=$('device');el.replaceChildren();
  try{
-  // Enumerate outputs without opening the microphone. The previous getUserMedia()
-  // call caused a permission prompt every time the app launched.
   const devices=await navigator.mediaDevices.enumerateDevices();
   const outs=devices.filter(d=>d.kind==='audiooutput');
   outs.forEach((d,i)=>{const o=document.createElement('option');o.value=d.deviceId||'default';o.textContent=d.label||('Audio output '+(i+1));el.append(o)});
   if(!outs.length){const o=document.createElement('option');o.value='default';o.textContent='System default';el.append(o)}
  }catch{const o=document.createElement('option');o.value='default';o.textContent='System default';el.append(o)}
 }
+function releaseMic(){if(micStream){micStream.getTracks().forEach(t=>t.stop());micStream=null}}
 function scheduleRead(){clearTimeout(autoTimer);if($('autoRead').checked)autoTimer=setTimeout(()=>{const v=$('text').value.trim();if(v&&!speaking)startSpeech(v,true)},1400)}
 function finishPlayback(){speaking=false;$('stop').disabled=true;if($('clearAfter').checked){$('text').value='';finalText=''}status('Playback finished.'+(listening?' Listening for your next phrase.':''));if(listening&&recognition){try{recognition.start()}catch{}}}
 async function startSpeech(value,automatic=false){
@@ -76,10 +75,16 @@ if(SR){
  recognition=new SR();recognition.continuous=true;recognition.interimResults=true;recognition.lang='en-US';
  recognition.onstart=()=>status('Listening to your microphone…');
  recognition.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal){finalText+=t+' ';scheduleRead()}else interim+=t}$('text').value=finalText+interim};
- recognition.onerror=e=>{if(e.error!=='no-speech'&&e.error!=='aborted')status('Dictation error: '+e.error+'. Allow microphone access for this app in Windows privacy settings, then restart dictation.')};
+ recognition.onerror=e=>{if(e.error!=='no-speech'&&e.error!=='aborted')status('Dictation error: '+e.error+'. '+(e.error==='not-allowed'?'Electron denied microphone access. Restart with the updated app build; there is no browser site-settings page.':'Check that Windows can access your microphone.'))};
  recognition.onend=()=>{if(listening&&!speaking)setTimeout(()=>{if(listening&&!speaking)try{recognition.start()}catch{}},350)};
- $('dictate').addEventListener('click',()=>{listening=true;finalText=$('text').value.trim()?$('text').value.trimEnd()+' ':'';try{recognition.start()}catch(e){status('Could not start dictation: '+e.message)}});
- $('stopDictation').addEventListener('click',()=>{listening=false;try{recognition.stop()}catch{};status('Dictation stopped.')});
+ $('dictate').addEventListener('click',async()=>{
+  listening=true;finalText=$('text').value.trim()?$('text').value.trimEnd()+' ':'';
+  try{
+   if(!micStream){status('Requesting microphone access…');micStream=await navigator.mediaDevices.getUserMedia({audio:true});await fillDevices()}
+   recognition.start();
+  }catch(e){listening=false;releaseMic();status('Could not access microphone: '+(e.message||e)+'. Check Windows Settings → Privacy & security → Microphone and make sure microphone access is enabled for desktop apps.');}
+ });
+ $('stopDictation').addEventListener('click',()=>{listening=false;try{recognition.stop()}catch{};releaseMic();status('Dictation stopped.')});
 }else{$('dictate').disabled=true;status('Speech recognition is not available in this Electron build. Typed text-to-speech remains available.')};
 fillVoices();fillDevices();
 })();
