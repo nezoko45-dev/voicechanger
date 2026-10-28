@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 try {
   Add-Type -AssemblyName System.Speech
   $culture = [System.Globalization.CultureInfo]::GetCultureInfo('en-US')
-  $engine = New-Object System.Speech.Recognition.SpeechRecognitionEngine($culture)
+  $engine = New-Object System.Speech.Recognition.SpeechRecognitionEngine -ArgumentList $culture
   $grammar = New-Object System.Speech.Recognition.DictationGrammar
   $engine.LoadGrammar($grammar)
   $engine.SetInputToDefaultAudioDevice()
