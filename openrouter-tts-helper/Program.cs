@@ -13,25 +13,7 @@ const string SpeechEndpoint = "https://openrouter.ai/api/v1/audio/speech";
 Console.Title = "OpenRouter TTS Helper";
 Console.WriteLine("OpenRouter TTS Helper — Chrome dictation + audio page");
 Console.WriteLine("The helper serves speech requests locally; The EXE plays audio directly through the selected Windows output device; Chrome handles dictation and controls.");
-Console.WriteLine("Your OpenRouter API key stays in memory and is not saved to disk.");
-Console.Write("Paste OpenRouter API key (input hidden): ");
-var keyBuilder = new StringBuilder();
-while (true)
-{
-    var k = Console.ReadKey(intercept: true);
-    if (k.Key == ConsoleKey.Enter) break;
-    if (k.Key == ConsoleKey.Backspace) { if (keyBuilder.Length > 0) keyBuilder.Length--; continue; }
-    if (!char.IsControl(k.KeyChar)) keyBuilder.Append(k.KeyChar);
-}
-var apiKey = keyBuilder.ToString().Trim();
-Console.WriteLine();
-if (!apiKey.StartsWith("sk-or-", StringComparison.Ordinal) || apiKey.Length < 20)
-{
-    Console.WriteLine("That does not look like an OpenRouter API key. Close this window and try again.");
-    Console.WriteLine("Press Enter to exit.");
-    Console.ReadLine();
-    return;
-}
+Console.WriteLine("Enter your OpenRouter API key in the reader page; the helper does not save it.");
 
 using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(3) };
 using var listener = new HttpListener();
@@ -55,7 +37,7 @@ while (listener.IsListening)
     try { context = await listener.GetContextAsync(); }
     catch (HttpListenerException) { break; }
     catch (ObjectDisposedException) { break; }
-    _ = HandleAsync(context, client, apiKey, audioPlayer);
+    _ = HandleAsync(context, client, audioPlayer);
 }
 
 static void OpenChrome(string url)
@@ -79,7 +61,7 @@ static void OpenChrome(string url)
     }
 }
 
-static async Task HandleAsync(HttpListenerContext context, HttpClient client, string apiKey, LocalAudioPlayer audioPlayer)
+static async Task HandleAsync(HttpListenerContext context, HttpClient client, LocalAudioPlayer audioPlayer)
 {
     var req = context.Request;
     var res = context.Response;
@@ -114,11 +96,12 @@ static async Task HandleAsync(HttpListenerContext context, HttpClient client, st
         using var doc = JsonDocument.Parse(body.ToArray());
         var root = doc.RootElement;
         string Get(string name) => root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
-        var model = Get("model");
+        var apiKey = Get("apiKey").Trim();\n        var model = Get("model");
         var input = Get("input");
         var voice = Get("voice");
         var format = Get("response_format");
         int deviceNumber = root.TryGetProperty("deviceNumber", out var dv) && dv.TryGetInt32(out var dn) ? dn : -1;
+        if (!apiKey.StartsWith("sk-or-", StringComparison.Ordinal) || apiKey.Length < 20) { await JsonAsync(res, 400, new { error = "Enter a valid OpenRouter API key in the reader page." }); return; }
         if (string.IsNullOrWhiteSpace(input)) { await JsonAsync(res, 400, new { error = "Text input is required." }); return; }
         if (input.Length > 20000) { await JsonAsync(res, 413, new { error = "Text is too long. Please split it into shorter phrases." }); return; }
         var allowedModels = new[] { "x-ai/grok-voice-tts-1.0", "mistralai/voxtral-mini-tts-2603", "microsoft/mai-voice-2" };
