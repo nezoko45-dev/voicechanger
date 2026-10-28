@@ -94,12 +94,9 @@ internal sealed class MainForm : Form
             composer.SetFocus();
             SendKeys.SendWait("^{END}");
             Thread.Sleep(150);
-            // Windows Voice Typing UI (Win+H), not Windows SAPI and not a synthetic David voice.
-            SendKeys.SendWait("^{ESC}");
-            SendKeys.SendWait("{ESC}");
-            SendKeys.SendWait("^{ESC}");
-            SendKeys.SendWait("{ESC}");
-            SendKeys.SendWait("{LWIN down}h{LWIN up}");
+            // Open Windows Voice Typing without sending Ctrl+Esc or other keys that steal focus.
+            // SendKeys does not reliably support the Windows key, so let the user invoke Win+H.
+            status.Text = "Composer focused. Press Win+H to start Windows Voice Typing, then speak.";
 
             active = true;
             stop.Enabled = true;
@@ -221,37 +218,63 @@ internal sealed class MainForm : Form
 
     private static AutomationElement? FindComposer(AutomationElement window)
     {
+        // ChatGPT's composer is a contenteditable ProseMirror textbox. Depending on
+        // Chrome/UIA version it may appear as Edit, Document, Custom, or Pane.
+        // Search by its accessible name first instead of assuming ControlType.Edit.
+        AutomationElement? bestFallback = null;
         try
         {
-            var edits = window.FindAll(TreeScope.Descendants,
-                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit));
-            AutomationElement? candidate = null;
-            foreach (AutomationElement edit in edits)
+            var all = window.FindAll(TreeScope.Descendants, Condition.TrueCondition);
+            foreach (AutomationElement element in all)
             {
                 try
                 {
-                    if (!edit.Current.IsEnabled || edit.Current.IsOffscreen) continue;
-                    var name = SafeName(edit);
-                    if (name.Contains("message", StringComparison.OrdinalIgnoreCase) ||
-                        name.Contains("prompt", StringComparison.OrdinalIgnoreCase))
-                        return edit;
-                    candidate = edit;
+                    var current = element.Current;
+                    if (!current.IsEnabled || current.IsOffscreen) continue;
+
+                    var type = current.ControlType;
+                    if (type != ControlType.Edit && type != ControlType.Document &&
+                        type != ControlType.Custom && type != ControlType.Pane)
+                        continue;
+
+                    var name = SafeName(element);
+                    var isComposerName =
+                        name.Contains("chat with chatgpt", StringComparison.OrdinalIgnoreCase) ||
+                        name.Contains("ask anything", StringComparison.OrdinalIgnoreCase) ||
+                        name.Contains("send a message", StringComparison.OrdinalIgnoreCase) ||
+                        name.Equals("message", StringComparison.OrdinalIgnoreCase) ||
+                        name.Contains("prompt-textarea", StringComparison.OrdinalIgnoreCase);
+
+                    if (isComposerName && current.IsKeyboardFocusable)
+                        return element;
+
+                    // Keep only a focusable fallback; never select an arbitrary edit
+                    // from a sidebar or settings dialog when a named composer is present.
+                    if (bestFallback is null && current.IsKeyboardFocusable &&
+                        (type == ControlType.Edit || type == ControlType.Document))
+                        bestFallback = element;
                 }
                 catch { }
             }
-            if (candidate is not null) return candidate;
+        }
+        catch { }
 
-            var docs = window.FindAll(TreeScope.Descendants,
-                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Document));
-            foreach (AutomationElement doc in docs)
+        if (bestFallback is not null) return bestFallback;
+
+        // Some Chromium builds expose the editable surface only as a focused element.
+        try
+        {
+            var focused = AutomationElement.FocusedElement;
+            if (focused is not null)
             {
-                var name = SafeName(doc);
-                if (name.Contains("message", StringComparison.OrdinalIgnoreCase) ||
-                    name.Contains("prompt", StringComparison.OrdinalIgnoreCase))
-                    return doc;
+                var name = SafeName(focused);
+                if (name.Contains("chat with chatgpt", StringComparison.OrdinalIgnoreCase) ||
+                    name.Contains("ask anything", StringComparison.OrdinalIgnoreCase))
+                    return focused;
             }
         }
         catch { }
+
         return null;
     }
 
