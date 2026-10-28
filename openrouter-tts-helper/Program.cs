@@ -12,7 +12,7 @@ sealed class ReaderForm : Form
     private readonly TextBox textBox = new() { Multiline = true, ScrollBars = ScrollBars.Vertical, AcceptsReturn = true, AcceptsTab = true, PlaceholderText = "Click here, then use Windows voice typing (Win+H) to dictate…", Font = new System.Drawing.Font("Segoe UI", 11), Dock = DockStyle.Fill };
     private readonly ComboBox model = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
     private readonly ComboBox voice = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220 };
-    private readonly Button dictateButton = new() { Text = "Prepare Dictation", AutoSize = true };
+    private readonly Button dictateButton = new() { Text = "Prepare Dictation (Win+H)", AutoSize = true };\n    private readonly Button openPageButton = new() { Text = "Open GitHub Page Reader", AutoSize = true };
     private readonly Button pasteButton = new() { Text = "Paste Text", AutoSize = true };
     private readonly Button generateButton = new() { Text = "Generate & Play", AutoSize = true };
     private readonly Button clearButton = new() { Text = "Clear Text", AutoSize = true };
@@ -44,13 +44,13 @@ sealed class ReaderForm : Form
         root.Controls.Add(new Label { Text = "Speech transcript / text to read aloud", AutoSize = true, Padding = new Padding(0, 5, 0, 5) }, 0, 3);
         root.Controls.Add(textBox, 0, 4);
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(0, 10, 0, 10) };
-        buttons.Controls.Add(dictateButton); buttons.Controls.Add(pasteButton); buttons.Controls.Add(generateButton); buttons.Controls.Add(clearButton);
+        buttons.Controls.Add(openPageButton); buttons.Controls.Add(dictateButton); buttons.Controls.Add(pasteButton); buttons.Controls.Add(generateButton); buttons.Controls.Add(clearButton);
         root.Controls.Add(buttons, 0, 5);
         root.Controls.Add(status, 0, 6);
         root.RowCount = 7; root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         foreach (var item in Voices.Keys) model.Items.Add(item);
         model.SelectedIndex = 0; UpdateVoices(); model.SelectedIndexChanged += (_, _) => UpdateVoices();
-        dictateButton.Click += (_, _) => PrepareDictation();
+        openPageButton.Click += (_, _) => Process.Start(new ProcessStartInfo("https://nezoko45-dev.github.io/voicechanger/openrouter-tts-reader/") { UseShellExecute = true });\n        dictateButton.Click += (_, _) => PrepareDictation();
         pasteButton.Click += (_, _) => PasteClipboard();
         clearButton.Click += (_, _) => textBox.Clear();
         generateButton.Click += async (_, _) => await GenerateAsync();
