@@ -16,7 +16,7 @@ internal sealed class LoopForm : Form
     private readonly Button stop = new() { Text = "Stop", AutoSize = true, Enabled = false };
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 150 };
     private WasapiCapture? capture;
-    private volatile double rms;
+    private double rms;
     private DateTime lastVoice = DateTime.UtcNow;
     private DateTime lastAction = DateTime.MinValue;
     private DateTime actionTime = DateTime.MinValue;
