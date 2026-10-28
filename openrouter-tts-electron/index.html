@@ -24,7 +24,7 @@
 <div class="actions"><button id="speak">Generate &amp; Read Aloud</button><button id="stop" class="secondary">Stop audio</button><button id="clear" class="secondary">Clear text</button></div>
 </section>
 <div id="status" class="status" role="status">Ready. Enter your API key, choose a voice and output device, then dictate or type text.</div>
-<p class="muted"><small>Microphone dictation uses the speech recognition engine available in the installed Electron/Chromium build. Audio is played by the app and routed to the selected Windows output when supported.</small></p>
+<p class="muted"><small>Microphone access is requested only when you press Start microphone dictation. Audio is played by the app and routed to the selected Windows output when supported.</small></p>
 <script>
 (() => {
 const $=id=>document.getElementById(id);
@@ -39,10 +39,11 @@ function fillVoices(){const el=$('voice');el.replaceChildren();for(const [v,labe
 async function fillDevices(){
  const el=$('device');el.replaceChildren();
  try{
-  await navigator.mediaDevices.getUserMedia({audio:true}).then(s=>s.getTracks().forEach(t=>t.stop())).catch(()=>{});
+  // Enumerate outputs without opening the microphone. The previous getUserMedia()
+  // call caused a permission prompt every time the app launched.
   const devices=await navigator.mediaDevices.enumerateDevices();
   const outs=devices.filter(d=>d.kind==='audiooutput');
-  for(const d of outs){const o=document.createElement('option');o.value=d.deviceId;o.textContent=d.label||'Audio output';el.append(o)}
+  outs.forEach((d,i)=>{const o=document.createElement('option');o.value=d.deviceId||'default';o.textContent=d.label||('Audio output '+(i+1));el.append(o)});
   if(!outs.length){const o=document.createElement('option');o.value='default';o.textContent='System default';el.append(o)}
  }catch{const o=document.createElement('option');o.value='default';o.textContent='System default';el.append(o)}
 }
@@ -75,11 +76,11 @@ if(SR){
  recognition=new SR();recognition.continuous=true;recognition.interimResults=true;recognition.lang='en-US';
  recognition.onstart=()=>status('Listening to your microphone…');
  recognition.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal){finalText+=t+' ';scheduleRead()}else interim+=t}$('text').value=finalText+interim};
- recognition.onerror=e=>{if(e.error!=='no-speech'&&e.error!=='aborted')status('Dictation error: '+e.error+'. Check microphone permission.')};
+ recognition.onerror=e=>{if(e.error!=='no-speech'&&e.error!=='aborted')status('Dictation error: '+e.error+'. Allow microphone access for this app in Windows privacy settings, then restart dictation.')};
  recognition.onend=()=>{if(listening&&!speaking)setTimeout(()=>{if(listening&&!speaking)try{recognition.start()}catch{}},350)};
  $('dictate').addEventListener('click',()=>{listening=true;finalText=$('text').value.trim()?$('text').value.trimEnd()+' ':'';try{recognition.start()}catch(e){status('Could not start dictation: '+e.message)}});
  $('stopDictation').addEventListener('click',()=>{listening=false;try{recognition.stop()}catch{};status('Dictation stopped.')});
-}else{$('dictate').disabled=true;status('Speech recognition is not available in this Electron build. Typed text-to-speech remains available.')}
+}else{$('dictate').disabled=true;status('Speech recognition is not available in this Electron build. Typed text-to-speech remains available.')};
 fillVoices();fillDevices();
 })();
 </script>
