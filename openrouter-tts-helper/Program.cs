@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using NAudio.Wave;
 
 const string Prefix = "http://127.0.0.1:32146/";
 const string AllowedOrigin = "https://nezoko45-dev.github.io";
@@ -11,7 +12,7 @@ const string SpeechEndpoint = "https://openrouter.ai/api/v1/audio/speech";
 
 Console.Title = "OpenRouter TTS Helper";
 Console.WriteLine("OpenRouter TTS Helper — Chrome dictation + audio page");
-Console.WriteLine("The helper serves speech requests locally; Chrome handles microphone dictation and audio playback.");
+Console.WriteLine("The helper serves speech requests locally; The EXE plays audio directly through the selected Windows output device; Chrome handles dictation and controls.");
 Console.WriteLine("Your OpenRouter API key stays in memory and is not saved to disk.");
 Console.Write("Paste OpenRouter API key (input hidden): ");
 var keyBuilder = new StringBuilder();
@@ -47,13 +48,14 @@ Console.WriteLine();
 Console.WriteLine($"Ready at {Prefix}api/speech");
 Console.WriteLine("Opening the reader page in Chrome. Keep this window open while using dictation.");
 OpenChrome(PageUrl);
+var audioPlayer = new LocalAudioPlayer();
 while (listener.IsListening)
 {
     HttpListenerContext context;
     try { context = await listener.GetContextAsync(); }
     catch (HttpListenerException) { break; }
     catch (ObjectDisposedException) { break; }
-    _ = HandleAsync(context, client, apiKey);
+    _ = HandleAsync(context, client, apiKey, audioPlayer);
 }
 
 static void OpenChrome(string url)
@@ -77,7 +79,7 @@ static void OpenChrome(string url)
     }
 }
 
-static async Task HandleAsync(HttpListenerContext context, HttpClient client, string apiKey)
+static async Task HandleAsync(HttpListenerContext context, HttpClient client, string apiKey, LocalAudioPlayer audioPlayer)
 {
     var req = context.Request;
     var res = context.Response;
@@ -91,11 +93,15 @@ static async Task HandleAsync(HttpListenerContext context, HttpClient client, st
     }
     res.Headers["Access-Control-Allow-Origin"] = origin;
     res.Headers["Vary"] = "Origin";
-    res.Headers["Access-Control-Allow-Methods"] = "POST, OPTIONS";
+    res.Headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS";
     res.Headers["Access-Control-Allow-Headers"] = "Content-Type";
     res.Headers["Access-Control-Max-Age"] = "600";
     if (req.HttpMethod == "OPTIONS") { res.StatusCode = 204; res.Close(); return; }
-    if (req.HttpMethod != "POST" || req.Url?.AbsolutePath != "/api/speech")
+    var path = req.Url?.AbsolutePath ?? "/";
+    if (req.HttpMethod == "GET" && path == "/api/devices") { var devices = Enumerable.Range(0, WaveOut.DeviceCount).Select(i => new { deviceNumber = i, name = WaveOut.GetCapabilities(i).ProductName }).ToArray(); await JsonAsync(res, 200, new { devices, playing = audioPlayer.IsPlaying }); return; }
+    if (req.HttpMethod == "GET" && path == "/api/status") { await JsonAsync(res, 200, new { playing = audioPlayer.IsPlaying }); return; }
+    if (req.HttpMethod == "POST" && path == "/api/stop") { audioPlayer.Stop(); await JsonAsync(res, 200, new { ok = true, playing = false }); return; }
+    if (req.HttpMethod != "POST" || path != "/api/speech")
     {
         await JsonAsync(res, 404, new { error = "Use POST /api/speech." });
         return;
@@ -112,11 +118,13 @@ static async Task HandleAsync(HttpListenerContext context, HttpClient client, st
         var input = Get("input");
         var voice = Get("voice");
         var format = Get("response_format");
+        int deviceNumber = root.TryGetProperty("deviceNumber", out var dv) && dv.TryGetInt32(out var dn) ? dn : -1;
         if (string.IsNullOrWhiteSpace(input)) { await JsonAsync(res, 400, new { error = "Text input is required." }); return; }
         if (input.Length > 20000) { await JsonAsync(res, 413, new { error = "Text is too long. Please split it into shorter phrases." }); return; }
         var allowedModels = new[] { "x-ai/grok-voice-tts-1.0", "mistralai/voxtral-mini-tts-2603", "microsoft/mai-voice-2" };
         if (!allowedModels.Contains(model)) { await JsonAsync(res, 400, new { error = "Unsupported model selection." }); return; }
         if (string.IsNullOrWhiteSpace(voice)) { await JsonAsync(res, 400, new { error = "Voice is required." }); return; }
+        if (deviceNumber < 0 || deviceNumber >= WaveOut.DeviceCount) { await JsonAsync(res, 400, new { error = "Choose a valid Windows audio output device." }); return; }
         var payload = JsonSerializer.Serialize(new { model, input, voice, response_format = string.IsNullOrWhiteSpace(format) ? "mp3" : format });
         using var upstream = new HttpRequestMessage(HttpMethod.Post, SpeechEndpoint);
         upstream.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
@@ -134,11 +142,8 @@ static async Task HandleAsync(HttpListenerContext context, HttpClient client, st
         }
         var audio = await response.Content.ReadAsByteArrayAsync();
         if (audio.Length == 0) { await JsonAsync(res, 502, new { error = "OpenRouter returned an empty audio response." }); return; }
-        res.StatusCode = 200;
-        res.ContentType = response.Content.Headers.ContentType?.MediaType?.StartsWith("audio/") == true ? response.Content.Headers.ContentType.MediaType : "audio/mpeg";
-        res.ContentLength64 = audio.Length;
-        await res.OutputStream.WriteAsync(audio);
-        res.Close();
+        audioPlayer.PlayMp3(audio, deviceNumber);
+        await JsonAsync(res, 200, new { ok = true, playing = true, deviceNumber });
     }
     catch (JsonException) { await JsonAsync(res, 400, new { error = "Invalid JSON request." }); }
     catch (TaskCanceledException) { await JsonAsync(res, 504, new { error = "OpenRouter request timed out." }); }
@@ -160,4 +165,15 @@ static async Task JsonAsync(HttpListenerResponse res, int status, object body)
     }
     catch { }
     finally { try { res.Close(); } catch { } }
+}
+
+
+sealed class LocalAudioPlayer
+{
+ private readonly object gate = new(); private WaveOutEvent? output; private Mp3FileReader? reader; private MemoryStream? stream;
+ public bool IsPlaying { get { lock (gate) return output is not null; } }
+ public void PlayMp3(byte[] bytes, int deviceNumber) { Stop(); var ms = new MemoryStream(bytes, false); Mp3FileReader? r = null; WaveOutEvent? o = null; try { r = new Mp3FileReader(ms); o = new WaveOutEvent { DeviceNumber = deviceNumber }; o.Init(r); o.PlaybackStopped += (_, _) => Cleanup(o, r, ms); lock (gate) { stream = ms; reader = r; output = o; } o.Play(); } catch { o?.Dispose(); r?.Dispose(); ms.Dispose(); throw; } }
+ public void Stop() { WaveOutEvent? o; lock (gate) o = output; if (o is null) return; try { o.Stop(); } catch { CleanupCurrent(); } }
+ private void Cleanup(WaveOutEvent o, Mp3FileReader r, MemoryStream ms) { lock (gate) { if (ReferenceEquals(output, o)) { output = null; reader = null; stream = null; } } o.Dispose(); r.Dispose(); ms.Dispose(); }
+ private void CleanupCurrent() { WaveOutEvent? o; Mp3FileReader? r; MemoryStream? ms; lock (gate) { o=output; r=reader; ms=stream; output=null; reader=null; stream=null; } o?.Dispose(); r?.Dispose(); ms?.Dispose(); }
 }
