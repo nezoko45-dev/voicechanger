@@ -1,7 +1,5 @@
-// Vercel serverless endpoint for the OpenAI Realtime API.
-// Set OPENAI_API_KEY in the Vercel project's Environment Variables.
-// Never put the permanent API key in the browser or in this repository.
-
+// Exchange a user-entered OpenAI API key for a short-lived Realtime client secret.
+// The permanent key is not stored or logged by this function. Use HTTPS and a dedicated API key.
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -9,43 +7,43 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST, OPTIONS");
-    return res.status(405).send("Use POST with an SDP offer.");
+    return res.status(405).json({ error: "Use POST with { apiKey }." });
   }
 
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return res.status(500).send("Server is missing OPENAI_API_KEY.");
+  const apiKey = typeof req.body?.apiKey === "string" ? req.body.apiKey.trim() : "";
+  if (!apiKey || !/^sk-[A-Za-z0-9_-]+$/.test(apiKey)) {
+    return res.status(400).json({ error: "Missing or invalid OpenAI API key." });
+  }
 
-  let sdp = "";
   try {
-    if (typeof req.body === "string") sdp = req.body;
-    else if (Buffer.isBuffer(req.body)) sdp = req.body.toString("utf8");
-    else if (req.body && typeof req.body.sdp === "string") sdp = req.body.sdp;
-    if (!sdp || !sdp.includes("v=0")) return res.status(400).send("Missing or invalid SDP offer.");
-    const session = {
-      type: "realtime",
-      model: "gpt-realtime-2.1",
-      instructions: "You are ChatGPT, a friendly, helpful conversational voice assistant. Reply naturally and concisely. Speak your answer aloud. Let the user finish speaking before responding.",
-      audio: {
-        input: {
-          transcription: { model: "gpt-4o-mini-transcribe", language: "en" },
-          turn_detection: { type: "server_vad", create_response: true, interrupt_response: true }
-        },
-        output: { voice: "marin" }
-      }
-    };
-    const form = new FormData();
-    form.set("sdp", sdp);
-    form.set("session", JSON.stringify(session));
-    const upstream = await fetch("https://api.openai.com/v1/realtime/calls", {
+    const upstream = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
       method: "POST",
-      headers: { Authorization: "Bearer " + apiKey },
-      body: form
+      headers: { Authorization: "Bearer " + apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        expires_after: { anchor: "created_at", seconds: 600 },
+        session: {
+          type: "realtime",
+          model: "gpt-realtime-2.1",
+          instructions: "You are ChatGPT, a friendly, helpful conversational voice assistant. Reply naturally and concisely. Speak your answer aloud. Let the user finish speaking before responding.",
+          audio: {
+            input: {
+              transcription: { model: "gpt-4o-mini-transcribe", language: "en" },
+              turn_detection: { type: "server_vad", create_response: true, interrupt_response: true }
+            },
+            output: { voice: "marin" }
+          }
+        }
+      })
     });
-    const body = await upstream.text();
-    res.setHeader("Content-Type", "application/sdp");
-    return res.status(upstream.status).send(body);
+    const data = await upstream.json();
+    if (!upstream.ok) {
+      return res.status(upstream.status).json({
+        error: data?.error?.message || "OpenAI could not create a voice token. Check your API key and API billing."
+      });
+    }
+    return res.status(200).json({ value: data.value, expires_at: data.expires_at });
   } catch (error) {
-    console.error("Realtime session setup failed:", error?.message || error);
-    return res.status(500).send("Failed to create a voice session.");
+    console.error("Realtime token creation failed:", error?.message || "unknown error");
+    return res.status(500).json({ error: "Failed to create a short-lived voice token." });
   }
 }
