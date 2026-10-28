@@ -1,18 +1,20 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using NAudio.Wave;
 
 const string Prefix = "http://127.0.0.1:32146/";
-const string AllowedOrigin = "https://nezoko45-dev.github.io";
-const string PageUrl = "https://nezoko45-dev.github.io/voicechanger/openrouter-tts-reader/";
+const string AllowedOrigin = "http://127.0.0.1:32146";
+const string PageUrl = "http://127.0.0.1:32146/";
 const string SpeechEndpoint = "https://openrouter.ai/api/v1/audio/speech";
 
 Console.Title = "OpenRouter TTS Helper";
 Console.WriteLine("OpenRouter TTS Helper — Chrome dictation + audio page");
-Console.WriteLine("The helper serves speech requests locally; The EXE plays audio directly through the selected Windows output device; Chrome handles dictation and controls.");
+Console.WriteLine("The reader page is bundled inside this EXE and served locally; no GitHub Pages URL is needed.");
+Console.WriteLine("The EXE plays audio directly through the selected Windows output device; Chrome handles microphone dictation.");
 Console.WriteLine("Enter your OpenRouter API key in the reader page; the helper does not save it.");
 
 using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(3) };
@@ -82,6 +84,18 @@ static async Task HandleAsync(HttpListenerContext context, HttpClient client, Lo
     res.Headers["Access-Control-Max-Age"] = "600";
     if (req.HttpMethod == "OPTIONS") { res.StatusCode = 204; res.Close(); return; }
     var path = req.Url?.AbsolutePath ?? "/";
+    if (req.HttpMethod == "GET" && (path == "/" || path == "/index.html"))
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        using var page = assembly.GetManifestResourceStream("OpenRouterTTSHelper.reader.html");
+        if (page is null) { await JsonAsync(res, 500, new { error = "Bundled reader page is missing." }); return; }
+        res.StatusCode = 200;
+        res.ContentType = "text/html; charset=utf-8";
+        res.Headers["Cache-Control"] = "no-store";
+        await page.CopyToAsync(res.OutputStream);
+        res.Close();
+        return;
+    }
     if (req.HttpMethod == "GET" && path == "/api/devices") { var devices = Enumerable.Range(0, WaveOut.DeviceCount).Select(i => new { deviceNumber = i, name = WaveOut.GetCapabilities(i).ProductName }).ToArray(); await JsonAsync(res, 200, new { devices, playing = audioPlayer.IsPlaying }); return; }
     if (req.HttpMethod == "GET" && path == "/api/status") { await JsonAsync(res, 200, new { playing = audioPlayer.IsPlaying }); return; }
     if (req.HttpMethod == "POST" && path == "/api/stop") { audioPlayer.Stop(); await JsonAsync(res, 200, new { ok = true, playing = false }); return; }
