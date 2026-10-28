@@ -90,50 +90,39 @@ internal sealed class MainForm : Form
             Activate(window);
             Thread.Sleep(400);
             window = FindChatGPTWindow() ?? window;
+            // Alternative to requiring Chrome's accessibility tree to expose the composer:
+            // click the expected composer location directly. The UI Automation tree may
+            // omit ChatGPT's contenteditable in some Chrome configurations.
             var composer = FindComposer(window);
-            if (composer is null)
-            {
-                // Fallback: click the bottom-center of the ChatGPT content area,
-                // where the message composer normally sits, then query the focused element.
-                // This avoids requiring Chrome to expose the contenteditable in its UIA tree.
-                ClickComposerArea(window);
-                Thread.Sleep(350);
-                composer = FindComposer(window);
-                if (composer is null)
-                {
-                    var focused = TryGetFocusedElement();
-                    if (focused is not null && IsWithinWindow(focused, window) &&
-                        IsTextEntryType(focused.Current.ControlType))
-                        composer = focused;
-                }
-            }
             if (composer is null || !IsWithinWindow(composer, window))
             {
-                status.Text = "Couldn't verify ChatGPT's message box. Click directly inside the 'Ask ChatGPT' composer at the bottom of the page, then press Start again. Make sure the ChatGPT tab is active.";
-                start.Enabled = true;
-                return;
+                ClickComposerArea(window);
+                Thread.Sleep(250);
+                composer = FindComposer(window);
             }
 
-            try { composer.SetFocus(); } catch { }
-            Thread.Sleep(150);
-            var verifiedFocus = TryGetFocusedElement();
-            if (verifiedFocus is null || !IsWithinWindow(verifiedFocus, window))
+            if (composer is not null && IsWithinWindow(composer, window))
             {
-                status.Text = "ChatGPT's message box was found, but Windows could not verify focus. Click inside 'Ask ChatGPT' and press Start again.";
-                start.Enabled = true;
-                return;
+                try { composer.SetFocus(); } catch { }
+                try { SendKeys.SendWait("^{END}"); } catch { }
+                lastComposerText = ReadValue(composer);
             }
-            SendKeys.SendWait("^{END}");
-            Thread.Sleep(150);
+            else
+            {
+                // Do not abort just because UIA cannot name the contenteditable.
+                // Keep running and retry discovery each tick; never claim focus was verified.
+                lastComposerText = "";
+            }
 
             active = true;
             stop.Enabled = true;
             waitingForReply = false;
             clickedReadAloudForCurrentReply = false;
-            lastComposerText = ReadValue(composer);
             lastTextChange = DateTime.UtcNow;
             timer.Start();
-            status.Text = "Composer focus verified. Press Win+H, dictate into ChatGPT, and pause; the loop will send stable text and click Read aloud when a reply appears.";
+            status.Text = composer is null
+                ? "Loop running in fallback mode. ChatGPT's composer is not exposed to UI Automation, so the app clicked its usual location and will keep retrying detection. If dictation doesn't appear, use Win+H after Chrome is active."
+                : "Composer found. Press Win+H and dictate into ChatGPT; the loop will send stable text and click Read aloud when a reply appears.";
         }
         catch (Exception ex)
         {
@@ -316,7 +305,8 @@ internal sealed class MainForm : Form
             var hwnd = new IntPtr(window.Current.NativeWindowHandle);
             if (hwnd == IntPtr.Zero || !GetWindowRect(hwnd, out var rect)) return;
             int x = rect.Left + (rect.Right - rect.Left) / 2;
-            int y = rect.Bottom - Math.Min(115, Math.Max(70, (rect.Bottom - rect.Top) / 8));
+            // ChatGPT's composer is close to the bottom edge; 115px could land above it.
+            int y = rect.Bottom - Math.Min(78, Math.Max(48, (rect.Bottom - rect.Top) / 18));
             SetCursorPos(x, y);
             mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
             mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
