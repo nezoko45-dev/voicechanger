@@ -40,7 +40,8 @@
  function updateVoices(){voice.replaceChildren();for(const [id,label] of voices[model.value]){const o=document.createElement('option');o.value=id;o.textContent=label;voice.append(o)}}
  function cleanup(){if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=null}
  model.addEventListener('change',updateVoices);
- $('paste').addEventListener('click',async()=>{try{const clip=await navigator.clipboard.readText();if(!clip){status('Clipboard is empty. Copy the ChatGPT reply first, then try again.');return}input.value=clip;input.focus();input.dispatchEvent(new Event('input',{bubbles:true}));status('Pasted text from clipboard. Click Generate & Read Aloud when ready.')}catch(e){input.focus();status('Clipboard access was blocked by the browser. Click inside the text box and press Ctrl+V (or right-click and choose Paste).')}});\n $('clear').addEventListener('click',()=>input.value='');
+ $('paste').addEventListener('click',async()=>{try{const clip=await navigator.clipboard.readText();if(!clip){status('Clipboard is empty. Copy the ChatGPT reply first, then try again.');return}input.value=clip;input.focus();input.dispatchEvent(new Event('input',{bubbles:true}));status('Pasted text from clipboard. Click Generate & Read Aloud when ready.')}catch(e){input.focus();status('Clipboard access was blocked by the browser. Click inside the text box and press Ctrl+V (or right-click and choose Paste).')}});
+ $('clear').addEventListener('click',()=>input.value='');
  stop.addEventListener('click',()=>{player.pause();player.currentTime=0;status('Playback stopped.')});
  speak.addEventListener('click',async()=>{
   const text=input.value.trim();if(!text){status('Paste a reply first.');input.focus();return}
