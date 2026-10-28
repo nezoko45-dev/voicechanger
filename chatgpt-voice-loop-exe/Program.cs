@@ -86,7 +86,7 @@ internal sealed class MainForm : Form
             var composer = FindComposer(window);
             if (composer is null)
             {
-                status.Text = "Found ChatGPT, but UI Automation couldn't find the message text box. Click inside ChatGPT's composer once and try again.";
+                status.Text = "Couldn't locate the composer in Chrome's accessibility tree. Click directly inside ChatGPT's message box, then press Start again. If it still fails, this Chrome build is not exposing the editor to UI Automation.";
                 start.Enabled = true;
                 return;
             }
@@ -218,13 +218,26 @@ internal sealed class MainForm : Form
 
     private static AutomationElement? FindComposer(AutomationElement window)
     {
-        // ChatGPT's composer is a contenteditable ProseMirror textbox. Depending on
-        // Chrome/UIA version it may appear as Edit, Document, Custom, or Pane.
-        // Search by its accessible name first instead of assuming ControlType.Edit.
-        AutomationElement? bestFallback = null;
+        // Best signal: if the user clicked ChatGPT's composer, Chrome may expose it
+        // as the focused element even when the accessibility tree omits its name.
+        try
+        {
+            var focused = AutomationElement.FocusedElement;
+            if (focused is not null && IsWithinWindow(focused, window))
+            {
+                var focusedType = focused.Current.ControlType;
+                var focusedName = SafeName(focused);
+                if (IsTextEntryType(focusedType) ||
+                    LooksLikeComposerName(focusedName))
+                    return focused;
+            }
+        }
+        catch { }
+
         try
         {
             var all = window.FindAll(TreeScope.Descendants, Condition.TrueCondition);
+            AutomationElement? fallback = null;
             foreach (AutomationElement element in all)
             {
                 try
@@ -233,51 +246,55 @@ internal sealed class MainForm : Form
                     if (!current.IsEnabled || current.IsOffscreen) continue;
 
                     var type = current.ControlType;
-                    if (type != ControlType.Edit && type != ControlType.Document &&
-                        type != ControlType.Custom && type != ControlType.Pane)
+                    if (!IsTextEntryType(type) && type != ControlType.Custom &&
+                        type != ControlType.Pane)
                         continue;
 
                     var name = SafeName(element);
-                    var isComposerName =
-                        name.Contains("chat with chatgpt", StringComparison.OrdinalIgnoreCase) ||
-                        name.Contains("ask anything", StringComparison.OrdinalIgnoreCase) ||
-                        name.Contains("send a message", StringComparison.OrdinalIgnoreCase) ||
-                        name.Equals("message", StringComparison.OrdinalIgnoreCase) ||
-                        name.Contains("prompt-textarea", StringComparison.OrdinalIgnoreCase);
-
-                    if (isComposerName && current.IsKeyboardFocusable)
+                    if (LooksLikeComposerName(name))
                         return element;
 
-                    // Keep only a focusable fallback; never select an arbitrary edit
-                    // from a sidebar or settings dialog when a named composer is present.
-                    if (bestFallback is null && current.IsKeyboardFocusable &&
-                        (type == ControlType.Edit || type == ControlType.Document))
-                        bestFallback = element;
+                    // Keep a fallback only for a real text-entry control.
+                    if (fallback is null && IsTextEntryType(type) &&
+                        current.IsKeyboardFocusable)
+                        fallback = element;
                 }
                 catch { }
             }
-        }
-        catch { }
-
-        if (bestFallback is not null) return bestFallback;
-
-        // Some Chromium builds expose the editable surface only as a focused element.
-        try
-        {
-            var focused = AutomationElement.FocusedElement;
-            if (focused is not null)
-            {
-                var name = SafeName(focused);
-                if (name.Contains("chat with chatgpt", StringComparison.OrdinalIgnoreCase) ||
-                    name.Contains("ask anything", StringComparison.OrdinalIgnoreCase))
-                    return focused;
-            }
+            if (fallback is not null) return fallback;
         }
         catch { }
 
         return null;
     }
 
+    private static bool IsTextEntryType(ControlType type) =>
+        type == ControlType.Edit || type == ControlType.Document;
+
+    private static bool LooksLikeComposerName(string name) =>
+        name.Contains("chat with chatgpt", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("ask anything", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("send a message", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("message chatgpt", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("message to chatgpt", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("write a message", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("prompt", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("message", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsWithinWindow(AutomationElement element, AutomationElement window)
+    {
+        try
+        {
+            var elementWindow = AutomationTreeWalker.ControlViewWalker.GetParent(element);
+            while (elementWindow is not null)
+            {
+                if (elementWindow.Equals(window)) return true;
+                elementWindow = AutomationTreeWalker.ControlViewWalker.GetParent(elementWindow);
+            }
+        }
+        catch { }
+        return false;
+    }
     private static AutomationElement? FindReadAloudButton(AutomationElement window)
     {
         try
