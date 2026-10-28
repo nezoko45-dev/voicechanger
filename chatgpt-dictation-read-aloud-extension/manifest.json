@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "ChatGPT Dictation + Read Aloud Loop",
+  "version": "1.0.0",
+  "description": "Transcribe your microphone into ChatGPT, send after a pause, then read the reply aloud.",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*"
+  ],
+  "action": {
+    "default_title": "ChatGPT Dictation Loop",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
