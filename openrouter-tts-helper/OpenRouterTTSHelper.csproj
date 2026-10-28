@@ -10,4 +10,7 @@
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../openrouter-tts-reader/index.html" LogicalName="OpenRouterTTSHelper.reader.html" />
+  </ItemGroup>
 </Project>
