@@ -10,9 +10,10 @@
 </head>
 <body>
 <h1>OpenRouter TTS Reader</h1>
-<p class="muted">Windows EXE + microphone dictation. This page sends speech requests to the local OpenRouterTTSHelper.exe, not directly to OpenRouter. The EXE keeps your API key in memory.</p>
+<p class="muted">Windows EXE + microphone dictation. The EXE generates and plays audio directly through the Windows output device you select below. Chrome handles microphone dictation and controls; audio does not play in the browser.</p>
 <div class="notice"><strong>First:</strong> Run <code>OpenRouterTTSHelper.exe</code>, enter your OpenRouter API key in its console, and keep that window open. Dictation uses Chrome's speech recognition.</div>
 <div class="grid">
+<div><label for="device">Windows audio output device (played by EXE)</label><select id="device"><option value="">Loading Windows devices…</option></select></div>
 <div><label for="model">Speech model</label><select id="model">
 <option value="x-ai/grok-voice-tts-1.0">Grok Voice TTS 1.0</option>
 <option value="mistralai/voxtral-mini-tts-2603">Mistral Voxtral Mini TTS</option>
@@ -27,14 +28,14 @@
 <div class="row"><label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500"><input id="clearAfterRead" type="checkbox" checked style="width:auto"> Clear old text after playback</label></div>
 <div class="row"><button id="paste">Paste from Clipboard</button><button id="speak">Generate &amp; Read Aloud</button><button id="stop" disabled>Stop audio</button><button id="clear">Clear text</button></div>
 <p id="status" role="status">Run OpenRouterTTSHelper.exe first, then start dictation or enter text.</p>
-<audio id="player" controls style="width:100%;margin-top:8px"></audio>
+<p class="muted"><small>Audio is played by the EXE through the selected Windows device (including Voicemeeter devices when available). Keep the EXE running.</small></p>
 <p class="muted"><small>Voice examples: Grok: eve, ara, rex, sal, leo. Voxtral: en_paul_neutral. MAI: en-US-Harper:MAI-Voice-2. The selected model and voice must be supported by your OpenRouter account.</small></p>
 <script>
 (() => {
  const $ = id => document.getElementById(id);
- const model=$('model'),voice=$('voice'),text=$('text'),player=$('player'),speak=$('speak'),stop=$('stop'),dictate=$('dictate'),stopDictation=$('stopDictation');
+ const model=$('model'),voice=$('voice'),text=$('text'),device=$('device'),speak=$('speak'),stop=$('stop'),dictate=$('dictate'),stopDictation=$('stopDictation');
  const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
- let recognition=null,dictationOn=false,readingAudio=false,finalTranscript='',autoTimer=null,lastSpoken='',objectUrl=null,requestInFlight=false;
+ let recognition=null,dictationOn=false,readingAudio=false,finalTranscript='',autoTimer=null,lastSpoken='',requestInFlight=false,pollTimer=null,wasPlaying=false;
  const voices={
   'x-ai/grok-voice-tts-1.0':[['eve','Eve — feminine'],['ara','Ara'],['rex','Rex'],['sal','Sal'],['leo','Leo']],
   'mistralai/voxtral-mini-tts-2603':[['en_paul_neutral','Paul — neutral English']],
@@ -47,7 +48,12 @@
   if(!$('autoRead').checked)return;
   autoTimer=setTimeout(()=>{const value=text.value.trim();if(value&&value!==lastSpoken&&!requestInFlight)startSpeech(value,true)},1400);
  }
- function cleanup(){if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=null}
+ async function loadDevices(){
+  try{const r=await fetch('http://127.0.0.1:32146/api/devices');if(!r.ok)throw new Error('HTTP '+r.status);const data=await r.json();device.replaceChildren();for(const d of data.devices){const o=document.createElement('option');o.value=String(d.deviceNumber);o.textContent=d.name;device.append(o)}if(!data.devices.length){const o=document.createElement('option');o.value='';o.textContent='No Windows audio output devices found';device.append(o);status('No Windows audio output devices were detected. Check Windows sound settings.')}else{const saved=localStorage.getItem('openrouter-tts-device');if(saved!==null&&[...device.options].some(o=>o.value===saved))device.value=saved;status('Connected to OpenRouterTTSHelper.exe. Choose an output device and start dictation.')}}
+  catch(e){device.replaceChildren();const o=document.createElement('option');o.value='';o.textContent='EXE not connected — run helper';device.append(o);status('Cannot reach OpenRouterTTSHelper.exe. Run it, enter your API key, then reload this page.')}
+ }
+ device.addEventListener('change',()=>localStorage.setItem('openrouter-tts-device',device.value));
+ async function pollPlayback(){clearTimeout(pollTimer);try{const r=await fetch('http://127.0.0.1:32146/api/status',{cache:'no-store'});if(!r.ok)throw new Error('status');const data=await r.json();if(data.playing){wasPlaying=true;stop.disabled=false;pollTimer=setTimeout(pollPlayback,300)}else if(wasPlaying){wasPlaying=false;finishPlayback('Finished reading. Old text cleared; listening for your next phrase.')}else{pollTimer=setTimeout(pollPlayback,500)}}catch{pollTimer=setTimeout(pollPlayback,1000)}}
  function resumeDictation(){
   readingAudio=false;
   if(dictationOn&&recognition){dictate.disabled=true;stopDictation.disabled=false;setTimeout(()=>{if(dictationOn&&!readingAudio){try{recognition.start()}catch{}}},350)}
@@ -78,7 +84,7 @@
   if($('clearAfterRead').checked){text.value='';finalTranscript='';lastSpoken='';clearTimeout(autoTimer)}
   status(message);resumeDictation();
  }
- stop.addEventListener('click',()=>{player.pause();player.currentTime=0;finishPlayback('Playback stopped. Old text cleared; ready for the next phrase.')});
+ stop.addEventListener('click',async()=>{try{await fetch('http://127.0.0.1:32146/api/stop',{method:'POST'})}catch{}wasPlaying=false;finishPlayback('Playback stopped. Old text cleared; ready for the next phrase.')});
  speak.addEventListener('click',()=>startSpeech(text.value.trim(),false));
  async function startSpeech(value,automatic){
   if(!value||requestInFlight)return;
@@ -87,15 +93,15 @@
   if(dictationOn&&recognition){readingAudio=true;try{recognition.stop()}catch{}}
   status('Generating audio through OpenRouterTTSHelper.exe…');
   try{
-   const response=await fetch('http://127.0.0.1:32146/api/speech',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:model.value,input:value,voice:voice.value,response_format:'mp3'})});
+   if(device.value==='')throw new Error('Choose a Windows audio output device first.');
+   const response=await fetch('http://127.0.0.1:32146/api/speech',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:model.value,input:value,voice:voice.value,response_format:'mp3',deviceNumber:Number(device.value)})});
    if(!response.ok){let detail=await response.text();try{detail=JSON.parse(detail).error||detail}catch{}throw new Error('Local helper returned HTTP '+response.status+': '+detail.slice(0,600))}
-   const blob=await response.blob();if(!blob.size)throw new Error('The helper returned an empty audio file.');
-   cleanup();objectUrl=URL.createObjectURL(blob);player.src=objectUrl;await player.play();lastSpoken=value;stop.disabled=false;status((automatic?'Reading dictated phrase':'Speaking text')+' with '+voice.options[voice.selectedIndex].text+'.');
+   const result=await response.json();if(!result.ok)throw new Error('The EXE did not start playback.');
+   lastSpoken=value;wasPlaying=true;stop.disabled=false;status((automatic?'Reading dictated phrase':'Speaking text')+' with '+voice.options[voice.selectedIndex].text+' through '+device.options[device.selectedIndex].text+'.');pollPlayback();
   }catch(e){readingAudio=false;status('Could not generate speech: '+(e.message||e)+'\nMake sure OpenRouterTTSHelper.exe is running and the key/credits are valid.');resumeDictation()}
   finally{requestInFlight=false;speak.disabled=false}
  }
- player.addEventListener('ended',()=>finishPlayback('Finished reading. Old text cleared; listening for your next phrase.'));
- window.addEventListener('beforeunload',cleanup);
+ window.addEventListener('beforeunload',()=>clearTimeout(pollTimer));
  updateVoices();
 })();
 </script>
