@@ -84,7 +84,14 @@
     const text = (pendingFinal + " " + interim).replace(/\s+/g, " ").trim();
     pendingFinal = "";
     interim = "";
-    if (!text) { setStatus("Listening…"); return; }
+    if (!text) {
+      // Recognition can fire a silence timeout before Chrome delivers its final
+      // result. Don't treat that as a completed turn; keep listening and expose
+      // a useful status instead of silently losing the utterance.
+      setStatus("No speech text received yet — check microphone access, then keep speaking.");
+      scheduleRestart(700);
+      return;
+    }
     busy = true;
     stopRecognition();
     const el = composer();
@@ -229,28 +236,43 @@
     }
     try {
       recognition = new SpeechRecognition();
-      recognition.lang = document.documentElement.lang || "en-US";
+      // ChatGPT's page language can be empty or unrelated to the user's speech.
+      // Use a stable default so recognition doesn't inherit a surprising locale.
+      recognition.lang = "en-US";
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
+      recognition._seenFinals = new Set();
       recognition.onstart = () => { recognitionActive = true; setStatus("Listening to your microphone…"); };
       recognition.onresult = event => {
-        for (let i = event.resultIndex; i < event.results.length; i++) {
+        // Rebuild the current interim phrase from all non-final results. Chrome
+        // may revise interim results; appending each revision duplicates words.
+        const interimParts = [];
+        for (let i = 0; i < event.results.length; i++) {
           const result = event.results[i];
-          const phrase = result[0]?.transcript || "";
+          const phrase = (result[0]?.transcript || "").trim();
+          if (!phrase) continue;
           if (result.isFinal) {
-            pendingFinal += " " + phrase;
-            interim = "";
+            const key = phrase.toLocaleLowerCase();
+            if (!recognition._seenFinals) recognition._seenFinals = new Set();
+            if (!recognition._seenFinals.has(key)) {
+              pendingFinal += " " + phrase;
+              recognition._seenFinals.add(key);
+            }
           } else {
-            interim = phrase;
+            interimParts.push(phrase);
           }
         }
-        const spoken = (pendingFinal + " " + interim).trim();
+        interim = interimParts.join(" ").trim();
+        const spoken = (pendingFinal + " " + interim).replace(/\\s+/g, " ").trim();
         if (spoken) {
           setStatus("Hearing: " + spoken.slice(-90));
           clearTimeout(silenceTimer);
-          silenceTimer = setTimeout(sendMessage, silenceSeconds * 1000);
+          silenceTimer = setTimeout(sendMessage, silenceSeconds * 1000 + 900);
         }
+      };
+      recognition.onnomatch = () => {
+        setStatus("Didn't catch words. Keep the microphone selected and try speaking again.");
       };
       recognition.onerror = event => {
         if (event.error === "not-allowed" || event.error === "service-not-allowed") {
