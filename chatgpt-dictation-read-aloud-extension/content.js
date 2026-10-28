@@ -127,90 +127,34 @@
   }
 
   async function waitForReplyAndReadAloud() {
+    // Don't wait for assistant message text: ChatGPT's DOM can change and
+    // the reply detector may fail even while the Read aloud control is present.
+    // Poll the visible page for the button and click it as soon as it appears.
     const started = Date.now();
-    const overallTimeoutMs = 90000;
-    let responseSeenAt = 0;
-    let previousText = "";
-    let stableSince = 0;
-    let latest = null;
-
-    while (running && Date.now() - started < overallTimeoutMs) {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      const messages = assistantMessages();
-      latest = messages[messages.length - 1] || null;
-      const text = latest?.innerText?.trim() || "";
-      const isNewReply = messages.length > assistantCountBeforeSend ||
-        (text.length > 0 && text !== assistantTextBeforeSend);
-
-      if (isNewReply && text) {
-        if (!responseSeenAt) responseSeenAt = Date.now();
-        if (text === previousText) {
-          if (!stableSince) stableSince = Date.now();
-        } else {
-          previousText = text;
-          stableSince = 0;
-        }
-        if (!generating() && stableSince && Date.now() - stableSince >= 1800) break;
-        // A stale/mismatched generation indicator must not block the loop forever.
-        if (stableSince && Date.now() - stableSince >= 5000) break;
-        if (responseSeenAt && Date.now() - responseSeenAt >= 45000) break;
-      } else if (Date.now() - started > 20000 && !generating()) {
-        setStatus("No new reply detected. Check that your message was sent.");
+    const timeoutMs = 120000;
+    while (running && Date.now() - started < timeoutMs) {
+      const clicked = clickButtonByLabel(["Read aloud"]);
+      if (clicked) {
+        setStatus("Clicked Read aloud. Waiting before listening again…");
+        // Avoid inspecting reply text/audio; simply allow playback time based on
+        // the visible assistant response if available, then resume the mic.
+        const latest = assistantMessages().at(-1);
+        const replyText = latest?.innerText?.trim() || "";
+        const waitMs = Math.min(120000, Math.max(8000, (replyText.length / 14) * 1000 + 3000));
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+        if (!running) return;
         busy = false;
-        scheduleRestart(1800);
+        setStatus("Listening for your next dictation…");
+        scheduleRestart(700);
         return;
       }
+      await new Promise(resolve => setTimeout(resolve, 700));
     }
 
     if (!running) return;
-    const messages = assistantMessages();
-    latest = messages[messages.length - 1] || null;
-    const latestText = latest?.innerText?.trim() || "";
-    const hasNewReply = messages.length > assistantCountBeforeSend ||
-      (latestText.length > 0 && latestText !== assistantTextBeforeSend);
-
-    if (!hasNewReply || !latest) {
-      setStatus("Reply timed out or wasn't detected. Listening again.");
-      busy = false;
-      scheduleRestart(1500);
-      return;
-    }
-
-    setStatus("Clicking Read aloud…");
-    const clicked = clickButtonByLabel(["Read aloud"], latest) || clickButtonByLabel(["Read aloud"]);
-    if (!clicked) {
-      setStatus("Reply detected, but Read aloud wasn't found. Listening again.");
-      busy = false;
-      scheduleRestart(2200);
-      return;
-    }
-    setStatus("Reading reply aloud…");
-    await waitForReadAloudToFinish(latestText);
-    if (!running) return;
+    setStatus("Couldn't find Read aloud yet. Listening again.");
     busy = false;
-    setStatus("Listening for your next dictation…");
-    scheduleRestart(700);
-  }
-
-  async function waitForReadAloudToFinish(replyText) {
-    // Prefer a real playing audio element when ChatGPT exposes one. Fall back to a
-    // conservative duration estimate if its player is hidden from the DOM.
-    const audioAtStart = [...document.querySelectorAll("audio")];
-    const estimateMs = Math.min(120000, Math.max(5000, (replyText.length / 14) * 1000 + 2500));
-    const start = Date.now();
-    let sawPlaying = audioAtStart.some(a => !a.paused && !a.ended);
-    let quietSince = 0;
-    while (running && Date.now() - start < 125000) {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      const audios = [...document.querySelectorAll("audio")];
-      const playing = audios.some(a => !a.paused && !a.ended);
-      if (playing) { sawPlaying = true; quietSince = 0; }
-      else if (sawPlaying) {
-        if (!quietSince) quietSince = Date.now();
-        if (Date.now() - quietSince > 1800) return;
-      }
-      if (!sawPlaying && Date.now() - start >= estimateMs) return;
-    }
+    scheduleRestart(1500);
   }
 
   function scheduleRestart(delay = 500) {
