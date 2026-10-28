@@ -26,6 +26,7 @@
 <label for="text">Live speech transcript / text to read aloud</label>
 <textarea id="text" placeholder="Your recognized speech will appear here as you talk… You can also type or paste text."></textarea>
 <div class="row"><label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500"><input id="autoRead" type="checkbox" checked style="width:auto"> Automatically read text aloud after a short pause</label><small>Uses your selected OpenRouter voice. Dictation pauses while audio plays to prevent feedback.</small></div>
+<div class="row"><label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500"><input id="clearAfterRead" type="checkbox" checked style="width:auto"> Clear old text after it finishes speaking</label></div>
 <div class="row"><button id="paste" type="button">Paste from Clipboard</button><small>Or click the text box and press Ctrl+V.</small></div>
 <div class="row">
   <button id="speak">Generate &amp; Read Aloud</button>
@@ -153,7 +154,13 @@
   }
   player.addEventListener('ended', () => {
     stop.disabled = true;
-    status('Finished reading.');
+    if ($('clearAfterRead').checked) {
+      text.value = '';
+      finalTranscript = '';
+      lastAutoReadText = '';
+      clearTimeout(autoReadTimer);
+    }
+    status('Finished reading. Old text cleared; ready for your next sentence.');
     readingAudio = false;
     if (dictationOn && recognition) { try { recognition.start(); } catch {} }
   });
