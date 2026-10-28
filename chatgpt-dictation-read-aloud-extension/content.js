@@ -127,44 +127,42 @@
   }
 
   async function waitForNewReplyThenReadAloud() {
+    // Wait only until ChatGPT has actually replied. Then immediately click
+    // Read aloud on that new assistant message; don't add a stability delay.
     const started = Date.now();
     const timeoutMs = 120000;
     let sawGeneration = false;
-    let lastReply = "";
-    let stableSince = 0;
+    let previousText = "";
     while (running && Date.now() - started < timeoutMs) {
       const messages = assistantMessages();
       const latest = messages.at(-1);
       const latestText = latest?.innerText?.trim() || "";
       const isGenerating = generating();
-      if (isGenerating) { sawGeneration = true; stableSince = 0; }
+      if (isGenerating) sawGeneration = true;
+
       const isNewReply = messages.length > assistantCountBeforeSend ||
         (latestText && latestText !== assistantTextBeforeSend);
-      if (isNewReply && latestText && !isGenerating && (sawGeneration || Date.now() - started > 1800)) {
-        if (latestText !== lastReply) {
-          lastReply = latestText;
-          stableSince = Date.now();
-        } else if (stableSince && Date.now() - stableSince >= 1200) {
-          try {
-            latest.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
-            latest.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
-          } catch {}
-          if (clickButtonByLabel(["Read aloud"], latest)) {
-            setStatus("Reading the new reply aloud…");
-            const waitMs = Math.min(120000, Math.max(8000, (latestText.length / 14) * 1000 + 3000));
-            await new Promise(resolve => setTimeout(resolve, waitMs));
-            if (!running) return;
-            busy = false;
-            setStatus("Listening for your next dictation…");
-            scheduleRestart(700);
-            return;
-          }
+      if (isNewReply && latestText && !isGenerating && (sawGeneration || Date.now() - started > 1200)) {
+        try {
+          latest.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+          latest.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+        } catch {}
+        if (clickButtonByLabel(["Read aloud"], latest)) {
+          setStatus("Clicked Read aloud on the new reply…");
+          const waitMs = Math.min(120000, Math.max(8000, (latestText.length / 14) * 1000 + 3000));
+          await new Promise(resolve => setTimeout(resolve, waitMs));
+          if (!running) return;
+          busy = false;
+          setStatus("Listening for your next dictation…");
+          scheduleRestart(700);
+          return;
         }
       }
-      await new Promise(resolve => setTimeout(resolve, 500));
+      previousText = latestText;
+      await new Promise(resolve => setTimeout(resolve, 250));
     }
     if (!running) return;
-    setStatus("Timed out waiting for the new reply. Listening again.");
+    setStatus("Couldn't click Read aloud on the new reply. Listening again.");
     busy = false;
     scheduleRestart(1500);
   }
