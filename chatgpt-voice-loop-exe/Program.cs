@@ -58,13 +58,13 @@ internal sealed class MainForm : Form
             recognizer.SpeechRecognized += (_, e) =>
             {
                 if (e.Result.Confidence < 0.48 || string.IsNullOrWhiteSpace(e.Result.Text)) return;
-                BeginInvoke(() =>
+                BeginInvoke(new Action(() =>
                 {
                     pending = (pending + " " + e.Result.Text).Trim();
                     lastSpeech = DateTime.Now;
                     status.Text = "Hearing: " + pending;
                     silenceTimer.Stop(); silenceTimer.Start();
-                });
+                }));
             };
             recognizer.RecognizeAsync(RecognizeMode.Multiple);
             start.Enabled = false; stop.Enabled = true;
