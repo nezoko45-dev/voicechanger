@@ -1,5 +1,5 @@
-using System.IO;
 using System.Globalization;
+using System.IO;
 using System.Net.Http;
 using System.Speech.Recognition;
 using System.Text;
@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using NAudio.Wave;
 
 namespace OpenRouterTtsReader;
 
@@ -14,15 +15,14 @@ public partial class MainWindow : Window
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(2) };
     private SpeechRecognitionEngine? _recognizer;
+    private WaveOutEvent? _output;
+    private MediaFoundationReader? _audioReader;
     private readonly DispatcherTimer _autoReadTimer;
     private bool _dictationOn;
     private bool _isSpeaking;
     private bool _requestInFlight;
-    private bool _suppressTextChange;
-    private string _finalTranscript = "";
     private string _lastSpoken = "";
     private string? _audioPath;
-    private string? _model;
     private readonly Dictionary<string, (string Value, string Label)[]> _voices = new()
     {
         ["x-ai/grok-voice-tts-1.0"] = new[] { ("eve", "Eve — feminine"), ("ara", "Ara"), ("rex", "Rex"), ("sal", "Sal"), ("leo", "Leo") },
@@ -42,10 +42,30 @@ public partial class MainWindow : Window
                 _ = GenerateAndPlayAsync(value, automatic: true);
         };
         UpdateVoices();
+        LoadOutputDevices();
     }
 
     private string SelectedModel => (ModelBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "x-ai/grok-voice-tts-1.0";
     private string SelectedVoice => (VoiceBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "eve";
+
+    private void LoadOutputDevices()
+    {
+        OutputDeviceBox.Items.Clear();
+        OutputDeviceBox.Items.Add(new ComboBoxItem { Content = "Windows default output", Tag = -1 });
+        try
+        {
+            for (var i = 0; i < WaveOut.DeviceCount; i++)
+            {
+                var capabilities = WaveOut.GetCapabilities(i);
+                OutputDeviceBox.Items.Add(new ComboBoxItem { Content = capabilities.ProductName, Tag = i });
+            }
+        }
+        catch (Exception ex)
+        {
+            SetStatus("Could not enumerate audio output devices: " + ex.Message);
+        }
+        OutputDeviceBox.SelectedIndex = 0;
+    }
 
     private void ModelBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -69,22 +89,28 @@ public partial class MainWindow : Window
         {
             if (_recognizer is null)
             {
-                _recognizer = new SpeechRecognitionEngine(new CultureInfo("en-US"));
+                var installed = SpeechRecognitionEngine.InstalledRecognizers();
+                var recognizerInfo = installed
+                    .OrderByDescending(x => x.Culture.Name.Equals("en-US", StringComparison.OrdinalIgnoreCase))
+                    .ThenByDescending(x => x.Culture.TwoLetterISOLanguageName == "en")
+                    .FirstOrDefault();
+                if (recognizerInfo is null)
+                    throw new InvalidOperationException("Windows has no desktop speech-recognition engine installed. Install/enable Windows Speech Recognition or Windows speech language support, then reopen this app.");
+                _recognizer = new SpeechRecognitionEngine(recognizerInfo);
                 _recognizer.LoadGrammar(new DictationGrammar());
                 _recognizer.SetInputToDefaultAudioDevice();
                 _recognizer.SpeechRecognized += (_, args) =>
                 {
-                    if (args.Result.Confidence < 0.35 || !_dictationOn || _isSpeaking) return;
-                    Dispatcher.Invoke(() =>
+                    if (args.Result.Confidence < 0.25 || !_dictationOn || _isSpeaking) return;
+                    var phrase = args.Result.Text.Trim();
+                    if (phrase.Length == 0) return;
+                    Dispatcher.BeginInvoke(() =>
                     {
-                        var phrase = args.Result.Text.Trim();
-                        if (phrase.Length == 0) return;
+                        if (!_dictationOn || _isSpeaking) return;
                         if (TextBoxInput.Text.Length > 0 && !char.IsWhiteSpace(TextBoxInput.Text[^1]))
                             TextBoxInput.AppendText(" ");
-                        TextBoxInput.AppendText(phrase);
-                        TextBoxInput.AppendText(" ");
+                        TextBoxInput.AppendText(phrase + " ");
                         TextBoxInput.ScrollToEnd();
-                        _finalTranscript = TextBoxInput.Text;
                         if (AutoReadCheckBox.IsChecked == true)
                         {
                             _autoReadTimer.Stop();
@@ -92,25 +118,31 @@ public partial class MainWindow : Window
                         }
                     });
                 };
-                _recognizer.RecognizeCompleted += (_, _) =>
+                _recognizer.SpeechRecognitionRejected += (_, _) =>
                 {
-                    if (_dictationOn && !_isSpeaking)
+                    Dispatcher.BeginInvoke(() =>
                     {
-                        try { _recognizer?.RecognizeAsync(RecognizeMode.Multiple); } catch { }
-                    }
+                        if (_dictationOn && !_isSpeaking)
+                            StatusText.Text = "Listening… (speech heard, but not recognized clearly)";
+                    });
                 };
             }
+
+            if (_recognizer.AudioState != AudioState.Stopped)
+                _recognizer.RecognizeAsyncCancel();
+
             _dictationOn = true;
-            _finalTranscript = TextBoxInput.Text;
             _recognizer.RecognizeAsync(RecognizeMode.Multiple);
             StartDictationButton.IsEnabled = false;
             StopDictationButton.IsEnabled = true;
-            SetStatus("Listening to your microphone using Windows speech recognition…");
+            SetStatus("Listening to microphone with " + _recognizer.RecognizerInfo.Culture.Name + " Windows speech recognition. Speak now.");
         }
         catch (Exception ex)
         {
             _dictationOn = false;
-            SetStatus("Could not start Windows speech recognition. Check that a compatible English speech-recognition engine is installed and that Windows microphone privacy settings allow desktop apps. Details: " + ex.Message);
+            StartDictationButton.IsEnabled = true;
+            StopDictationButton.IsEnabled = false;
+            SetStatus("Dictation could not start: " + ex.Message + " Check Windows Settings > Privacy & security > Microphone and allow desktop apps.");
         }
     }
 
@@ -160,21 +192,12 @@ public partial class MainWindow : Window
             if (bytes.Length == 0) throw new InvalidOperationException("OpenRouter returned an empty audio response.");
             _audioPath = Path.Combine(Path.GetTempPath(), $"openrouter-tts-{Guid.NewGuid():N}.mp3");
             await File.WriteAllBytesAsync(_audioPath, bytes);
-            await Dispatcher.InvokeAsync(() =>
-            {
-                AudioPlayer.Stop();
-                AudioPlayer.Source = new Uri(_audioPath);
-                AudioPlayer.Position = TimeSpan.Zero;
-                AudioPlayer.Play();
-                _lastSpoken = value;
-                StopAudioButton.IsEnabled = true;
-                SetStatus((automatic ? "Reading dictated phrase" : "Reading text") + " with " + (VoiceBox.SelectedItem as ComboBoxItem)?.Content + ".");
-            });
+            await Dispatcher.InvokeAsync(() => StartPlayback(_audioPath, value, automatic));
         }
         catch (Exception ex)
         {
             _isSpeaking = false;
-            SetStatus("Could not generate speech: " + ex.Message);
+            SetStatus("Could not generate/play speech: " + ex.Message);
             ResumeDictationIfNeeded();
         }
         finally
@@ -184,31 +207,61 @@ public partial class MainWindow : Window
         }
     }
 
-    private void AudioPlayer_MediaEnded(object sender, RoutedEventArgs e) => FinishPlayback("Finished reading.");
-    private void AudioPlayer_MediaFailed(object sender, ExceptionRoutedEventArgs e)
+    private void StartPlayback(string path, string value, bool automatic)
     {
-        SetStatus("Audio playback failed: " + e.ErrorException.Message);
-        FinishPlayback("Playback failed.");
+        StopPlaybackResources();
+        try
+        {
+            _audioReader = new MediaFoundationReader(path);
+            _output = new WaveOutEvent();
+            if (OutputDeviceBox.SelectedItem is ComboBoxItem selected && selected.Tag is int device && device >= 0)
+                _output.DeviceNumber = device;
+            _output.PlaybackStopped += (_, args) => Dispatcher.BeginInvoke(() =>
+            {
+                if (args.Exception is not null)
+                    SetStatus("Audio playback failed: " + args.Exception.Message);
+                FinishPlayback(args.Exception is null ? "Finished reading." : "Playback failed.");
+            });
+            _output.Init(_audioReader);
+            _lastSpoken = value;
+            StopAudioButton.IsEnabled = true;
+            _isSpeaking = true;
+            _output.Play();
+            SetStatus((automatic ? "Reading dictated text" : "Reading text") + " through " + (OutputDeviceBox.SelectedItem as ComboBoxItem)?.Content + ".");
+        }
+        catch
+        {
+            StopPlaybackResources();
+            throw;
+        }
     }
 
     private void StopAudio_Click(object sender, RoutedEventArgs e)
     {
-        AudioPlayer.Stop();
+        try { _output?.Stop(); } catch { }
         FinishPlayback("Playback stopped.");
     }
 
     private void FinishPlayback(string message)
     {
         StopAudioButton.IsEnabled = false;
+        StopPlaybackResources();
         if (ClearAfterReadCheckBox.IsChecked == true)
         {
             TextBoxInput.Clear();
-            _finalTranscript = "";
             _lastSpoken = "";
         }
         SetStatus(message + (ClearAfterReadCheckBox.IsChecked == true ? " Text cleared." : ""));
         _isSpeaking = false;
         ResumeDictationIfNeeded();
+    }
+
+    private void StopPlaybackResources()
+    {
+        try { _output?.Dispose(); } catch { }
+        try { _audioReader?.Dispose(); } catch { }
+        _output = null;
+        _audioReader = null;
     }
 
     private void ResumeDictationIfNeeded()
@@ -220,14 +273,18 @@ public partial class MainWindow : Window
             _recognizer.RecognizeAsync(RecognizeMode.Multiple);
             SetStatus("Listening to your microphone…");
         }
-        catch (Exception ex) { SetStatus("Could not resume dictation: " + ex.Message); }
+        catch (Exception ex)
+        {
+            SetStatus("Could not resume dictation: " + ex.Message + " Press Start microphone dictation to retry.");
+            StartDictationButton.IsEnabled = true;
+            StopDictationButton.IsEnabled = false;
+        }
     }
 
     private void Clear_Click(object sender, RoutedEventArgs e)
     {
         _autoReadTimer.Stop();
         TextBoxInput.Clear();
-        _finalTranscript = "";
         _lastSpoken = "";
         SetStatus("Text cleared.");
     }
@@ -239,7 +296,7 @@ public partial class MainWindow : Window
         _dictationOn = false;
         _autoReadTimer.Stop();
         try { _recognizer?.RecognizeAsyncCancel(); _recognizer?.Dispose(); } catch { }
-        try { AudioPlayer.Stop(); } catch { }
+        StopPlaybackResources();
         try { if (_audioPath is not null && File.Exists(_audioPath)) File.Delete(_audioPath); } catch { }
         base.OnClosed(e);
     }
