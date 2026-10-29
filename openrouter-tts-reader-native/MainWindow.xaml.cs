@@ -221,9 +221,62 @@ const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,r
 async function pollSpeech(){try{const r=await fetch('/next-speech');const j=await r.json();if(j.text){const list=speechSynthesis.getVoices();const wanted=(j.voice||'').toLowerCase();const v=list.find(x=>x.name.toLowerCase()===wanted)||list.find(x=>wanted&&x.name.toLowerCase().includes(wanted))||list.find(x=>x.default)||list[0];speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(j.text);if(v)u.voice=v;u.onend=()=>fetch('/speech-done',{method:'POST'}).catch(()=>{});u.onerror=()=>fetch('/speech-done',{method:'POST'}).catch(()=>{});speechSynthesis.speak(u);state.textContent='Reading aloud with '+(v?v.name:'browser default voice')+'…'}}catch(e){}setTimeout(pollSpeech,350)}pollSpeech();
 async function send(text){try{await fetch('/transcript',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text,final:true})})}catch(e){state.textContent='Cannot reach desktop app. Keep EXE open and reload.'}}
 if(!SR){state.textContent='SpeechRecognition unavailable. Open this page in current Chrome or Edge.';start.disabled=true}
-else{rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=true;rec.onstart=()=>state.textContent='Listening to your microphone…';rec.onerror=e=>state.textContent='Recognition error: '+e.error+'. Check microphone permission/internet.';rec.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){let t=e.results[i][0].transcript.trim();if(e.results[i].isFinal){heard.textContent=(heard.textContent+' '+t).trim();send(t)}else interim+=t+' '}if(interim)state.textContent='Listening… '+interim};rec.onend=()=>{if(running){try{rec.start()}catch(e){setTimeout(()=>{if(running)try{rec.start()}catch(_){}},500)}}else state.textContent='Not listening.'}}
-start.onclick=async()=>{running=true;try{await navigator.mediaDevices.getUserMedia({audio:true});rec.start();start.disabled=true;stop.disabled=false}catch(e){state.textContent='Microphone error: '+e.message;running=false}};
-stop.onclick=()=>{running=false;try{rec.stop()}catch(e){}start.disabled=false;stop.disabled=true;state.textContent='Stopped listening.'};stop.disabled=true;
+else{
+  rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=true;
+  let restartTimer=null,starting=false;
+  function scheduleRestart(){
+    if(!running||restartTimer)return;
+    state.textContent='Reconnecting microphone recognition…';
+    restartTimer=setTimeout(()=>{
+      restartTimer=null;
+      if(!running||starting)return;
+      try{starting=true;rec.start()}catch(e){starting=false;scheduleRestart()}
+    },800);
+  }
+  rec.onstart=()=>{starting=false;state.textContent='Listening to your microphone…';start.disabled=true;stop.disabled=false};
+  rec.onerror=e=>{
+    starting=false;
+    const fatal=['not-allowed','service-not-allowed','audio-capture'].includes(e.error);
+    state.textContent=fatal
+      ? 'Microphone/recognition error: '+e.error+'. Check Chrome site microphone permission and select the correct microphone.'
+      : 'Speech recognition paused ('+e.error+'). Reconnecting automatically…';
+    if(fatal){running=false;if(restartTimer){clearTimeout(restartTimer);restartTimer=null}start.disabled=false;stop.disabled=true}
+  };
+  rec.onresult=e=>{
+    let interim='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const t=e.results[i][0].transcript.trim();
+      if(e.results[i].isFinal){heard.textContent=(heard.textContent+' '+t).trim();send(t)}
+      else interim+=t+' '
+    }
+    if(interim&&running)state.textContent='Listening… '+interim;
+  };
+  rec.onend=()=>{
+    starting=false;
+    if(running)scheduleRestart();
+    else state.textContent='Not listening.';
+  };
+  start.onclick=async()=>{
+    if(running)return;
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+      stream.getTracks().forEach(track=>track.stop());
+      running=true;start.disabled=true;stop.disabled=false;
+      state.textContent='Starting microphone recognition…';
+      try{starting=true;rec.start()}catch(e){starting=false;scheduleRestart()}
+    }catch(e){
+      running=false;start.disabled=false;stop.disabled=true;
+      state.textContent='Microphone error: '+e.message+'. Allow microphone access for 127.0.0.1 in Chrome site settings, then try again.';
+    }
+  };
+  stop.onclick=()=>{
+    running=false;starting=false;
+    if(restartTimer){clearTimeout(restartTimer);restartTimer=null}
+    try{rec.stop()}catch(e){}
+    start.disabled=false;stop.disabled=true;state.textContent='Stopped listening.';
+  };
+}
+stop.disabled=true;state.textContent='Stopped listening.'};stop.disabled=true;
 </script></body></html>
 """;
 
