@@ -381,9 +381,10 @@ public sealed class MainForm : Form
                 }
 
                 Buffer.BlockCopy(frame, 0, buffer, offset + producedFrames * blockAlign, blockAlign);
-                // Skip half a frame every other output frame to average 1.5×.
+                // Skip one whole source frame every other output frame to average 1.5×.
+                // Keeping seeks aligned to BlockAlign avoids corrupting interleaved audio samples.
                 if ((producedFrames & 1) == 0)
-                    _source.Position = Math.Min(_source.Length, _source.Position + blockAlign / 2);
+                    _source.Position = Math.Min(_source.Length, _source.Position + blockAlign);
                 producedFrames++;
             }
             return producedFrames * blockAlign;
