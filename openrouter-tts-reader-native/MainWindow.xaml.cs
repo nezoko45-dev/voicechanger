@@ -83,10 +83,22 @@ public partial class MainWindow : Window
         if (VoiceBox is null || ModelBox.SelectedItem is not ComboBoxItem item) return;
         var model = item.Tag?.ToString() ?? "x-ai/grok-voice-tts-1.0";
         VoiceBox.Items.Clear();
-        if (!_voices.TryGetValue(model, out var entries)) return;
-        foreach (var entry in entries)
-            VoiceBox.Items.Add(new ComboBoxItem { Content = entry.Label, Tag = entry.Value });
-        VoiceBox.SelectedIndex = 0;
+        if (model == "local-windows")
+        {
+            try
+            {
+                using var synth = new System.Speech.Synthesis.SpeechSynthesizer();
+                foreach (var voice in synth.GetInstalledVoices().Where(v => v.Enabled).Select(v => v.VoiceInfo).OrderBy(v => v.Name))
+                    VoiceBox.Items.Add(new ComboBoxItem { Content = voice.Name + " (" + voice.Culture.Name + ")", Tag = voice.Name });
+            }
+            catch { }
+        }
+        else if (_voices.TryGetValue(model, out var entries))
+        {
+            foreach (var entry in entries)
+                VoiceBox.Items.Add(new ComboBoxItem { Content = entry.Label, Tag = entry.Value });
+        }
+        if (VoiceBox.Items.Count > 0) VoiceBox.SelectedIndex = 0;
     }
 
     private void StartBrowserDictation_Click(object sender, RoutedEventArgs e)
@@ -266,8 +278,9 @@ stop.onclick=()=>{running=false;try{rec.stop()}catch(e){}start.disabled=false;st
     private async Task GenerateAndPlayAsync(string value, bool automatic)
     {
         if (string.IsNullOrWhiteSpace(value) || _requestInFlight) return;
+        var isLocal = SelectedModel == "local-windows";
         var key = ApiKeyBox.Password.Trim();
-        if (key.Length == 0) { SetStatus("Enter your OpenRouter API key first."); return; }
+        if (!isLocal && key.Length == 0) { SetStatus("Enter your OpenRouter API key first, or select Local Windows Voice (Free)."); return; }
 
         _autoReadTimer.Stop();
         _requestInFlight = true;
@@ -277,9 +290,26 @@ stop.onclick=()=>{running=false;try{rec.stop()}catch(e){}start.disabled=false;st
             _isSpeaking = true;
             try { _recognizer?.RecognizeAsyncCancel(); } catch { }
         }
-        SetStatus("Generating audio with OpenRouter…");
+        SetStatus(isLocal ? "Generating speech locally (no API or credits)…" : "Generating audio with OpenRouter…");
         try
         {
+            if (isLocal)
+            {
+                _audioPath = Path.Combine(Path.GetTempPath(), $"local-tts-{Guid.NewGuid():N}.wav");
+                var localPath = _audioPath;
+                await Task.Run(() =>
+                {
+                    using var synth = new System.Speech.Synthesis.SpeechSynthesizer();
+                    if (!string.IsNullOrWhiteSpace(SelectedVoice))
+                        synth.SelectVoice(SelectedVoice);
+                    synth.SetOutputToWaveFile(localPath);
+                    synth.Speak(value);
+                    synth.SetOutputToNull();
+                });
+                await Dispatcher.InvokeAsync(() => StartPlayback(localPath, value, automatic));
+                return;
+            }
+
             var body = JsonSerializer.Serialize(new { model = SelectedModel, input = value, voice = SelectedVoice, response_format = "mp3" });
             using var request = new HttpRequestMessage(HttpMethod.Post, "https://openrouter.ai/api/v1/audio/speech");
             request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", key);
