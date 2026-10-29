@@ -8,7 +8,7 @@ public sealed class MainForm : Form
     private readonly TextBox _fileBox = new() { ReadOnly = true, Width = 320 };
     private readonly ComboBox _deviceBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 340 };
     private readonly Button _browseButton = new() { Text = "Choose attack sound…", AutoSize = true };
-    private readonly Button _startButton = new() { Text = "Start F-key listener", AutoSize = true, Height = 34 };
+    private readonly Button _startButton = new() { Text = "Start F/Q-key listener", AutoSize = true, Height = 34 };
     private readonly Button _stopButton = new() { Text = "Stop", Width = 100, Height = 34, Enabled = false };
     private readonly TrackBar _volume = new() { Minimum = 0, Maximum = 100, Value = 80, TickFrequency = 10, Width = 250 };
     private readonly Label _volumeLabel = new() { AutoSize = true, Text = "80%" };
@@ -19,11 +19,11 @@ public sealed class MainForm : Form
     private WaveOutEvent? _output;
     private LoopStream? _loop;
     private bool _running;
-    private bool _fWasDown;
+    private bool _attackWasDown;
 
     public MainForm()
     {
-        Text = "VRChat F-Key Attack Sound";
+        Text = "VRChat F/Q-Key Attack Sound";
         Width = 570;
         Height = 330;
         MinimumSize = new Size(570, 330);
@@ -69,7 +69,7 @@ public sealed class MainForm : Form
         {
             AutoSize = true,
             MaximumSize = new Size(510, 0),
-            Text = "Press and hold F to loop your selected attack sound. Releasing F immediately pauses the sound and rewinds it, ready for the next press. F is detected globally, so VRChat can stay focused. Choose your Voicemeeter or virtual-cable playback device to route it into VRChat."
+            Text = "Hold F or Q to loop the selected attack sound. Releasing both keys stops and rewinds it; pressing either key again starts from the beginning. Both keys work globally while VRChat is focused. Choose your Voicemeeter or virtual-cable playback device to route it into VRChat."
         };
         layout.Controls.Add(help, 0, 5);
         layout.SetColumnSpan(help, 2);
@@ -82,7 +82,7 @@ public sealed class MainForm : Form
             _volumeLabel.Text = $"{_volume.Value}%";
             if (_output != null) _output.Volume = _volume.Value / 100f;
         };
-        _pollTimer.Tick += (_, _) => PollKey();
+        _pollTimer.Tick += (_, _) => PollKeys();
         LoadDevices();
         FormClosing += (_, _) => StopListener();
     }
@@ -146,7 +146,7 @@ public sealed class MainForm : Form
 
             _wavPath = outputPath;
             _fileBox.Text = Path.GetFileName(dialog.FileName) + " → WAV";
-            _status.Text = "Attack sound ready. Click Start F-key listener.";
+            _status.Text = "Attack sound ready. Click Start F/Q-key listener.";
         }
         catch (Exception ex)
         {
@@ -192,13 +192,13 @@ public sealed class MainForm : Form
             _loop.Position = 0;
 
             _running = true;
-            _fWasDown = false;
+            _attackWasDown = false;
             _pollTimer.Start();
             _startButton.Enabled = false;
             _stopButton.Enabled = true;
             _browseButton.Enabled = false;
             _deviceBox.Enabled = false;
-            _status.Text = "Listening globally for F… hold F to play.";
+            _status.Text = "Listening globally for F or Q… hold either key to play.";
         }
         catch (Exception ex)
         {
@@ -208,21 +208,25 @@ public sealed class MainForm : Form
         }
     }
 
-    private void PollKey()
+    private void PollKeys()
     {
         if (!_running) return;
         bool fDown = (GetAsyncKeyState(0x46) & 0x8000) != 0; // VK_F
+        bool qDown = (GetAsyncKeyState(0x51) & 0x8000) != 0; // VK_Q
+        bool attackDown = fDown || qDown;
 
-        if (fDown == _fWasDown) return;
-        _fWasDown = fDown;
+        if (attackDown == _attackWasDown) return;
+        _attackWasDown = attackDown;
 
-        if (fDown)
+        if (attackDown)
         {
             try
             {
                 if (_loop != null) _loop.Position = 0;
                 _output?.Play();
-                _status.Text = "F held — attack sound looping.";
+                _status.Text = fDown && qDown
+                    ? "F + Q held — attack sound looping."
+                    : fDown ? "F held — attack sound looping." : "Q held — attack sound looping.";
             }
             catch (Exception ex)
             {
@@ -232,7 +236,7 @@ public sealed class MainForm : Form
         else
         {
             StopLoop();
-            _status.Text = "F released — sound stopped.";
+            _status.Text = "F and Q released — sound stopped.";
         }
     }
 
