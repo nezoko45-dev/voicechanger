@@ -26,6 +26,7 @@
                     <ComboBoxItem Content="Mistral Voxtral Mini TTS" Tag="mistralai/voxtral-mini-tts-2603"/>
                     <ComboBoxItem Content="Microsoft MAI Voice 2" Tag="microsoft/mai-voice-2"/>
                     <ComboBoxItem Content="Local Windows Voice (Free)" Tag="local-windows"/>
+                    <ComboBoxItem Content="Google Chrome Voices (Free)" Tag="google-browser"/>
                 </ComboBox>
             </StackPanel>
             <StackPanel Grid.Column="2">
