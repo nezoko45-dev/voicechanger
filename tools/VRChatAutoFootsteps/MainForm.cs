@@ -8,10 +8,10 @@ public sealed class MainForm : Form
 {
     private readonly TextBox _fileBox = new() { ReadOnly = true, Width = 340 };
     private readonly ComboBox _deviceBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 340 };
-    private readonly Button _browseButton = new() { Text = "Browse WAV…", AutoSize = true };
+    private readonly Button _browseButton = new() { Text = "Choose audio…", AutoSize = true };
     private readonly Button _startButton = new() { Text = "Start", Width = 100, Height = 34 };
     private readonly Button _stopButton = new() { Text = "Stop", Width = 100, Height = 34, Enabled = false };
-    private readonly Label _status = new() { AutoSize = true, Text = "Choose a footsteps WAV file to begin." };
+    private readonly Label _status = new() { AutoSize = true, Text = "Choose an audio file. It will be converted to standard WAV automatically." };
     private readonly TrackBar _volume = new() { Minimum = 0, Maximum = 100, Value = 75, TickFrequency = 10, Width = 250 };
     private readonly Label _volumeLabel = new() { AutoSize = true, Text = "75%" };
     private readonly System.Windows.Forms.Timer _pollTimer = new() { Interval = 35 };
@@ -27,8 +27,8 @@ public sealed class MainForm : Form
     {
         Text = "VRChat Auto Footsteps";
         Width = 560;
-        Height = 360;
-        MinimumSize = new Size(560, 360);
+        Height = 390;
+        MinimumSize = new Size(560, 390);
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -45,7 +45,7 @@ public sealed class MainForm : Form
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         Controls.Add(layout);
 
-        layout.Controls.Add(new Label { Text = "Footsteps WAV", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
+        layout.Controls.Add(new Label { Text = "Audio file", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
         var fileRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Dock = DockStyle.Fill };
         fileRow.Controls.Add(_fileBox);
         fileRow.Controls.Add(_browseButton);
@@ -72,7 +72,7 @@ public sealed class MainForm : Form
         {
             AutoSize = true,
             MaximumSize = new Size(500, 0),
-            Text = "PC-mode movement detection: while VRChat is the active window, holding W/A/S/D or an arrow key starts the footsteps loop. Releasing movement keys stops it. Select your virtual cable or Voicemeeter playback device to route the sound into VRChat's microphone."
+            Text = "Selected audio is converted to standard 44.1 kHz, 16-bit PCM WAV automatically. While VRChat is the active window, holding W/A/S/D or an arrow key starts the footsteps loop. Releasing movement keys stops it. Select your virtual cable or Voicemeeter playback device to route the sound into VRChat's microphone."
         };
         layout.Controls.Add(help, 0, 5);
         layout.SetColumnSpan(help, 2);
@@ -139,11 +139,44 @@ public sealed class MainForm : Form
             Filter = "WAV audio (*.wav)|*.wav",
             CheckFileExists = true
         };
-        if (dialog.ShowDialog(this) == DialogResult.OK)
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+        _browseButton.Enabled = false;
+        _status.Text = "Converting audio to standard WAV…";
+        try
         {
-            _wavPath = dialog.FileName;
-            _fileBox.Text = _wavPath;
-            _status.Text = "Ready. Choose an output device and press Start.";
+            string outputDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "VRChatAutoFootsteps", "Converted");
+            Directory.CreateDirectory(outputDirectory);
+
+            string baseName = Path.GetFileNameWithoutExtension(dialog.FileName);
+            string outputPath = Path.Combine(outputDirectory, $"{baseName}-converted.wav");
+
+            // Normalize even WAV inputs to predictable 44.1 kHz, 16-bit PCM WAV.
+            using (var reader = new MediaFoundationReader(dialog.FileName))
+            using (var resampler = new MediaFoundationResampler(reader, new WaveFormat(44100, 16, 2)))
+            {
+                resampler.ResamplerQuality = 60;
+                WaveFileWriter.CreateWaveFile(outputPath, resampler);
+            }
+
+            _wavPath = outputPath;
+            _fileBox.Text = Path.GetFileName(dialog.FileName) + " → standard WAV";
+            _status.Text = $"Converted successfully: {Path.GetFileName(outputPath)}";
+        }
+        catch (Exception ex)
+        {
+            _wavPath = null;
+            _fileBox.Text = "";
+            _status.Text = "Audio conversion failed.";
+            MessageBox.Show(this,
+                "Windows couldn't decode or convert this audio file. Try a WAV, MP3, M4A, AAC, or WMA file supported by Windows.\n\nDetails: " + ex.Message,
+                "Conversion failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            _browseButton.Enabled = true;
         }
     }
 
