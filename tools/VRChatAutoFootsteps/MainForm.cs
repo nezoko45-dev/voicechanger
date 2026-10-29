@@ -21,6 +21,7 @@ public sealed class MainForm : Form
     private LoopStream? _loop;
     private bool _moving;
     private bool _running;
+    private bool _fastMode;
     private DateTime _lastStatus = DateTime.MinValue;
 
     public MainForm()
@@ -82,7 +83,7 @@ public sealed class MainForm : Form
             AutoSize = true,
             ForeColor = Color.DimGray,
             MaximumSize = new Size(500, 0),
-            Text = "This version detects keyboard movement input, not actual avatar position. It won't detect movement caused by external tracking or other input devices."
+            Text = "Hold Shift while moving in VRChat to make the footsteps play faster (about 1.5×, with a higher pitch). This detects keyboard movement input, not actual avatar position."
         };
         layout.Controls.Add(note, 0, 6);
         layout.SetColumnSpan(note, 2);
@@ -240,6 +241,15 @@ public sealed class MainForm : Form
                          vrchatFocused && IsDown(Keys.Up) || vrchatFocused && IsDown(Keys.Down) ||
                          vrchatFocused && IsDown(Keys.Left) || vrchatFocused && IsDown(Keys.Right);
 
+        bool fastNow = vrchatFocused && IsDown(Keys.ShiftKey);
+        if (fastNow != _fastMode)
+        {
+            _fastMode = fastNow;
+            if (_loop != null) _loop.Fast = _fastMode;
+            if (vrchatFocused)
+                _status.Text = _fastMode ? "Fast footsteps — Shift held." : (_moving ? "Moving — normal footsteps." : "Ready.");
+        }
+
         if (movingNow != _moving)
         {
             _moving = movingNow;
@@ -322,6 +332,7 @@ public sealed class MainForm : Form
     private sealed class LoopStream : WaveStream
     {
         private readonly WaveStream _source;
+        public bool Fast { get; set; }
         public LoopStream(WaveStream source) => _source = source;
         public override WaveFormat WaveFormat => _source.WaveFormat;
         public override long Length => long.MaxValue;
@@ -333,19 +344,49 @@ public sealed class MainForm : Form
 
         public override int Read(byte[] buffer, int offset, int count)
         {
-            int total = 0;
-            while (total < count)
+            if (!Fast)
             {
-                int read = _source.Read(buffer, offset + total, count - total);
-                if (read == 0)
+                int total = 0;
+                while (total < count)
+                {
+                    int read = _source.Read(buffer, offset + total, count - total);
+                    if (read == 0)
+                    {
+                        _source.Position = 0;
+                        read = _source.Read(buffer, offset + total, count - total);
+                        if (read == 0) break;
+                    }
+                    total += read;
+                }
+                return total;
+            }
+
+            // Fast mode advances through the source by 1.5 frames for every output
+            // frame. This speeds the footsteps up without needing another audio device.
+            int blockAlign = WaveFormat.BlockAlign;
+            int requestedFrames = count / blockAlign;
+            int producedFrames = 0;
+            byte[] frame = new byte[blockAlign];
+            while (producedFrames < requestedFrames)
+            {
+                if (_source.Position + blockAlign > _source.Length)
+                    _source.Position = 0;
+
+                int read = _source.Read(frame, 0, blockAlign);
+                if (read < blockAlign)
                 {
                     _source.Position = 0;
-                    read = _source.Read(buffer, offset + total, count - total);
-                    if (read == 0) break;
+                    read = _source.Read(frame, 0, blockAlign);
+                    if (read < blockAlign) break;
                 }
-                total += read;
+
+                Buffer.BlockCopy(frame, 0, buffer, offset + producedFrames * blockAlign, blockAlign);
+                // Skip half a frame every other output frame to average 1.5×.
+                if ((producedFrames & 1) == 0)
+                    _source.Position = Math.Min(_source.Length, _source.Position + blockAlign / 2);
+                producedFrames++;
             }
-            return total;
+            return producedFrames * blockAlign;
         }
 
         protected override void Dispose(bool disposing)
