@@ -18,3 +18,8 @@ GitHub Actions builds a self-contained Windows x64 publish. Open the repository'
 ## Troubleshooting
 
 If dictation cannot start, check Windows Settings → Privacy & security → Microphone and enable microphone access for desktop apps. Also check that Windows has an English speech-recognition language/engine installed. If the selected model/voice is unavailable to your OpenRouter account, choose another supported model/voice.
+
+
+## Free local read-aloud fallback
+
+Choose **Local Windows Voice (Free)** in the Speech model menu to read text using installed Windows speech voices. This mode requires no OpenRouter API key, internet connection, or API credits; audio is generated to a temporary WAV file and played through the selected output device. The available voice list depends on speech voices installed in Windows, and local voices may sound less natural than cloud neural voices. The Chrome speech bridge can still be used for dictation.
