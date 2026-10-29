@@ -270,7 +270,10 @@ else{
   rec.onend=()=>{
     starting=false;
     if(running){
-      retryDelay=Math.min(Math.max(retryDelay,700)*1.25,5000);
+      // Chrome routinely ends Web Speech sessions even in continuous mode.
+      // Treat a normal end as a short handoff, not a growing backoff: reconnect
+      // quickly every time and only back off if rec.start() itself throws.
+      retryDelay=250;
       scheduleRestart();
     } else state.textContent='Not listening.';
   };
