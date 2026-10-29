@@ -25,6 +25,7 @@
                     <ComboBoxItem Content="Grok Voice TTS 1.0" Tag="x-ai/grok-voice-tts-1.0" IsSelected="True"/>
                     <ComboBoxItem Content="Mistral Voxtral Mini TTS" Tag="mistralai/voxtral-mini-tts-2603"/>
                     <ComboBoxItem Content="Microsoft MAI Voice 2" Tag="microsoft/mai-voice-2"/>
+                    <ComboBoxItem Content="Local Windows Voice (Free)" Tag="local-windows"/>
                 </ComboBox>
             </StackPanel>
             <StackPanel Grid.Column="2">
