@@ -21,6 +21,7 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _bridgeCts;
     private int _bridgePort;
     private bool _browserDictationOn;
+    private readonly System.Collections.Concurrent.ConcurrentQueue<(string Text, string Voice)> _browserSpeechQueue = new();
     private WaveOutEvent? _output;
     private MediaFoundationReader? _audioReader;
     private readonly DispatcherTimer _autoReadTimer;
@@ -83,7 +84,12 @@ public partial class MainWindow : Window
         if (VoiceBox is null || ModelBox.SelectedItem is not ComboBoxItem item) return;
         var model = item.Tag?.ToString() ?? "x-ai/grok-voice-tts-1.0";
         VoiceBox.Items.Clear();
-        if (model == "local-windows")
+        if (model == "google-browser")
+        {
+            foreach (var voice in new[] { ("Google US English", "Google US English"), ("Google UK English Female", "Google UK English Female"), ("Google UK English Male", "Google UK English Male"), ("Google Australian English", "Google Australian English"), ("Browser default voice", "") })
+                VoiceBox.Items.Add(new ComboBoxItem { Content = voice.Item1, Tag = voice.Item2 });
+        }
+        else if (model == "local-windows")
         {
             try
             {
@@ -146,12 +152,32 @@ public partial class MainWindow : Window
                 res.Headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS";
                 res.Headers["Access-Control-Allow-Headers"] = "Content-Type";
                 if (req.HttpMethod == "OPTIONS") { res.StatusCode = 204; res.Close(); continue; }
-                if (req.HttpMethod == "GET")
+                if (req.HttpMethod == "GET" && req.Url?.AbsolutePath == "/next-speech")
+                {
+                    var payload = _browserSpeechQueue.TryDequeue(out var item)
+                        ? JsonSerializer.Serialize(new { text = item.Text, voice = item.Voice })
+                        : "{\"text\":null}";
+                    var bytes = Encoding.UTF8.GetBytes(payload);
+                    res.ContentType = "application/json";
+                    res.ContentLength64 = bytes.Length;
+                    await res.OutputStream.WriteAsync(bytes);
+                }
+                else if (req.HttpMethod == "GET")
                 {
                     var bytes = Encoding.UTF8.GetBytes(BrowserBridgeHtml);
                     res.ContentType = "text/html; charset=utf-8";
                     res.ContentLength64 = bytes.Length;
                     await res.OutputStream.WriteAsync(bytes);
+                }
+                else if (req.HttpMethod == "POST" && req.Url?.AbsolutePath == "/speech-done")
+                {
+                    Dispatcher.BeginInvoke(() =>
+                    {
+                        FinishPlayback("Finished reading with Chrome speech.");
+                        _requestInFlight = false;
+                        SpeakButton.IsEnabled = true;
+                    });
+                    res.StatusCode = 204;
                 }
                 else if (req.HttpMethod == "POST" && req.Url?.AbsolutePath == "/transcript")
                 {
@@ -192,6 +218,7 @@ public partial class MainWindow : Window
 <script>
 const state=document.getElementById('state'),heard=document.getElementById('heard'),start=document.getElementById('start'),stop=document.getElementById('stop');
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,running=false;
+async function pollSpeech(){try{const r=await fetch('/next-speech');const j=await r.json();if(j.text){const list=speechSynthesis.getVoices();const wanted=(j.voice||'').toLowerCase();const v=list.find(x=>x.name.toLowerCase()===wanted)||list.find(x=>wanted&&x.name.toLowerCase().includes(wanted))||list.find(x=>x.default)||list[0];speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(j.text);if(v)u.voice=v;u.onend=()=>fetch('/speech-done',{method:'POST'}).catch(()=>{});u.onerror=()=>fetch('/speech-done',{method:'POST'}).catch(()=>{});speechSynthesis.speak(u);state.textContent='Reading aloud with '+(v?v.name:'browser default voice')+'…'}}catch(e){}setTimeout(pollSpeech,350)}pollSpeech();
 async function send(text){try{await fetch('/transcript',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text,final:true})})}catch(e){state.textContent='Cannot reach desktop app. Keep EXE open and reload.'}}
 if(!SR){state.textContent='SpeechRecognition unavailable. Open this page in current Chrome or Edge.';start.disabled=true}
 else{rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=true;rec.onstart=()=>state.textContent='Listening to your microphone…';rec.onerror=e=>state.textContent='Recognition error: '+e.error+'. Check microphone permission/internet.';rec.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){let t=e.results[i][0].transcript.trim();if(e.results[i].isFinal){heard.textContent=(heard.textContent+' '+t).trim();send(t)}else interim+=t+' '}if(interim)state.textContent='Listening… '+interim};rec.onend=()=>{if(running){try{rec.start()}catch(e){setTimeout(()=>{if(running)try{rec.start()}catch(_){}},500)}}else state.textContent='Not listening.'}}
@@ -279,7 +306,20 @@ stop.onclick=()=>{running=false;try{rec.stop()}catch(e){}start.disabled=false;st
     {
         if (string.IsNullOrWhiteSpace(value) || _requestInFlight) return;
         var isLocal = SelectedModel == "local-windows";
+        var isGoogleBrowser = SelectedModel == "google-browser";
         var key = ApiKeyBox.Password.Trim();
+        if (isGoogleBrowser)
+        {
+            if (_bridgeListener is null || !_bridgeListener.IsListening)
+                StartBrowserDictation_Click(this, new RoutedEventArgs());
+            _browserSpeechQueue.Enqueue((value, SelectedVoice));
+            _lastSpoken = value;
+            _isSpeaking = true;
+            _requestInFlight = true;
+            SpeakButton.IsEnabled = false;
+            SetStatus("Sent text to Chrome speech. Playback uses Chrome's selected audio output.");
+            return;
+        }
         if (!isLocal && key.Length == 0) { SetStatus("Enter your OpenRouter API key first, or select Local Windows Voice (Free)."); return; }
 
         _autoReadTimer.Stop();
