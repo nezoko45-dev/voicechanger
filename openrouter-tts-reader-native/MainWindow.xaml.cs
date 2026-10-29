@@ -223,24 +223,40 @@ async function send(text){try{await fetch('/transcript',{method:'POST',headers:{
 if(!SR){state.textContent='SpeechRecognition unavailable. Open this page in current Chrome or Edge.';start.disabled=true}
 else{
   rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=true;
-  let restartTimer=null,starting=false;
+  let restartTimer=null,starting=false,lastStart=0,retryDelay=700;
   function scheduleRestart(){
     if(!running||restartTimer)return;
-    state.textContent='Reconnecting microphone recognition…';
+    state.textContent='Speech service disconnected. Reconnecting automatically…';
+    const delay=retryDelay;
     restartTimer=setTimeout(()=>{
       restartTimer=null;
-      if(!running||starting)return;
-      try{starting=true;rec.start()}catch(e){starting=false;scheduleRestart()}
-    },800);
+      if(!running)return;
+      // Avoid repeatedly calling start while Chrome still considers the old session active.
+      if(Date.now()-lastStart<500){scheduleRestart();return}
+      try{starting=true;lastStart=Date.now();rec.start()}
+      catch(e){starting=false;retryDelay=Math.min(retryDelay*1.5,5000);scheduleRestart()}
+    },delay);
   }
-  rec.onstart=()=>{starting=false;state.textContent='Listening to your microphone…';start.disabled=true;stop.disabled=false};
+  rec.onstart=()=>{
+    starting=false;retryDelay=700;
+    if(restartTimer){clearTimeout(restartTimer);restartTimer=null}
+    state.textContent='Listening to your microphone…';start.disabled=true;stop.disabled=false;
+  };
   rec.onerror=e=>{
     starting=false;
-    const fatal=['not-allowed','service-not-allowed','audio-capture'].includes(e.error);
-    state.textContent=fatal
-      ? 'Microphone/recognition error: '+e.error+'. Check Chrome site microphone permission and select the correct microphone.'
-      : 'Speech recognition paused ('+e.error+'). Reconnecting automatically…';
-    if(fatal){running=false;if(restartTimer){clearTimeout(restartTimer);restartTimer=null}start.disabled=false;stop.disabled=true}
+    // Only permission denial is truly fatal. Chrome can report audio-capture and
+    // service/network errors during temporary device/service interruptions.
+    if(e.error==='not-allowed'||e.error==='service-not-allowed'){
+      running=false;
+      if(restartTimer){clearTimeout(restartTimer);restartTimer=null}
+      state.textContent='Chrome denied speech recognition ('+e.error+'). Check microphone/site permissions, then press Start Listening.';
+      start.disabled=false;stop.disabled=true;
+      return;
+    }
+    state.textContent='Speech recognition interrupted ('+e.error+'). Reconnecting automatically…';
+    retryDelay=Math.min(Math.max(retryDelay,700)*1.5,5000);
+    // Some Chrome errors do not reliably produce onend, so schedule recovery here too.
+    scheduleRestart();
   };
   rec.onresult=e=>{
     let interim='';
@@ -253,8 +269,10 @@ else{
   };
   rec.onend=()=>{
     starting=false;
-    if(running)scheduleRestart();
-    else state.textContent='Not listening.';
+    if(running){
+      retryDelay=Math.min(Math.max(retryDelay,700)*1.25,5000);
+      scheduleRestart();
+    } else state.textContent='Not listening.';
   };
   start.onclick=async()=>{
     if(running)return;
