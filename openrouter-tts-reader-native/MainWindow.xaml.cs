@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.IO;
 using System.Net.Http;
+using System.Net;
+using System.Diagnostics;
 using System.Speech.Recognition;
 using System.Text;
 using System.Text.Json;
@@ -15,6 +17,10 @@ public partial class MainWindow : Window
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(2) };
     private SpeechRecognitionEngine? _recognizer;
+    private HttpListener? _bridgeListener;
+    private CancellationTokenSource? _bridgeCts;
+    private int _bridgePort;
+    private bool _browserDictationOn;
     private WaveOutEvent? _output;
     private MediaFoundationReader? _audioReader;
     private readonly DispatcherTimer _autoReadTimer;
@@ -82,6 +88,105 @@ public partial class MainWindow : Window
             VoiceBox.Items.Add(new ComboBoxItem { Content = entry.Label, Tag = entry.Value });
         VoiceBox.SelectedIndex = 0;
     }
+
+    private void StartBrowserDictation_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (_bridgeListener is null)
+            {
+                _bridgePort = GetFreePort();
+                _bridgeListener = new HttpListener();
+                _bridgeListener.Prefixes.Add("http://127.0.0.1:" + _bridgePort + "/");
+                _bridgeListener.Start();
+                _bridgeCts = new CancellationTokenSource();
+                _ = RunBridgeServerAsync(_bridgeListener, _bridgeCts.Token);
+            }
+            _browserDictationOn = true;
+            _dictationOn = true;
+            StopDictationButton.IsEnabled = true;
+            StartDictationButton.IsEnabled = true;
+            Process.Start(new ProcessStartInfo("http://127.0.0.1:" + _bridgePort + "/") { UseShellExecute = true });
+            SetStatus("Opened browser speech bridge. Allow microphone access, then press Start Listening on that page.");
+        }
+        catch (Exception ex) { SetStatus("Could not start browser speech bridge: " + ex.Message); }
+    }
+
+    private static int GetFreePort()
+    {
+        using var tcp = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        tcp.Start();
+        return ((System.Net.IPEndPoint)tcp.LocalEndpoint).Port;
+    }
+
+    private async Task RunBridgeServerAsync(HttpListener listener, CancellationToken token)
+    {
+        while (listener.IsListening && !token.IsCancellationRequested)
+        {
+            HttpListenerContext context;
+            try { context = await listener.GetContextAsync().WaitAsync(token); }
+            catch { break; }
+            try
+            {
+                var req = context.Request;
+                var res = context.Response;
+                res.Headers["Access-Control-Allow-Origin"] = "*";
+                res.Headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS";
+                res.Headers["Access-Control-Allow-Headers"] = "Content-Type";
+                if (req.HttpMethod == "OPTIONS") { res.StatusCode = 204; res.Close(); continue; }
+                if (req.HttpMethod == "GET")
+                {
+                    var bytes = Encoding.UTF8.GetBytes(BrowserBridgeHtml);
+                    res.ContentType = "text/html; charset=utf-8";
+                    res.ContentLength64 = bytes.Length;
+                    await res.OutputStream.WriteAsync(bytes);
+                }
+                else if (req.HttpMethod == "POST" && req.Url?.AbsolutePath == "/transcript")
+                {
+                    using var reader = new StreamReader(req.InputStream, req.ContentEncoding);
+                    using var doc = JsonDocument.Parse(await reader.ReadToEndAsync());
+                    var root = doc.RootElement;
+                    var phrase = root.TryGetProperty("text", out var te) ? te.GetString()?.Trim() : null;
+                    var final = !root.TryGetProperty("final", out var fe) || fe.GetBoolean();
+                    if (final && !string.IsNullOrWhiteSpace(phrase))
+                        Dispatcher.BeginInvoke(() => AppendBrowserTranscript(phrase));
+                    res.ContentType = "application/json";
+                    var bytes = Encoding.UTF8.GetBytes("{\"ok\":true}");
+                    res.ContentLength64 = bytes.Length;
+                    await res.OutputStream.WriteAsync(bytes);
+                }
+                else res.StatusCode = 404;
+                res.Close();
+            }
+            catch { try { context.Response.Abort(); } catch { } }
+        }
+    }
+
+    private void AppendBrowserTranscript(string phrase)
+    {
+        if (!_browserDictationOn || _isSpeaking) return;
+        if (TextBoxInput.Text.Length > 0 && !char.IsWhiteSpace(TextBoxInput.Text[^1]))
+            TextBoxInput.AppendText(" ");
+        TextBoxInput.AppendText(phrase + " ");
+        TextBoxInput.ScrollToEnd();
+        StatusText.Text = "Chrome speech recognition: " + phrase;
+        if (AutoReadCheckBox.IsChecked == true) { _autoReadTimer.Stop(); _autoReadTimer.Start(); }
+    }
+
+    private const string BrowserBridgeHtml = """
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Speech bridge</title>
+<style>body{font:16px system-ui;max-width:760px;margin:40px auto;padding:0 18px;background:#111827;color:#f9fafb}button{font:inherit;padding:12px 18px;margin:6px;border:0;border-radius:8px;cursor:pointer}#start{background:#34d399}#stop{background:#fca5a5}#state,#heard{padding:12px;background:#1f2937;border-radius:8px}#heard{white-space:pre-wrap;min-height:120px}</style></head>
+<body><h1>Microphone speech bridge</h1><p>Uses browser speech recognition instead of Windows desktop recognition, then sends recognized phrases to the running desktop app.</p><button id="start">Start Listening</button><button id="stop">Stop Listening</button><p id="state">Click Start Listening and allow microphone access.</p><div id="heard"></div>
+<script>
+const state=document.getElementById('state'),heard=document.getElementById('heard'),start=document.getElementById('start'),stop=document.getElementById('stop');
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,running=false;
+async function send(text){try{await fetch('/transcript',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text,final:true})})}catch(e){state.textContent='Cannot reach desktop app. Keep EXE open and reload.'}}
+if(!SR){state.textContent='SpeechRecognition unavailable. Open this page in current Chrome or Edge.';start.disabled=true}
+else{rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=true;rec.onstart=()=>state.textContent='Listening to your microphone…';rec.onerror=e=>state.textContent='Recognition error: '+e.error+'. Check microphone permission/internet.';rec.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){let t=e.results[i][0].transcript.trim();if(e.results[i].isFinal){heard.textContent=(heard.textContent+' '+t).trim();send(t)}else interim+=t+' '}if(interim)state.textContent='Listening… '+interim};rec.onend=()=>{if(running){try{rec.start()}catch(e){setTimeout(()=>{if(running)try{rec.start()}catch(_){}},500)}}else state.textContent='Not listening.'}}
+start.onclick=async()=>{running=true;try{await navigator.mediaDevices.getUserMedia({audio:true});rec.start();start.disabled=true;stop.disabled=false}catch(e){state.textContent='Microphone error: '+e.message;running=false}};
+stop.onclick=()=>{running=false;try{rec.stop()}catch(e){}start.disabled=false;stop.disabled=true;state.textContent='Stopped listening.'};stop.disabled=true;
+</script></body></html>
+""";
 
     private void StartDictation_Click(object sender, RoutedEventArgs e)
     {
@@ -294,7 +399,9 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         _dictationOn = false;
+        _browserDictationOn = false;
         _autoReadTimer.Stop();
+        try { _bridgeCts?.Cancel(); _bridgeListener?.Stop(); _bridgeListener?.Close(); } catch { }
         try { _recognizer?.RecognizeAsyncCancel(); _recognizer?.Dispose(); } catch { }
         StopPlaybackResources();
         try { if (_audioPath is not null && File.Exists(_audioPath)) File.Delete(_audioPath); } catch { }
