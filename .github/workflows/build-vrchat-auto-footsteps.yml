@@ -1,0 +1,36 @@
+name: Build VRChat Auto Footsteps
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/vrchat-auto-footsteps
+    paths:
+      - 'tools/VRChatAutoFootsteps/**'
+      - '.github/workflows/build-vrchat-auto-footsteps.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish standalone Windows executable
+        run: dotnet publish tools/VRChatAutoFootsteps/VRChatAutoFootsteps.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o artifacts/VRChat-Auto-Footsteps-win-x64
+
+      - name: Upload executable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VRChat-Auto-Footsteps-win-x64
+          path: artifacts/VRChat-Auto-Footsteps-win-x64/
+          if-no-files-found: error
+          retention-days: 30
