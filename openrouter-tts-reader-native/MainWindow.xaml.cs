@@ -312,7 +312,6 @@ else{
     start.disabled=false;stop.disabled=true;state.textContent='Stopped listening.';
   };
 }
-}
 stop.disabled=true;
 </script></body></html>
 """;
