@@ -221,88 +221,97 @@ const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,r
 function showBridgeTranscript(text){
   heard.textContent=(heard.textContent+' '+text).trim();
   if(transcriptClearTimer)clearTimeout(transcriptClearTimer);
-  // Keep the latest recognized words visible briefly, then clear the bridge
-  // display so old dictation does not build up indefinitely.
   transcriptClearTimer=setTimeout(()=>{heard.textContent='';transcriptClearTimer=null},5000);
 }
 async function pollSpeech(){try{const r=await fetch('/next-speech');const j=await r.json();if(j.text){const list=speechSynthesis.getVoices();const wanted=(j.voice||'').toLowerCase();const v=list.find(x=>x.name.toLowerCase()===wanted)||list.find(x=>wanted&&x.name.toLowerCase().includes(wanted))||list.find(x=>x.default)||list[0];speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(j.text);if(v)u.voice=v;u.onend=()=>fetch('/speech-done',{method:'POST'}).catch(()=>{});u.onerror=()=>fetch('/speech-done',{method:'POST'}).catch(()=>{});speechSynthesis.speak(u);state.textContent='Reading aloud with '+(v?v.name:'browser default voice')+'…'}}catch(e){}setTimeout(pollSpeech,350)}pollSpeech();
 async function send(text){try{await fetch('/transcript',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text,final:true})})}catch(e){state.textContent='Cannot reach desktop app. Keep EXE open and reload.'}}
 if(!SR){state.textContent='SpeechRecognition unavailable. Open this page in current Chrome or Edge.';start.disabled=true}
 else{
-  rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=true;
-  let restartTimer=null,starting=false,lastStart=0,retryDelay=700;
-  function scheduleRestart(){
-    if(!running||restartTimer)return;
-    state.textContent='Speech service disconnected. Reconnecting automatically…';
-    const delay=retryDelay;
-    restartTimer=setTimeout(()=>{
-      restartTimer=null;
-      if(!running)return;
-      // Avoid repeatedly calling start while Chrome still considers the old session active.
-      if(Date.now()-lastStart<500){scheduleRestart();return}
-      try{starting=true;lastStart=Date.now();rec.start()}
-      catch(e){starting=false;retryDelay=Math.min(retryDelay*1.5,5000);scheduleRestart()}
-    },delay);
-  }
-  rec.onstart=()=>{
-    starting=false;retryDelay=700;
+  let restartTimer=null,startWatchdog=null,retryDelay=300,sessionNumber=0;
+  function clearTimers(){
     if(restartTimer){clearTimeout(restartTimer);restartTimer=null}
-    state.textContent='Listening to your microphone…';start.disabled=true;stop.disabled=false;
-  };
-  rec.onerror=e=>{
-    starting=false;
-    // Only permission denial is truly fatal. Chrome can report audio-capture and
-    // service/network errors during temporary device/service interruptions.
-    if(e.error==='not-allowed'||e.error==='service-not-allowed'){
-      running=false;
-      if(restartTimer){clearTimeout(restartTimer);restartTimer=null}
-      state.textContent='Chrome denied speech recognition ('+e.error+'). Check microphone/site permissions, then press Start Listening.';
-      start.disabled=false;stop.disabled=true;
-      return;
+    if(startWatchdog){clearTimeout(startWatchdog);startWatchdog=null}
+  }
+  function scheduleRestart(reason){
+    if(!running||restartTimer)return;
+    state.textContent=reason||'Speech recognition ended. Reconnecting…';
+    restartTimer=setTimeout(()=>{restartTimer=null;if(running)startRecognition()},retryDelay);
+  }
+  function startRecognition(){
+    if(!running)return;
+    clearTimers();
+    // Create a fresh SpeechRecognition object for every session. Reusing an
+    // ended Chrome instance can leave it stuck in InvalidStateError.
+    const mySession=++sessionNumber;
+    try{
+      const next=new SR();
+      rec=next;
+      next.lang='en-US';next.continuous=true;next.interimResults=true;
+      next.onstart=()=>{
+        if(mySession!==sessionNumber)return;
+        retryDelay=300;
+        if(startWatchdog){clearTimeout(startWatchdog);startWatchdog=null}
+        state.textContent='Listening to your microphone…';start.disabled=true;stop.disabled=false;
+      };
+      next.onerror=e=>{
+        if(mySession!==sessionNumber||!running)return;
+        state.textContent='Speech recognition interrupted ('+e.error+'). Reconnecting…';
+        if(e.error==='not-allowed'||e.error==='service-not-allowed'){
+          running=false;clearTimers();start.disabled=false;stop.disabled=true;
+          state.textContent='Microphone/speech permission denied. Allow microphone access for this local page, then press Start Listening.';
+        }
+      };
+      next.onresult=e=>{
+        if(mySession!==sessionNumber||!running)return;
+        let interim='';
+        for(let i=e.resultIndex;i<e.results.length;i++){
+          const t=e.results[i][0].transcript.trim();
+          if(e.results[i].isFinal){showBridgeTranscript(t);send(t)}
+          else interim+=t+' ';
+        }
+        if(interim)state.textContent='Listening… '+interim;
+      };
+      next.onend=()=>{
+        if(mySession!==sessionNumber||!running)return;
+        rec=null;
+        retryDelay=300;
+        scheduleRestart('Speech service ended. Reconnecting automatically…');
+      };
+      next.start();
+      // If Chrome accepts start() but never emits onstart/onend, force a fresh
+      // session rather than leaving the UI falsely stuck in Listening.
+      startWatchdog=setTimeout(()=>{
+        if(mySession===sessionNumber&&running){
+          try{next.abort()}catch(e){}
+          rec=null;retryDelay=Math.min(retryDelay*2,3000);
+          scheduleRestart('Speech service did not start. Trying a fresh session…');
+        }
+      },8000);
+    }catch(e){
+      rec=null;retryDelay=Math.min(Math.max(retryDelay*1.5,500),3000);
+      scheduleRestart('Could not restart speech service ('+e.message+'). Retrying…');
     }
-    state.textContent='Speech recognition interrupted ('+e.error+'). Reconnecting automatically…';
-    retryDelay=Math.min(Math.max(retryDelay,700)*1.5,5000);
-    // Some Chrome errors do not reliably produce onend, so schedule recovery here too.
-    scheduleRestart();
-  };
-  rec.onresult=e=>{
-    let interim='';
-    for(let i=e.resultIndex;i<e.results.length;i++){
-      const t=e.results[i][0].transcript.trim();
-      if(e.results[i].isFinal){showBridgeTranscript(t);send(t)}
-      else interim+=t+' '
-    }
-    if(interim&&running)state.textContent='Listening… '+interim;
-  };
-  rec.onend=()=>{
-    starting=false;
-    if(running){
-      // Chrome routinely ends Web Speech sessions even in continuous mode.
-      // Treat a normal end as a short handoff, not a growing backoff: reconnect
-      // quickly every time and only back off if rec.start() itself throws.
-      retryDelay=250;
-      scheduleRestart();
-    } else state.textContent='Not listening.';
-  };
+  }
   start.onclick=async()=>{
     if(running)return;
     try{
       const stream=await navigator.mediaDevices.getUserMedia({audio:true});
       stream.getTracks().forEach(track=>track.stop());
       running=true;start.disabled=true;stop.disabled=false;
-      state.textContent='Starting microphone recognition…';
-      try{starting=true;rec.start()}catch(e){starting=false;scheduleRestart()}
+      retryDelay=300;state.textContent='Starting microphone recognition…';
+      startRecognition();
     }catch(e){
       running=false;start.disabled=false;stop.disabled=true;
       state.textContent='Microphone error: '+e.message+'. Allow microphone access for 127.0.0.1 in Chrome site settings, then try again.';
     }
   };
   stop.onclick=()=>{
-    running=false;starting=false;
-    if(restartTimer){clearTimeout(restartTimer);restartTimer=null}
-    try{rec.stop()}catch(e){}
+    running=false;sessionNumber++;clearTimers();
+    const old=rec;rec=null;
+    try{old&&old.abort()}catch(e){}
     start.disabled=false;stop.disabled=true;state.textContent='Stopped listening.';
   };
+}
 }
 stop.disabled=true;
 </script></body></html>
