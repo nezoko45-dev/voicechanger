@@ -335,7 +335,7 @@ function showBridgeTranscript(text){
 async function send(text){try{await fetch('/transcript',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text,final:true})})}catch(e){state.textContent='Cannot reach desktop app. Keep EXE open and reload.'}}
 if(!SR){state.textContent='SpeechRecognition unavailable. Open this page in current Chrome or Edge.';start.disabled=true}
 else{
-  let restartTimer=null,startWatchdog=null,retryDelay=300,sessionNumber=0;
+  let restartTimer=null,startWatchdog=null,retryDelay=500,sessionNumber=0,sessionStartedAt=0;
   function clearTimers(){
     if(restartTimer){clearTimeout(restartTimer);restartTimer=null}
     if(startWatchdog){clearTimeout(startWatchdog);startWatchdog=null}
@@ -357,14 +357,14 @@ else{
       next.lang='en-US';next.continuous=true;next.interimResults=true;
       next.onstart=()=>{
         if(mySession!==sessionNumber)return;
-        retryDelay=300;
+        sessionStartedAt=Date.now();
         if(startWatchdog){clearTimeout(startWatchdog);startWatchdog=null}
         state.textContent='Listening to your microphone…';start.disabled=true;stop.disabled=false;
       };
       next.onerror=e=>{
         if(mySession!==sessionNumber||!running)return;
         state.textContent='Speech recognition interrupted ('+e.error+'). Reconnecting…';
-        if(e.error==='not-allowed'||e.error==='service-not-allowed'){
+        if(e.error==='not-allowed'||e.error==='service-not-allowed'){clearTimers();
           running=false;clearTimers();start.disabled=false;stop.disabled=true;
           state.textContent='Microphone/speech permission denied. Allow microphone access for this local page, then press Start Listening.';
         }
@@ -382,8 +382,11 @@ else{
       next.onend=()=>{
         if(mySession!==sessionNumber||!running)return;
         rec=null;
-        retryDelay=300;
-        scheduleRestart('Speech service ended. Reconnecting automatically…');
+        if(startWatchdog){clearTimeout(startWatchdog);startWatchdog=null}
+        // Back off when Chrome repeatedly disconnects; only reset after a stable session.
+        const lived= sessionStartedAt ? Date.now()-sessionStartedAt : 0;
+        retryDelay=lived>15000?500:Math.min(Math.max(retryDelay*1.8,700),6000);
+        scheduleRestart('Speech service ended. Creating a fresh recognition session in '+retryDelay+' ms…');
       };
       next.start();
       // If Chrome accepts start() but never emits onstart/onend, force a fresh
@@ -391,8 +394,9 @@ else{
       startWatchdog=setTimeout(()=>{
         if(mySession===sessionNumber&&running){
           try{next.abort()}catch(e){}
-          rec=null;retryDelay=Math.min(retryDelay*2,3000);
-          scheduleRestart('Speech service did not start. Trying a fresh session…');
+          if(mySession!==sessionNumber||!running)return;
+          rec=null;retryDelay=Math.min(Math.max(retryDelay*1.8,900),6000);
+          scheduleRestart('Speech service did not start. Trying a fresh recognition session…');
         }
       },8000);
     }catch(e){
