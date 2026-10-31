@@ -37,7 +37,7 @@
  const $=id=>document.getElementById(id);
  const model=$('model'),voice=$('voice'),text=$('text'),player=$('player'),speak=$('speak'),stop=$('stop'),dictate=$('dictate'),stopDictation=$('stopDictation');
  const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
- let recognition=null,dictationOn=false,readingAudio=false,finalTranscript='',autoTimer=null,lastSpoken='',requestInFlight=false;
+ let recognition=null,dictationOn=false,readingAudio=false,finalTranscript='',autoTimer=null,lastSpoken='',requestInFlight=false,restartTimer=null,restartDelay=400,sessionStarting=false;
  let currentUrl='';
  const voices={
   'x-ai/grok-voice-tts-1.0':[['eve','Eve — feminine'],['ara','Ara'],['rex','Rex'],['sal','Sal'],['leo','Leo']],
@@ -47,15 +47,13 @@
  const status=s=>$('status').textContent=s;
  function updateVoices(){voice.replaceChildren();for(const [id,label] of voices[model.value]){const o=document.createElement('option');o.value=id;o.textContent=label;voice.append(o)}}
  function scheduleAutoRead(){clearTimeout(autoTimer);if(!$('autoRead').checked)return;autoTimer=setTimeout(()=>{const value=text.value.trim();if(value&&value!==lastSpoken&&!requestInFlight)startSpeech(value,true)},1400)}
- function resumeDictation(){readingAudio=false;if(dictationOn&&recognition){dictate.disabled=true;stopDictation.disabled=false;setTimeout(()=>{if(dictationOn&&!readingAudio){try{recognition.start()}catch{}}},350)}else{dictate.disabled=false;stopDictation.disabled=true}}
+ function scheduleFreshSession(delay=restartDelay){clearTimeout(restartTimer);if(!dictationOn||readingAudio)return;restartTimer=setTimeout(()=>{restartTimer=null;if(dictationOn&&!readingAudio)startRecognition()},delay)}
+ function createRecognition(){const r=new SpeechRecognition();r.continuous=true;r.interimResults=true;r.lang='en-US';r.onstart=()=>{sessionStarting=false;restartDelay=400;dictate.disabled=true;stopDictation.disabled=false;status('Listening to your microphone… (fresh Chrome recognition session)')};r.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const phrase=e.results[i][0].transcript;if(e.results[i].isFinal){finalTranscript+=phrase+' ';scheduleAutoRead()}else interim+=phrase}text.value=finalTranscript+interim;text.scrollTop=text.scrollHeight};r.onerror=e=>{sessionStarting=false;if(e.error==='not-allowed'||e.error==='service-not-allowed'){dictationOn=false;clearTimeout(restartTimer);status('Microphone permission is blocked. Click the site icon beside the address bar → Site settings → Microphone → Allow, then reload this HTTPS page.');dictate.disabled=false;stopDictation.disabled=true}else if(e.error!=='no-speech'&&e.error!=='aborted'){status('Dictation error: '+e.error+'. Creating a fresh recognition session…')}};r.onend=()=>{sessionStarting=false;if(recognition===r)recognition=null;if(dictationOn&&!readingAudio){restartDelay=Math.min(Math.max(restartDelay*1.5,600),4000);scheduleFreshSession(restartDelay)}else if(!dictationOn){dictate.disabled=false;stopDictation.disabled=true}};return r}
+ function startRecognition(){if(!SpeechRecognition||!dictationOn||readingAudio||sessionStarting)return;clearTimeout(restartTimer);restartTimer=null;sessionStarting=true;const r=createRecognition();recognition=r;try{r.start()}catch(e){sessionStarting=false;if(recognition===r)recognition=null;restartDelay=Math.min(Math.max(restartDelay*2,800),5000);scheduleFreshSession(restartDelay)}}
+ function resumeDictation(){readingAudio=false;if(dictationOn){dictate.disabled=true;stopDictation.disabled=false;scheduleFreshSession(500)}else{dictate.disabled=false;stopDictation.disabled=true}}
  if(SpeechRecognition){
-  recognition=new SpeechRecognition();recognition.continuous=true;recognition.interimResults=true;recognition.lang='en-US';
-  recognition.onstart=()=>{dictate.disabled=true;stopDictation.disabled=false;status('Listening to your microphone… speak naturally.')};
-  recognition.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const phrase=e.results[i][0].transcript;if(e.results[i].isFinal){finalTranscript+=phrase+' ';scheduleAutoRead()}else interim+=phrase}text.value=finalTranscript+interim;text.scrollTop=text.scrollHeight};
-  recognition.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed')status('Microphone permission is blocked. Click the site icon beside the address bar → Site settings → Microphone → Allow, then reload this HTTPS page.');else if(e.error!=='no-speech'&&e.error!=='aborted')status('Dictation error: '+e.error+'. Check that Chrome has microphone permission and an internet connection.')};
-  recognition.onend=()=>{if(dictationOn&&!readingAudio){setTimeout(()=>{if(dictationOn&&!readingAudio){try{recognition.start()}catch{}}},300)}else if(!dictationOn){dictate.disabled=false;stopDictation.disabled=true}};
-  dictate.addEventListener('click',async()=>{dictationOn=true;finalTranscript=text.value.trim()?text.value.trimEnd()+' ':'';try{if(navigator.mediaDevices?.getUserMedia){const stream=await navigator.mediaDevices.getUserMedia({audio:true});stream.getTracks().forEach(t=>t.stop())}recognition.start()}catch(e){dictationOn=false;status(e.name==='NotAllowedError'?'Microphone permission was denied. Allow it in Chrome site settings, then reload.':'Could not start dictation: '+e.message);dictate.disabled=false}});
-  stopDictation.addEventListener('click',()=>{dictationOn=false;try{recognition.stop()}catch{}dictate.disabled=false;stopDictation.disabled=true;status('Dictation stopped.')});
+  dictate.addEventListener('click',async()=>{dictationOn=true;readingAudio=false;restartDelay=400;finalTranscript=text.value.trim()?text.value.trimEnd()+' ':'';dictate.disabled=true;stopDictation.disabled=false;try{if(navigator.mediaDevices?.getUserMedia){const stream=await navigator.mediaDevices.getUserMedia({audio:true});stream.getTracks().forEach(t=>t.stop())}startRecognition()}catch(e){dictationOn=false;clearTimeout(restartTimer);status(e.name==='NotAllowedError'?'Microphone permission was denied. Allow it in Chrome site settings, then reload.':'Could not start dictation: '+e.message);dictate.disabled=false;stopDictation.disabled=true}});
+  stopDictation.addEventListener('click',()=>{dictationOn=false;clearTimeout(restartTimer);restartTimer=null;const active=recognition;recognition=null;sessionStarting=false;try{active?.stop()}catch{}dictate.disabled=false;stopDictation.disabled=true;status('Dictation stopped.')});
  }else{dictate.disabled=true;stopDictation.disabled=true;status('Speech recognition is not supported here. Open this HTTPS page in desktop Google Chrome.')}
 
  model.addEventListener('change',updateVoices);text.addEventListener('input',scheduleAutoRead);
@@ -80,7 +78,7 @@
   }catch(e){readingAudio=false;status('Could not generate speech: '+(e.message||e));resumeDictation()}
   finally{requestInFlight=false;speak.disabled=false}
  }
- window.addEventListener('beforeunload',()=>{clearTimeout(autoTimer);if(currentUrl)URL.revokeObjectURL(currentUrl)});
+ window.addEventListener('beforeunload',()=>{dictationOn=false;clearTimeout(autoTimer);clearTimeout(restartTimer);try{recognition?.abort()}catch{}if(currentUrl)URL.revokeObjectURL(currentUrl)});
  updateVoices();
 })();
 </script>
