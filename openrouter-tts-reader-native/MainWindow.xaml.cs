@@ -499,6 +499,32 @@ stop.disabled=true;
         }
     }
 
+    // Keep each Groq request below the provider's input-size limit while
+    // preserving word boundaries. Prefer sentence boundaries when possible.
+    private static IEnumerable<string> SplitForGroq(string text, int maxCharacters = 1800)
+    {
+        var remaining = text.Trim();
+        while (remaining.Length > 0)
+        {
+            if (remaining.Length <= maxCharacters)
+            {
+                yield return remaining;
+                yield break;
+            }
+
+            var limit = Math.Min(maxCharacters, remaining.Length);
+            var split = remaining.LastIndexOfAny(new[] { '.', '!', '?', ';', ':', '\n' }, limit - 1, limit);
+            if (split < maxCharacters / 2)
+                split = remaining.LastIndexOf(' ', limit - 1, limit);
+            if (split <= 0)
+                split = limit;
+
+            var chunk = remaining[..split].Trim();
+            if (chunk.Length > 0) yield return chunk;
+            remaining = remaining[split..].TrimStart();
+        }
+    }
+
     private async Task<string> GenerateGroqWavAsync(string text, string apiKey)
     {
         var chunks = SplitForGroq(text).ToArray();
