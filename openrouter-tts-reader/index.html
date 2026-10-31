@@ -3,85 +3,105 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>OpenRouter TTS Reader — GitHub Pages</title>
+<title>Chrome Voice Dictation & Reader</title>
 <style>
-:root{color-scheme:light dark;font:16px system-ui}body{max-width:820px;margin:28px auto;padding:0 18px}h1{font-size:1.7rem}.muted{opacity:.78;line-height:1.5}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}label{display:block;font-weight:600;margin:14px 0 6px}select,textarea,input,button{font:inherit;padding:10px;border-radius:9px;max-width:100%}select,textarea,input[type=password]{box-sizing:border-box;width:100%}textarea{min-height:220px;resize:vertical}button{cursor:pointer}button:disabled{opacity:.5}#status{padding:12px;border-radius:10px;background:color-mix(in srgb,CanvasText 8%,Canvas);white-space:pre-wrap}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.notice{border:1px solid color-mix(in srgb,CanvasText 20%,transparent);border-radius:10px;padding:12px}
+:root{color-scheme:light dark;font:16px system-ui}body{max-width:850px;margin:28px auto;padding:0 18px}h1{font-size:1.7rem}.muted{opacity:.78;line-height:1.5}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}label{display:block;font-weight:600;margin:14px 0 6px}select,textarea,button{font:inherit;padding:10px;border-radius:9px;max-width:100%}select{box-sizing:border-box;width:100%}textarea{box-sizing:border-box;width:100%;min-height:230px;resize:vertical}button{cursor:pointer}button:disabled{opacity:.5}#status{padding:12px;border-radius:10px;background:color-mix(in srgb,CanvasText 8%,Canvas);white-space:pre-wrap}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.notice{border:1px solid color-mix(in srgb,CanvasText 20%,transparent);border-radius:10px;padding:12px}
 </style>
 </head>
 <body>
-<h1>OpenRouter TTS Reader</h1>
-<p class="muted">GitHub Pages edition — no EXE or local server required. Open this page in desktop Chrome over HTTPS, allow microphone access, then start dictation. Speech is generated with OpenRouter and played in your browser.</p>
-<div class="notice"><strong>Microphone access:</strong> This page is served over HTTPS, which allows Chrome to request microphone permission. Click “Start microphone dictation” and choose <strong>Allow</strong> when Chrome prompts. If you previously blocked it, use the site icon beside the address bar → Site settings → Microphone → Allow, then reload.</div>
-<label for="apiKey">OpenRouter API key</label>
-<input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-or-…">
-<p class="muted"><small>Your API key is kept only in this page's memory and is sent directly to OpenRouter when generating speech. It is not saved to GitHub or browser storage. Avoid using this on a shared computer.</small></p>
+<h1>Chrome Voice Dictation & Reader</h1>
+<p class="muted">A browser-only voice page. Chrome handles microphone dictation and reads text aloud using voices available to Chrome on this computer. No EXE, API key, Python, or local server.</p>
+<div class="notice"><strong>Microphone:</strong> Open this GitHub Pages site over HTTPS, click Start microphone dictation, and allow microphone access. For best results while reading aloud, use headphones so the microphone does not hear the computer's speaker.</div>
 <div class="grid">
-<div><label for="model">Speech model</label><select id="model">
-<option value="x-ai/grok-voice-tts-1.0">Grok Voice TTS 1.0</option>
-<option value="mistralai/voxtral-mini-tts-2603">Mistral Voxtral Mini TTS</option>
-<option value="microsoft/mai-voice-2">Microsoft MAI Voice 2</option>
-</select></div>
-<div><label for="voice">Voice</label><select id="voice"></select></div>
+ <div><label for="voice">Chrome speech voice</label><select id="voice"><option>Loading Chrome voices…</option></select></div>
+ <div><label for="language">Dictation language</label><select id="language"><option value="en-US">English (United States)</option><option value="en-GB">English (United Kingdom)</option><option value="en-AU">English (Australia)</option><option value="en-CA">English (Canada)</option><option value="en">English (automatic)</option></select></div>
 </div>
-<div class="row"><button id="dictate">Start microphone dictation</button><button id="stopDictation" disabled>Stop dictation</button><small>Keep this tab open while speaking.</small></div>
+<div class="row">
+ <button id="start">Start microphone dictation</button><button id="stopDictation" disabled>Stop dictation</button>
+ <label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500"><input id="autoRead" type="checkbox" checked> Automatically read finished phrases</label>
+</div>
 <label for="text">Dictation / text to read aloud</label>
-<textarea id="text" placeholder="Click Start microphone dictation and speak, or type/paste text here…"></textarea>
-<div class="row"><label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500"><input id="autoRead" type="checkbox" checked style="width:auto"> Automatically read each finished phrase</label></div>
-<div class="row"><label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500"><input id="clearAfterRead" type="checkbox" checked style="width:auto"> Clear old text after playback</label></div>
-<div class="row"><button id="paste">Paste from Clipboard</button><button id="speak">Generate &amp; Read Aloud</button><button id="stop" disabled>Stop audio</button><button id="clear">Clear text</button></div>
-<audio id="player" controls style="width:100%;margin:8px 0"></audio>
-<p id="status" role="status">Ready. Allow microphone access, then start dictation or enter text.</p>
-<p class="muted"><small>Voice examples: Grok: eve, ara, rex, sal, leo. Voxtral: en_paul_neutral. MAI: en-US-Harper:MAI-Voice-2. The selected model and voice must be supported by your OpenRouter account.</small></p>
+<textarea id="text" placeholder="Start dictation and speak, or type/paste text here…"></textarea>
+<div class="row">
+ <label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500"><input id="clearAfterRead" type="checkbox" checked> Clear text after it is read</label>
+</div>
+<div class="row"><button id="read">Read aloud</button><button id="pause" disabled>Pause</button><button id="resume" disabled>Resume</button><button id="stopSpeech" disabled>Stop speech</button><button id="clear">Clear text</button></div>
+<p id="status" role="status">Ready. Select a Chrome voice, allow microphone access, then start dictation.</p>
+<p class="muted"><small>The voice list is supplied by Chrome and Windows. If a voice does not appear, it is not currently exposed to this Chrome profile. Voices can load a moment after the page opens.</small></p>
 <script>
-(() => {
- const $=id=>document.getElementById(id);
- const model=$('model'),voice=$('voice'),text=$('text'),player=$('player'),speak=$('speak'),stop=$('stop'),dictate=$('dictate'),stopDictation=$('stopDictation');
- const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
- let recognition=null,dictationOn=false,readingAudio=false,finalTranscript='',autoTimer=null,lastSpoken='',requestInFlight=false;
- let currentUrl='';
- const voices={
-  'x-ai/grok-voice-tts-1.0':[['eve','Eve — feminine'],['ara','Ara'],['rex','Rex'],['sal','Sal'],['leo','Leo']],
-  'mistralai/voxtral-mini-tts-2603':[['en_paul_neutral','Paul — neutral English']],
-  'microsoft/mai-voice-2':[['en-US-Harper:MAI-Voice-2','Harper — US English']]
- };
+(()=>{
+ const $=id=>document.getElementById(id),text=$('text'),voiceSelect=$('voice'),start=$('start'),stopDictation=$('stopDictation');
+ const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+ let availableVoices=[],recognition=null,listening=false,starting=false,pausedForSpeech=false,restartTimer=null,restartDelay=500,watchdog=null,sessionId=0,finalText='',autoTimer=null,speaking=false,lastRead='',utterance=null;
  const status=s=>$('status').textContent=s;
- function updateVoices(){voice.replaceChildren();for(const [id,label] of voices[model.value]){const o=document.createElement('option');o.value=id;o.textContent=label;voice.append(o)}}
- function scheduleAutoRead(){clearTimeout(autoTimer);if(!$('autoRead').checked)return;autoTimer=setTimeout(()=>{const value=text.value.trim();if(value&&value!==lastSpoken&&!requestInFlight)startSpeech(value,true)},1400)}
- function resumeDictation(){readingAudio=false;if(dictationOn&&recognition){dictate.disabled=true;stopDictation.disabled=false;setTimeout(()=>{if(dictationOn&&!readingAudio){try{recognition.start()}catch{}}},350)}else{dictate.disabled=false;stopDictation.disabled=true}}
- if(SpeechRecognition){
-  recognition=new SpeechRecognition();recognition.continuous=true;recognition.interimResults=true;recognition.lang='en-US';
-  recognition.onstart=()=>{dictate.disabled=true;stopDictation.disabled=false;status('Listening to your microphone… speak naturally.')};
-  recognition.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const phrase=e.results[i][0].transcript;if(e.results[i].isFinal){finalTranscript+=phrase+' ';scheduleAutoRead()}else interim+=phrase}text.value=finalTranscript+interim;text.scrollTop=text.scrollHeight};
-  recognition.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed')status('Microphone permission is blocked. Click the site icon beside the address bar → Site settings → Microphone → Allow, then reload this HTTPS page.');else if(e.error!=='no-speech'&&e.error!=='aborted')status('Dictation error: '+e.error+'. Check that Chrome has microphone permission and an internet connection.')};
-  recognition.onend=()=>{if(dictationOn&&!readingAudio){setTimeout(()=>{if(dictationOn&&!readingAudio){try{recognition.start()}catch{}}},300)}else if(!dictationOn){dictate.disabled=false;stopDictation.disabled=true}};
-  dictate.addEventListener('click',async()=>{dictationOn=true;finalTranscript=text.value.trim()?text.value.trimEnd()+' ':'';try{if(navigator.mediaDevices?.getUserMedia){const stream=await navigator.mediaDevices.getUserMedia({audio:true});stream.getTracks().forEach(t=>t.stop())}recognition.start()}catch(e){dictationOn=false;status(e.name==='NotAllowedError'?'Microphone permission was denied. Allow it in Chrome site settings, then reload.':'Could not start dictation: '+e.message);dictate.disabled=false}});
-  stopDictation.addEventListener('click',()=>{dictationOn=false;try{recognition.stop()}catch{}dictate.disabled=false;stopDictation.disabled=true;status('Dictation stopped.')});
- }else{dictate.disabled=true;stopDictation.disabled=true;status('Speech recognition is not supported here. Open this HTTPS page in desktop Google Chrome.')}
-
- model.addEventListener('change',updateVoices);text.addEventListener('input',scheduleAutoRead);
- $('clear').addEventListener('click',()=>{clearTimeout(autoTimer);text.value='';finalTranscript='';lastSpoken='';status('Text cleared.')});
- $('paste').addEventListener('click',async()=>{try{const value=await navigator.clipboard.readText();if(!value){status('Clipboard is empty. Copy text first.');return}text.value=value;finalTranscript=value.trimEnd()+' ';scheduleAutoRead();status('Pasted text. It will be read aloud after a short pause.')}catch{text.focus();status('Clipboard blocked. Click the text box and press Ctrl+V.')}});
- function finishPlayback(message){stop.disabled=true;if($('clearAfterRead').checked){text.value='';finalTranscript='';lastSpoken='';clearTimeout(autoTimer)}status(message);resumeDictation()}
- stop.addEventListener('click',()=>{player.pause();player.currentTime=0;finishPlayback('Playback stopped. Old text cleared; ready for the next phrase.')});
- player.addEventListener('ended',()=>finishPlayback('Finished reading. Old text cleared; listening for your next phrase.'));
- player.addEventListener('error',()=>{status('Browser could not play the returned audio. Try another supported model/voice.');resumeDictation()});
- speak.addEventListener('click',()=>startSpeech(text.value.trim(),false));
- async function startSpeech(value,automatic){
-  if(!value||requestInFlight||(automatic&&value===lastSpoken))return;
-  clearTimeout(autoTimer);requestInFlight=true;speak.disabled=true;stop.disabled=true;
-  if(dictationOn&&recognition){readingAudio=true;try{recognition.stop()}catch{}}
-  status('Generating audio with OpenRouter…');
-  try{
-   const apiKey=$('apiKey').value.trim();if(!apiKey)throw new Error('Enter your OpenRouter API key above.');
-   const response=await fetch('https://openrouter.ai/api/v1/audio/speech',{method:'POST',headers:{'Authorization':'Bearer '+apiKey,'Content-Type':'application/json','HTTP-Referer':location.origin,'X-OpenRouter-Title':'OpenRouter TTS Reader'},body:JSON.stringify({model:model.value,input:value,voice:voice.value,response_format:'mp3'})});
-   if(!response.ok){let detail=await response.text();try{detail=JSON.parse(detail).error?.message||JSON.parse(detail).error||detail}catch{}throw new Error('OpenRouter HTTP '+response.status+': '+String(detail).slice(0,500))}
-   const blob=await response.blob();if(!blob.size)throw new Error('OpenRouter returned an empty audio response.');
-   if(currentUrl)URL.revokeObjectURL(currentUrl);currentUrl=URL.createObjectURL(blob);player.src=currentUrl;await player.play();lastSpoken=value;stop.disabled=false;status((automatic?'Reading dictated phrase':'Reading text')+' with '+voice.options[voice.selectedIndex].text+'.');
-  }catch(e){readingAudio=false;status('Could not generate speech: '+(e.message||e));resumeDictation()}
-  finally{requestInFlight=false;speak.disabled=false}
+ function loadVoices(){
+  availableVoices=window.speechSynthesis? speechSynthesis.getVoices():[];
+  const previous=voiceSelect.value;voiceSelect.replaceChildren();
+  if(!availableVoices.length){const o=document.createElement('option');o.textContent='No Chrome speech voices available';voiceSelect.append(o);return}
+  availableVoices.forEach((v,i)=>{const o=document.createElement('option');o.value=String(i);o.textContent=v.name+' — '+v.lang+(v.default?' (default)':'');voiceSelect.append(o)});
+  const preferred=availableVoices.findIndex(v=>v.lang==='en-GB'&&/female|zira|susan|hazel|libby|sonia|aria/i.test(v.name));
+  const fallback=availableVoices.findIndex(v=>v.lang.startsWith('en-'));
+  voiceSelect.value=availableVoices[Number(previous)]?previous:String(preferred>=0?preferred:fallback>=0?fallback:0);
  }
- window.addEventListener('beforeunload',()=>{clearTimeout(autoTimer);if(currentUrl)URL.revokeObjectURL(currentUrl)});
- updateVoices();
+ if(window.speechSynthesis){loadVoices();speechSynthesis.onvoiceschanged=loadVoices;setTimeout(loadVoices,700)}
+ function chosenVoice(){return availableVoices[Number(voiceSelect.value)]||null}
+ function scheduleRestart(delay=restartDelay){
+  clearTimeout(restartTimer);if(!listening||speaking||pausedForSpeech)return;
+  restartTimer=setTimeout(()=>{restartTimer=null;beginFreshSession()},delay)
+ }
+ function createSession(id){
+  const r=new SR();r.continuous=true;r.interimResults=true;r.lang=$('language').value;
+  r.onstart=()=>{if(id!==sessionId)return;starting=false;clearTimeout(watchdog);restartDelay=500;start.disabled=true;stopDictation.disabled=false;status('Listening to your microphone…')};
+  r.onresult=e=>{if(id!==sessionId)return;let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const phrase=e.results[i][0].transcript;if(e.results[i].isFinal){finalText+=phrase.trim()+' ';scheduleAutoRead()}else interim+=phrase}text.value=finalText+interim;text.scrollTop=text.scrollHeight};
+  r.onerror=e=>{if(id!==sessionId)return;starting=false;clearTimeout(watchdog);if(e.error==='not-allowed'||e.error==='service-not-allowed'){listening=false;clearTimeout(restartTimer);start.disabled=false;stopDictation.disabled=true;status('Microphone permission denied. Allow it in Chrome site settings, then reload.')}else if(e.error!=='no-speech'&&e.error!=='aborted')status('Dictation service issue: '+e.error+'. Reconnecting with a fresh session…')};
+  r.onend=()=>{if(id!==sessionId)return;recognition=null;starting=false;clearTimeout(watchdog);if(listening&&!speaking&&!pausedForSpeech){restartDelay=Math.min(Math.max(restartDelay*1.6,700),5000);status('Chrome recognition ended. Starting a fresh session…');scheduleRestart(restartDelay)}};
+  return r
+ }
+ function beginFreshSession(){
+  if(!SR||!listening||speaking||pausedForSpeech||starting)return;
+  clearTimeout(restartTimer);restartTimer=null;starting=true;const id=++sessionId,r=createSession(id);recognition=r;
+  try{r.start();watchdog=setTimeout(()=>{if(id!==sessionId||!starting)return;starting=false;try{r.abort()}catch{}recognition=null;restartDelay=Math.min(Math.max(restartDelay*2,1000),6000);scheduleRestart(restartDelay)},8000)}
+  catch(e){starting=false;recognition=null;restartDelay=Math.min(Math.max(restartDelay*2,1000),6000);scheduleRestart(restartDelay)}
+ }
+ start.addEventListener('click',async()=>{
+  if(!SR){status('Speech recognition is unavailable. Open this HTTPS page in desktop Google Chrome.');return}
+  listening=true;pausedForSpeech=false;restartDelay=500;finalText=text.value.trim()?text.value.trimEnd()+' ':'';
+  try{if(navigator.mediaDevices?.getUserMedia){const stream=await navigator.mediaDevices.getUserMedia({audio:true});stream.getTracks().forEach(t=>t.stop())}beginFreshSession()}
+  catch(e){listening=false;start.disabled=false;stopDictation.disabled=true;status('Could not access microphone: '+e.message)}
+ });
+ stopDictation.addEventListener('click',()=>{listening=false;pausedForSpeech=false;clearTimeout(restartTimer);clearTimeout(watchdog);sessionId++;const r=recognition;recognition=null;starting=false;try{r?.abort()}catch{}start.disabled=false;stopDictation.disabled=true;status('Microphone dictation stopped.')});
+ function scheduleAutoRead(){clearTimeout(autoTimer);if(!$('autoRead').checked)return;autoTimer=setTimeout(()=>{const value=text.value.trim();if(value&&value!==lastRead)readText(value,true)},1250)}
+ text.addEventListener('input',()=>{finalText=text.value; scheduleAutoRead()});
+ function pauseRecognitionForSpeech(){
+  if(!listening)return;pausedForSpeech=true;clearTimeout(restartTimer);clearTimeout(watchdog);sessionId++;const r=recognition;recognition=null;starting=false;try{r?.stop()}catch{}
+ }
+ function resumeRecognition(){
+  if(listening){pausedForSpeech=false;finalText=text.value.trim()?text.value.trimEnd()+' ':'';scheduleRestart(500)}
+ }
+ function readText(value,automatic){
+  if(!value||!window.speechSynthesis)return;
+  clearTimeout(autoTimer);speechSynthesis.cancel();pauseRecognitionForSpeech();
+  utterance=new SpeechSynthesisUtterance(value);const v=chosenVoice();if(v)utterance.voice=v;
+  utterance.rate=1;utterance.pitch=1;utterance.volume=1;speaking=true;lastRead=value;
+  $('read').disabled=true;$('pause').disabled=false;$('resume').disabled=true;$('stopSpeech').disabled=false;
+  utterance.onstart=()=>status('Reading aloud'+(v?' with '+v.name:'')+'…');
+  utterance.onend=()=>finishSpeech('Finished reading.');
+  utterance.onerror=e=>finishSpeech('Speech playback ended: '+e.error+'.');
+  speechSynthesis.speak(utterance);
+ }
+ function finishSpeech(message){
+  speaking=false;utterance=null;$('read').disabled=false;$('pause').disabled=true;$('resume').disabled=true;$('stopSpeech').disabled=true;
+  if($('clearAfterRead').checked){text.value='';finalText='';lastRead=''}
+  status(message);resumeRecognition()
+ }
+ $('read').addEventListener('click',()=>readText(text.value.trim(),false));
+ $('pause').addEventListener('click',()=>{speechSynthesis.pause();$('pause').disabled=true;$('resume').disabled=false;status('Speech paused.')});
+ $('resume').addEventListener('click',()=>{speechSynthesis.resume();$('pause').disabled=false;$('resume').disabled=true;status('Speech resumed.')});
+ $('stopSpeech').addEventListener('click',()=>{speechSynthesis.cancel();finishSpeech('Speech stopped.')});
+ $('clear').addEventListener('click',()=>{clearTimeout(autoTimer);text.value='';finalText='';lastRead='';status('Text cleared.')});
+ $('language').addEventListener('change',()=>{if(listening){const r=recognition;sessionId++;recognition=null;try{r?.abort()}catch{}starting=false;scheduleRestart(300)}});
+ window.addEventListener('beforeunload',()=>{listening=false;clearTimeout(restartTimer);clearTimeout(watchdog);clearTimeout(autoTimer);try{recognition?.abort();speechSynthesis.cancel()}catch{}});
+ if(!SR){start.disabled=true;stopDictation.disabled=true;status('Chrome Speech Recognition is unavailable in this browser.')}
 })();
 </script>
 </body>
