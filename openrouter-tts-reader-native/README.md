@@ -25,8 +25,8 @@ If dictation cannot start, check Windows Settings → Privacy & security → Mic
 Choose **Local Windows Voice (Free)** in the Speech model menu to read text using installed Windows speech voices. This mode requires no Groq API key, internet connection, or API credits; audio is generated to a temporary WAV file and played through the selected output device. The available voice list depends on speech voices installed in Windows, and local voices may sound less natural than cloud neural voices. The Chrome speech bridge can still be used for dictation.
 
 
-## Microsoft Edge voices (Free)
+## Microsoft Edge neural voices (Free)
 
-Choose **Microsoft Edge Voices (Free)** in the Speech model menu. The app opens its local speech bridge in Microsoft Edge and uses the voices exposed by Edge's browser speech engine. Suggested choices include Microsoft Aria (US), Sonia (UK), Ryan (UK), and Natasha (Australia), when those voices are available in the installed Edge environment. The voice list varies by Edge version, language packs, region, and network availability. This browser-speech mode requires no Groq API key or credits, but audio plays through Edge's selected output device rather than the app's NAudio output selector. Edge's separate Read Aloud voice catalog is not guaranteed to be exposed to browser speech APIs.
+**Microsoft Edge Voices (Free)** is selected by default, with **Microsoft Sonia Online (Natural) — English (United Kingdom)** selected first. The app calls the bundled `edge-tts-native.exe` helper directly to generate Sonia audio, then plays the resulting MP3 through NAudio and the selected Windows output device. It does not launch an Edge browser window for speech playback and does not require a Groq/OpenRouter API key or credits. An internet connection is required for the online neural voice. Other bundled choices include Aria (US), Ryan (UK), Natasha (Australia), and Jenny (US).
 
 Groq cloud speech and Local Windows Voice remain available as separate options. Groq mode still requires a Groq API key; Local Windows Voice uses installed Windows voices and can generate a WAV file.
