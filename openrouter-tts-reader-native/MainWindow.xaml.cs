@@ -500,7 +500,7 @@ stop.disabled=true;
     }
 
     // Keep each Groq request below the provider's input-size limit while
-    // preserving word boundaries. Prefer sentence boundaries when possible.
+    // preserving word and sentence boundaries.
     private static IEnumerable<string> SplitForGroq(string text, int maxCharacters = 1800)
     {
         var remaining = text.Trim();
@@ -513,11 +513,15 @@ stop.disabled=true;
             }
 
             var limit = Math.Min(maxCharacters, remaining.Length);
-            var split = remaining.LastIndexOfAny(new[] { '.', '!', '?', ';', ':', '\n' }, limit - 1, limit);
-            if (split < maxCharacters / 2)
-                split = remaining.LastIndexOf(' ', limit - 1, limit);
-            if (split <= 0)
-                split = limit;
+            var boundary = remaining.LastIndexOfAny(new[] { '.', '!', '?', ';', ':', '\n' }, limit - 1, limit);
+            int split;
+            if (boundary >= maxCharacters / 2)
+                split = boundary + 1; // retain punctuation/newline in the emitted chunk
+            else
+            {
+                boundary = remaining.LastIndexOf(' ', limit - 1, limit);
+                split = boundary >= maxCharacters / 2 ? boundary : limit;
+            }
 
             var chunk = remaining[..split].Trim();
             if (chunk.Length > 0) yield return chunk;
