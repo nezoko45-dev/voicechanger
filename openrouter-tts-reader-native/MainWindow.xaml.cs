@@ -1,4 +1,5 @@
 using System.Globalization;
+using Microsoft.Win32;
 using System.Buffers.Binary;
 using System.Net.WebSockets;
 using System.Security.Cryptography;
@@ -139,9 +140,11 @@ public partial class MainWindow : Window
     {
         try
         {
-            // WinRT exposes OneCore voices installed from Narrator settings,
-            // unlike System.Speech/SAPI which commonly lists only David and Zira.
-            foreach (var voice in SpeechSynthesizer.AllVoices
+            // WinRT is the synthesis source of truth. Also inspect OneCore's
+            // registry catalog because Narrator can register voices that are
+            // not surfaced by the WinRT voice collection on some Windows builds.
+            var runtimeVoices = SpeechSynthesizer.AllVoices.ToArray();
+            foreach (var voice in runtimeVoices
                 .OrderByDescending(v => v.DisplayName.Contains("Sonia", StringComparison.OrdinalIgnoreCase))
                 .ThenBy(v => v.DisplayName))
             {
@@ -150,8 +153,92 @@ public partial class MainWindow : Window
                 if (!VoiceBox.Items.OfType<ComboBoxItem>().Any(i => Equals(i.Tag, tag)))
                     VoiceBox.Items.Add(new ComboBoxItem { Content = label, Tag = tag });
             }
+
+            var registered = GetOneCoreVoiceRegistrations();
+            var registeredSonia = registered.FirstOrDefault(v =>
+                v.Name.Contains("Sonia", StringComparison.OrdinalIgnoreCase) ||
+                v.Token.Contains("Sonia", StringComparison.OrdinalIgnoreCase));
+            var runtimeSonia = runtimeVoices.FirstOrDefault(v =>
+                v.DisplayName.Contains("Sonia", StringComparison.OrdinalIgnoreCase) ||
+                v.Id.Contains("Sonia", StringComparison.OrdinalIgnoreCase));
+
+            if (runtimeSonia is null && registeredSonia is not null)
+            {
+                SetStatus("Windows registry contains Sonia (" + registeredSonia.Name +
+                    "), but Windows SpeechSynthesizer does not expose it for app playback. " +
+                    "Registered OneCore token: " + registeredSonia.Token +
+                    ". Other installed Narrator voices remain available.");
+            }
+            else if (runtimeSonia is null)
+            {
+                SetStatus("Sonia was not found in the Windows OneCore voice registry or the app speech catalog. " +
+                    "Registry entries found: " + registered.Count + ". Check that Sonia's voice download finished in Windows Settings.");
+            }
         }
-        catch (Exception ex) { SetStatus("Could not enumerate installed Narrator/OneCore voices: " + ex.Message); }
+        catch (Exception ex)
+        {
+            SetStatus("Could not enumerate installed Narrator/OneCore voices: " + ex.Message);
+        }
+    }
+
+    private static List<(string Token, string Name)> GetOneCoreVoiceRegistrations()
+    {
+        var found = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var paths = new[]
+        {
+            @"SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens",
+            @"SOFTWARE\Microsoft\Speech\Voices\Tokens"
+        };
+
+        foreach (var view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
+        {
+            try
+            {
+                using var baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view);
+                foreach (var path in paths)
+                {
+                    using var tokens = baseKey.OpenSubKey(path);
+                    if (tokens is null) continue;
+                    foreach (var token in tokens.GetSubKeyNames())
+                    {
+                        try
+                        {
+                            using var item = tokens.OpenSubKey(token);
+                            var name = item?.GetValue(null)?.ToString();
+                            if (string.IsNullOrWhiteSpace(name)) name = item?.GetValue("Name")?.ToString();
+                            if (string.IsNullOrWhiteSpace(name)) name = token;
+                            found[token] = name;
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        try
+        {
+            using var user = Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Speech_OneCore\Voices\Tokens");
+            if (user is not null)
+            {
+                foreach (var token in user.GetSubKeyNames())
+                {
+                    try
+                    {
+                        using var item = user.OpenSubKey(token);
+                        var name = item?.GetValue(null)?.ToString();
+                        if (string.IsNullOrWhiteSpace(name)) name = item?.GetValue("Name")?.ToString();
+                        if (string.IsNullOrWhiteSpace(name)) name = token;
+                        found[token] = name;
+                    }
+                    catch { }
+                }
+            }
+        }
+        catch { }
+
+        return found.Select(pair => (pair.Key, pair.Value)).ToList();
     }
 
     private void StartBrowserDictation_Click(object sender, RoutedEventArgs e)
