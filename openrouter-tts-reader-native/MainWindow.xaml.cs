@@ -450,110 +450,27 @@ stop.disabled=true;
 
 
 
-    // Microsoft Edge Read Aloud neural voices: synthesize MP3, then route playback through NAudio.
-    // This uses Microsoft's currently used (unofficial) Edge Read Aloud WebSocket protocol.
-    private const string EdgeTrustedClientToken = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
-    private const string EdgeAudioFormat = "audio-24khz-48kbitrate-mono-mp3";
-
-    private static string CreateEdgeSecurityToken()
-    {
-        var epoch = new DateTime(1601, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        long seconds = (long)Math.Floor((DateTime.UtcNow - epoch).TotalSeconds);
-        seconds -= seconds % 300;
-        var input = (seconds * 10_000_000L).ToString(CultureInfo.InvariantCulture) + EdgeTrustedClientToken;
-        return Convert.ToHexString(SHA256.HashData(Encoding.ASCII.GetBytes(input)));
-    }
-
-    private static string EscapeEdgeSsml(string value) => value.Replace("&", "&amp;")
-        .Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;").Replace("'", "&apos;");
-
+    // Uses the maintained EdgeTTS.DotNet client, which implements Microsoft's
+    // current v2 Sec-MS-GEC handshake and retries clock-skew corrections.
     private async Task<string> GenerateEdgeMp3Async(string text, string voice)
     {
         if (string.IsNullOrWhiteSpace(voice))
             throw new InvalidOperationException("Select a Microsoft Edge neural voice.");
 
-        using var audio = new MemoryStream();
-        foreach (var part in SplitForGroq(text, 1800))
-        {
-            var url = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1" +
-                "?TrustedClientToken=" + EdgeTrustedClientToken +
-                "&Sec-MS-GEC=" + CreateEdgeSecurityToken() +
-                "&Sec-MS-GEC-Version=1-130.0.2849.68&ConnectionId=" + Guid.NewGuid().ToString("N");
-
-            using var socket = new ClientWebSocket();
-            socket.Options.SetRequestHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0");
-            socket.Options.SetRequestHeader("Origin", "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold");
-            socket.Options.SetRequestHeader("Pragma", "no-cache");
-            socket.Options.SetRequestHeader("Cache-Control", "no-cache");
-            await socket.ConnectAsync(new Uri(url), CancellationToken.None);
-
-            var now = DateTime.UtcNow.ToString("ddd MMM dd yyyy HH:mm:ss 'GMT+0000 (Coordinated Universal Time)'", CultureInfo.InvariantCulture);
-            var config = "{\"context\":{\"synthesis\":{\"audio\":{\"metadataoptions\":{\"sentenceBoundaryEnabled\":\"false\",\"wordBoundaryEnabled\":\"false\"},\"outputFormat\":\"" + EdgeAudioFormat + "\"}}}}";
-            var configFrame = "X-Timestamp:" + now + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n" + config;
-            await socket.SendAsync(Encoding.UTF8.GetBytes(configFrame), WebSocketMessageType.Text, true, CancellationToken.None);
-
-            var ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='" +
-                voice + "'><prosody pitch='+0Hz' rate='+0%' volume='+0%'>" + EscapeEdgeSsml(part) + "</prosody></voice></speak>";
-            var requestFrame = "X-RequestId:" + Guid.NewGuid().ToString("N") +
-                "\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:" +
-                DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture) +
-                "\r\nPath:ssml\r\n\r\n" + ssml;
-            await socket.SendAsync(Encoding.UTF8.GetBytes(requestFrame), WebSocketMessageType.Text, true, CancellationToken.None);
-
-            var buffer = new byte[16 * 1024];
-            using var frameBuffer = new MemoryStream();
-            while (socket.State == WebSocketState.Open)
-            {
-                frameBuffer.SetLength(0);
-                WebSocketReceiveResult result;
-                do
-                {
-                    result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
-                    if (result.MessageType == WebSocketMessageType.Close) break;
-                    frameBuffer.Write(buffer, 0, result.Count);
-                } while (!result.EndOfMessage);
-
-                if (result.MessageType == WebSocketMessageType.Close) break;
-
-                // Edge sends audio as binary frames, but the turn.end marker is
-                // commonly delivered as a text frame. Ignoring text frames leaves
-                // the receive loop waiting forever and prevents playback from starting.
-                if (result.MessageType == WebSocketMessageType.Text)
-                {
-                    var textFrame = Encoding.UTF8.GetString(frameBuffer.ToArray());
-                    if (textFrame.Contains("Path:turn.end", StringComparison.OrdinalIgnoreCase))
-                        break;
-                    if (textFrame.Contains("Path:response", StringComparison.OrdinalIgnoreCase))
-                        throw new InvalidOperationException("Edge TTS rejected the synthesis request: " + textFrame);
-                    continue;
-                }
-
-                if (result.MessageType != WebSocketMessageType.Binary) continue;
-
-                var frame = frameBuffer.ToArray();
-                if (frame.Length < 2) continue;
-                int headerLength = BinaryPrimitives.ReadUInt16BigEndian(frame.AsSpan(0, 2));
-                if (headerLength + 2 > frame.Length) continue;
-                var headers = Encoding.ASCII.GetString(frame, 2, headerLength);
-                if (headers.Contains("Path:audio", StringComparison.OrdinalIgnoreCase))
-                    audio.Write(frame, headerLength + 2, frame.Length - headerLength - 2);
-                if (headers.Contains("Path:turn.end", StringComparison.OrdinalIgnoreCase)) break;
-            }
-
-            try
-            {
-                if (socket.State == WebSocketState.Open)
-                    await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
-            }
-            catch { }
-        }
-
-        if (audio.Length == 0)
-            throw new InvalidOperationException("Edge neural TTS returned no audio. Microsoft may have changed or rejected its Read Aloud service request.");
-
         var path = Path.Combine(Path.GetTempPath(), $"edge-tts-{Guid.NewGuid():N}.mp3");
-        await File.WriteAllBytesAsync(path, audio.ToArray());
-        return path;
+        try
+        {
+            var request = new EdgeTTS.DotNet.Communicate(text, voice: voice);
+            await request.SaveAsync(path);
+            if (!File.Exists(path) || new FileInfo(path).Length == 0)
+                throw new InvalidOperationException("Microsoft Edge TTS returned an empty audio file.");
+            return path;
+        }
+        catch
+        {
+            try { if (File.Exists(path)) File.Delete(path); } catch { }
+            throw;
+        }
     }
 
     private static IEnumerable<string> SplitForGroq(string text, int maxChars = 190)
