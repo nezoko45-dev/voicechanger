@@ -27,7 +27,7 @@ public partial class MainWindow : Window
     private int _bridgePort;
     private bool _browserDictationOn;
     private WaveOutEvent? _output;
-    private MediaFoundationReader? _audioReader;
+    private WaveStream? _audioReader;
     private readonly DispatcherTimer _autoReadTimer;
     private bool _dictationOn;
     private bool _isSpeaking;
@@ -109,24 +109,14 @@ public partial class MainWindow : Window
             {
                 using var synth = new System.Speech.Synthesis.SpeechSynthesizer();
                 foreach (var voice in synth.GetInstalledVoices().Where(v => v.Enabled).Select(v => v.VoiceInfo).OrderBy(v => v.Name))
-                    VoiceBox.Items.Add(new ComboBoxItem { Content = voice.Name + " (" + voice.Culture.Name + ")", Tag = voice.Name });
+                    VoiceBox.Items.Add(new ComboBoxItem { Content = voice.Name + " (" + voice.Culture.Name + ") — SAPI", Tag = "sapi:" + voice.Name });
+            AddWindowsRuntimeVoices();
             }
             catch { }
         }
         else if (model == "windows-narrator")
         {
-            try
-            {
-                foreach (var voice in SpeechSynthesizer.AllVoices
-                    .Where(v => v.Language.StartsWith("en", StringComparison.OrdinalIgnoreCase))
-                    .OrderByDescending(v => v.DisplayName.Contains("Sonia", StringComparison.OrdinalIgnoreCase))
-                    .ThenBy(v => v.DisplayName))
-                {
-                    var label = voice.DisplayName + " (" + voice.Language + ")";
-                    VoiceBox.Items.Add(new ComboBoxItem { Content = label, Tag = voice.Id });
-                }
-            }
-            catch (Exception ex) { SetStatus("Could not enumerate Windows Narrator voices: " + ex.Message); }
+            AddWindowsRuntimeVoices();
         }
         else if (_voices.TryGetValue(model, out var entries))
         {
@@ -134,6 +124,25 @@ public partial class MainWindow : Window
                 VoiceBox.Items.Add(new ComboBoxItem { Content = entry.Label, Tag = entry.Value });
         }
         if (VoiceBox.Items.Count > 0) VoiceBox.SelectedIndex = 0;
+    }
+
+    private void AddWindowsRuntimeVoices()
+    {
+        try
+        {
+            // WinRT exposes OneCore voices installed from Narrator settings,
+            // unlike System.Speech/SAPI which commonly lists only David and Zira.
+            foreach (var voice in SpeechSynthesizer.AllVoices
+                .OrderByDescending(v => v.DisplayName.Contains("Sonia", StringComparison.OrdinalIgnoreCase))
+                .ThenBy(v => v.DisplayName))
+            {
+                var label = voice.DisplayName + " (" + voice.Language + ") — Narrator";
+                var tag = "winrt:" + voice.Id;
+                if (!VoiceBox.Items.OfType<ComboBoxItem>().Any(i => Equals(i.Tag, tag)))
+                    VoiceBox.Items.Add(new ComboBoxItem { Content = label, Tag = tag });
+            }
+        }
+        catch (Exception ex) { SetStatus("Could not enumerate installed Narrator/OneCore voices: " + ex.Message); }
     }
 
     private void StartBrowserDictation_Click(object sender, RoutedEventArgs e)
@@ -411,7 +420,8 @@ stop.disabled=true;
     {
         if (string.IsNullOrWhiteSpace(value) || _requestInFlight) return;
         var isLocal = SelectedModel == "local-windows";
-        var isNarrator = SelectedModel == "windows-narrator";
+        var selectedVoice = SelectedVoice;
+        var isNarrator = SelectedModel == "windows-narrator" || selectedVoice.StartsWith("winrt:", StringComparison.Ordinal);
         var isEdgeBrowser = SelectedModel == "edge-browser";
         var key = ApiKeyBox.Password.Trim();
         if (!isLocal && !isNarrator && !isEdgeBrowser && key.Length == 0) { SetStatus("Enter your Groq API key first, or select a free Windows voice."); return; }
@@ -435,7 +445,8 @@ stop.disabled=true;
             }
             if (isNarrator)
             {
-                _audioPath = await GenerateWindowsNarratorWavAsync(value, SelectedVoice);
+                var narratorVoiceId = selectedVoice.StartsWith("winrt:", StringComparison.Ordinal) ? selectedVoice["winrt:".Length..] : selectedVoice;
+                _audioPath = await GenerateWindowsNarratorWavAsync(value, narratorVoiceId);
                 await Dispatcher.InvokeAsync(() => StartPlayback(_audioPath, value, automatic));
                 return;
             }
@@ -446,8 +457,11 @@ stop.disabled=true;
                 await Task.Run(() =>
                 {
                     using var synth = new System.Speech.Synthesis.SpeechSynthesizer();
-                    if (!string.IsNullOrWhiteSpace(SelectedVoice))
-                        synth.SelectVoice(SelectedVoice);
+                    if (!string.IsNullOrWhiteSpace(selectedVoice))
+                    {
+                        var sapiVoice = selectedVoice.StartsWith("sapi:", StringComparison.Ordinal) ? selectedVoice["sapi:".Length..] : selectedVoice;
+                        synth.SelectVoice(sapiVoice);
+                    }
                     synth.SetOutputToWaveFile(localPath);
                     synth.Speak(value);
                     synth.SetOutputToNull();
@@ -632,7 +646,11 @@ stop.disabled=true;
         StopPlaybackResources();
         try
         {
-            _audioReader = new MediaFoundationReader(path);
+            // Native WAV playback avoids Media Foundation COM apartment ownership
+            // problems when NAudio reads audio on its playback thread.
+            _audioReader = Path.GetExtension(path).Equals(".wav", StringComparison.OrdinalIgnoreCase)
+                ? new WaveFileReader(path)
+                : new MediaFoundationReader(path);
             _output = new WaveOutEvent();
             if (OutputDeviceBox.SelectedItem is ComboBoxItem selected && selected.Tag is int device && device >= 0)
                 _output.DeviceNumber = device;
