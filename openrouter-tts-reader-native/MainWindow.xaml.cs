@@ -12,6 +12,8 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using Windows.Media.SpeechSynthesis;
+using Windows.Storage.Streams;
 using NAudio.Wave;
 
 namespace OpenRouterTtsReader;
@@ -110,6 +112,21 @@ public partial class MainWindow : Window
                     VoiceBox.Items.Add(new ComboBoxItem { Content = voice.Name + " (" + voice.Culture.Name + ")", Tag = voice.Name });
             }
             catch { }
+        }
+        else if (model == "windows-narrator")
+        {
+            try
+            {
+                foreach (var voice in SpeechSynthesizer.AllVoices
+                    .Where(v => v.Language.StartsWith("en", StringComparison.OrdinalIgnoreCase))
+                    .OrderByDescending(v => v.DisplayName.Contains("Sonia", StringComparison.OrdinalIgnoreCase))
+                    .ThenBy(v => v.DisplayName))
+                {
+                    var label = voice.DisplayName + " (" + voice.Language + ")";
+                    VoiceBox.Items.Add(new ComboBoxItem { Content = label, Tag = voice.Id });
+                }
+            }
+            catch (Exception ex) { SetStatus("Could not enumerate Windows Narrator voices: " + ex.Message); }
         }
         else if (_voices.TryGetValue(model, out var entries))
         {
@@ -394,9 +411,10 @@ stop.disabled=true;
     {
         if (string.IsNullOrWhiteSpace(value) || _requestInFlight) return;
         var isLocal = SelectedModel == "local-windows";
+        var isNarrator = SelectedModel == "windows-narrator";
         var isEdgeBrowser = SelectedModel == "edge-browser";
         var key = ApiKeyBox.Password.Trim();
-        if (!isLocal && !isEdgeBrowser && key.Length == 0) { SetStatus("Enter your Groq API key first, or select Local Windows Voice (Free)."); return; }
+        if (!isLocal && !isNarrator && !isEdgeBrowser && key.Length == 0) { SetStatus("Enter your Groq API key first, or select a free Windows voice."); return; }
 
         _autoReadTimer.Stop();
         _requestInFlight = true;
@@ -406,12 +424,18 @@ stop.disabled=true;
             _isSpeaking = true;
             try { _recognizer?.RecognizeAsyncCancel(); } catch { }
         }
-        SetStatus(isLocal ? "Generating speech locally (no API or credits)…" : isEdgeBrowser ? "Generating Microsoft Edge neural voice audio…" : "Generating audio with Groq Orpheus…");
+        SetStatus(isNarrator ? "Generating speech with your installed Windows Narrator voice…" : isLocal ? "Generating speech locally (no API or credits)…" : isEdgeBrowser ? "Generating Microsoft Edge neural voice audio…" : "Generating audio with Groq Orpheus…");
         try
         {
             if (isEdgeBrowser)
             {
                 _audioPath = await GenerateEdgeMp3Async(value, SelectedVoice);
+                await Dispatcher.InvokeAsync(() => StartPlayback(_audioPath, value, automatic));
+                return;
+            }
+            if (isNarrator)
+            {
+                _audioPath = await GenerateWindowsNarratorWavAsync(value, SelectedVoice);
                 await Dispatcher.InvokeAsync(() => StartPlayback(_audioPath, value, automatic));
                 return;
             }
@@ -449,6 +473,29 @@ stop.disabled=true;
     }
 
 
+
+    // Uses the Windows Runtime speech engine, which exposes OneCore/Narrator
+    // voices installed through Settings > Accessibility > Narrator > Voice.
+    private static async Task<string> GenerateWindowsNarratorWavAsync(string text, string voiceId)
+    {
+        using var synthesizer = new SpeechSynthesizer();
+        var selected = SpeechSynthesizer.AllVoices.FirstOrDefault(v => v.Id == voiceId);
+        if (selected is null)
+            throw new InvalidOperationException("The selected Windows Narrator voice is no longer installed. Reopen the app and choose an available voice.");
+        synthesizer.Voice = selected;
+        using var speechStream = await synthesizer.SynthesizeTextToStreamAsync(text);
+        using var input = speechStream.GetInputStreamAt(0);
+        using var reader = new DataReader(input);
+        var size = checked((uint)speechStream.Size);
+        await reader.LoadAsync(size);
+        var bytes = new byte[size];
+        reader.ReadBytes(bytes);
+        var path = Path.Combine(Path.GetTempPath(), $"windows-narrator-{Guid.NewGuid():N}.wav");
+        await File.WriteAllBytesAsync(path, bytes);
+        if (!File.Exists(path) || new FileInfo(path).Length < 44)
+            throw new InvalidOperationException("Windows Narrator returned an empty or invalid WAV stream.");
+        return path;
+    }
 
     // Uses the bundled native Rust Edge TTS helper (no Python runtime).
     private async Task<string> GenerateEdgeMp3Async(string text, string voice)
