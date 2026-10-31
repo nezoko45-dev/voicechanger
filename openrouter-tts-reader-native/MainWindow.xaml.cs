@@ -155,6 +155,7 @@ public partial class MainWindow : Window
             }
 
             var registered = GetOneCoreVoiceRegistrations();
+            // ValueTuple is a value type; keep the lookup non-nullable and test its fields below.
             var registeredSonia = registered.FirstOrDefault(v =>
                 v.Name.Contains("Sonia", StringComparison.OrdinalIgnoreCase) ||
                 v.Token.Contains("Sonia", StringComparison.OrdinalIgnoreCase));
