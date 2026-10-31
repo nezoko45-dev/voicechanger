@@ -84,9 +84,9 @@ public partial class MainWindow : Window
         if (VoiceBox is null || ModelBox.SelectedItem is not ComboBoxItem item) return;
         var model = item.Tag?.ToString() ?? "canopylabs/orpheus-v1-english";
         VoiceBox.Items.Clear();
-        if (model == "google-browser")
+        if (model == "edge-browser")
         {
-            foreach (var voice in new[] { ("Google US English", "Google US English"), ("Google UK English Female", "Google UK English Female"), ("Google UK English Male", "Google UK English Male"), ("Google Australian English", "Google Australian English"), ("Browser default voice", "") })
+            foreach (var voice in new[] { ("Microsoft Aria Online (Natural) - English (United States)", "Microsoft Aria Online (Natural) - English (United States)"), ("Microsoft Sonia Online (Natural) - English (United Kingdom)", "Microsoft Sonia Online (Natural) - English (United Kingdom)"), ("Microsoft Ryan Online (Natural) - English (United Kingdom)", "Microsoft Ryan Online (Natural) - English (United Kingdom)"), ("Microsoft Natasha Online (Natural) - English (Australia)", "Microsoft Natasha Online (Natural) - English (Australia)"), ("Edge default voice", "") })
                 VoiceBox.Items.Add(new ComboBoxItem { Content = voice.Item1, Tag = voice.Item2 });
         }
         else if (model == "local-windows")
@@ -124,7 +124,15 @@ public partial class MainWindow : Window
             _dictationOn = true;
             StopDictationButton.IsEnabled = true;
             StartDictationButton.IsEnabled = true;
-            Process.Start(new ProcessStartInfo("http://127.0.0.1:" + _bridgePort + "/") { UseShellExecute = true });
+            try
+            {
+                Process.Start(new ProcessStartInfo("msedge.exe", "http://127.0.0.1:" + _bridgePort + "/") { UseShellExecute = true });
+            }
+            catch
+            {
+                Process.Start(new ProcessStartInfo("http://127.0.0.1:" + _bridgePort + "/") { UseShellExecute = true });
+                SetStatus("Microsoft Edge was not found; opened the default browser instead.");
+            }
             SetStatus("Opened browser speech bridge. Allow microphone access, then press Start Listening on that page.");
         }
         catch (Exception ex) { SetStatus("Could not start browser speech bridge: " + ex.Message); }
@@ -173,7 +181,7 @@ public partial class MainWindow : Window
                 {
                     Dispatcher.BeginInvoke(() =>
                     {
-                        FinishPlayback("Finished reading with Chrome speech.");
+                        FinishPlayback("Finished reading with Edge speech.");
                         _requestInFlight = false;
                         SpeakButton.IsEnabled = true;
                     });
@@ -207,7 +215,7 @@ public partial class MainWindow : Window
             TextBoxInput.AppendText(" ");
         TextBoxInput.AppendText(phrase + " ");
         TextBoxInput.ScrollToEnd();
-        StatusText.Text = "Chrome speech recognition: " + phrase;
+        StatusText.Text = "Edge speech recognition: " + phrase;
         if (AutoReadCheckBox.IsChecked == true) { _autoReadTimer.Stop(); _autoReadTimer.Start(); }
     }
 
@@ -395,9 +403,9 @@ stop.disabled=true;
     {
         if (string.IsNullOrWhiteSpace(value) || _requestInFlight) return;
         var isLocal = SelectedModel == "local-windows";
-        var isGoogleBrowser = SelectedModel == "google-browser";
+        var isEdgeBrowser = SelectedModel == "edge-browser";
         var key = ApiKeyBox.Password.Trim();
-        if (isGoogleBrowser)
+        if (isEdgeBrowser)
         {
             if (_bridgeListener is null || !_bridgeListener.IsListening)
                 StartBrowserDictation_Click(this, new RoutedEventArgs());
@@ -406,7 +414,7 @@ stop.disabled=true;
             _isSpeaking = true;
             _requestInFlight = true;
             SpeakButton.IsEnabled = false;
-            SetStatus("Sent text to Chrome speech. Playback uses Chrome's selected audio output.");
+            SetStatus("Sent text to Edge speech. Playback uses Microsoft Edge's selected audio output.");
             return;
         }
         if (!isLocal && key.Length == 0) { SetStatus("Enter your Groq API key first, or select Local Windows Voice (Free)."); return; }
