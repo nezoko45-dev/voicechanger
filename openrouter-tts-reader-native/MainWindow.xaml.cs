@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Collections.Concurrent;
-using Microsoft.Win32;
 using System.Buffers.Binary;
 using System.Net.WebSockets;
 using System.Security.Cryptography;
@@ -160,92 +159,13 @@ public partial class MainWindow : Window
                     VoiceBox.Items.Add(new ComboBoxItem { Content = label, Tag = tag });
             }
 
-            var registered = GetOneCoreVoiceRegistrations();
-            // ValueTuple is a value type; keep the lookup non-nullable and test its fields below.
-            var registeredSonia = registered.FirstOrDefault(v =>
-                v.Name.Contains("Sonia", StringComparison.OrdinalIgnoreCase) ||
-                v.Token.Contains("Sonia", StringComparison.OrdinalIgnoreCase));
-            var runtimeSonia = runtimeVoices.FirstOrDefault(v =>
-                v.DisplayName.Contains("Sonia", StringComparison.OrdinalIgnoreCase) ||
-                v.Id.Contains("Sonia", StringComparison.OrdinalIgnoreCase));
+            // Use only voices exposed by the supported Windows Runtime catalog.
 
-            if (runtimeSonia is null && registeredSonia is not null)
-            {
-                SetStatus("Windows registry contains Sonia (" + registeredSonia.Name +
-                    "), but Windows SpeechSynthesizer does not expose it for app playback. " +
-                    "Registered OneCore token: " + registeredSonia.Token +
-                    ". Other installed Narrator voices remain available.");
-            }
-            else if (runtimeSonia is null)
-            {
-                SetStatus("Sonia was not found in the Windows OneCore voice registry or the app speech catalog. " +
-                    "Registry entries found: " + registered.Count + ". Check that Sonia's voice download finished in Windows Settings.");
-            }
         }
         catch (Exception ex)
         {
             SetStatus("Could not enumerate installed Narrator/OneCore voices: " + ex.Message);
         }
-    }
-
-    private static List<(string Token, string Name)> GetOneCoreVoiceRegistrations()
-    {
-        var found = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var paths = new[]
-        {
-            @"SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens",
-            @"SOFTWARE\Microsoft\Speech\Voices\Tokens"
-        };
-
-        foreach (var view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
-        {
-            try
-            {
-                using var baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view);
-                foreach (var path in paths)
-                {
-                    using var tokens = baseKey.OpenSubKey(path);
-                    if (tokens is null) continue;
-                    foreach (var token in tokens.GetSubKeyNames())
-                    {
-                        try
-                        {
-                            using var item = tokens.OpenSubKey(token);
-                            var name = item?.GetValue(null)?.ToString();
-                            if (string.IsNullOrWhiteSpace(name)) name = item?.GetValue("Name")?.ToString();
-                            if (string.IsNullOrWhiteSpace(name)) name = token;
-                            found[token] = name;
-                        }
-                        catch { }
-                    }
-                }
-            }
-            catch { }
-        }
-
-        try
-        {
-            using var user = Registry.CurrentUser.OpenSubKey(
-                @"Software\Microsoft\Speech_OneCore\Voices\Tokens");
-            if (user is not null)
-            {
-                foreach (var token in user.GetSubKeyNames())
-                {
-                    try
-                    {
-                        using var item = user.OpenSubKey(token);
-                        var name = item?.GetValue(null)?.ToString();
-                        if (string.IsNullOrWhiteSpace(name)) name = item?.GetValue("Name")?.ToString();
-                        if (string.IsNullOrWhiteSpace(name)) name = token;
-                        found[token] = name;
-                    }
-                    catch { }
-                }
-            }
-        }
-        catch { }
-
-        return found.Select(pair => (pair.Key, pair.Value)).ToList();
     }
 
     private void EnsureBrowserBridgePage()
