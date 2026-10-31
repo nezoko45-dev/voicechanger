@@ -28,6 +28,7 @@ public partial class MainWindow : Window
     private int _bridgePort;
     private readonly ConcurrentQueue<string> _chromeSpeechQueue = new();
     private bool _browserDictationOn;
+    private bool _browserBridgePageOpened;
     private WaveOutEvent? _output;
     private WaveStream? _audioReader;
     private readonly DispatcherTimer _autoReadTimer;
@@ -179,9 +180,11 @@ public partial class MainWindow : Window
             _bridgeCts = new CancellationTokenSource();
             _ = RunBridgeServerAsync(_bridgeListener, _bridgeCts.Token);
         }
-        if (!_browserDictationOn)
+        if (!_browserBridgePageOpened)
         {
-            Process.Start(new ProcessStartInfo("chrome.exe", "http://127.0.0.1:" + _bridgePort + "/") { UseShellExecute = true });
+            try { Process.Start(new ProcessStartInfo("chrome.exe", "http://127.0.0.1:" + _bridgePort + "/") { UseShellExecute = true }); }
+            catch { Process.Start(new ProcessStartInfo("http://127.0.0.1:" + _bridgePort + "/") { UseShellExecute = true }); }
+            _browserBridgePageOpened = true;
         }
     }
 
@@ -194,16 +197,7 @@ public partial class MainWindow : Window
             _dictationOn = true;
             StopDictationButton.IsEnabled = true;
             StartDictationButton.IsEnabled = true;
-            try
-            {
-                Process.Start(new ProcessStartInfo("chrome.exe", "http://127.0.0.1:" + _bridgePort + "/") { UseShellExecute = true });
-                SetStatus("Opened Chrome speech bridge. Allow microphone access, then press Start Listening on that page.");
-            }
-            catch
-            {
-                Process.Start(new ProcessStartInfo("http://127.0.0.1:" + _bridgePort + "/") { UseShellExecute = true });
-                SetStatus("Chrome was not found by its app name; opened the local speech bridge in your default browser.");
-            }
+            SetStatus("Opened Chrome speech bridge. Allow microphone access, then press Start Listening on that page.");
         }
         catch (Exception ex) { SetStatus("Could not start browser speech bridge: " + ex.Message); }
     }
@@ -243,8 +237,9 @@ public partial class MainWindow : Window
                 {
                     Dispatcher.BeginInvoke(() =>
                     {
+                        _isSpeaking = false;
                         if (ClearAfterReadCheckBox.IsChecked == true) { TextBoxInput.Clear(); _lastSpoken = ""; }
-                        StatusText.Text = "Chrome finished reading.";
+                        StatusText.Text = "Chrome finished reading. Ready for the next phrase.";
                     });
                     res.ContentType = "application/json";
                     var bytes = Encoding.UTF8.GetBytes("{\"ok\":true}");
@@ -315,15 +310,18 @@ function refreshVoices(){
 refreshVoices();speechSynthesis.onvoiceschanged=refreshVoices;
 async function pollSpeech(){
   try{
-    const response=await fetch('/next-speech',{cache:'no-store'});
-    const text=await response.json();
-    if(text){
-      const utterance=new SpeechSynthesisUtterance(text);
-      const voice=availableVoices[Number(voicePicker.value)];
-      if(voice)utterance.voice=voice;
-      utterance.onend=()=>fetch('/speech-done',{method:'POST'});
-      utterance.onerror=()=>{state.textContent='Chrome could not play the selected speech voice.';};
-      speechSynthesis.cancel();speechSynthesis.speak(utterance);
+    // Do not dequeue another item until the current utterance has completed.
+    if(!speechSynthesis.speaking && !speechSynthesis.pending){
+      const response=await fetch('/next-speech',{cache:'no-store'});
+      const text=await response.json();
+      if(text){
+        const utterance=new SpeechSynthesisUtterance(text);
+        const voice=availableVoices[Number(voicePicker.value)];
+        if(voice)utterance.voice=voice;
+        utterance.onend=()=>fetch('/speech-done',{method:'POST'});
+        utterance.onerror=()=>{state.textContent='Chrome could not play the selected speech voice.';fetch('/speech-done',{method:'POST'});};
+        speechSynthesis.speak(utterance);
+      }
     }
   }catch(e){}
   setTimeout(pollSpeech,350);
