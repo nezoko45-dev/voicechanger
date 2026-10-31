@@ -123,7 +123,16 @@ public partial class MainWindow : Window
             foreach (var entry in entries)
                 VoiceBox.Items.Add(new ComboBoxItem { Content = entry.Label, Tag = entry.Value });
         }
-        if (VoiceBox.Items.Count > 0) VoiceBox.SelectedIndex = 0;
+        // Always expose installed Narrator/OneCore voices, even while another
+        // provider is selected. Selecting one routes synthesis through WinRT.
+        AddWindowsRuntimeVoices();
+        if (VoiceBox.Items.Count > 0)
+        {
+            var installedSonia = VoiceBox.Items.OfType<ComboBoxItem>()
+                .FirstOrDefault(v => v.Tag?.ToString()?.StartsWith("winrt:", StringComparison.Ordinal) == true
+                    && v.Content?.ToString()?.Contains("Sonia", StringComparison.OrdinalIgnoreCase) == true);
+            VoiceBox.SelectedItem = installedSonia ?? VoiceBox.Items[0];
+        }
     }
 
     private void AddWindowsRuntimeVoices()
