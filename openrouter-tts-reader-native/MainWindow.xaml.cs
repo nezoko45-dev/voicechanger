@@ -155,14 +155,14 @@ public partial class MainWindow : Window
             StartDictationButton.IsEnabled = true;
             try
             {
-                Process.Start(new ProcessStartInfo("msedge.exe", "http://127.0.0.1:" + _bridgePort + "/") { UseShellExecute = true });
+                Process.Start(new ProcessStartInfo("chrome.exe", "http://127.0.0.1:" + _bridgePort + "/") { UseShellExecute = true });
+                SetStatus("Opened Chrome speech bridge. Allow microphone access, then press Start Listening on that page.");
             }
             catch
             {
                 Process.Start(new ProcessStartInfo("http://127.0.0.1:" + _bridgePort + "/") { UseShellExecute = true });
-                SetStatus("Microsoft Edge was not found; opened the default browser instead.");
+                SetStatus("Chrome was not found by its app name; opened the local speech bridge in your default browser.");
             }
-            SetStatus("Opened browser speech bridge. Allow microphone access, then press Start Listening on that page.");
         }
         catch (Exception ex) { SetStatus("Could not start browser speech bridge: " + ex.Message); }
     }
@@ -224,7 +224,7 @@ public partial class MainWindow : Window
             TextBoxInput.AppendText(" ");
         TextBoxInput.AppendText(phrase + " ");
         TextBoxInput.ScrollToEnd();
-        StatusText.Text = "Edge speech recognition: " + phrase;
+        StatusText.Text = "Chrome speech recognition: " + phrase;
         if (AutoReadCheckBox.IsChecked == true) { _autoReadTimer.Stop(); _autoReadTimer.Start(); }
     }
 
