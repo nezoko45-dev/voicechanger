@@ -1,4 +1,7 @@
 using System.Globalization;
+using System.Buffers.Binary;
+using System.Net.WebSockets;
+using System.Security.Cryptography;
 using System.IO;
 using System.Net.Http;
 using System.Net;
@@ -21,7 +24,6 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _bridgeCts;
     private int _bridgePort;
     private bool _browserDictationOn;
-    private readonly System.Collections.Concurrent.ConcurrentQueue<(string Text, string Voice)> _browserSpeechQueue = new();
     private WaveOutEvent? _output;
     private MediaFoundationReader? _audioReader;
     private readonly DispatcherTimer _autoReadTimer;
@@ -85,12 +87,8 @@ public partial class MainWindow : Window
     {
         if (OutputDeviceBox is null || ModelBox.SelectedItem is not ComboBoxItem item) return;
         var edgeMode = item.Tag?.ToString() == "edge-browser";
-        OutputDeviceBox.IsEnabled = !edgeMode;
-        OutputDeviceBox.ToolTip = edgeMode
-            ? "Edge browser speech uses the Windows default output device. The app cannot route SpeechSynthesis to a separate device."
-            : "Select the Windows audio output used by desktop-app playback.";
-        if (edgeMode)
-            SetStatus("Edge speech uses the Windows default output device. Change the Windows output device to redirect it.");
+        OutputDeviceBox.IsEnabled = true;
+        OutputDeviceBox.ToolTip = "Select the Windows audio output used by NAudio playback, including Microsoft Edge neural voices.";
     }
 
     private void UpdateVoices()
@@ -100,7 +98,7 @@ public partial class MainWindow : Window
         VoiceBox.Items.Clear();
         if (model == "edge-browser")
         {
-            foreach (var voice in new[] { ("Microsoft Aria Online (Natural) - English (United States)", "Microsoft Aria Online (Natural) - English (United States)"), ("Microsoft Sonia Online (Natural) - English (United Kingdom)", "Microsoft Sonia Online (Natural) - English (United Kingdom)"), ("Microsoft Ryan Online (Natural) - English (United Kingdom)", "Microsoft Ryan Online (Natural) - English (United Kingdom)"), ("Microsoft Natasha Online (Natural) - English (Australia)", "Microsoft Natasha Online (Natural) - English (Australia)"), ("Edge default voice", "") })
+            foreach (var voice in new[] { ("Microsoft Aria Online (Natural) - English (United States)", "en-US-AriaNeural"), ("Microsoft Sonia Online (Natural) - English (United Kingdom)", "en-GB-SoniaNeural"), ("Microsoft Ryan Online (Natural) - English (United Kingdom)", "en-GB-RyanNeural"), ("Microsoft Natasha Online (Natural) - English (Australia)", "en-AU-NatashaNeural"), ("Microsoft Jenny Online (Natural) - English (United States)", "en-US-JennyNeural") })
                 VoiceBox.Items.Add(new ComboBoxItem { Content = voice.Item1, Tag = voice.Item2 });
         }
         else if (model == "local-windows")
@@ -174,32 +172,12 @@ public partial class MainWindow : Window
                 res.Headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS";
                 res.Headers["Access-Control-Allow-Headers"] = "Content-Type";
                 if (req.HttpMethod == "OPTIONS") { res.StatusCode = 204; res.Close(); continue; }
-                if (req.HttpMethod == "GET" && req.Url?.AbsolutePath == "/next-speech")
-                {
-                    var payload = _browserSpeechQueue.TryDequeue(out var item)
-                        ? JsonSerializer.Serialize(new { text = item.Text, voice = item.Voice })
-                        : "{\"text\":null}";
-                    var bytes = Encoding.UTF8.GetBytes(payload);
-                    res.ContentType = "application/json";
-                    res.ContentLength64 = bytes.Length;
-                    await res.OutputStream.WriteAsync(bytes);
-                }
-                else if (req.HttpMethod == "GET")
+                if (req.HttpMethod == "GET")
                 {
                     var bytes = Encoding.UTF8.GetBytes(BrowserBridgeHtml);
                     res.ContentType = "text/html; charset=utf-8";
                     res.ContentLength64 = bytes.Length;
                     await res.OutputStream.WriteAsync(bytes);
-                }
-                else if (req.HttpMethod == "POST" && req.Url?.AbsolutePath == "/speech-done")
-                {
-                    Dispatcher.BeginInvoke(() =>
-                    {
-                        FinishPlayback("Finished reading with Edge speech.");
-                        _requestInFlight = false;
-                        SpeakButton.IsEnabled = true;
-                    });
-                    res.StatusCode = 204;
                 }
                 else if (req.HttpMethod == "POST" && req.Url?.AbsolutePath == "/transcript")
                 {
@@ -419,19 +397,7 @@ stop.disabled=true;
         var isLocal = SelectedModel == "local-windows";
         var isEdgeBrowser = SelectedModel == "edge-browser";
         var key = ApiKeyBox.Password.Trim();
-        if (isEdgeBrowser)
-        {
-            if (_bridgeListener is null || !_bridgeListener.IsListening)
-                StartBrowserDictation_Click(this, new RoutedEventArgs());
-            _browserSpeechQueue.Enqueue((value, SelectedVoice));
-            _lastSpoken = value;
-            _isSpeaking = true;
-            _requestInFlight = true;
-            SpeakButton.IsEnabled = false;
-            SetStatus("Sent text to Edge speech. Playback uses Microsoft Edge's selected audio output.");
-            return;
-        }
-        if (!isLocal && key.Length == 0) { SetStatus("Enter your Groq API key first, or select Local Windows Voice (Free)."); return; }
+        if (!isLocal && !isEdgeBrowser && key.Length == 0) { SetStatus("Enter your Groq API key first, or select Local Windows Voice (Free)."); return; }
 
         _autoReadTimer.Stop();
         _requestInFlight = true;
@@ -441,9 +407,15 @@ stop.disabled=true;
             _isSpeaking = true;
             try { _recognizer?.RecognizeAsyncCancel(); } catch { }
         }
-        SetStatus(isLocal ? "Generating speech locally (no API or credits)…" : "Generating audio with Groq Orpheus…");
+        SetStatus(isLocal ? "Generating speech locally (no API or credits)…" : isEdgeBrowser ? "Generating Microsoft Edge neural voice audio…" : "Generating audio with Groq Orpheus…");
         try
         {
+            if (isEdgeBrowser)
+            {
+                _audioPath = await GenerateEdgeMp3Async(value, SelectedVoice);
+                await Dispatcher.InvokeAsync(() => StartPlayback(_audioPath, value, automatic));
+                return;
+            }
             if (isLocal)
             {
                 _audioPath = Path.Combine(Path.GetTempPath(), $"local-tts-{Guid.NewGuid():N}.wav");
@@ -477,6 +449,99 @@ stop.disabled=true;
         }
     }
 
+
+
+    // Microsoft Edge Read Aloud neural voices: synthesize MP3, then route playback through NAudio.
+    // This uses Microsoft's currently used (unofficial) Edge Read Aloud WebSocket protocol.
+    private const string EdgeTrustedClientToken = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
+    private const string EdgeAudioFormat = "audio-24khz-48kbitrate-mono-mp3";
+
+    private static string CreateEdgeSecurityToken()
+    {
+        var epoch = new DateTime(1601, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        long seconds = (long)Math.Floor((DateTime.UtcNow - epoch).TotalSeconds);
+        seconds -= seconds % 300;
+        var input = (seconds * 10_000_000L).ToString(CultureInfo.InvariantCulture) + EdgeTrustedClientToken;
+        return Convert.ToHexString(SHA256.HashData(Encoding.ASCII.GetBytes(input)));
+    }
+
+    private static string EscapeEdgeSsml(string value) => value.Replace("&", "&amp;")
+        .Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;").Replace("'", "&apos;");
+
+    private async Task<string> GenerateEdgeMp3Async(string text, string voice)
+    {
+        if (string.IsNullOrWhiteSpace(voice))
+            throw new InvalidOperationException("Select a Microsoft Edge neural voice.");
+
+        using var audio = new MemoryStream();
+        foreach (var part in SplitForGroq(text, 1800))
+        {
+            var url = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1" +
+                "?TrustedClientToken=" + EdgeTrustedClientToken +
+                "&Sec-MS-GEC=" + CreateEdgeSecurityToken() +
+                "&Sec-MS-GEC-Version=1-130.0.2849.68&ConnectionId=" + Guid.NewGuid().ToString("N");
+
+            using var socket = new ClientWebSocket();
+            socket.Options.SetRequestHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0");
+            socket.Options.SetRequestHeader("Origin", "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold");
+            socket.Options.SetRequestHeader("Pragma", "no-cache");
+            socket.Options.SetRequestHeader("Cache-Control", "no-cache");
+            await socket.ConnectAsync(new Uri(url), CancellationToken.None);
+
+            var now = DateTime.UtcNow.ToString("ddd MMM dd yyyy HH:mm:ss 'GMT+0000 (Coordinated Universal Time)'", CultureInfo.InvariantCulture);
+            var config = "{\"context\":{\"synthesis\":{\"audio\":{\"metadataoptions\":{\"sentenceBoundaryEnabled\":\"false\",\"wordBoundaryEnabled\":\"false\"},\"outputFormat\":\"" + EdgeAudioFormat + "\"}}}}";
+            var configFrame = "X-Timestamp:" + now + "\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n" + config;
+            await socket.SendAsync(Encoding.UTF8.GetBytes(configFrame), WebSocketMessageType.Text, true, CancellationToken.None);
+
+            var ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='" +
+                voice + "'><prosody pitch='+0Hz' rate='+0%' volume='+0%'>" + EscapeEdgeSsml(part) + "</prosody></voice></speak>";
+            var requestFrame = "X-RequestId:" + Guid.NewGuid().ToString("N") +
+                "\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:" +
+                DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture) +
+                "\r\nPath:ssml\r\n\r\n" + ssml;
+            await socket.SendAsync(Encoding.UTF8.GetBytes(requestFrame), WebSocketMessageType.Text, true, CancellationToken.None);
+
+            var buffer = new byte[16 * 1024];
+            using var frameBuffer = new MemoryStream();
+            while (socket.State == WebSocketState.Open)
+            {
+                frameBuffer.SetLength(0);
+                WebSocketReceiveResult result;
+                do
+                {
+                    result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+                    if (result.MessageType == WebSocketMessageType.Close) break;
+                    frameBuffer.Write(buffer, 0, result.Count);
+                } while (!result.EndOfMessage);
+
+                if (result.MessageType == WebSocketMessageType.Close) break;
+                if (result.MessageType != WebSocketMessageType.Binary) continue;
+
+                var frame = frameBuffer.ToArray();
+                if (frame.Length < 2) continue;
+                int headerLength = BinaryPrimitives.ReadUInt16BigEndian(frame.AsSpan(0, 2));
+                if (headerLength + 2 > frame.Length) continue;
+                var headers = Encoding.ASCII.GetString(frame, 2, headerLength);
+                if (headers.Contains("Path:audio", StringComparison.Ordinal))
+                    audio.Write(frame, headerLength + 2, frame.Length - headerLength - 2);
+                if (headers.Contains("Path:turn.end", StringComparison.Ordinal)) break;
+            }
+
+            try
+            {
+                if (socket.State == WebSocketState.Open)
+                    await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
+            }
+            catch { }
+        }
+
+        if (audio.Length == 0)
+            throw new InvalidOperationException("Edge neural TTS returned no audio. Microsoft may have changed or rejected its Read Aloud service request.");
+
+        var path = Path.Combine(Path.GetTempPath(), $"edge-tts-{Guid.NewGuid():N}.mp3");
+        await File.WriteAllBytesAsync(path, audio.ToArray());
+        return path;
+    }
 
     private static IEnumerable<string> SplitForGroq(string text, int maxChars = 190)
     {
