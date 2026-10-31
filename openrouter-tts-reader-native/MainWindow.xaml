@@ -9,8 +9,8 @@
             <RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <StackPanel Grid.Row="0" Margin="0,0,0,12">
-            <TextBlock Text="Edge TTS Reader" FontSize="25" FontWeight="Bold"/>
-            <TextBlock Text="Native Windows app • Edge neural voices routed through NAudio • Selectable audio output" Foreground="Gray" Margin="0,4,0,0"/>
+            <TextBlock Text="Chrome TTS Reader" FontSize="25" FontWeight="Bold"/>
+            <TextBlock Text="Native Windows app • Chrome built-in speech voices • Selectable voices in Chrome" Foreground="Gray" Margin="0,4,0,0"/>
         </StackPanel>
         <StackPanel Grid.Row="1" Margin="0,0,0,12">
             <TextBlock Text="API key (cloud providers only)" FontWeight="SemiBold" Margin="0,0,0,5"/>
@@ -27,7 +27,8 @@
                     <ComboBoxItem Content="Microsoft MAI Voice 2" Tag="microsoft/mai-voice-2"/>
                     <ComboBoxItem Content="Local Windows Voice (Free)" Tag="local-windows"/>
                     <ComboBoxItem Content="Windows Narrator Voices (Free)" Tag="windows-narrator"/>
-                    <ComboBoxItem Content="Microsoft Edge Voices (Free)" Tag="edge-browser" IsSelected="True"/>
+                    <ComboBoxItem Content="Chrome Browser Voices (Free)" Tag="chrome-browser" IsSelected="True"/>
+                    <ComboBoxItem Content="Microsoft Edge Voices (Free)" Tag="edge-browser"/>
                 </ComboBox>
             </StackPanel>
             <StackPanel Grid.Column="2">
