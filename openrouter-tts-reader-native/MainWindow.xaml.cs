@@ -514,6 +514,20 @@ stop.disabled=true;
                 } while (!result.EndOfMessage);
 
                 if (result.MessageType == WebSocketMessageType.Close) break;
+
+                // Edge sends audio as binary frames, but the turn.end marker is
+                // commonly delivered as a text frame. Ignoring text frames leaves
+                // the receive loop waiting forever and prevents playback from starting.
+                if (result.MessageType == WebSocketMessageType.Text)
+                {
+                    var textFrame = Encoding.UTF8.GetString(frameBuffer.ToArray());
+                    if (textFrame.Contains("Path:turn.end", StringComparison.OrdinalIgnoreCase))
+                        break;
+                    if (textFrame.Contains("Path:response", StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidOperationException("Edge TTS rejected the synthesis request: " + textFrame);
+                    continue;
+                }
+
                 if (result.MessageType != WebSocketMessageType.Binary) continue;
 
                 var frame = frameBuffer.ToArray();
@@ -521,9 +535,9 @@ stop.disabled=true;
                 int headerLength = BinaryPrimitives.ReadUInt16BigEndian(frame.AsSpan(0, 2));
                 if (headerLength + 2 > frame.Length) continue;
                 var headers = Encoding.ASCII.GetString(frame, 2, headerLength);
-                if (headers.Contains("Path:audio", StringComparison.Ordinal))
+                if (headers.Contains("Path:audio", StringComparison.OrdinalIgnoreCase))
                     audio.Write(frame, headerLength + 2, frame.Length - headerLength - 2);
-                if (headers.Contains("Path:turn.end", StringComparison.Ordinal)) break;
+                if (headers.Contains("Path:turn.end", StringComparison.OrdinalIgnoreCase)) break;
             }
 
             try
