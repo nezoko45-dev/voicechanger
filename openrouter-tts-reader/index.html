@@ -32,7 +32,7 @@
 (()=>{
  const $=id=>document.getElementById(id),text=$('text'),voiceSelect=$('voice'),start=$('start'),stopDictation=$('stopDictation');
  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
- let availableVoices=[],recognition=null,listening=false,starting=false,pausedForSpeech=false,restartTimer=null,restartDelay=500,watchdog=null,sessionId=0,finalText='',autoTimer=null,speaking=false,lastRead='',utterance=null;
+ let availableVoices=[],recognition=null,listening=false,starting=false,pausedForSpeech=false,restartTimer=null,restartDelay=500,watchdog=null,sessionTimer=null,sessionId=0,finalText='',autoTimer=null,speaking=false,lastRead='',utterance=null;
  const status=s=>$('status').textContent=s;
  function loadVoices(){
   availableVoices=window.speechSynthesis? speechSynthesis.getVoices():[];
@@ -51,10 +51,10 @@
  }
  function createSession(id){
   const r=new SR();r.continuous=true;r.interimResults=true;r.lang=$('language').value;
-  r.onstart=()=>{if(id!==sessionId)return;starting=false;clearTimeout(watchdog);restartDelay=500;start.disabled=true;stopDictation.disabled=false;status('Listening to your microphone…')};
+  r.onstart=()=>{if(id!==sessionId)return;starting=false;clearTimeout(watchdog);clearTimeout(sessionTimer);restartDelay=500;start.disabled=true;stopDictation.disabled=false;status('Listening to your microphone…');sessionTimer=setTimeout(()=>{if(id===sessionId&&listening&&!speaking&&!pausedForSpeech){status('Refreshing Chrome speech session…');try{r.stop()}catch{scheduleRestart(500)} }},55000)};
   r.onresult=e=>{if(id!==sessionId)return;let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const phrase=e.results[i][0].transcript;if(e.results[i].isFinal){finalText+=phrase.trim()+' ';scheduleAutoRead()}else interim+=phrase}text.value=finalText+interim;text.scrollTop=text.scrollHeight};
-  r.onerror=e=>{if(id!==sessionId)return;starting=false;clearTimeout(watchdog);if(e.error==='not-allowed'||e.error==='service-not-allowed'){listening=false;clearTimeout(restartTimer);start.disabled=false;stopDictation.disabled=true;status('Microphone permission denied. Allow it in Chrome site settings, then reload.')}else if(e.error!=='no-speech'&&e.error!=='aborted')status('Dictation service issue: '+e.error+'. Reconnecting with a fresh session…')};
-  r.onend=()=>{if(id!==sessionId)return;recognition=null;starting=false;clearTimeout(watchdog);if(listening&&!speaking&&!pausedForSpeech){restartDelay=Math.min(Math.max(restartDelay*1.6,700),5000);status('Chrome recognition ended. Starting a fresh session…');scheduleRestart(restartDelay)}};
+  r.onerror=e=>{if(id!==sessionId)return;starting=false;clearTimeout(watchdog);if(e.error==='not-allowed'||e.error==='service-not-allowed'){listening=false;clearTimeout(restartTimer);clearTimeout(sessionTimer);start.disabled=false;stopDictation.disabled=true;status('Chrome blocked microphone recognition. Check site microphone permission and Chrome speech service availability.')}else if(e.error!=='aborted'){status('Chrome speech service interrupted ('+e.error+'). Reconnecting…');clearTimeout(watchdog);watchdog=setTimeout(()=>{if(id===sessionId&&listening&&!speaking&&!pausedForSpeech){try{r.abort()}catch{}if(recognition===r)recognition=null;starting=false;scheduleRestart(700)}},1800)}};
+  r.onend=()=>{if(id!==sessionId)return;recognition=null;starting=false;clearTimeout(watchdog);clearTimeout(sessionTimer);if(listening&&!speaking&&!pausedForSpeech){restartDelay=Math.min(Math.max(restartDelay*1.35,500),2500);status('Chrome recognition ended. Reopening the microphone…');scheduleRestart(restartDelay)}};
   return r
  }
  function beginFreshSession(){
@@ -65,15 +65,13 @@
  }
  start.addEventListener('click',async()=>{
   if(!SR){status('Speech recognition is unavailable. Open this HTTPS page in desktop Google Chrome.');return}
-  listening=true;pausedForSpeech=false;restartDelay=500;finalText=text.value.trim()?text.value.trimEnd()+' ':'';
-  try{if(navigator.mediaDevices?.getUserMedia){const stream=await navigator.mediaDevices.getUserMedia({audio:true});stream.getTracks().forEach(t=>t.stop())}beginFreshSession()}
-  catch(e){listening=false;start.disabled=false;stopDictation.disabled=true;status('Could not access microphone: '+e.message)}
+  listening=true;pausedForSpeech=false;restartDelay=500;finalText=text.value.trim()?text.value.trimEnd()+' ':'';beginFreshSession();
  });
- stopDictation.addEventListener('click',()=>{listening=false;pausedForSpeech=false;clearTimeout(restartTimer);clearTimeout(watchdog);sessionId++;const r=recognition;recognition=null;starting=false;try{r?.abort()}catch{}start.disabled=false;stopDictation.disabled=true;status('Microphone dictation stopped.')});
+ stopDictation.addEventListener('click',()=>{listening=false;pausedForSpeech=false;clearTimeout(restartTimer);clearTimeout(watchdog);clearTimeout(sessionTimer);sessionId++;const r=recognition;recognition=null;starting=false;try{r?.abort()}catch{}start.disabled=false;stopDictation.disabled=true;status('Microphone dictation stopped.')});
  function scheduleAutoRead(){clearTimeout(autoTimer);if(!$('autoRead').checked)return;autoTimer=setTimeout(()=>{const value=text.value.trim();if(value&&value!==lastRead)readText(value,true)},1250)}
  text.addEventListener('input',()=>{finalText=text.value; scheduleAutoRead()});
  function pauseRecognitionForSpeech(){
-  if(!listening)return;pausedForSpeech=true;clearTimeout(restartTimer);clearTimeout(watchdog);sessionId++;const r=recognition;recognition=null;starting=false;try{r?.stop()}catch{}
+  if(!listening)return;pausedForSpeech=true;clearTimeout(restartTimer);clearTimeout(watchdog);clearTimeout(sessionTimer);sessionId++;const r=recognition;recognition=null;starting=false;try{r?.stop()}catch{}
  }
  function resumeRecognition(){
   if(listening){pausedForSpeech=false;finalText=text.value.trim()?text.value.trimEnd()+' ':'';scheduleRestart(500)}
@@ -100,7 +98,7 @@
  $('stopSpeech').addEventListener('click',()=>{speechSynthesis.cancel();finishSpeech('Speech stopped.')});
  $('clear').addEventListener('click',()=>{clearTimeout(autoTimer);text.value='';finalText='';lastRead='';status('Text cleared.')});
  $('language').addEventListener('change',()=>{if(listening){const r=recognition;sessionId++;recognition=null;try{r?.abort()}catch{}starting=false;scheduleRestart(300)}});
- window.addEventListener('beforeunload',()=>{listening=false;clearTimeout(restartTimer);clearTimeout(watchdog);clearTimeout(autoTimer);try{recognition?.abort();speechSynthesis.cancel()}catch{}});
+ window.addEventListener('beforeunload',()=>{listening=false;clearTimeout(restartTimer);clearTimeout(watchdog);clearTimeout(sessionTimer);clearTimeout(autoTimer);try{recognition?.abort();speechSynthesis.cancel()}catch{}});
  if(!SR){start.disabled=true;stopDictation.disabled=true;status('Chrome Speech Recognition is unavailable in this browser.')}
 })();
 </script>
