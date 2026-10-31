@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Collections.Concurrent;
 using Microsoft.Win32;
 using System.Buffers.Binary;
 using System.Net.WebSockets;
@@ -26,6 +27,7 @@ public partial class MainWindow : Window
     private HttpListener? _bridgeListener;
     private CancellationTokenSource? _bridgeCts;
     private int _bridgePort;
+    private readonly ConcurrentQueue<string> _chromeSpeechQueue = new();
     private bool _browserDictationOn;
     private WaveOutEvent? _output;
     private WaveStream? _audioReader;
@@ -99,7 +101,11 @@ public partial class MainWindow : Window
         if (VoiceBox is null || ModelBox.SelectedItem is not ComboBoxItem item) return;
         var model = item.Tag?.ToString() ?? "canopylabs/orpheus-v1-english";
         VoiceBox.Items.Clear();
-        if (model == "edge-browser")
+        if (model == "chrome-browser")
+        {
+            VoiceBox.Items.Add(new ComboBoxItem { Content = "Choose a voice in the Chrome bridge page", Tag = "chrome-default" });
+        }
+        else if (model == "edge-browser")
         {
             foreach (var voice in new[] { ("Microsoft Sonia Online (Natural) - English (United Kingdom)", "en-GB-SoniaNeural"), ("Microsoft Aria Online (Natural) - English (United States)", "en-US-AriaNeural"), ("Microsoft Ryan Online (Natural) - English (United Kingdom)", "en-GB-RyanNeural"), ("Microsoft Natasha Online (Natural) - English (Australia)", "en-AU-NatashaNeural"), ("Microsoft Jenny Online (Natural) - English (United States)", "en-US-JennyNeural") })
                 VoiceBox.Items.Add(new ComboBoxItem { Content = voice.Item1, Tag = voice.Item2 });
@@ -242,19 +248,28 @@ public partial class MainWindow : Window
         return found.Select(pair => (pair.Key, pair.Value)).ToList();
     }
 
+    private void EnsureBrowserBridgePage()
+    {
+        if (_bridgeListener is null)
+        {
+            _bridgePort = GetFreePort();
+            _bridgeListener = new HttpListener();
+            _bridgeListener.Prefixes.Add("http://127.0.0.1:" + _bridgePort + "/");
+            _bridgeListener.Start();
+            _bridgeCts = new CancellationTokenSource();
+            _ = RunBridgeServerAsync(_bridgeListener, _bridgeCts.Token);
+        }
+        if (!_browserDictationOn)
+        {
+            Process.Start(new ProcessStartInfo("chrome.exe", "http://127.0.0.1:" + _bridgePort + "/") { UseShellExecute = true });
+        }
+    }
+
     private void StartBrowserDictation_Click(object sender, RoutedEventArgs e)
     {
         try
         {
-            if (_bridgeListener is null)
-            {
-                _bridgePort = GetFreePort();
-                _bridgeListener = new HttpListener();
-                _bridgeListener.Prefixes.Add("http://127.0.0.1:" + _bridgePort + "/");
-                _bridgeListener.Start();
-                _bridgeCts = new CancellationTokenSource();
-                _ = RunBridgeServerAsync(_bridgeListener, _bridgeCts.Token);
-            }
+            EnsureBrowserBridgePage();
             _browserDictationOn = true;
             _dictationOn = true;
             StopDictationButton.IsEnabled = true;
@@ -295,7 +310,28 @@ public partial class MainWindow : Window
                 res.Headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS";
                 res.Headers["Access-Control-Allow-Headers"] = "Content-Type";
                 if (req.HttpMethod == "OPTIONS") { res.StatusCode = 204; res.Close(); continue; }
-                if (req.HttpMethod == "GET")
+                if (req.HttpMethod == "GET" && req.Url?.AbsolutePath == "/next-speech")
+                {
+                    _chromeSpeechQueue.TryDequeue(out var nextText);
+                    var payload = JsonSerializer.Serialize(nextText);
+                    var bytes = Encoding.UTF8.GetBytes(payload);
+                    res.ContentType = "application/json; charset=utf-8";
+                    res.ContentLength64 = bytes.Length;
+                    await res.OutputStream.WriteAsync(bytes);
+                }
+                else if (req.HttpMethod == "POST" && req.Url?.AbsolutePath == "/speech-done")
+                {
+                    Dispatcher.BeginInvoke(() =>
+                    {
+                        if (ClearAfterReadCheckBox.IsChecked == true) { TextBoxInput.Clear(); _lastSpoken = ""; }
+                        StatusText.Text = "Chrome finished reading.";
+                    });
+                    res.ContentType = "application/json";
+                    var bytes = Encoding.UTF8.GetBytes("{\"ok\":true}");
+                    res.ContentLength64 = bytes.Length;
+                    await res.OutputStream.WriteAsync(bytes);
+                }
+                else if (req.HttpMethod == "GET")
                 {
                     var bytes = Encoding.UTF8.GetBytes(BrowserBridgeHtml);
                     res.ContentType = "text/html; charset=utf-8";
@@ -341,6 +377,38 @@ public partial class MainWindow : Window
 <script>
 const state=document.getElementById('state'),heard=document.getElementById('heard'),start=document.getElementById('start'),stop=document.getElementById('stop');
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,running=false,transcriptClearTimer=null;
+const voicePicker=document.createElement('select');voicePicker.id='ttsVoice';voicePicker.style.cssText='font:inherit;padding:10px;margin:8px 0;width:100%;border-radius:8px';
+const voiceLabel=document.createElement('label');voiceLabel.textContent='Chrome speech voice';voiceLabel.style.display='block';voiceLabel.appendChild(voicePicker);
+document.querySelector('h1').after(voiceLabel);
+let availableVoices=[];
+function refreshVoices(){
+  availableVoices=speechSynthesis.getVoices();
+  const previous=voicePicker.value;
+  voicePicker.innerHTML='';
+  availableVoices.forEach((voice,index)=>{
+    const option=document.createElement('option');option.value=String(index);
+    option.textContent=voice.name+' ('+voice.lang+')'+(voice.default?' — default':'');
+    voicePicker.appendChild(option);
+  });
+  if(previous && Number(previous)<availableVoices.length)voicePicker.value=previous;
+}
+refreshVoices();speechSynthesis.onvoiceschanged=refreshVoices;
+async function pollSpeech(){
+  try{
+    const response=await fetch('/next-speech',{cache:'no-store'});
+    const text=await response.json();
+    if(text){
+      const utterance=new SpeechSynthesisUtterance(text);
+      const voice=availableVoices[Number(voicePicker.value)];
+      if(voice)utterance.voice=voice;
+      utterance.onend=()=>fetch('/speech-done',{method:'POST'});
+      utterance.onerror=()=>{state.textContent='Chrome could not play the selected speech voice.';};
+      speechSynthesis.cancel();speechSynthesis.speak(utterance);
+    }
+  }catch(e){}
+  setTimeout(pollSpeech,350);
+}
+pollSpeech();
 function showBridgeTranscript(text){
   heard.textContent=(heard.textContent+' '+text).trim();
   if(transcriptClearTimer)clearTimeout(transcriptClearTimer);
@@ -517,11 +585,12 @@ stop.disabled=true;
     {
         if (string.IsNullOrWhiteSpace(value) || _requestInFlight) return;
         var isLocal = SelectedModel == "local-windows";
+        var isChromeBrowser = SelectedModel == "chrome-browser";
         var selectedVoice = SelectedVoice;
         var isNarrator = SelectedModel == "windows-narrator" || selectedVoice.StartsWith("winrt:", StringComparison.Ordinal);
         var isEdgeBrowser = SelectedModel == "edge-browser";
         var key = ApiKeyBox.Password.Trim();
-        if (!isLocal && !isNarrator && !isEdgeBrowser && key.Length == 0) { SetStatus("Enter your Groq API key first, or select a free Windows voice."); return; }
+        if (!isLocal && !isNarrator && !isEdgeBrowser && !isChromeBrowser && key.Length == 0) { SetStatus("Enter your Groq API key first, or select a free Windows voice."); return; }
 
         _autoReadTimer.Stop();
         _requestInFlight = true;
@@ -531,9 +600,18 @@ stop.disabled=true;
             _isSpeaking = true;
             try { _recognizer?.RecognizeAsyncCancel(); } catch { }
         }
-        SetStatus(isNarrator ? "Generating speech with your installed Windows Narrator voice…" : isLocal ? "Generating speech locally (no API or credits)…" : isEdgeBrowser ? "Generating Microsoft Edge neural voice audio…" : "Generating audio with Groq Orpheus…");
+        SetStatus(isChromeBrowser ? "Sending text to Chrome speech synthesis…" : isNarrator ? "Generating speech with your installed Windows Narrator voice…" : isLocal ? "Generating speech locally (no API or credits)…" : isEdgeBrowser ? "Generating Microsoft Edge neural voice audio…" : "Generating audio with Groq Orpheus…");
         try
         {
+            if (isChromeBrowser)
+            {
+                EnsureBrowserBridgePage();
+                _chromeSpeechQueue.Enqueue(value);
+                _lastSpoken = value;
+                SetStatus("Sent text to Chrome. Select a voice on the Chrome speech bridge page if you have not already.");
+                if (ClearAfterReadCheckBox.IsChecked == true) { /* cleared when Chrome reports speech complete */ }
+                return;
+            }
             if (isEdgeBrowser)
             {
                 _audioPath = await GenerateEdgeMp3Async(value, SelectedVoice);
