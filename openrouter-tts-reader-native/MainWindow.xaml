@@ -1,7 +1,7 @@
 <Window x:Class="OpenRouterTtsReader.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Groq TTS Reader" Height="800" Width="1000" MinHeight="700" MinWidth="760"
+        Title="Edge TTS Reader" Height="800" Width="1000" MinHeight="700" MinWidth="760"
         WindowStartupLocation="CenterScreen">
     <Grid Margin="18">
         <Grid.RowDefinitions>
@@ -9,11 +9,11 @@
             <RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <StackPanel Grid.Row="0" Margin="0,0,0,12">
-            <TextBlock Text="Groq TTS Reader" FontSize="25" FontWeight="Bold"/>
-            <TextBlock Text="Native Windows app • Windows microphone dictation • Groq Orpheus-generated speech" Foreground="Gray" Margin="0,4,0,0"/>
+            <TextBlock Text="Edge TTS Reader" FontSize="25" FontWeight="Bold"/>
+            <TextBlock Text="Native Windows app • Windows microphone dictation • Microsoft Edge browser speech" Foreground="Gray" Margin="0,4,0,0"/>
         </StackPanel>
         <StackPanel Grid.Row="1" Margin="0,0,0,12">
-            <TextBlock Text="Groq API key" FontWeight="SemiBold" Margin="0,0,0,5"/>
+            <TextBlock Text="API key (cloud providers only)" FontWeight="SemiBold" Margin="0,0,0,5"/>
             <PasswordBox x:Name="ApiKeyBox" Padding="9" FontSize="14"/>
             <TextBlock Text="The key stays in memory for this session and is sent directly to Groq. It is not saved to disk." Foreground="Gray" TextWrapping="Wrap" Margin="0,5,0,0"/>
         </StackPanel>
@@ -26,7 +26,7 @@
                     <ComboBoxItem Content="Mistral Voxtral Mini TTS" Tag="mistralai/voxtral-mini-tts-2603"/>
                     <ComboBoxItem Content="Microsoft MAI Voice 2" Tag="microsoft/mai-voice-2"/>
                     <ComboBoxItem Content="Local Windows Voice (Free)" Tag="local-windows"/>
-                    <ComboBoxItem Content="Google Chrome Voices (Free)" Tag="google-browser"/>
+                    <ComboBoxItem Content="Microsoft Edge Voices (Free)" Tag="google-browser"/>
                 </ComboBox>
             </StackPanel>
             <StackPanel Grid.Column="2">
@@ -40,7 +40,7 @@
         </Grid>
         <WrapPanel Grid.Row="3" Margin="0,0,0,10" VerticalAlignment="Center">
             <Button x:Name="StartDictationButton" Content="Windows dictation" Padding="12,8" Margin="0,0,8,8" Click="StartDictation_Click"/>
-            <Button x:Name="StartBrowserDictationButton" Content="Chrome speech bridge" Padding="12,8" Margin="0,0,8,8" Click="StartBrowserDictation_Click"/>
+            <Button x:Name="StartBrowserDictationButton" Content="Microsoft Edge speech bridge" Padding="12,8" Margin="0,0,8,8" Click="StartBrowserDictation_Click"/>
             <Button x:Name="StopDictationButton" Content="Stop dictation" Padding="12,8" Margin="0,0,8,8" IsEnabled="False" Click="StopDictation_Click"/>
             <CheckBox x:Name="AutoReadCheckBox" Content="Automatically read finished phrases" IsChecked="True" VerticalAlignment="Center" Margin="4,0,16,8"/>
             <CheckBox x:Name="ClearAfterReadCheckBox" Content="Clear text after playback" IsChecked="True" VerticalAlignment="Center" Margin="0,0,0,8"/>
@@ -56,7 +56,7 @@
             <Button Content="Clear text" Padding="14,9" Click="Clear_Click"/>
         </WrapPanel>
         <Border Grid.Row="6" Background="{DynamicResource {x:Static SystemColors.ControlLightBrushKey}}" CornerRadius="8" Padding="10">
-            <TextBlock x:Name="StatusText" Text="Ready. Enter your API key, select an output device, then start dictation or type text." TextWrapping="Wrap"/>
+            <TextBlock x:Name="StatusText" Text="Ready. Select Microsoft Edge Voices (Free), choose a voice, then start dictation or type text." TextWrapping="Wrap"/>
         </Border>
     </Grid>
 </Window>
