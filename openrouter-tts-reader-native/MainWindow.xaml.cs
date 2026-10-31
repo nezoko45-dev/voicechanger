@@ -223,7 +223,6 @@ function showBridgeTranscript(text){
   if(transcriptClearTimer)clearTimeout(transcriptClearTimer);
   transcriptClearTimer=setTimeout(()=>{heard.textContent='';transcriptClearTimer=null},5000);
 }
-async function pollSpeech(){try{const r=await fetch('/next-speech');const j=await r.json();if(j.text){const list=speechSynthesis.getVoices();const wanted=(j.voice||'').toLowerCase();const v=list.find(x=>x.name.toLowerCase()===wanted)||list.find(x=>wanted&&x.name.toLowerCase().includes(wanted))||list.find(x=>x.default)||list[0];speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(j.text);if(v)u.voice=v;u.onend=()=>fetch('/speech-done',{method:'POST'}).catch(()=>{});u.onerror=()=>fetch('/speech-done',{method:'POST'}).catch(()=>{});speechSynthesis.speak(u);state.textContent='Reading aloud with '+(v?v.name:'browser default voice')+'…'}}catch(e){}setTimeout(pollSpeech,350)}pollSpeech();
 async function send(text){try{await fetch('/transcript',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text,final:true})})}catch(e){state.textContent='Cannot reach desktop app. Keep EXE open and reload.'}}
 if(!SR){state.textContent='SpeechRecognition unavailable. Open this page in current Chrome or Edge.';start.disabled=true}
 else{
