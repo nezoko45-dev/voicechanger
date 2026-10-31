@@ -32,7 +32,7 @@ public partial class MainWindow : Window
     private string? _audioPath;
     private readonly Dictionary<string, (string Value, string Label)[]> _voices = new()
     {
-        ["x-ai/grok-voice-tts-1.0"] = new[] { ("eve", "Eve — feminine"), ("ara", "Ara"), ("rex", "Rex"), ("sal", "Sal"), ("leo", "Leo") },
+        ["canopylabs/orpheus-v1-english"] = new[] { ("hannah", "Hannah — female"), ("autumn", "Autumn — female"), ("diana", "Diana — female"), ("austin", "Austin — male"), ("daniel", "Daniel — male"), ("troy", "Troy — male") },
         ["mistralai/voxtral-mini-tts-2603"] = new[] { ("en_paul_neutral", "Paul — neutral English") },
         ["microsoft/mai-voice-2"] = new[] { ("en-US-Harper:MAI-Voice-2", "Harper — US English") }
     };
@@ -52,7 +52,7 @@ public partial class MainWindow : Window
         LoadOutputDevices();
     }
 
-    private string SelectedModel => (ModelBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "x-ai/grok-voice-tts-1.0";
+    private string SelectedModel => (ModelBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "canopylabs/orpheus-v1-english";
     private string SelectedVoice => (VoiceBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "eve";
 
     private void LoadOutputDevices()
@@ -82,7 +82,7 @@ public partial class MainWindow : Window
     private void UpdateVoices()
     {
         if (VoiceBox is null || ModelBox.SelectedItem is not ComboBoxItem item) return;
-        var model = item.Tag?.ToString() ?? "x-ai/grok-voice-tts-1.0";
+        var model = item.Tag?.ToString() ?? "canopylabs/orpheus-v1-english";
         VoiceBox.Items.Clear();
         if (model == "google-browser")
         {
@@ -409,7 +409,7 @@ stop.disabled=true;
             SetStatus("Sent text to Chrome speech. Playback uses Chrome's selected audio output.");
             return;
         }
-        if (!isLocal && key.Length == 0) { SetStatus("Enter your OpenRouter API key first, or select Local Windows Voice (Free)."); return; }
+        if (!isLocal && key.Length == 0) { SetStatus("Enter your Groq API key first, or select Local Windows Voice (Free)."); return; }
 
         _autoReadTimer.Stop();
         _requestInFlight = true;
@@ -419,7 +419,7 @@ stop.disabled=true;
             _isSpeaking = true;
             try { _recognizer?.RecognizeAsyncCancel(); } catch { }
         }
-        SetStatus(isLocal ? "Generating speech locally (no API or credits)…" : "Generating audio with OpenRouter…");
+        SetStatus(isLocal ? "Generating speech locally (no API or credits)…" : "Generating audio with Groq Orpheus…");
         try
         {
             if (isLocal)
@@ -439,23 +439,7 @@ stop.disabled=true;
                 return;
             }
 
-            var body = JsonSerializer.Serialize(new { model = SelectedModel, input = value, voice = SelectedVoice, response_format = "mp3" });
-            using var request = new HttpRequestMessage(HttpMethod.Post, "https://openrouter.ai/api/v1/audio/speech");
-            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", key);
-            request.Headers.TryAddWithoutValidation("HTTP-Referer", "https://github.com/nezoko45-dev/voicechanger");
-            request.Headers.TryAddWithoutValidation("X-OpenRouter-Title", "OpenRouter TTS Reader Native");
-            request.Content = new StringContent(body, Encoding.UTF8, "application/json");
-            using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-            var bytes = await response.Content.ReadAsByteArrayAsync();
-            if (!response.IsSuccessStatusCode)
-            {
-                var detail = Encoding.UTF8.GetString(bytes);
-                try { detail = JsonDocument.Parse(detail).RootElement.GetProperty("error").GetProperty("message").GetString() ?? detail; } catch { }
-                throw new InvalidOperationException($"OpenRouter HTTP {(int)response.StatusCode}: {detail}");
-            }
-            if (bytes.Length == 0) throw new InvalidOperationException("OpenRouter returned an empty audio response.");
-            _audioPath = Path.Combine(Path.GetTempPath(), $"openrouter-tts-{Guid.NewGuid():N}.mp3");
-            await File.WriteAllBytesAsync(_audioPath, bytes);
+            _audioPath = await GenerateGroqWavAsync(value, key);
             await Dispatcher.InvokeAsync(() => StartPlayback(_audioPath, value, automatic));
         }
         catch (Exception ex)
