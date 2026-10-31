@@ -450,20 +450,32 @@ stop.disabled=true;
 
 
 
-    // Runs bundled edge-tts 7.3.1, which implements Microsoft's v2 Sec-MS-GEC handshake.
-    // The CI build packages it as a standalone executable; no Python install is needed.
+    // Uses the bundled native Rust Edge TTS helper (no Python runtime).
     private async Task<string> GenerateEdgeMp3Async(string text, string voice)
     {
         if (string.IsNullOrWhiteSpace(voice))
             throw new InvalidOperationException("Select a Microsoft Edge neural voice.");
-        var executable = Path.Combine(AppContext.BaseDirectory, "edge-tts.exe");
+
+        var executable = Path.Combine(AppContext.BaseDirectory, "edge-tts-native.exe");
         if (!File.Exists(executable))
-            throw new FileNotFoundException("Bundled Edge TTS engine is missing. Download the complete Windows build.", executable);
+            throw new FileNotFoundException("The native Edge TTS engine is missing. Download the complete Windows build.", executable);
+
         var path = Path.Combine(Path.GetTempPath(), $"edge-tts-{Guid.NewGuid():N}.mp3");
-        var start = new ProcessStartInfo { FileName = executable, UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true, RedirectStandardOutput = true };
-        start.ArgumentList.Add("--voice"); start.ArgumentList.Add(voice);
-        start.ArgumentList.Add("--text"); start.ArgumentList.Add(text);
-        start.ArgumentList.Add("--write-media"); start.ArgumentList.Add(path);
+        var start = new ProcessStartInfo
+        {
+            FileName = executable,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardError = true,
+            RedirectStandardOutput = true
+        };
+        start.ArgumentList.Add("--voice");
+        start.ArgumentList.Add(voice);
+        start.ArgumentList.Add("--text");
+        start.ArgumentList.Add(text);
+        start.ArgumentList.Add("--output");
+        start.ArgumentList.Add(path);
+
         try
         {
             using var process = new Process { StartInfo = start };
@@ -473,27 +485,18 @@ stop.disabled=true;
             await process.WaitForExitAsync();
             var stderr = await stderrTask;
             _ = await stdoutTask;
+
             if (process.ExitCode != 0)
-                throw new InvalidOperationException("Edge TTS failed (" + process.ExitCode + "): " + stderr.Trim());
+                throw new InvalidOperationException("Native Edge TTS failed (" + process.ExitCode + "): " + stderr.Trim());
             if (!File.Exists(path) || new FileInfo(path).Length == 0)
                 throw new InvalidOperationException("Microsoft Edge TTS returned an empty audio file. " + stderr.Trim());
             return path;
         }
-        catch { try { if (File.Exists(path)) File.Delete(path); } catch { } throw; }
-    }
-
-    private static IEnumerable<string> SplitForGroq(string text, int maxChars = 190)
-    {
-        var remaining = text.Trim();
-        while (remaining.Length > maxChars)
+        catch
         {
-            var cut = remaining.LastIndexOfAny(new[] { '.', '!', '?', ';', ',', ' ' }, maxChars - 1);
-            if (cut < maxChars / 2) cut = maxChars;
-            var part = remaining[..cut].Trim();
-            if (part.Length > 0) yield return part;
-            remaining = remaining[cut..].Trim();
+            try { if (File.Exists(path)) File.Delete(path); } catch { }
+            throw;
         }
-        if (remaining.Length > 0) yield return remaining;
     }
 
     private async Task<string> GenerateGroqWavAsync(string text, string apiKey)
