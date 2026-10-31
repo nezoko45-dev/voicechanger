@@ -10,7 +10,7 @@
         </Grid.RowDefinitions>
         <StackPanel Grid.Row="0" Margin="0,0,0,12">
             <TextBlock Text="Edge TTS Reader" FontSize="25" FontWeight="Bold"/>
-            <TextBlock Text="Native Windows app • Windows microphone dictation • Microsoft Edge browser speech" Foreground="Gray" Margin="0,4,0,0"/>
+            <TextBlock Text="Native Windows app • Edge neural voices routed through NAudio • Selectable audio output" Foreground="Gray" Margin="0,4,0,0"/>
         </StackPanel>
         <StackPanel Grid.Row="1" Margin="0,0,0,12">
             <TextBlock Text="API key (cloud providers only)" FontWeight="SemiBold" Margin="0,0,0,5"/>
@@ -40,7 +40,7 @@
         </Grid>
         <WrapPanel Grid.Row="3" Margin="0,0,0,10" VerticalAlignment="Center">
             <Button x:Name="StartDictationButton" Content="Windows dictation" Padding="12,8" Margin="0,0,8,8" Click="StartDictation_Click"/>
-            <Button x:Name="StartBrowserDictationButton" Content="Microsoft Edge speech bridge" Padding="12,8" Margin="0,0,8,8" Click="StartBrowserDictation_Click"/>
+            <Button x:Name="StartBrowserDictationButton" Content="Edge microphone dictation" Padding="12,8" Margin="0,0,8,8" Click="StartBrowserDictation_Click"/>
             <Button x:Name="StopDictationButton" Content="Stop dictation" Padding="12,8" Margin="0,0,8,8" IsEnabled="False" Click="StopDictation_Click"/>
             <CheckBox x:Name="AutoReadCheckBox" Content="Automatically read finished phrases" IsChecked="True" VerticalAlignment="Center" Margin="4,0,16,8"/>
             <CheckBox x:Name="ClearAfterReadCheckBox" Content="Clear text after playback" IsChecked="True" VerticalAlignment="Center" Margin="0,0,0,8"/>
