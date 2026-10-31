@@ -455,6 +455,72 @@ stop.disabled=true;
         }
     }
 
+
+    private static IEnumerable<string> SplitForGroq(string text, int maxChars = 190)
+    {
+        var remaining = text.Trim();
+        while (remaining.Length > maxChars)
+        {
+            var cut = remaining.LastIndexOfAny(new[] { '.', '!', '?', ';', ',', ' ' }, maxChars - 1);
+            if (cut < maxChars / 2) cut = maxChars;
+            var part = remaining[..cut].Trim();
+            if (part.Length > 0) yield return part;
+            remaining = remaining[cut..].Trim();
+        }
+        if (remaining.Length > 0) yield return remaining;
+    }
+
+    private async Task<string> GenerateGroqWavAsync(string text, string apiKey)
+    {
+        var chunks = SplitForGroq(text).ToArray();
+        if (chunks.Length == 0) throw new InvalidOperationException("There is no text to read.");
+        var tempFiles = new List<string>();
+        try
+        {
+            foreach (var chunk in chunks)
+            {
+                var body = JsonSerializer.Serialize(new { model = SelectedModel, input = chunk, voice = SelectedVoice, response_format = "wav" });
+                using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.groq.com/openai/v1/audio/speech");
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+                request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+                using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+                var bytes = await response.Content.ReadAsByteArrayAsync();
+                if (!response.IsSuccessStatusCode)
+                {
+                    var detail = Encoding.UTF8.GetString(bytes);
+                    try { detail = JsonDocument.Parse(detail).RootElement.GetProperty("error").GetProperty("message").GetString() ?? detail; } catch { }
+                    throw new InvalidOperationException($"Groq HTTP {(int)response.StatusCode}: {detail}");
+                }
+                if (bytes.Length == 0) throw new InvalidOperationException("Groq returned an empty audio response.");
+                var partPath = Path.Combine(Path.GetTempPath(), $"groq-tts-part-{Guid.NewGuid():N}.wav");
+                await File.WriteAllBytesAsync(partPath, bytes);
+                tempFiles.Add(partPath);
+            }
+
+            var combinedPath = Path.Combine(Path.GetTempPath(), $"groq-tts-{Guid.NewGuid():N}.wav");
+            using var first = new WaveFileReader(tempFiles[0]);
+            using (var writer = new WaveFileWriter(combinedPath, first.WaveFormat))
+            {
+                foreach (var partPath in tempFiles)
+                {
+                    using var reader = new WaveFileReader(partPath);
+                    if (!reader.WaveFormat.Equals(first.WaveFormat))
+                        throw new InvalidOperationException("Groq returned audio chunks with incompatible WAV formats.");
+                    var buffer = new byte[65536];
+                    int read;
+                    while ((read = reader.Read(buffer, 0, buffer.Length)) > 0)
+                        writer.Write(buffer, 0, read);
+                }
+            }
+            return combinedPath;
+        }
+        finally
+        {
+            foreach (var file in tempFiles)
+                try { File.Delete(file); } catch { }
+        }
+    }
+
     private void StartPlayback(string path, string value, bool automatic)
     {
         StopPlaybackResources();
