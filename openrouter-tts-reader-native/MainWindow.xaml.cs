@@ -98,7 +98,7 @@ public partial class MainWindow : Window
         VoiceBox.Items.Clear();
         if (model == "edge-browser")
         {
-            foreach (var voice in new[] { ("Microsoft Aria Online (Natural) - English (United States)", "en-US-AriaNeural"), ("Microsoft Sonia Online (Natural) - English (United Kingdom)", "en-GB-SoniaNeural"), ("Microsoft Ryan Online (Natural) - English (United Kingdom)", "en-GB-RyanNeural"), ("Microsoft Natasha Online (Natural) - English (Australia)", "en-AU-NatashaNeural"), ("Microsoft Jenny Online (Natural) - English (United States)", "en-US-JennyNeural") })
+            foreach (var voice in new[] { ("Microsoft Sonia Online (Natural) - English (United Kingdom)", "en-GB-SoniaNeural"), ("Microsoft Aria Online (Natural) - English (United States)", "en-US-AriaNeural"), ("Microsoft Ryan Online (Natural) - English (United Kingdom)", "en-GB-RyanNeural"), ("Microsoft Natasha Online (Natural) - English (Australia)", "en-AU-NatashaNeural"), ("Microsoft Jenny Online (Natural) - English (United States)", "en-US-JennyNeural") })
                 VoiceBox.Items.Add(new ComboBoxItem { Content = voice.Item1, Tag = voice.Item2 });
         }
         else if (model == "local-windows")
