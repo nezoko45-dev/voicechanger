@@ -3,17 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Chrome Voice Dictation & Reader</title>
+<title>Microsoft Edge Voice Dictation & Reader</title>
 <style>
 :root{color-scheme:light dark;font:16px system-ui}body{max-width:850px;margin:28px auto;padding:0 18px}h1{font-size:1.7rem}.muted{opacity:.78;line-height:1.5}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}label{display:block;font-weight:600;margin:14px 0 6px}select,textarea,button{font:inherit;padding:10px;border-radius:9px;max-width:100%}select{box-sizing:border-box;width:100%}textarea{box-sizing:border-box;width:100%;min-height:230px;resize:vertical}button{cursor:pointer}button:disabled{opacity:.5}#status{padding:12px;border-radius:10px;background:color-mix(in srgb,CanvasText 8%,Canvas);white-space:pre-wrap}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.notice{border:1px solid color-mix(in srgb,CanvasText 20%,transparent);border-radius:10px;padding:12px}
 </style>
 </head>
 <body>
-<h1>Chrome Voice Dictation & Reader</h1>
-<p class="muted">A browser-only voice page. Chrome handles microphone dictation and reads text aloud using voices available to Chrome on this computer. No EXE, API key, Python, or local server.</p>
+<h1>Microsoft Edge Voice Dictation & Reader</h1>
+<p class="muted">A browser-only voice page. Microsoft Edge handles microphone dictation and reads text aloud using voices available to Edge, including Microsoft online neural voices when exposed by your Edge installation. No EXE, API key, Python, or local server.</p>
 <div class="notice"><strong>Microphone:</strong> Open this GitHub Pages site over HTTPS, click Start microphone dictation, and allow microphone access. For best results while reading aloud, use headphones so the microphone does not hear the computer's speaker.</div>
 <div class="grid">
- <div><label for="voice">Chrome speech voice</label><select id="voice"><option>Loading Chrome voices…</option></select></div>
+ <div><label for="voice">Microsoft Edge speech voice</label><select id="voice"><option>Loading Chrome voices…</option></select></div>
  <div><label for="language">Dictation language</label><select id="language"><option value="en-US">English (United States)</option><option value="en-GB">English (United Kingdom)</option><option value="en-AU">English (Australia)</option><option value="en-CA">English (Canada)</option><option value="en">English (automatic)</option></select></div>
 </div>
 <div class="row">
@@ -26,8 +26,8 @@
  <label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500"><input id="clearAfterRead" type="checkbox" checked> Clear text after it is read</label>
 </div>
 <div class="row"><button id="read">Read aloud</button><button id="pause" disabled>Pause</button><button id="resume" disabled>Resume</button><button id="stopSpeech" disabled>Stop speech</button><button id="clear">Clear text</button></div>
-<p id="status" role="status">Ready. Select a Chrome voice, allow microphone access, then start dictation.</p>
-<p class="muted"><small>The voice list is supplied by Chrome and Windows. If a voice does not appear, it is not currently exposed to this Chrome profile. Voices can load a moment after the page opens.</small></p>
+<p id="status" role="status">Ready. Open this page in Microsoft Edge, select a Microsoft voice, allow microphone access, then start dictation.</p>
+<p class="muted"><small>The voice list comes directly from Microsoft Edge and Windows. Microsoft online neural voices may appear after Edge finishes loading its voice service. If a voice is missing, Edge is not exposing it to this page.</small></p>
 <script>
 (()=>{
  const $=id=>document.getElementById(id),text=$('text'),voiceSelect=$('voice'),start=$('start'),stopDictation=$('stopDictation');
@@ -37,11 +37,12 @@
  function loadVoices(){
   availableVoices=window.speechSynthesis? speechSynthesis.getVoices():[];
   const previous=voiceSelect.value;voiceSelect.replaceChildren();
-  if(!availableVoices.length){const o=document.createElement('option');o.textContent='No Chrome speech voices available';voiceSelect.append(o);return}
+  if(!availableVoices.length){const o=document.createElement('option');o.textContent='No Microsoft Edge speech voices available';voiceSelect.append(o);return}
   availableVoices.forEach((v,i)=>{const o=document.createElement('option');o.value=String(i);o.textContent=v.name+' — '+v.lang+(v.default?' (default)':'');voiceSelect.append(o)});
+  const microsoftNatural=availableVoices.findIndex(v=>/^en/i.test(v.lang)&&/microsoft/i.test(v.name)&&/(online|natural)/i.test(v.name));
   const preferred=availableVoices.findIndex(v=>v.lang==='en-GB'&&/female|zira|susan|hazel|libby|sonia|aria/i.test(v.name));
   const fallback=availableVoices.findIndex(v=>v.lang.startsWith('en-'));
-  voiceSelect.value=availableVoices[Number(previous)]?previous:String(preferred>=0?preferred:fallback>=0?fallback:0);
+  voiceSelect.value=availableVoices[Number(previous)]?previous:String(microsoftNatural>=0?microsoftNatural:preferred>=0?preferred:fallback>=0?fallback:0);
  }
  if(window.speechSynthesis){loadVoices();speechSynthesis.onvoiceschanged=loadVoices;setTimeout(loadVoices,700)}
  function chosenVoice(){return availableVoices[Number(voiceSelect.value)]||null}
@@ -53,8 +54,8 @@
   const r=new SR();r.continuous=true;r.interimResults=true;r.lang=$('language').value;
   r.onstart=()=>{if(id!==sessionId)return;starting=false;clearTimeout(watchdog);clearTimeout(sessionTimer);restartDelay=500;start.disabled=true;stopDictation.disabled=false;status('Listening to your microphone…');sessionTimer=setTimeout(()=>{if(id===sessionId&&listening&&!speaking&&!pausedForSpeech){status('Refreshing Chrome speech session…');try{r.stop()}catch{scheduleRestart(500)} }},55000)};
   r.onresult=e=>{if(id!==sessionId)return;let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const phrase=e.results[i][0].transcript;if(e.results[i].isFinal){finalText+=phrase.trim()+' ';scheduleAutoRead()}else interim+=phrase}text.value=finalText+interim;text.scrollTop=text.scrollHeight};
-  r.onerror=e=>{if(id!==sessionId)return;starting=false;clearTimeout(watchdog);if(e.error==='not-allowed'||e.error==='service-not-allowed'){listening=false;clearTimeout(restartTimer);clearTimeout(sessionTimer);start.disabled=false;stopDictation.disabled=true;status('Chrome blocked microphone recognition. Check site microphone permission and Chrome speech service availability.')}else if(e.error!=='aborted'){status('Chrome speech service interrupted ('+e.error+'). Reconnecting…');clearTimeout(watchdog);watchdog=setTimeout(()=>{if(id===sessionId&&listening&&!speaking&&!pausedForSpeech){try{r.abort()}catch{}if(recognition===r)recognition=null;starting=false;scheduleRestart(700)}},1800)}};
-  r.onend=()=>{if(id!==sessionId)return;recognition=null;starting=false;clearTimeout(watchdog);clearTimeout(sessionTimer);if(listening&&!speaking&&!pausedForSpeech){restartDelay=Math.min(Math.max(restartDelay*1.35,500),2500);status('Chrome recognition ended. Reopening the microphone…');scheduleRestart(restartDelay)}};
+  r.onerror=e=>{if(id!==sessionId)return;starting=false;clearTimeout(watchdog);if(e.error==='not-allowed'||e.error==='service-not-allowed'){listening=false;clearTimeout(restartTimer);clearTimeout(sessionTimer);start.disabled=false;stopDictation.disabled=true;status('Microsoft Edge blocked microphone recognition. Check site microphone permission and Edge speech service availability.')}else if(e.error!=='aborted'){status('Edge speech service interrupted ('+e.error+'). Reconnecting…');clearTimeout(watchdog);watchdog=setTimeout(()=>{if(id===sessionId&&listening&&!speaking&&!pausedForSpeech){try{r.abort()}catch{}if(recognition===r)recognition=null;starting=false;scheduleRestart(700)}},1800)}};
+  r.onend=()=>{if(id!==sessionId)return;recognition=null;starting=false;clearTimeout(watchdog);clearTimeout(sessionTimer);if(listening&&!speaking&&!pausedForSpeech){restartDelay=Math.min(Math.max(restartDelay*1.35,500),2500);status('Edge recognition ended. Reopening the microphone…');scheduleRestart(restartDelay)}};
   return r
  }
  function beginFreshSession(){
@@ -64,7 +65,7 @@
   catch(e){starting=false;recognition=null;restartDelay=Math.min(Math.max(restartDelay*2,1000),6000);scheduleRestart(restartDelay)}
  }
  start.addEventListener('click',async()=>{
-  if(!SR){status('Speech recognition is unavailable. Open this HTTPS page in desktop Google Chrome.');return}
+  if(!SR){status('Speech recognition is unavailable. Open this HTTPS page in desktop Microsoft Edge.');return}
   listening=true;pausedForSpeech=false;restartDelay=500;finalText=text.value.trim()?text.value.trimEnd()+' ':'';beginFreshSession();
  });
  stopDictation.addEventListener('click',()=>{listening=false;pausedForSpeech=false;clearTimeout(restartTimer);clearTimeout(watchdog);clearTimeout(sessionTimer);sessionId++;const r=recognition;recognition=null;starting=false;try{r?.abort()}catch{}start.disabled=false;stopDictation.disabled=true;status('Microphone dictation stopped.')});
@@ -99,7 +100,7 @@
  $('clear').addEventListener('click',()=>{clearTimeout(autoTimer);text.value='';finalText='';lastRead='';status('Text cleared.')});
  $('language').addEventListener('change',()=>{if(listening){const r=recognition;sessionId++;recognition=null;try{r?.abort()}catch{}starting=false;scheduleRestart(300)}});
  window.addEventListener('beforeunload',()=>{listening=false;clearTimeout(restartTimer);clearTimeout(watchdog);clearTimeout(sessionTimer);clearTimeout(autoTimer);try{recognition?.abort();speechSynthesis.cancel()}catch{}});
- if(!SR){start.disabled=true;stopDictation.disabled=true;status('Chrome Speech Recognition is unavailable in this browser.')}
+ if(!SR){start.disabled=true;stopDictation.disabled=true;status('Microsoft Edge Speech Recognition is unavailable in this browser.')}
 })();
 </script>
 </body>
