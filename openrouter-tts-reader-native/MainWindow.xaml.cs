@@ -155,9 +155,11 @@ public partial class MainWindow : Window
             }
 
             var registered = GetOneCoreVoiceRegistrations();
-            var registeredSonia = registered.FirstOrDefault(v =>
-                v.Name.Contains("Sonia", StringComparison.OrdinalIgnoreCase) ||
-                v.Token.Contains("Sonia", StringComparison.OrdinalIgnoreCase));
+            (string Token, string Name)? registeredSonia = registered
+                .Where(v => v.Name.Contains("Sonia", StringComparison.OrdinalIgnoreCase) ||
+                            v.Token.Contains("Sonia", StringComparison.OrdinalIgnoreCase))
+                .Select(v => ((string Token, string Name)?)v)
+                .FirstOrDefault();
             var runtimeSonia = runtimeVoices.FirstOrDefault(v =>
                 v.DisplayName.Contains("Sonia", StringComparison.OrdinalIgnoreCase) ||
                 v.Id.Contains("Sonia", StringComparison.OrdinalIgnoreCase));
