@@ -22,11 +22,11 @@
             <StackPanel Grid.Column="0">
                 <TextBlock Text="Speech model" FontWeight="SemiBold" Margin="0,0,0,5"/>
                 <ComboBox x:Name="ModelBox" Padding="7" SelectionChanged="ModelBox_SelectionChanged">
-                    <ComboBoxItem Content="Groq Orpheus English TTS" Tag="canopylabs/orpheus-v1-english" IsSelected="True"/>
+                    <ComboBoxItem Content="Groq Orpheus English TTS" Tag="canopylabs/orpheus-v1-english"/>
                     <ComboBoxItem Content="Mistral Voxtral Mini TTS" Tag="mistralai/voxtral-mini-tts-2603"/>
                     <ComboBoxItem Content="Microsoft MAI Voice 2" Tag="microsoft/mai-voice-2"/>
                     <ComboBoxItem Content="Local Windows Voice (Free)" Tag="local-windows"/>
-                    <ComboBoxItem Content="Microsoft Edge Voices (Free)" Tag="edge-browser"/>
+                    <ComboBoxItem Content="Microsoft Edge Voices (Free)" Tag="edge-browser" IsSelected="True"/>
                 </ComboBox>
             </StackPanel>
             <StackPanel Grid.Column="2">
