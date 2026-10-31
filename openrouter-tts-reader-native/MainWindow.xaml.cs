@@ -50,6 +50,7 @@ public partial class MainWindow : Window
         };
         UpdateVoices();
         LoadOutputDevices();
+        UpdateOutputDeviceAvailability();
     }
 
     private string SelectedModel => (ModelBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "canopylabs/orpheus-v1-english";
@@ -77,6 +78,19 @@ public partial class MainWindow : Window
     private void ModelBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (VoiceBox is not null) UpdateVoices();
+        UpdateOutputDeviceAvailability();
+    }
+
+    private void UpdateOutputDeviceAvailability()
+    {
+        if (OutputDeviceBox is null || ModelBox.SelectedItem is not ComboBoxItem item) return;
+        var edgeMode = item.Tag?.ToString() == "edge-browser";
+        OutputDeviceBox.IsEnabled = !edgeMode;
+        OutputDeviceBox.ToolTip = edgeMode
+            ? "Edge browser speech uses the Windows default output device. The app cannot route SpeechSynthesis to a separate device."
+            : "Select the Windows audio output used by desktop-app playback.";
+        if (edgeMode)
+            SetStatus("Edge speech uses the Windows default output device. Change the Windows output device to redirect it.");
     }
 
     private void UpdateVoices()
