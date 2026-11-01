@@ -10,23 +10,35 @@ main{width:min(720px,100%);padding:28px;border:1px solid #343d50;border-radius:1
 h1{margin:0 0 8px;font-size:1.8rem}p{color:#b8c1d1;line-height:1.5}
 label{display:block;margin:20px 0 8px;font-weight:650}
 textarea,input,button{width:100%;padding:13px 14px;border-radius:10px;border:1px solid #46516a;background:#101722;color:#fff;font:inherit}
-textarea{min-height:145px;resize:vertical}button{margin-top:16px;background:#586ce8;border-color:#586ce8;font-weight:700;cursor:pointer}
+textarea{min-height:145px;resize:vertical}button{margin-top:12px;background:#586ce8;border-color:#586ce8;font-weight:700;cursor:pointer}
 button:hover{background:#6c7df0}button:disabled{opacity:.55;cursor:not-allowed}
-#status{margin-top:18px;padding:13px;border-radius:10px;background:#101722;color:#b8c1d1;min-height:48px;white-space:pre-wrap}
+#status,#dictationStatus{margin-top:14px;padding:13px;border-radius:10px;background:#101722;color:#b8c1d1;min-height:44px;white-space:pre-wrap}
 .ok{color:#91e3b0!important}.error{color:#ff9c9c!important}
 audio{width:100%;margin-top:18px}.hint,small{color:#8792a6}
-#download{display:none;color:#aebaff;margin-top:12px;display:none}
+#download{color:#aebaff;margin-top:12px;display:none}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#startDictation{background:#287c58;border-color:#287c58}
+#stopDictation{background:#6a3942;border-color:#6a3942}
+@media(max-width:520px){main{padding:20px}.controls{grid-template-columns:1fr}}
 </style>
 </head>
 <body><main>
 <h1>Chatterbox Voice Cloning</h1>
-<p>Upload a clean reference recording, enter what you want spoken, and generate new speech in the reference speaker's voice using your PC's local Chatterbox engine.</p>
+<p>Upload a clean reference recording, dictate or type your text, and generate new speech in the reference speaker's voice using your PC's local Chatterbox engine.</p>
 <div id="status" role="status" aria-live="polite">Checking local Chatterbox engine…</div>
 <label for="reference">Reference voice (WAV)</label>
 <input id="reference" type="file" accept=".wav,audio/wav">
 <p class="hint">A clear recording of around 5–10 seconds works well. Use a voice you have permission to clone.</p>
+
 <label for="text">Text to speak</label>
-<textarea id="text" placeholder="Type the words you want the cloned voice to say…"></textarea>
+<textarea id="text" placeholder="Start dictation or type the words you want the cloned voice to say…"></textarea>
+<div class="controls">
+ <button id="startDictation" type="button">Start continuous dictation</button>
+ <button id="stopDictation" type="button" disabled>Stop dictation</button>
+</div>
+<div id="dictationStatus" role="status" aria-live="polite">Dictation is stopped.</div>
+<p class="hint">Uses Chrome's built-in speech recognition. It automatically starts a fresh recognition session about every 50 seconds and restarts if Chrome ends a session unexpectedly. Keep this tab open and allow microphone access.</p>
+
 <button id="generate" type="button" disabled>Generate cloned voice</button>
 <audio id="player" controls hidden></audio>
 <a id="download" download="chatterbox-cloned-voice.wav">Download cloned WAV</a>
@@ -34,13 +46,23 @@ audio{width:100%;margin-top:18px}.hint,small{color:#8792a6}
 (() => {
  const API='http://127.0.0.1:8765';
  const status=document.getElementById('status');
+ const dictationStatus=document.getElementById('dictationStatus');
  const reference=document.getElementById('reference');
  const text=document.getElementById('text');
  const generate=document.getElementById('generate');
+ const startDictation=document.getElementById('startDictation');
+ const stopDictation=document.getElementById('stopDictation');
  const player=document.getElementById('player');
  const download=document.getElementById('download');
+ const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
  let engineReady=false, outputUrl=null;
+ let dictating=false, recognition=null, rotationTimer=null, restartTimer=null;
+ let sessionGeneration=0, restartDelay=700, intentionalStop=false;
+ const SESSION_ROTATE_MS=50000;
+
  function say(message,kind=''){status.textContent=message;status.className=kind;}
+ function dictationMessage(message,kind=''){dictationStatus.textContent=message;dictationStatus.className=kind;}
+
  async function check(){
    try{
      const r=await fetch(API+'/api/status');
@@ -54,11 +76,126 @@ audio{width:100%;margin-top:18px}.hint,small{color:#8792a6}
      say('Local Chatterbox engine is not running. Double-click Start-Chatterbox.bat and keep its engine window open. ('+e.message+')','error');
    }
  }
+
+ function clearSessionTimers(){
+   if(rotationTimer){clearTimeout(rotationTimer);rotationTimer=null;}
+   if(restartTimer){clearTimeout(restartTimer);restartTimer=null;}
+ }
+ function scheduleFreshSession(delay=0){
+   if(!dictating||restartTimer)return;
+   restartTimer=setTimeout(()=>{
+     restartTimer=null;
+     if(dictating) startRecognitionSession();
+   },delay);
+ }
+ function startRecognitionSession(){
+   if(!dictating)return;
+   clearSessionTimers();
+   const myGeneration=++sessionGeneration;
+   const rec=new SpeechRecognition();
+   recognition=rec;
+   rec.lang='en-US';
+   rec.continuous=true;
+   rec.interimResults=false;
+   rec.maxAlternatives=1;
+
+   rec.onstart=()=>{
+     if(myGeneration!==sessionGeneration)return;
+     restartDelay=700;
+     dictationMessage('Listening continuously… Chrome recognition session is active.','ok');
+     rotationTimer=setTimeout(()=>{
+       if(!dictating||myGeneration!==sessionGeneration)return;
+       dictationMessage('Refreshing the recognition session to keep dictation running…','ok');
+       try{rec.stop();}catch{scheduleFreshSession(150);}
+     },SESSION_ROTATE_MS);
+   };
+   rec.onresult=(event)=>{
+     if(myGeneration!==sessionGeneration)return;
+     let finalText='';
+     for(let i=event.resultIndex;i<event.results.length;i++){
+       if(event.results[i].isFinal){
+         const phrase=event.results[i][0].transcript.trim();
+         if(phrase)finalText+= (finalText?' ':'')+phrase;
+       }
+     }
+     if(finalText){
+       const before=text.value;
+       const needsSpace=before.length>0&&!/[\\s]$/.test(before);
+       text.value=before+(needsSpace?' ':'')+finalText;
+       text.dispatchEvent(new Event('input',{bubbles:true}));
+       dictationMessage('Added: '+finalText,'ok');
+     }
+   };
+   rec.onerror=(event)=>{
+     if(myGeneration!==sessionGeneration||!dictating)return;
+     if(event.error==='not-allowed'||event.error==='service-not-allowed'){
+       dictating=false;intentionalStop=true;clearSessionTimers();recognition=null;
+       startDictation.disabled=false;stopDictation.disabled=true;
+       dictationMessage('Microphone permission was denied. Allow microphone access for this GitHub Pages site, then press Start again.','error');
+       return;
+     }
+     if(event.error==='audio-capture'){
+       dictationMessage('No microphone was found. Check your Windows input device. Retrying…','error');
+     }else if(event.error==='network'){
+       dictationMessage('Chrome speech recognition reported a network error. Retrying a fresh session…','error');
+     }else if(event.error!=='no-speech'&&event.error!=='aborted'){
+       dictationMessage('Speech recognition error: '+event.error+'. Retrying…','error');
+     }
+   };
+   rec.onend=()=>{
+     if(myGeneration!==sessionGeneration)return;
+     if(recognition===rec)recognition=null;
+     if(!dictating||intentionalStop)return;
+     if(rotationTimer){clearTimeout(rotationTimer);rotationTimer=null;}
+     dictationMessage('Chrome ended that session. Starting a fresh one…');
+     const delay=restartDelay;
+     restartDelay=Math.min(restartDelay*1.7,8000);
+     scheduleFreshSession(delay);
+   };
+   try{
+     rec.start();
+     rotationTimer=setTimeout(()=>{
+       if(!dictating||myGeneration!==sessionGeneration)return;
+       dictationMessage('Refreshing recognition session…','ok');
+       try{rec.stop();}catch{scheduleFreshSession(200);}
+     },SESSION_ROTATE_MS);
+   }catch(error){
+     if(myGeneration===sessionGeneration){
+       dictationMessage('Could not start speech recognition: '+error.message+'. Retrying…','error');
+       scheduleFreshSession(restartDelay);
+       restartDelay=Math.min(restartDelay*1.7,8000);
+     }
+   }
+ }
+
+ function beginDictation(){
+   if(!SpeechRecognition){
+     dictationMessage('Chrome Speech Recognition is not available in this browser. Open this page in Google Chrome.','error');
+     return;
+   }
+   if(dictating)return;
+   dictating=true;intentionalStop=false;restartDelay=700;
+   startDictation.disabled=true;stopDictation.disabled=false;
+   dictationMessage('Requesting microphone and starting Chrome speech recognition…');
+   startRecognitionSession();
+ }
+ function endDictation(){
+   dictating=false;intentionalStop=true;sessionGeneration++;
+   clearSessionTimers();
+   const active=recognition;recognition=null;
+   if(active){try{active.stop();}catch{try{active.abort();}catch{}}}
+   startDictation.disabled=false;stopDictation.disabled=true;
+   dictationMessage('Dictation stopped. Your captured text has been kept.');
+ }
+ startDictation.addEventListener('click',beginDictation);
+ stopDictation.addEventListener('click',endDictation);
+ window.addEventListener('beforeunload',endDictation);
+
  generate.addEventListener('click',async()=>{
    if(!engineReady){await check();if(!engineReady)return;}
    const file=reference.files[0], words=text.value.trim();
    if(!file){say('Choose a reference WAV recording first.','error');return;}
-   if(!words){say('Enter the text you want the cloned voice to speak.','error');return;}
+   if(!words){say('Enter or dictate the text you want the cloned voice to speak.','error');return;}
    if(!file.name.toLowerCase().endsWith('.wav')){say('Please select a WAV reference file.','error');return;}
    const data=new FormData();data.append('text',words);data.append('reference',file);
    generate.disabled=true;generate.textContent='Generating cloned speech…';
