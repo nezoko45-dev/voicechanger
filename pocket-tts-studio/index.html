@@ -6,135 +6,40 @@
 <meta name="theme-color" content="#10131f">
 <title>Pocket TTS Studio — VoiceChanger</title>
 <style>
-:root{color-scheme:dark;--bg:#0b0e17;--panel:#151a29;--panel2:#1c2335;--line:#2b3550;--muted:#9ba8c4;--text:#f4f6ff;--accent:#a78bfa;--cyan:#67e8f9;--good:#86efac;--bad:#fda4af}
+:root{color-scheme:dark;--bg:#0b0e17;--panel:#151a29;--line:#2b3550;--muted:#9ba8c4;--text:#f4f6ff;--accent:#a78bfa;--cyan:#67e8f9;--good:#86efac;--bad:#fda4af}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 12% 0%,#29234a 0,transparent 38%),radial-gradient(ellipse at 90% 20%,#123446 0,transparent 30%),var(--bg);font:15px/1.5 Inter,ui-sans-serif,system-ui,sans-serif;color:var(--text);min-height:100vh}
-main{width:min(1080px,calc(100% - 32px));margin:0 auto;padding:48px 0 64px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:44px}.brand{display:flex;align-items:center;gap:12px;font-weight:750;letter-spacing:.2px}.logo{width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,var(--accent),var(--cyan));display:grid;place-items:center;color:#111827;font-size:21px}.pill{border:1px solid var(--line);border-radius:999px;padding:7px 12px;color:var(--muted);font-size:12px}
+main{width:min(1080px,calc(100% - 32px));margin:0 auto;padding:48px 0 64px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:44px}.brand{display:flex;align-items:center;gap:12px;font-weight:750}.logo{width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,var(--accent),var(--cyan));display:grid;place-items:center;color:#111827;font-size:21px}.pill{border:1px solid var(--line);border-radius:999px;padding:7px 12px;color:var(--muted);font-size:12px}
 .hero{max-width:760px;margin-bottom:30px}.eyebrow{color:var(--cyan);text-transform:uppercase;font-size:12px;font-weight:800;letter-spacing:2px}.hero h1{font-size:clamp(36px,6vw,62px);line-height:1.02;letter-spacing:-2px;margin:12px 0 16px}.hero p{color:var(--muted);font-size:17px;max-width:690px}
-.layout{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}.card{background:linear-gradient(180deg,#1a2031f2,#121725f2);border:1px solid var(--line);border-radius:20px;padding:22px;box-shadow:0 18px 60px #0003}.card h2{font-size:18px;margin:0 0 5px}.sub{color:var(--muted);font-size:13px;margin:0 0 18px}.steps{display:grid;gap:14px}.step{display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:start}.num{width:32px;height:32px;border-radius:10px;background:#2b2850;color:#c4b5fd;display:grid;place-items:center;font-weight:800}.step strong{display:block;margin:1px 0 3px}.step p{color:var(--muted);font-size:13px;margin:0}.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:12px;padding:12px 16px;background:linear-gradient(110deg,#a78bfa,#67e8f9);color:#111827;text-decoration:none;font-weight:800;cursor:pointer}.btn.secondary{background:#252e43;color:var(--text);border:1px solid var(--line)}.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px}
-.file{display:block;border:1px dashed #596783;border-radius:14px;padding:15px;color:var(--muted);cursor:pointer}.file input{display:block;width:100%;margin-top:8px;color:var(--muted)}audio{width:100%;margin-top:12px}.transcript{min-height:120px;background:#0d1220;border:1px solid var(--line);border-radius:14px;padding:14px;color:#e8ecfa;white-space:pre-wrap;overflow-wrap:anywhere}.status{font-size:12px;color:var(--muted);margin-top:10px}.status.good{color:var(--good)}.status.bad{color:var(--bad)}.controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.small{font-size:12px;color:var(--muted);margin-top:16px}.wide{grid-column:1/-1}.footer{text-align:center;color:#76829e;font-size:12px;margin-top:26px}
+.layout{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}.card{background:linear-gradient(180deg,#1a2031f2,#121725f2);border:1px solid var(--line);border-radius:20px;padding:22px;box-shadow:0 18px 60px #0003}.card h2{font-size:18px;margin:0 0 5px}.sub{color:var(--muted);font-size:13px;margin:0 0 18px}.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:12px;padding:12px 16px;background:linear-gradient(110deg,#a78bfa,#67e8f9);color:#111827;text-decoration:none;font-weight:800;cursor:pointer}.btn.secondary{background:#252e43;color:var(--text);border:1px solid var(--line)}.actions,.controls{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}.file{display:block;border:1px dashed #596783;border-radius:14px;padding:15px;color:var(--muted);cursor:pointer}.file input{display:block;width:100%;margin-top:8px}audio{width:100%;margin-top:12px}.transcript{min-height:120px;background:#0d1220;border:1px solid var(--line);border-radius:14px;padding:14px;color:#e8ecfa;white-space:pre-wrap;overflow-wrap:anywhere}.status{font-size:12px;color:var(--muted);margin-top:10px}.status.good{color:var(--good)}.status.bad{color:var(--bad)}.small{font-size:12px;color:var(--muted);margin-top:16px}.wide{grid-column:1/-1}.steps{display:grid;gap:14px}.step{display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:start}.num{width:32px;height:32px;border-radius:10px;background:#2b2850;color:#c4b5fd;display:grid;place-items:center;font-weight:800}.step strong{display:block}.step p{color:var(--muted);font-size:13px;margin:0}.footer{text-align:center;color:#76829e;font-size:12px;margin-top:26px}
 @media(max-width:760px){main{padding-top:24px}.layout{grid-template-columns:1fr}.top{margin-bottom:30px}.hero h1{letter-spacing:-1px}.wide{grid-column:auto}}
 </style>
 </head>
 <body><main>
 <header class="top"><div class="brand"><div class="logo">♫</div><span>VOICECHANGER <span style="color:var(--muted);font-weight:500">/ POCKET TTS</span></span></div><span class="pill">Chrome-first voice studio</span></header>
-<section class="hero"><div class="eyebrow">Speak · Transcribe · Clone · Listen</div><h1>Your words.<br><span style="background:linear-gradient(90deg,#c4b5fd,#67e8f9);background-clip:text;color:transparent">Your reference voice.</span></h1><p>A Chrome transcription workspace that sends each recognized phrase straight into the TTS text field on your open PocketWebTools Voice Cloning tab.</p></section>
+<section class="hero"><div class="eyebrow">Speak · Transcribe · Send · Listen</div><h1>Your words.<br><span style="background:linear-gradient(90deg,#c4b5fd,#67e8f9);background-clip:text;color:transparent">Straight into Pocket TTS.</span></h1><p>Speak into your microphone and the complete recognized transcript is automatically inserted into the TTS text field on your open PocketWebTools Voice Cloning tab.</p></section>
 <div class="layout">
-<section class="card"><h2>01 / Reference voice</h2><p class="sub">Choose a clean WAV recording to preview before loading it into PocketWebTools.</p>
-<label class="file">Select your reference WAV<input id="reference" type="file" accept=".wav,audio/wav,audio/x-wav"></label><audio id="preview" controls hidden></audio><div id="fileStatus" class="status">No reference WAV selected yet.</div>
-<div class="small">For best results, use a clear single-speaker recording with little background noise. You must also upload this same WAV in PocketWebTools' reference-audio control; this preview does not transfer files between websites.</div></section>
-<section class="card"><h2>02 / Chrome transcription test</h2><p class="sub">Check that Chrome can hear and transcribe your microphone.</p>
-<div id="transcript" class="transcript" aria-live="polite">Your recognized words will appear here…</div>
-<div class="controls"><button class="btn" id="listen">Start listening</button><button class="btn secondary" id="stop" disabled>Stop</button><button class="btn secondary" id="copy">Copy text</button></div><div id="speechStatus" class="status">Waiting to start.</div><div id="transferStatus" class="status">Open PocketWebTools in another tab, then start listening here.</div>
-<div class="small">Uses Chrome's Web Speech Recognition. Recognition availability may depend on Chrome's speech service, language and network connection.</div></section>
-<section class="card wide"><h2>03 / Generate cloned speech</h2><p class="sub">PocketWebTools performs the voice cloning. This page cannot control another website's private controls directly, so the companion extension handles the transcription-to-generation loop there.</p>
-<div class="steps">
-<div class="step"><div class="num">1</div><div><strong>Open PocketWebTools Voice Cloning</strong><p>Load your reference WAV into its reference voice/upload area and make sure the voice is ready.</p></div></div>
-<div class="step"><div class="num">2</div><div><strong>Install the companion Chrome extension</strong><p>Load <code>extension/pocketweb-dictation</code> as an unpacked extension from this repository.</p></div></div>
-<div class="step"><div class="num">3</div><div><strong>Start transcription here</strong><p>Press Start listening above. After each recognized phrase, this page sends the text into the TTS text field on your open PocketWebTools tab. Then press Generate Speech there when you are ready.</p></div></div></div>
-<div class="actions"><a class="btn" href="https://pocketweb.tools/voice-cloning" target="_blank" rel="noopener">Open PocketWebTools ↗</a><a class="btn secondary" href="https://github.com/nezoko45-dev/voicechanger/tree/main/extension/pocketweb-dictation" target="_blank" rel="noopener">Extension files ↗</a></div>
-<p class="small">The companion extension is required because Chrome prevents one website from directly editing another website's fields. This page sends text only; it does not upload your WAV or automatically press Generate Speech. Only clone voices you own or have permission to use.</p></section>
+<section class="card"><h2>01 / Reference voice</h2><p class="sub">Choose a WAV recording to preview. Upload the same file in PocketWebTools.</p><label class="file">Select reference WAV<input id="reference" type="file" accept=".wav,audio/wav,audio/x-wav"></label><audio id="preview" controls hidden></audio><div id="fileStatus" class="status">No reference WAV selected.</div><div class="small">The WAV preview stays on this page; it is not transferred to PocketWebTools.</div></section>
+<section class="card"><h2>02 / Live microphone transcription</h2><p class="sub">Recognized words are sent automatically as you speak.</p><div id="transcript" class="transcript" aria-live="polite">Your recognized words will appear here…</div><div class="controls"><button class="btn" id="listen">Start listening</button><button class="btn secondary" id="stop" disabled>Stop</button><button class="btn secondary" id="copy">Copy transcript</button></div><div id="speechStatus" class="status">Waiting to start.</div><div id="transferStatus" class="status">Open PocketWebTools in another tab, then start listening.</div><div class="small">Keep this tab open while speaking. Chrome Web Speech Recognition requires an internet connection in many configurations.</div></section>
+<section class="card wide"><h2>03 / Send to PocketWebTools</h2><div class="steps"><div class="step"><div class="num">1</div><div><strong>Open PocketWebTools</strong><p>Open the Voice Cloning page and upload your reference WAV there.</p></div></div><div class="step"><div class="num">2</div><div><strong>Install or reload the companion extension</strong><p>Load <code>extension/pocketweb-dictation</code> from this repository using <code>chrome://extensions</code>.</p></div></div><div class="step"><div class="num">3</div><div><strong>Speak here — text transfers automatically</strong><p>Press Start listening. Each recognized phrase is added to the full transcript and the complete text is sent into PocketWebTools' TTS text field. You do not need to copy and paste.</p></div></div></div><div class="actions"><a class="btn" href="https://pocketweb.tools/voice-cloning" target="_blank" rel="noopener">Open PocketWebTools ↗</a><a class="btn secondary" href="https://github.com/nezoko45-dev/voicechanger/tree/main/extension/pocketweb-dictation" target="_blank" rel="noopener">Extension files ↗</a></div><p class="small">Text is transferred automatically; generating audio remains a manual step. The extension does not upload your WAV or click Generate Speech. Only clone voices you own or have permission to use.</p></section>
 </div><div class="footer">VoiceChanger · Pocket TTS Studio · GitHub Pages</div></main>
 <script>
 (() => {
- const file=document.getElementById('reference'), audio=document.getElementById('preview'), fileStatus=document.getElementById('fileStatus');
- let objectUrl=null;
- file.addEventListener('change',()=>{
-   const f=file.files&&file.files[0]; if(!f)return;
-   if(!/\\.wav$/i.test(f.name)&&f.type!=='audio/wav'&&f.type!=='audio/x-wav'){
-     fileStatus.textContent='Please choose a WAV file.'; fileStatus.className='status bad'; return;
-   }
-   if(objectUrl)URL.revokeObjectURL(objectUrl);
-   objectUrl=URL.createObjectURL(f); audio.src=objectUrl; audio.hidden=false;
-   fileStatus.textContent=f.name+' · '+(f.size/1024/1024).toFixed(2)+' MB · ready to preview'; fileStatus.className='status good';
- });
- const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
- const transcript=document.getElementById('transcript'),status=document.getElementById('speechStatus');
- const transferStatus=document.getElementById('transferStatus'),listen=document.getElementById('listen'),stop=document.getElementById('stop');
- let recognition=null,running=false,finalText='',pendingSend='',sendTimer=null,restartTimer=null,retryDelay=1000,lastError='';
+ const file=document.getElementById('reference'),audio=document.getElementById('preview'),fileStatus=document.getElementById('fileStatus');let objectUrl=null;
+ file.addEventListener('change',()=>{const f=file.files&&file.files[0];if(!f)return;if(!/\.wav$/i.test(f.name)&&f.type!=='audio/wav'&&f.type!=='audio/x-wav'){fileStatus.textContent='Please choose a WAV file.';fileStatus.className='status bad';return;}if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(f);audio.src=objectUrl;audio.hidden=false;fileStatus.textContent=f.name+' · ready to preview';fileStatus.className='status good';});
+ const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition,transcript=document.getElementById('transcript'),status=document.getElementById('speechStatus'),transferStatus=document.getElementById('transferStatus'),listen=document.getElementById('listen'),stop=document.getElementById('stop');
+ let recognition=null,running=false,finalText='',sendTimer=null,restartTimer=null,retryDelay=1000,lastError='';
  function setStatus(message,bad=false){status.textContent=message;status.className='status '+(bad?'bad':'');}
- function sendPhrase(text){
-   const phrase=String(text||'').trim(); if(!phrase)return;
-   transferStatus.textContent='Sending transcript to PocketWebTools…'; transferStatus.className='status';
-   window.postMessage({source:'voicechanger-pocket-tts-studio',type:'TRANSCRIPT',text:phrase},location.origin);
- }
- window.addEventListener('message',event=>{
-   if(event.source!==window||event.origin!==location.origin)return;
-   const d=event.data;
-   if(d?.source!=='voicechanger-pocket-tts-bridge'||d.type!=='RESULT')return;
-   transferStatus.textContent=d.message|| (d.ok?'Transcript sent.':'Could not send transcript.');
-   transferStatus.className='status '+(d.ok?'good':'bad');
- });
- function scheduleRestart(){
-   if(!running||restartTimer)return;
-   restartTimer=setTimeout(()=>{
-     restartTimer=null;
-     if(!running||!recognition)return;
-     try{recognition.start();}
-     catch(e){lastError=e.message;setStatus('Restarting microphone recognition… '+e.message,true);scheduleRestart();}
-   },retryDelay);
- }
- function begin(){
-   if(!SpeechRecognition){setStatus('Speech recognition is unavailable. Please use desktop Google Chrome.',true);return;}
-   if(running)return;
-   running=true;retryDelay=1000;lastError='';finalText='';pendingSend='';
-   listen.disabled=true;stop.disabled=false;
-   transcript.textContent='Listening…';
-   recognition=new SpeechRecognition(); recognition.lang='en-US'; recognition.continuous=true; recognition.interimResults=true;
-   recognition.onresult=e=>{
-     let interim='';
-     for(let i=e.resultIndex;i<e.results.length;i++){
-       const phrase=e.results[i][0].transcript.trim();
-       if(e.results[i].isFinal&&phrase){
-         finalText+=(finalText?' ':'')+phrase;
-         pendingSend+=(pendingSend?' ':'')+phrase;
-         clearTimeout(sendTimer);
-         sendTimer=setTimeout(()=>{const text=pendingSend;pendingSend='';sendPhrase(text);},900);
-       }else if(phrase) interim+=(interim?' ':'')+phrase;
-     }
-     transcript.textContent=[finalText,interim].filter(Boolean).join(' ').trim()||'Listening…';
-   };
-   recognition.onerror=e=>{
-     lastError=e.error||'unknown';
-     if(lastError==='not-allowed'||lastError==='service-not-allowed'){
-       running=false;clearTimeout(restartTimer);restartTimer=null;
-       listen.disabled=false;stop.disabled=true;
-       setStatus('Microphone access was denied. Allow microphone access for this GitHub Pages site, then press Start listening.',true);
-     }else if(lastError==='network'){
-       retryDelay=Math.min(Math.max(retryDelay*2,2000),15000);
-       setStatus('Chrome speech service reported a network error. Retrying in '+Math.round(retryDelay/1000)+' seconds; check your internet connection.',true);
-     }else if(lastError!=='no-speech'&&lastError!=='aborted'){
-       setStatus('Speech recognition error: '+lastError,true);
-     }
-   };
-   recognition.onend=()=>{
-     if(running){
-       if(lastError!=='network')retryDelay=1000;
-       scheduleRestart();
-     }else{
-       listen.disabled=false;stop.disabled=true;
-     }
-   };
-   try{recognition.start();setStatus('Listening. Speak into your microphone; recognized phrases will be sent automatically.');}
-   catch(e){running=false;listen.disabled=false;stop.disabled=true;setStatus('Could not start recognition: '+e.message,true);}
- }
- function halt(){
-   running=false;clearTimeout(restartTimer);restartTimer=null;clearTimeout(sendTimer);
-   if(pendingSend.trim()){sendPhrase(pendingSend);pendingSend='';}
-   try{if(recognition)recognition.stop();}catch{}
-   listen.disabled=false;stop.disabled=true;setStatus('Stopped listening.');
- }
- listen.addEventListener('click',begin);
- stop.addEventListener('click',halt);
- document.getElementById('copy').addEventListener('click',async()=>{
-   const t=transcript.textContent;
-   if(!t||t==='Your recognized words will appear here…')return;
-   try{await navigator.clipboard.writeText(t);setStatus('Transcript copied.');}
-   catch{setStatus('Clipboard access was blocked. Select the transcript and copy it manually.',true);}
- });
- window.addEventListener('beforeunload',()=>{
-   running=false;clearTimeout(sendTimer);clearTimeout(restartTimer);
-   try{if(recognition)recognition.stop();}catch{}
-   if(objectUrl)URL.revokeObjectURL(objectUrl);
- });
+ function sendTranscript(){const text=finalText.trim();if(!text)return;transferStatus.textContent='Sending complete transcript to PocketWebTools…';transferStatus.className='status';window.postMessage({source:'voicechanger-pocket-tts-studio',type:'TRANSCRIPT',text},location.origin);}
+ window.addEventListener('message',event=>{if(event.source!==window||event.origin!==location.origin)return;const d=event.data;if(d?.source!=='voicechanger-pocket-tts-bridge'||d.type!=='RESULT')return;transferStatus.textContent=d.message||(d.ok?'Transcript inserted.':'Could not insert transcript.');transferStatus.className='status '+(d.ok?'good':'bad');});
+ function scheduleRestart(){if(!running||restartTimer)return;restartTimer=setTimeout(()=>{restartTimer=null;if(!running||!recognition)return;try{recognition.start();}catch(e){setStatus('Restarting recognition… '+e.message,true);scheduleRestart();}},retryDelay);}
+ function begin(){if(!SpeechRecognition){setStatus('Speech recognition is unavailable. Use desktop Google Chrome.',true);return;}if(running)return;running=true;retryDelay=1000;lastError='';finalText='';clearTimeout(sendTimer);listen.disabled=true;stop.disabled=false;transcript.textContent='Listening…';recognition=new SpeechRecognition();recognition.lang='en-US';recognition.continuous=true;recognition.interimResults=true;
+ recognition.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const phrase=e.results[i][0].transcript.trim();if(e.results[i].isFinal&&phrase){finalText+=(finalText?' ':'')+phrase;clearTimeout(sendTimer);sendTimer=setTimeout(sendTranscript,650);}else if(phrase)interim+=(interim?' ':'')+phrase;}transcript.textContent=[finalText,interim].filter(Boolean).join(' ').trim()||'Listening…';};
+ recognition.onerror=e=>{lastError=e.error||'unknown';if(lastError==='not-allowed'||lastError==='service-not-allowed'){running=false;clearTimeout(restartTimer);restartTimer=null;listen.disabled=false;stop.disabled=true;setStatus('Microphone access denied. Allow microphone access for this site, then start again.',true);}else if(lastError==='network'){retryDelay=Math.min(Math.max(retryDelay*2,2000),15000);setStatus('Chrome speech service network error. Retrying in '+Math.round(retryDelay/1000)+' seconds.',true);}else if(lastError!=='no-speech'&&lastError!=='aborted')setStatus('Speech recognition error: '+lastError,true);};
+ recognition.onend=()=>{if(running){if(lastError!=='network')retryDelay=1000;scheduleRestart();}else{listen.disabled=false;stop.disabled=true;}};
+ try{recognition.start();setStatus('Listening. New recognized words will be sent automatically.');}catch(e){running=false;listen.disabled=false;stop.disabled=true;setStatus('Could not start recognition: '+e.message,true);}}
+ function halt(){running=false;clearTimeout(restartTimer);restartTimer=null;clearTimeout(sendTimer);sendTranscript();try{if(recognition)recognition.stop();}catch{}listen.disabled=false;stop.disabled=true;setStatus('Stopped listening.');}
+ listen.addEventListener('click',begin);stop.addEventListener('click',halt);
+ document.getElementById('copy').addEventListener('click',async()=>{if(!finalText.trim())return;try{await navigator.clipboard.writeText(finalText);setStatus('Transcript copied.');}catch{setStatus('Clipboard blocked. Select the transcript and copy manually.',true);}});
+ window.addEventListener('beforeunload',()=>{running=false;clearTimeout(sendTimer);clearTimeout(restartTimer);try{if(recognition)recognition.stop();}catch{}if(objectUrl)URL.revokeObjectURL(objectUrl);});
 })();
 </script></body></html>
