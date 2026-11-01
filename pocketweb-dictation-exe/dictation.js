@@ -1,21 +1,15 @@
 (() => {
   let recognition = null;
-  let stream = null;
-  let audioContext = null;
-  let analyser = null;
-  let frame = 0;
   let running = false;
   let busy = false;
   let finalText = "";
   let lastVoiceAt = 0;
-  let heardVoice = false;
   let restarting = false;
   let starting = false;
   let localMode = false;
   let localSetupDone = false;
   let silenceTimer = 0;
   const SILENCE_MS = 2500;
-  const THRESHOLD = 0.012;
 
   function status(message) {
     window.__pwDictationStatus = "PocketWeb Dictation: " + message;
@@ -131,7 +125,6 @@
           const phrase = (event.results[i][0]?.transcript || "").trim();
           if (!phrase) continue;
           lastVoiceAt = Date.now();
-          heardVoice = true;
           if (event.results[i].isFinal) {
             finalText = (finalText + " " + phrase).trim();
             status("Recognized: " + finalText.slice(-100));
@@ -140,6 +133,15 @@
             status("Hearing: " + interim.slice(0, 80));
           }
         }
+        if (finalText.trim()) armSilenceSubmit();
+      };
+      rec.onspeechend = () => {
+        // Chrome detected that the user stopped speaking. Submit after a short quiet gap.
+        lastVoiceAt = Date.now();
+        if (finalText.trim()) armSilenceSubmit();
+      };
+      rec.onsoundend = () => {
+        // Chrome reports that the microphone input has gone quiet.
         if (finalText.trim()) armSilenceSubmit();
       };
       rec.onerror = event => {
@@ -201,45 +203,18 @@
     }
     await new Promise(resolve => setTimeout(resolve, 1000));
     busy = false;
-    heardVoice = false;
     lastVoiceAt = Date.now();
     if (running) startRecognition();
-  }
-  function meter() {
-    if (!running || !analyser) return;
-    const samples = new Uint8Array(analyser.fftSize);
-    analyser.getByteTimeDomainData(samples);
-    let sum = 0;
-    for (const sample of samples) {
-      const v = (sample - 128) / 128;
-      sum += v * v;
-    }
-    const rms = Math.sqrt(sum / samples.length);
-    const now = Date.now();
-    if (rms > THRESHOLD) {
-      lastVoiceAt = now;
-      heardVoice = true;
-    } else if (heardVoice && now - lastVoiceAt >= SILENCE_MS && finalText.trim() && !busy) {
-      generatePhrase();
-    }
-    frame = requestAnimationFrame(meter);
   }
   window.__pwDictationStart = async () => {
     if (running) return "Already listening.";
     running = true;
     try {
-      if (!navigator.mediaDevices?.getUserMedia) throw new Error("Microphone capture is unavailable in this tab.");
-      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
-      audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      if (audioContext.state === "suspended") await audioContext.resume();
-      const source = audioContext.createMediaStreamSource(stream);
-      analyser = audioContext.createAnalyser();
-      analyser.fftSize = 1024;
-      source.connect(analyser);
+      // SpeechRecognition owns microphone capture and reports speechend/soundend.
+      // No Web Audio analyser, RMS threshold, or second microphone stream is used.
       lastVoiceAt = Date.now();
-      frame = requestAnimationFrame(meter);
-      startRecognition();
-      return "Microphone connected. Listening…";
+      await startRecognition();
+      return "Speech recognition started. Listening for speech and silence…";
     } catch (e) {
       running = false;
       status("Microphone error: " + e.message + " Allow microphone access for pocketweb.tools in Chrome.");
@@ -249,13 +224,7 @@
   window.__pwDictationStop = () => {
     running = false;
     clearTimeout(silenceTimer);
-    cancelAnimationFrame(frame);
     if (recognition) { try { recognition.stop(); } catch {} recognition = null; }
-    if (stream) stream.getTracks().forEach(t => t.stop());
-    stream = null;
-    if (audioContext) audioContext.close().catch(() => {});
-    audioContext = null;
-    analyser = null;
     finalText = "";
     busy = false;
     status("Stopped.");
