@@ -307,6 +307,7 @@ async function init() {
     setupHistoryPageEvents();
     setupModalEvents();
     setupMicrophoneDictation();
+    window.__voiceChangerBooted = true;
 
     try {
         // Initialize local storage and populate the voice/history views.
