@@ -10,6 +10,9 @@
   let lastVoiceAt = 0;
   let heardVoice = false;
   let restarting = false;
+  let starting = false;
+  let localMode = false;
+  let localSetupDone = false;
   let silenceTimer = 0;
   const SILENCE_MS = 2500;
   const THRESHOLD = 0.012;
@@ -70,17 +73,58 @@
       }
     }, SILENCE_MS + 100);
   }
-  function startRecognition() {
-    if (!running || busy || recognition || restarting) return;
+  async function prepareRecognition(API) {
+    if (localSetupDone) return;
+    localSetupDone = true;
+    if (typeof API.available !== "function" || typeof API.install !== "function") {
+      localMode = false;
+      status("On-device recognition is not supported by this Chrome build; using Chrome's online speech service.");
+      return;
+    }
+    try {
+      status("Checking for offline English speech recognition…");
+      const options = { langs: ["en-US"], processLocally: true, quality: "dictation" };
+      let availability = await API.available(options);
+      if (availability === "available") {
+        localMode = true;
+        status("Offline English speech recognition is ready.");
+        return;
+      }
+      if (availability === "downloadable" || availability === "downloading") {
+        status("Installing Chrome's offline English speech pack…");
+        const installed = await API.install(options);
+        if (installed) {
+          localMode = true;
+          status("Offline English speech pack installed. Starting local recognition…");
+          return;
+        }
+        localMode = false;
+        localSetupDone = false;
+        throw new Error("Chrome could not install the offline English speech pack.");
+      }
+      localMode = false;
+      status("Offline English speech recognition is unavailable; using Chrome's online service.");
+    } catch (e) {
+      localMode = false;
+      localSetupDone = false;
+      status("Offline speech setup failed: " + (e.message || e) + ". Online recognition may show a network error.");
+    }
+  }
+  async function startRecognition() {
+    if (!running || busy || recognition || restarting || starting) return;
     const API = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!API) { status("Chrome SpeechRecognition is unavailable."); return; }
+    starting = true;
     try {
+      await prepareRecognition(API);
+      if (!running || busy || recognition) return;
       const rec = new API();
       recognition = rec;
       rec.lang = "en-US";
       rec.continuous = true;
       rec.interimResults = true;
       rec.maxAlternatives = 1;
+      if ("processLocally" in rec) rec.processLocally = localMode;
       rec.onresult = event => {
         let interim = "";
         for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -100,7 +144,15 @@
       };
       rec.onerror = event => {
         if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-          status("Chrome blocked microphone/speech permission. Allow microphone access for pocketweb.tools and retry.");
+          status("Chrome blocked speech recognition. Allow microphone and speech permissions for pocketweb.tools.");
+        } else if (event.error === "network") {
+          status(localMode
+            ? "Offline speech recognition reported a network error. Check Chrome's offline English speech pack, then restart dictation."
+            : "Speech service network error. Checking offline recognition on restart; verify internet/VPN/firewall if offline speech is unavailable.");
+        } else if (event.error === "language-not-supported") {
+          localMode = false;
+          localSetupDone = false;
+          status("Offline English language pack is unavailable. Restart dictation to retry setup.");
         } else if (event.error !== "no-speech" && event.error !== "aborted") {
           status("Speech recognition error: " + event.error);
         }
@@ -109,15 +161,17 @@
         if (recognition === rec) recognition = null;
         if (running && !busy) {
           restarting = true;
-          setTimeout(() => { restarting = false; startRecognition(); }, 350);
+          setTimeout(() => { restarting = false; startRecognition(); }, 900);
         }
       };
       rec.start();
-      status("Listening… speak into your microphone.");
+      status(localMode ? "Listening offline… speak into your microphone." : "Listening… speak into your microphone.");
     } catch (e) {
       recognition = null;
-      status("Could not start speech recognition: " + e.message);
-      setTimeout(startRecognition, 1200);
+      status("Could not start speech recognition: " + (e.message || e));
+      setTimeout(() => startRecognition(), 1800);
+    } finally {
+      starting = false;
     }
   }
   async function generatePhrase() {
