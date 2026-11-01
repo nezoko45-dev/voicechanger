@@ -1,11 +1,12 @@
-# Single source of truth for the OpenRouter TTS reader Pages deployment.
-name: Deploy OpenRouter TTS Reader to GitHub Pages
+# Deploy the repository's GitHub Pages tools.
+name: Deploy Voicechanger Pages
 
 on:
   push:
     branches: [main]
     paths:
       - "openrouter-tts-reader/**"
+      - "pocket-tts-studio/**"
       - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
@@ -31,9 +32,11 @@ jobs:
       - name: Prepare site
         run: |
           test -s openrouter-tts-reader/index.html
-          mkdir -p _site/openrouter-tts-reader
+          test -s pocket-tts-studio/index.html
+          mkdir -p _site/openrouter-tts-reader _site/pocket-tts-studio
           cp openrouter-tts-reader/index.html _site/index.html
           cp openrouter-tts-reader/index.html _site/openrouter-tts-reader/index.html
+          cp pocket-tts-studio/index.html _site/pocket-tts-studio/index.html
           touch _site/.nojekyll
 
       - name: Configure Pages
