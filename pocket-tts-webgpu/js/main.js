@@ -198,6 +198,105 @@ const state = {
     historyAudioUrls: []
 };
 
+
+function setupMicrophoneDictation() {
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const transcriptEl = document.getElementById('dictation-transcript');
+    const statusEl = document.getElementById('dictation-status');
+    const startBtn = document.getElementById('dictation-start');
+    const stopBtn = document.getElementById('dictation-stop');
+    const insertBtn = document.getElementById('dictation-insert');
+    const textInput = document.getElementById('text-input');
+    if (!Recognition || !startBtn) {
+        if (statusEl) statusEl.textContent = 'Speech recognition is unavailable in this browser. Use desktop Chrome.';
+        if (startBtn) startBtn.disabled = true;
+        return;
+    }
+    let recognition = null;
+    let running = false;
+    let finalText = '';
+    let restartTimer = null;
+    let retryDelay = 1000;
+    let lastError = '';
+    const setStatus = (message, bad = false) => {
+        statusEl.textContent = message;
+        statusEl.style.color = bad ? 'var(--danger)' : 'var(--text-secondary)';
+    };
+    const sendToCompanion = (value) => {
+        if (!value.trim()) return;
+        window.postMessage({source:'voicechanger-pocket-tts-studio',type:'TRANSCRIPT',text:value.trim()}, location.origin);
+    };
+    const stop = () => {
+        running = false;
+        clearTimeout(restartTimer);
+        restartTimer = null;
+        try { recognition?.stop(); } catch {}
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        setStatus('Stopped listening.');
+    };
+    const start = () => {
+        if (running) return;
+        running = true;
+        finalText = '';
+        retryDelay = 1000;
+        lastError = '';
+        transcriptEl.textContent = 'Listening…';
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        recognition = new Recognition();
+        recognition.lang = 'en-US';
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.onresult = (event) => {
+            let interim = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                const phrase = event.results[i][0].transcript.trim();
+                if (event.results[i].isFinal && phrase) {
+                    finalText += (finalText ? ' ' : '') + phrase;
+                    sendToCompanion(finalText);
+                    textInput.value = finalText;
+                    textInput.dispatchEvent(new Event('input', {bubbles:true}));
+                } else if (phrase) interim += (interim ? ' ' : '') + phrase;
+            }
+            transcriptEl.textContent = [finalText, interim].filter(Boolean).join(' ') || 'Listening…';
+        };
+        recognition.onerror = (event) => {
+            lastError = event.error || 'unknown';
+            if (lastError === 'not-allowed' || lastError === 'service-not-allowed') {
+                stop();
+                setStatus('Microphone access denied. Allow microphone access and try again.', true);
+            } else if (lastError === 'network') {
+                retryDelay = Math.min(retryDelay * 2, 15000);
+                setStatus('Chrome speech service network error. Retrying shortly…', true);
+            } else if (!['no-speech','aborted'].includes(lastError)) {
+                setStatus('Speech recognition error: ' + lastError, true);
+            }
+        };
+        recognition.onend = () => {
+            if (!running) return;
+            if (lastError !== 'network') retryDelay = 1000;
+            restartTimer = setTimeout(() => {
+                restartTimer = null;
+                if (running) { try { recognition.start(); } catch { restartTimer = setTimeout(() => { if (running) start(); }, retryDelay); } }
+            }, retryDelay);
+        };
+        try { recognition.start(); setStatus('Listening. Recognized speech is copied into the text box.'); }
+        catch (error) { stop(); setStatus('Could not start speech recognition: ' + error.message, true); }
+    };
+    startBtn.addEventListener('click', start);
+    stopBtn.addEventListener('click', stop);
+    insertBtn.addEventListener('click', () => {
+        if (!finalText.trim()) return;
+        textInput.value = finalText.trim();
+        textInput.dispatchEvent(new Event('input', {bubbles:true}));
+        textInput.focus();
+        sendToCompanion(finalText);
+        setStatus('Transcript inserted into the Chatterbox text field.');
+    });
+    window.addEventListener('beforeunload', stop);
+}
+
 // Initialize application
 async function init() {
     try {
@@ -214,6 +313,7 @@ async function init() {
         setupVoiceLibraryEvents();
         setupHistoryPageEvents();
         setupModalEvents();
+        setupMicrophoneDictation();
 
         // Initialize TTS engine
         console.log('Initializing TTS engine...');
