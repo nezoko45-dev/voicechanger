@@ -25,13 +25,13 @@
       "main.cjs",
       "preload.cjs",
       "index.html",
-      "package.json"
+      "package.json",
+      "renderer.js"
     ],
     "win": {
       "target": [
         "nsis"
-      ],
-      "icon": "assets/icon.ico"
+      ]
     },
     "nsis": {
       "oneClick": false,
