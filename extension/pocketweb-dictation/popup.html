@@ -1,25 +1,8 @@
 <!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>PocketWeb Dictation</title>
-<style>
-body{font:14px system-ui,sans-serif;width:280px;margin:0;padding:16px;color:#172033;background:#f8fafc}
-h1{font-size:17px;margin:0 0 8px}p{line-height:1.45;color:#475569}
-button{width:100%;border:0;border-radius:8px;padding:10px;margin-top:8px;font-weight:650;cursor:pointer}
-#start{background:#2563eb;color:white}#stop{background:#e2e8f0;color:#172033}
-#status{font-size:12px;min-height:30px;margin-top:10px}
-small{color:#64748b}
-</style>
-</head>
-<body>
-<h1>PocketWeb Dictation</h1>
-<p>Speak a sentence. After a pause, it will be sent to PocketWebTools to generate speech, play the result, then listen for the next sentence.</p>
-<button id="start">Start listening</button>
-<button id="stop">Stop</button>
-<div id="status">Open pocketweb.tools/voice-cloning first.</div>
-<small>Use only a voice you own or have permission to clone.</small>
-<script src="popup.js"></script>
-</body>
-</html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PocketWeb Dictation Bridge</title>
+<style>body{font:14px system-ui,sans-serif;width:290px;margin:0;padding:16px;color:#eaf0ff;background:#101827}h1{font-size:17px;margin:0 0 8px}p{line-height:1.5;color:#b7c3d8}a{color:#8ddfff}strong{color:#fff}</style></head>
+<body><h1>Pocket TTS Bridge is ready</h1>
+<p>1. Open <a href="https://pocketweb.tools/voice-cloning" target="_blank">PocketWebTools Voice Cloning</a> in a tab.</p>
+<p>2. Open <a href="https://nezoko45-dev.github.io/voicechanger/pocket-tts-studio/" target="_blank">Pocket TTS Studio</a> in another tab.</p>
+<p>3. Start listening on Pocket TTS Studio. Recognized phrases will be inserted into PocketWebTools' TTS text field automatically.</p>
+<p><strong>Note:</strong> This bridge fills the text field only. Press Generate Speech on PocketWebTools yourself.</p></body></html>
