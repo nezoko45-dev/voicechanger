@@ -20,6 +20,7 @@
  <div><label for="engine">Speech engine</label><select id="engine"><option value="edge">Microsoft Edge voices</option><option value="fish">Fish Audio — my custom WAV voice</option></select></div>
  <div><label for="fishBackend">Private API backend URL</label><input id="fishBackend" type="url" placeholder="https://your-vercel-project.vercel.app" style="box-sizing:border-box;width:100%;padding:10px;border-radius:9px;font:inherit"></div>
  <div><label for="fishVoiceId">Saved custom voice ID</label><input id="fishVoiceId" type="text" placeholder="Upload your WAV to create a voice" style="box-sizing:border-box;width:100%;padding:10px;border-radius:9px;font:inherit"></div>
+ <div><label for="readerAccessCode">Private reader access code</label><input id="readerAccessCode" type="password" autocomplete="off" placeholder="Your private access code" style="box-sizing:border-box;width:100%;padding:10px;border-radius:9px;font:inherit"></div>
 </div>
 <div class="notice">
  <strong>Custom reference voice</strong>
@@ -46,6 +47,7 @@
  const $=id=>document.getElementById(id),text=$('text'),voiceSelect=$('voice'),start=$('start'),stopDictation=$('stopDictation');
  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
  let availableVoices=[],recognition=null,listening=false,starting=false,pausedForSpeech=false,restartTimer=null,restartDelay=500,watchdog=null,sessionTimer=null,sessionId=0,finalText='',autoTimer=null,speaking=false,lastRead='',utterance=null,liveAudio=null;\n const backend=()=>$('fishBackend').value.trim().replace(/\\/$/,'');
+ const accessCode=()=>$('readerAccessCode').value.trim();
  const status=s=>$('status').textContent=s;
  function loadVoices(){
   availableVoices=window.speechSynthesis? speechSynthesis.getVoices():[];
@@ -101,7 +103,7 @@
    $('read').disabled=true;$('pause').disabled=false;$('resume').disabled=true;$('stopSpeech').disabled=false;
    status('Generating speech with your custom Fish Audio voice…');
    try{
-    const response=await fetch(root+'/api/fish-reference-tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:value,reference_id:voiceId,speed:1})});
+    const response=await fetch(root+'/api/fish-reference-tts',{method:'POST',headers:{'Content-Type':'application/json','x-reader-access-code':accessCode()},body:JSON.stringify({text:value,reference_id:voiceId,speed:1})});
     if(!response.ok){let message='Fish Audio request failed ('+response.status+').';try{message=(await response.json()).error||message}catch{}throw new Error(message)}
     const blob=await response.blob();if(!blob.size)throw new Error('Fish Audio returned empty audio.');
     liveAudio=new Audio(URL.createObjectURL(blob));
@@ -130,8 +132,10 @@
 
  $('fishBackend').value=localStorage.getItem('fishBackend')||'';
  $('fishVoiceId').value=localStorage.getItem('fishVoiceId')||'';
+ $('readerAccessCode').value=sessionStorage.getItem('readerAccessCode')||'';
  $('fishBackend').addEventListener('change',()=>localStorage.setItem('fishBackend',$('fishBackend').value.trim()));
  $('fishVoiceId').addEventListener('change',()=>localStorage.setItem('fishVoiceId',$('fishVoiceId').value.trim()));
+ $('readerAccessCode').addEventListener('change',()=>sessionStorage.setItem('readerAccessCode',$('readerAccessCode').value.trim()));
  $('uploadReference').addEventListener('click',async()=>{
   const file=$('referenceWav').files[0],root=backend();
   if(!file){status('Choose your custom WAV file first.');return}
@@ -142,7 +146,7 @@
   try{
    const form=new FormData();form.append('type','tts');form.append('title',$('referenceTitle').value.trim()||'My custom voice');form.append('train_mode','fast');form.append('visibility','private');form.append('voices',file,file.name);
    const transcript=$('referenceTranscript').value.trim();if(transcript)form.append('texts',transcript);
-   const response=await fetch(root+'/api/fish-create-voice',{method:'POST',body:form});
+   const response=await fetch(root+'/api/fish-create-voice',{method:'POST',headers:{'x-reader-access-code':accessCode()},body:form});
    const data=await response.json().catch(()=>({}));
    if(!response.ok)throw new Error(data.message||data.reason||data.error||('Voice creation failed ('+response.status+').'));
    const id=data._id||data.id;if(!id)throw new Error('Fish Audio did not return a voice ID.');
