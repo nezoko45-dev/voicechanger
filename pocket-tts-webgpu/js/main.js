@@ -697,14 +697,26 @@ function updateVoiceSelector() {
         console.log(`  - ID ${voice.id}: "${voice.name}" (${voice.audioBlob ? voice.audioBlob.size + ' bytes' : 'no audio'})`);
     });
 
-    selector.innerHTML = state.voices.map(voice => `
-        <option value="${voice.id}">${escapeHtml(voice.name)}</option>
-    `).join('');
+    // Chatterbox uses a reference recording for each custom voice. A fresh
+    // browser profile has no saved voices, so never leave the select blank.
+    const validVoices = state.voices.filter(voice => voice && voice.id != null && voice.name);
+    selector.innerHTML = validVoices.length
+        ? validVoices.map(voice => `
+            <option value="${voice.id}">${escapeHtml(voice.name)}</option>
+        `).join('')
+        : '<option value="" selected>No saved voices — create one</option>';
 
-    if (state.selectedVoice) {
-        selector.value = state.selectedVoice.id;
+    selector.disabled = validVoices.length === 0;
+    if (state.selectedVoice && validVoices.some(voice => String(voice.id) === String(state.selectedVoice.id))) {
+        selector.value = String(state.selectedVoice.id);
         console.log('  Selected voice:', state.selectedVoice.name, '(ID:', state.selectedVoice.id + ')');
+    } else {
+        state.selectedVoice = null;
+        selector.value = '';
     }
+
+    const createButton = document.getElementById('create-voice-btn');
+    if (createButton) createButton.textContent = validVoices.length ? 'Create new voice' : 'Add your first voice';
 
     updatePreviewButton();
 }
