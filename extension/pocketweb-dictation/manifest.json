@@ -1,24 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "VoiceChanger PocketWeb Dictation",
-  "version": "1.0.0",
-  "description": "Continuously dictate sentences into PocketWebTools voice cloning, generate and play each sentence, then resume listening.",
-  "permissions": [
-    "activeTab"
-  ],
-  "action": {
-    "default_popup": "popup.html",
-    "default_title": "PocketWeb Dictation"
-  },
+  "name": "VoiceChanger PocketWeb Dictation Bridge",
+  "version": "1.1.0",
+  "description": "Sends Chrome speech recognition transcripts from Pocket TTS Studio into PocketWebTools' TTS text field.",
+  "permissions": ["activeTab", "tabs"],
+  "host_permissions": ["https://pocketweb.tools/*", "https://nezoko45-dev.github.io/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "popup.html", "default_title": "PocketWeb Dictation" },
   "content_scripts": [
-    {
-      "matches": [
-        "https://pocketweb.tools/voice-cloning*"
-      ],
-      "js": [
-        "content.js"
-      ],
-      "run_at": "document_idle"
-    }
+    { "matches": ["https://pocketweb.tools/voice-cloning*"], "js": ["content.js"], "run_at": "document_idle" },
+    { "matches": ["https://nezoko45-dev.github.io/voicechanger/pocket-tts-studio/*"], "js": ["bridge.js"], "run_at": "document_idle" }
   ]
 }
