@@ -12,6 +12,7 @@ Deploy this repository to Vercel as a project with the repository root as its Ro
 In Vercel, add this environment variable to the project:
 
 - `FISH_AUDIO_API_KEY` — your Fish Audio API key.
+- `FISH_READER_ACCESS_CODE` — a private password you choose. Enter the same code in the reader page; it protects the public API routes from casual use.
 
 Redeploy after adding the variable. Never put the API key in the GitHub Pages HTML.
 
