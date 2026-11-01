@@ -18,7 +18,7 @@
 </div>
 <div class="grid">
  <div><label for="engine">Speech engine</label><select id="engine"><option value="fish">Fish Audio — my custom WAV voice</option><option value="edge">Microsoft Edge voices</option></select></div>
- <div><label for="fishBackend">Private API backend URL</label><input id="fishBackend" type="url" placeholder="https://your-project.vercel.app"></div>
+ <div><label for="fishBackend">Local backend URL</label><input id="fishBackend" type="url" value="http://127.0.0.1:3000" placeholder="http://127.0.0.1:3000"></div>
  
  <div><label for="fishVoiceId">Saved custom voice ID</label><input id="fishVoiceId" type="text" placeholder="Created after WAV upload"></div>
 </div>
@@ -28,7 +28,7 @@
  <div class="row"><input id="referenceWav" type="file" accept=".wav,audio/wav,audio/x-wav"><button id="uploadReference" type="button">Upload WAV & create voice</button></div>
  <label for="referenceTitle">Voice name</label><input id="referenceTitle" type="text" value="My custom voice">
  <label for="referenceTranscript">What is spoken in the WAV? (optional)</label><input id="referenceTranscript" type="text" placeholder="Transcript of the reference recording">
- <p class="muted"><small>Your Fish Audio API key stays on the server in Vercel. Fish Audio usage and billing limits still apply.</small></p>
+ <p class="muted"><small>Your Fish Audio API key stays on your PC in the local backend process. Fish Audio usage and billing limits still apply.</small></p>
 </div>
 <div class="row">
  <button id="start">Start microphone dictation</button><button id="stopDictation" disabled>Stop dictation</button>
@@ -38,7 +38,7 @@
 <textarea id="text" placeholder="Start dictation and speak, or type/paste text here…"></textarea>
 <div class="row"><label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500"><input id="clearAfterRead" type="checkbox" checked style="width:auto"> Clear text after it is read</label></div>
 <div class="row"><button id="read">Read aloud</button><button id="pause" disabled>Pause</button><button id="resume" disabled>Resume</button><button id="stopSpeech" disabled>Stop speech</button><button id="clear">Clear text</button></div>
-<p id="status" role="status">Ready. Enter your backend URL, then upload a WAV to create your custom voice.</p>
+<p id="status" role="status">Ready. Start the local backend on your PC, then upload a WAV to create your custom voice.</p>
 <script>
 (()=> {
  const $=id=>document.getElementById(id), text=$('text'), voiceSelect=$('voice');
@@ -56,8 +56,8 @@
  $('stopDictation').onclick=()=>{listening=false;pausedForSpeech=false;clearTimeout(restartTimer);const r=recognition;recognition=null;try{r?.abort()}catch{}$('start').disabled=false;$('stopDictation').disabled=true;status('Microphone dictation stopped.')};
  function scheduleAutoRead(){clearTimeout(autoTimer);if($('autoRead').checked)autoTimer=setTimeout(()=>{const v=text.value.trim();if(v)readText(v,true)},1400)}
  text.addEventListener('input',()=>{finalText=text.value;scheduleAutoRead()});
- function backendConfig(){const root=$('fishBackend').value.trim().replace(/\/+$/,'');if(!/^https:\/\//i.test(root))throw Error('Enter your deployed HTTPS backend URL first.');return {root}}
- async function backendRequest(path,options){const {root}=backendConfig();let res;try{res=await fetch(root+path,options)}catch(e){throw Error('Could not reach your Vercel backend. Check its URL and deployment. '+e.message)}if(!res.ok){let msg='Backend request failed ('+res.status+').';try{const d=await res.json();msg=d.error||d.message||msg}catch{}throw Error(msg)}return res}
+ function backendConfig(){const root=$('fishBackend').value.trim().replace(/\/+$/,'');if(!/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(root))throw Error('Use your local backend URL, such as http://127.0.0.1:3000.');return {root}}
+ async function backendRequest(path,options){const {root}=backendConfig();let res;try{res=await fetch(root+path,options)}catch(e){throw Error('Could not reach the local backend. Start fish-audio-local-backend.exe and check that its window is still open. '+e.message)}if(!res.ok){let msg='Backend request failed ('+res.status+').';try{const d=await res.json();msg=d.error||d.message||msg}catch{}throw Error(msg)}return res}
  $('uploadReference').onclick=async()=>{const file=$('referenceWav').files[0];if(!file){status('Choose your WAV file first.');return}if(!/\.wav$/i.test(file.name)&&!['audio/wav','audio/x-wav'].includes(file.type)){status('Please select a WAV file.');return}if(file.size>4*1024*1024){status('WAV is over 4 MB. The private backend accepts WAV files up to 4 MB; choose a shorter sample.');return}const b=$('uploadReference');b.disabled=true;status('Uploading your WAV to your private backend…');try{const form=new FormData();form.append('type','tts');form.append('title',$('referenceTitle').value.trim()||'My custom voice');form.append('train_mode','fast');form.append('visibility','private');form.append('voices',file,file.name);const transcript=$('referenceTranscript').value.trim();if(transcript)form.append('texts',transcript);const res=await backendRequest('/api/fish-create-voice',{method:'POST',body:form});const raw=await res.text();let data;try{data=JSON.parse(raw)}catch{throw Error('The backend returned an unreadable response: '+raw.slice(0,400))}const id=data._id||data.id||data.voice_id||data.model?._id||data.model?.id||data.data?._id||data.data?.id||data.voice?._id||data.voice?.id||data.voice?.voice_id;if(!id){const detail=data.detail||data.message||data.error||JSON.stringify(data);throw Error('Upload response did not contain a voice ID. Fish Audio response: '+String(detail).slice(0,500))}$('fishVoiceId').value=id;$('engine').value='fish';status('Your private custom voice was created! Voice ID: '+id+(data.state?' (state: '+data.state+')':''))}catch(e){status(e.message||'Could not create your voice.')}finally{b.disabled=false}};
  async function readText(value){if(!value)return;clearTimeout(autoTimer);pauseRecognition();speaking=true;$('read').disabled=true;$('pause').disabled=false;$('resume').disabled=true;$('stopSpeech').disabled=false;
  try{if($('engine').value==='fish'){const id=$('fishVoiceId').value.trim();if(!id)throw Error('Upload your custom WAV and create a voice first.');status('Generating speech with your custom Fish Audio voice…');const res=await backendRequest('/api/fish-reference-tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:value,reference_id:id,speed:1})});const blob=await res.blob();if(!blob.size)throw Error('Fish Audio returned empty audio.');currentAudioUrl=URL.createObjectURL(blob);liveAudio=new Audio(currentAudioUrl);liveAudio.onended=()=>finishSpeech('Finished reading with your custom Fish Audio voice.');liveAudio.onerror=()=>finishSpeech('Audio playback failed.');await liveAudio.play();status('Reading aloud with your custom Fish Audio voice…')}else{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(value);const v=chosenVoice();if(v)u.voice=v;u.onend=()=>finishSpeech('Finished reading.');u.onerror=e=>finishSpeech('Speech playback ended: '+e.error);speechSynthesis.speak(u);status('Reading aloud with '+(v?.name||'the selected Edge voice')+'…')}}catch(e){speaking=false;$('read').disabled=false;$('pause').disabled=true;$('resume').disabled=true;$('stopSpeech').disabled=true;status(e.message||'Speech generation failed.');resumeRecognition()}}
