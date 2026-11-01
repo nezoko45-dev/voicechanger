@@ -14,7 +14,7 @@ self.addEventListener("message", async event => {
     engine = new module.ChatterboxTTSEngine();
     audioArrayToWav = module.audioArrayToWav;
    }
-   await engine.initialize(progress => self.postMessage({type:"progress",data:progress}), false);
+   await engine.initialize(progress => self.postMessage({type:"progress",data:progress}), true);
    self.postMessage({type:"loaded",data:{device:navigator.gpu?"webgpu":"wasm"}});
   } else if (type === "encode") {
    if (!engine) throw new Error("Load the Chatterbox model before uploading a WAV.");
