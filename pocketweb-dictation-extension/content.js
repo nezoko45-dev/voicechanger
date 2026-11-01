@@ -18,6 +18,27 @@
       return t.includes("generate speech")||t==="generate"||t.includes("generate audio");
     })||null;
   }
+  function findResultButton(){
+    return [...document.querySelectorAll("button,[role=button],input[type=button],input[type=submit],a")].filter(visible).find(el=>{
+      const t=(el.innerText||el.textContent||el.value||el.getAttribute("aria-label")||"").trim().toLowerCase();
+      return /^(view\\s+)?result(s)?$/.test(t)||t==="show result"||t==="see result";
+    })||null;
+  }
+  async function waitForResultAndClick(){
+    const deadline=Date.now()+90000;
+    while(running&&Date.now()<deadline){
+      await new Promise(r=>setTimeout(r,500));
+      const result=findResultButton();
+      if(result&&!result.disabled&&Date.now()+0>0){
+        await new Promise(r=>setTimeout(r,1000));
+        if(!running)return false;
+        const current=findResultButton();
+        if(current&&!current.disabled){current.click();status("Generate completed — clicked Result.");return true;}
+      }
+    }
+    status("Generate was clicked, but no Result button appeared within 90 seconds.");
+    return false;
+  }
   function fill(el,text){
     el.focus();
     if(el.isContentEditable)el.textContent=text;
@@ -101,7 +122,8 @@
       if(!button)throw new Error("Recognized speech, but couldn't find Generate Speech.");
       fill(box,phrase);await new Promise(r=>setTimeout(r,250));
       if(button.disabled)throw new Error("Text entered, but Generate is disabled.");
-      button.click();status("Submitted: "+phrase.slice(0,100));
+      button.click();status("Submitted: "+phrase.slice(0,100)+" — waiting for Result…");
+      await waitForResultAndClick();
     }catch(e){status((e.message||"Submission failed")+" Transcript: "+phrase.slice(0,120));}
     await new Promise(r=>setTimeout(r,700));busy=false;if(running)startRecognition();
   }
