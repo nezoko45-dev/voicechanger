@@ -1,0 +1,38 @@
+name: Build PocketWeb Dictation EXE
+
+on:
+  push:
+    branches:
+      - feature/pocketweb-dictation-exe
+    paths:
+      - "pocketweb-dictation-exe/**"
+      - ".github/workflows/build-pocketweb-dictation-exe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Publish self-contained EXE
+        run: dotnet publish pocketweb-dictation-exe/PocketWebDictation.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
+      - name: Include Chrome launcher and instructions
+        shell: pwsh
+        run: |
+          Copy-Item pocketweb-dictation-exe/Start-Chrome-Debug.bat publish/
+          Copy-Item pocketweb-dictation-exe/README.md publish/README.txt
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: PocketWebDictation-Windows-x64
+          path: publish/*
+          if-no-files-found: error
+          retention-days: 30
