@@ -13,7 +13,7 @@
 <p class="muted">A browser-only voice page. Microsoft Edge handles microphone dictation and reads text aloud using voices available to Edge, including Microsoft online neural voices when exposed by your Edge installation. No EXE, API key, Python, or local server.</p>
 <div class="notice"><strong>Microphone:</strong> Open this GitHub Pages site over HTTPS, click Start microphone dictation, and allow microphone access. For best results while reading aloud, use headphones so the microphone does not hear the computer's speaker.</div>
 <div class="grid">
- <div><label for="voice">Microsoft Edge speech voice</label><select id="voice"><option>Loading Chrome voices…</option></select></div>
+ <div><label for="voice">Microsoft Edge speech voice</label><select id="voice"><option>Loading Microsoft Edge voices…</option></select></div>
  <div><label for="language">Dictation language</label><select id="language"><option value="en-US">English (United States)</option><option value="en-GB">English (United Kingdom)</option><option value="en-AU">English (Australia)</option><option value="en-CA">English (Canada)</option><option value="en">English (automatic)</option></select></div>
 </div>
 <div class="row">
@@ -52,10 +52,10 @@
  }
  function createSession(id){
   const r=new SR();r.continuous=true;r.interimResults=true;r.lang=$('language').value;
-  r.onstart=()=>{if(id!==sessionId)return;starting=false;clearTimeout(watchdog);clearTimeout(sessionTimer);restartDelay=500;start.disabled=true;stopDictation.disabled=false;status('Listening to your microphone…');sessionTimer=setTimeout(()=>{if(id===sessionId&&listening&&!speaking&&!pausedForSpeech){status('Refreshing Chrome speech session…');try{r.stop()}catch{scheduleRestart(500)} }},55000)};
+  r.onstart=()=>{if(id!==sessionId)return;starting=false;clearTimeout(watchdog);clearTimeout(sessionTimer);restartDelay=500;start.disabled=true;stopDictation.disabled=false;status('Listening to your microphone… Automatic recovery is enabled.');sessionTimer=setTimeout(()=>{if(id===sessionId&&listening&&!speaking&&!pausedForSpeech){status('Refreshing Edge speech session…');try{r.stop();watchdog=setTimeout(()=>{if(id===sessionId&&listening&&!speaking&&!pausedForSpeech){try{r.abort()}catch{}if(recognition===r)recognition=null;sessionId++;starting=false;scheduleRestart(500)}},3500)}catch{if(recognition===r)recognition=null;sessionId++;starting=false;scheduleRestart(500)} }},50000)};
   r.onresult=e=>{if(id!==sessionId)return;let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const phrase=e.results[i][0].transcript;if(e.results[i].isFinal){finalText+=phrase.trim()+' ';scheduleAutoRead()}else interim+=phrase}text.value=finalText+interim;text.scrollTop=text.scrollHeight};
   r.onerror=e=>{if(id!==sessionId)return;starting=false;clearTimeout(watchdog);if(e.error==='not-allowed'||e.error==='service-not-allowed'){listening=false;clearTimeout(restartTimer);clearTimeout(sessionTimer);start.disabled=false;stopDictation.disabled=true;status('Microsoft Edge blocked microphone recognition. Check site microphone permission and Edge speech service availability.')}else if(e.error!=='aborted'){status('Edge speech service interrupted ('+e.error+'). Reconnecting…');clearTimeout(watchdog);watchdog=setTimeout(()=>{if(id===sessionId&&listening&&!speaking&&!pausedForSpeech){try{r.abort()}catch{}if(recognition===r)recognition=null;starting=false;scheduleRestart(700)}},1800)}};
-  r.onend=()=>{if(id!==sessionId)return;recognition=null;starting=false;clearTimeout(watchdog);clearTimeout(sessionTimer);if(listening&&!speaking&&!pausedForSpeech){restartDelay=Math.min(Math.max(restartDelay*1.35,500),2500);status('Edge recognition ended. Reopening the microphone…');scheduleRestart(restartDelay)}};
+  r.onend=()=>{if(id!==sessionId)return;recognition=null;starting=false;clearTimeout(watchdog);clearTimeout(sessionTimer);if(listening&&!speaking&&!pausedForSpeech){restartDelay=Math.min(Math.max(restartDelay*1.5,700),8000);status('Edge recognition ended. Automatically reconnecting…');scheduleRestart(restartDelay)}};
   return r
  }
  function beginFreshSession(){
