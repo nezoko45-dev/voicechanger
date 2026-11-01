@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pocket TTS Studio WebGPU — VoiceChanger</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
+    <link rel="stylesheet" href="./styles/main.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <div class="logo-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                        <path d="M12 14C13.66 14 15 12.66 15 11V5C15 3.34 13.66 2 12 2C10.34 2 9 3.34 9 5V11C9 12.66 10.34 14 12 14Z" fill="white"/>
+                        <path d="M17 11C17 13.76 14.76 16 12 16C9.24 16 7 13.76 7 11H5C5 14.53 7.61 17.43 11 17.92V21H13V17.92C16.39 17.43 19 14.53 19 11H17Z" fill="white"/>
+                    </svg>
+                </div>
+                <div class="logo-content">
+                    <span class="logo-text">Pocket TTS<span class="logo-web"> WebGPU</span></span>
+                    <span class="logo-tagline">Local voice cloning · Chatterbox Turbo ONNX</span>
+                </div>
+            </div>
+
+            <nav class="nav-menu">
+                <button class="nav-item active" data-page="home">
+                    <i class="ti ti-home"></i>
+                    <span>Home</span>
+                </button>
+                <button class="nav-item" data-page="library">
+                    <i class="ti ti-stack-2"></i>
+                    <span>Voice Library</span>
+                </button>
+                <button class="nav-item" data-page="history">
+                    <i class="ti ti-clock"></i>
+                    <span>History</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="powered-by">
+                    <p>Powered by Transformers.js</p>
+                    <p class="powered-desc">Everything runs 100% locally in your browser on WebGPU.</p>
+                </div>
+                <div class="model-progress" id="model-progress" aria-live="polite">
+                    <div class="model-progress-label">Model Downloads</div>
+                    <div class="model-progress-status" id="model-progress-text">Idle</div>
+                    <div class="model-progress-bar">
+                        <div class="model-progress-fill" id="model-progress-fill"></div>
+                    </div>
+                </div>
+                <div class="footer-buttons">
+                    <button class="footer-btn" id="view-model-btn">View Model</button>
+                    <button class="footer-btn" id="source-code-btn">Source Code</button>
+                </div>
+                <div class="made-by">
+                    <p>VoiceChanger · GitHub Pages</p>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Home Page -->
+            <div class="page active" id="home-page">
+                <header class="page-header">
+                    <!-- Header removed - tagline moved to sidebar -->
+                </header>
+
+                <div class="generation-container">
+                    <div class="control-grid">
+                        <!-- Voice Selection -->
+                        <section class="card control-card">
+                            <div class="card-header">
+                                <i class="ti ti-microphone"></i>
+                                <h2>Voice</h2>
+                            </div>
+                            <div class="voice-selector-container">
+                                <select class="voice-selector" id="voice-selector">
+                                    <!-- Voices will be populated dynamically -->
+                                </select>
+                                <button class="btn btn-icon" id="preview-voice-btn" title="Preview voice">
+                                    <i class="ti ti-player-play voice-play-icon"></i>
+                                    <i class="ti ti-player-pause voice-pause-icon" style="display: none;"></i>
+                                </button>
+                                <button class="btn btn-primary" id="create-voice-btn">Create new voice</button>
+                            </div>
+                        </section>
+
+                        <!-- Temperature -->
+                        <section class="card control-card">
+                            <div class="card-header">
+                                <i class="ti ti-adjustments"></i>
+                                <h2>Style</h2>
+                            </div>
+                            <div class="control-group">
+                                <label class="control-label">
+                                    <span>Temperature</span>
+                                    <span class="control-value" id="temp-value">0.20</span>
+                                </label>
+                                <p class="control-desc">Increase randomness and variation.</p>
+                                <input type="range" class="slider" id="temperature-slider" min="0" max="2" step="0.01" value="0.20">
+                            </div>
+                        </section>
+
+                        <!-- Repetition Penalty -->
+                        <section class="card control-card">
+                            <div class="card-header">
+                                <i class="ti ti-repeat"></i>
+                                <h2>Repetition Penalty</h2>
+                            </div>
+                            <div class="control-group">
+                                <label class="control-label">
+                                    <span>Penalty</span>
+                                    <span class="control-value" id="rep-value">1.20</span>
+                                </label>
+                                <p class="control-desc">Penalize repeated speech patterns to enhance diversity.</p>
+                                <input type="range" class="slider" id="repetition-slider" min="1" max="2" step="0.01" value="1.20">
+                            </div>
+                        </section>
+                    </div>
+
+                    <!-- Text Input -->
+                    <section class="card">
+                        <div class="card-header">
+                            <i class="ti ti-file-text"></i>
+                            <h2>Text</h2>
+                        </div>
+                        <div class="text-input-wrapper">
+                            <div
+                                class="text-input-highlights"
+                                id="text-input-highlights"
+                                aria-hidden="true"></div>
+                            <textarea
+                                class="text-input"
+                                id="text-input"
+                                placeholder="Enter your text here..."
+                                rows="6">Chatterbox Turbo from Resemble AI is an advanced open-source text-to-speech model [chuckle] designed for fast, expressive, and high-quality voice generation.</textarea>
+                        </div>
+
+                        <div class="emotion-tags">
+                            <h3>EMOTION TAGS</h3>
+                            <div class="tags-container">
+                                <button class="tag-btn">angry</button>
+                                <button class="tag-btn">fear</button>
+                                <button class="tag-btn">surprised</button>
+                                <button class="tag-btn">whispering</button>
+                                <button class="tag-btn">advertisement</button>
+                                <button class="tag-btn">dramatic</button>
+                                <button class="tag-btn">narration</button>
+                                <button class="tag-btn">crying</button>
+                                <button class="tag-btn">happy</button>
+                                <button class="tag-btn">sarcastic</button>
+                                <button class="tag-btn">clear throat</button>
+                                <button class="tag-btn">sigh</button>
+                                <button class="tag-btn">shush</button>
+                                <button class="tag-btn">cough</button>
+                                <button class="tag-btn">groan</button>
+                                <button class="tag-btn">sniff</button>
+                                <button class="tag-btn">gasp</button>
+                                <button class="tag-btn">chuckle</button>
+                                <button class="tag-btn">laugh</button>
+                            </div>
+                        </div>
+                        <button class="btn btn-generate" id="generate-btn">
+                            <i class="ti ti-wand"></i>
+                            Generate
+                        </button>
+                    </section>
+
+                    <!-- Output Section -->
+                    <section class="card output-section" id="output-section" style="display: none;">
+                        <div class="waveform" id="waveform"></div>
+                        <div class="audio-player-container">
+                            <audio controls class="audio-player" id="audio-player"></audio>
+                            <button class="btn btn-icon" id="download-btn" title="Download">
+                                <i class="ti ti-download"></i>
+                            </button>
+                        </div>
+                    </section>
+
+                    <!-- Loading State -->
+                    <section class="card loading-section" id="loading-section" style="display: none;">
+                        <div class="loading-spinner"></div>
+                        <p class="loading-text">Generating audio...</p>
+                        <p class="loading-subtext" id="loading-status">Initializing models...</p>
+                    </section>
+                </div>
+            </div>
+
+            <!-- Voice Library Page -->
+            <div class="page" id="library-page">
+                <header class="page-header">
+                    <h1>Voice Library</h1>
+                    <button class="btn btn-primary" id="add-voice-btn">+ Add Voice</button>
+                </header>
+
+                <div class="search-container">
+                    <input type="text" class="search-input" id="voice-search" placeholder="Search voices...">
+                    <span class="voice-count" id="voice-count">0 voices</span>
+                </div>
+
+                <div class="voice-grid" id="voice-grid">
+                    <!-- Voice cards will be dynamically added here -->
+                </div>
+            </div>
+
+            <!-- History Page -->
+            <div class="page" id="history-page">
+                <header class="page-header">
+                    <h1>History</h1>
+                </header>
+
+                <div class="history-list" id="history-list">
+                    <!-- History entries will be dynamically added here -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Voice Upload Modal -->
+    <div class="modal" id="voice-upload-modal">
+        <div class="modal-content">
+            <h2 class="modal-title">Add New Voice</h2>
+
+            <button class="upload-option" id="upload-file-btn">
+                <span>Upload from File</span>
+            </button>
+
+            <input type="file" id="file-input" accept="audio/*" style="display: none;">
+
+            <p class="modal-divider">or capture a new sample</p>
+
+            <button class="upload-option upload-option-primary" id="record-btn">
+                <i class="ti ti-microphone" style="font-size: 20px;"></i>
+                <span>Record with Microphone (1–60s)</span>
+            </button>
+
+            <!-- Recording State -->
+            <div class="recording-state" id="recording-state" style="display: none;">
+                <div class="recording-indicator">
+                    <div class="recording-dot"></div>
+                    <span>Recording... <span id="recording-time">0:00</span></span>
+                </div>
+                <button class="btn btn-danger" id="stop-recording-btn">Stop Recording</button>
+            </div>
+
+            <!-- Preview State -->
+            <div class="preview-state" id="preview-state" style="display: none;">
+                <h3 class="preview-title">Preview & Save</h3>
+                <audio controls class="preview-audio" id="preview-audio"></audio>
+
+                <div class="form-group">
+                    <label for="voice-name-input">VOICE NAME</label>
+                    <input type="text" class="form-input" id="voice-name-input" placeholder="Enter voice name">
+                </div>
+
+                <div class="form-group">
+                    <label for="voice-desc-input">DESCRIPTION</label>
+                    <textarea class="form-input" id="voice-desc-input" placeholder="Describe when this voice should be used." rows="3"></textarea>
+                </div>
+
+                <p class="sample-ready">Sample ready to upload.</p>
+
+                <div class="preview-actions">
+                    <button class="btn btn-secondary" id="re-record-btn" type="button">
+                        Re-record sample
+                    </button>
+                </div>
+
+                <div class="modal-buttons">
+                    <button class="btn btn-secondary" id="cancel-voice-btn">Cancel</button>
+                    <button class="btn btn-primary" id="save-voice-btn">Save Voice</button>
+                </div>
+            </div>
+
+            <button class="modal-close" id="close-modal-btn">Close</button>
+        </div>
+    </div>
+
+    <script type="module" src="./js/main.js"></script>
+</body>
+</html>
