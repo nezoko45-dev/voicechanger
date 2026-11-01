@@ -37,6 +37,10 @@ jobs:
           test -s openrouter-tts-reader/index.html
           test -s pocket-tts-studio/index.html
           test -s pocket-tts-webgpu/index.html
+          node --check pocket-tts-webgpu/js/main.js
+          node --check pocket-tts-webgpu/js/audio.js
+          node --check pocket-tts-webgpu/js/db.js
+          node --check pocket-tts-webgpu/js/tts-engine-complete.js
           mkdir -p _site
           cp index.html _site/index.html
           cp -R openrouter-tts-reader _site/openrouter-tts-reader
