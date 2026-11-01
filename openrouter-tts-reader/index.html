@@ -98,6 +98,7 @@
   if($('engine').value==='fish'){
    const root=backend(),voiceId=$('fishVoiceId').value.trim();
    if(!root){status('Enter your private API backend URL first.');return}
+   if(!accessCode()){status('Enter your private reader access code first.');return}
    if(!voiceId){status('Upload your custom WAV and create a voice first.');return}
    speechSynthesis?.cancel();pauseRecognitionForSpeech();speaking=true;lastRead=value;
    $('read').disabled=true;$('pause').disabled=false;$('resume').disabled=true;$('stopSpeech').disabled=false;
@@ -140,6 +141,7 @@
   const file=$('referenceWav').files[0],root=backend();
   if(!file){status('Choose your custom WAV file first.');return}
   if(!root){status('Enter your private API backend URL first.');return}
+  if(!accessCode()){status('Enter your private reader access code first.');return}
   if(!/\\.wav$/i.test(file.name)&&file.type!=='audio/wav'&&file.type!=='audio/x-wav'){status('Please select a WAV audio file.');return}
   if(file.size>4*1024*1024){status('This upload is over 4 MB. Trim the WAV to a clean 10–30 second sample and try again.');return}
   const button=$('uploadReference');button.disabled=true;status('Uploading WAV and creating your private Fish Audio voice…');
