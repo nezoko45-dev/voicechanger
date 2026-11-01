@@ -30,14 +30,14 @@ struct TtsRequest {
 
 async fn cors(req: axum::http::Request<axum::body::Body>, next: Next) -> Response {
     let is_preflight = req.method() == Method::OPTIONS;
-    let origin = req.headers().get(header::ORIGIN).and_then(|v| v.to_str().ok());
+    let allowed_origin = req.headers().get(header::ORIGIN).and_then(|v| v.to_str().ok()) == Some(ALLOWED_ORIGIN);
     let mut response = if is_preflight {
         StatusCode::NO_CONTENT.into_response()
     } else {
         next.run(req).await
     };
 
-    if origin == Some(ALLOWED_ORIGIN) {
+    if allowed_origin {
         let h = response.headers_mut();
         h.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static(ALLOWED_ORIGIN));
         h.insert(header::ACCESS_CONTROL_ALLOW_METHODS, HeaderValue::from_static("POST, OPTIONS"));
@@ -114,7 +114,7 @@ async fn reference_tts(
         .header(header::AUTHORIZATION, format!("Bearer {}", state.api_key))
         .header(header::CONTENT_TYPE, "application/json")
         .header("model", "s2.1-pro")
-        .json(&payload)
+        .body(payload.to_string())
         .send()
         .await
     {
