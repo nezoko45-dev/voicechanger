@@ -55,21 +55,29 @@
  function setModelDetail(s){$('modelDetail').textContent=s}
  function request(type,data,expected){
   return new Promise((resolve,reject)=>{
+   if(!worker){reject(new Error('Model worker was not created.'));return}
+   let settled=false;
+   const cleanup=()=>{clearTimeout(timer);worker.removeEventListener('message',handler);worker.removeEventListener('error',onError)};
+   const finish=(fn,value)=>{if(settled)return;settled=true;cleanup();fn(value)};
    const handler=e=>{
     const m=e.data||{};
     if(m.type==='progress'){updateProgress(m.data);return}
-    if(m.type==='failure'){worker.removeEventListener('message',handler);reject(new Error(m.data?.message||'Model error'));return}
-    if(m.type===expected){worker.removeEventListener('message',handler);resolve(m.data);return}
+    if(m.type==='failure'){finish(reject,new Error(m.data?.message||'Model worker reported an error'));return}
+    if(m.type===expected){finish(resolve,m.data);return}
    };
+   const onError=e=>finish(reject,new Error('The model worker could not start: '+(e.message||'module import or script loading failed')+' Check the browser console for the exact file or network error.'));
+   const timer=setTimeout(()=>finish(reject,new Error('The model worker did not respond within 3 minutes. Check the browser console and refresh the page to retry.')),180000);
    worker.addEventListener('message',handler);
-   worker.postMessage({type,data});
+   worker.addEventListener('error',onError);
+   try{worker.postMessage({type,data})}catch(e){finish(reject,e)}
   });
  }
  function updateProgress(p){
   if(!p)return;
   const total=Number(p.total)||0,loaded=Number(p.loaded)||0;
   if(total>0)$('modelProgress').value=Math.min(100,loaded/total*100);
-  setModelDetail((p.file||'Downloading model')+' — '+(p.status||'loading')+(total?' ('+Math.round(loaded/total*100)+'%)':''));
+  const detail=p.message||p.file||'Loading model';
+  setModelDetail(detail+(p.status?' — '+p.status:'')+(total?' ('+Math.round(loaded/total*100)+'%)':''));
  }
  $('loadModel').onclick=async()=>{
   if(modelReady)return;
