@@ -25,6 +25,7 @@ internal sealed class MainForm : Form
     private readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(4) };
     private ClientWebSocket? socket;
     private int commandId;
+    private readonly SemaphoreSlim commandLock = new(1, 1);
     private bool active;
 
     public MainForm()
@@ -135,30 +136,35 @@ internal sealed class MainForm : Form
     private async Task<string> EvaluateAsync(string expression)
     {
         if (socket?.State != WebSocketState.Open) throw new InvalidOperationException("Chrome debugging connection is closed.");
-        int id = Interlocked.Increment(ref commandId);
-        var payload = JsonSerializer.Serialize(new { id, method = "Runtime.evaluate", @params = new { expression, awaitPromise = true, returnByValue = true } });
-        await socket.SendAsync(Encoding.UTF8.GetBytes(payload), WebSocketMessageType.Text, true, CancellationToken.None);
-        var buffer = new byte[65536];
-        while (true)
+        await commandLock.WaitAsync();
+        try
         {
-            using var ms = new MemoryStream();
-            WebSocketReceiveResult part;
-            do
+            int id = Interlocked.Increment(ref commandId);
+            var payload = JsonSerializer.Serialize(new { id, method = "Runtime.evaluate", @params = new { expression, awaitPromise = true, returnByValue = true } });
+            await socket.SendAsync(Encoding.UTF8.GetBytes(payload).AsMemory(), WebSocketMessageType.Text, true, CancellationToken.None);
+            var buffer = new byte[65536];
+            while (true)
             {
-                part = await socket.ReceiveAsync(buffer, CancellationToken.None);
-                if (part.MessageType == WebSocketMessageType.Close) throw new InvalidOperationException("Chrome closed the debugging connection.");
-                ms.Write(buffer, 0, part.Count);
-            } while (!part.EndOfMessage);
-            using var doc = JsonDocument.Parse(ms.ToArray());
-            var root = doc.RootElement;
-            if (!root.TryGetProperty("id", out var gotId) || gotId.GetInt32() != id) continue;
-            if (root.TryGetProperty("error", out var error)) throw new InvalidOperationException(error.ToString());
-            var result = root.GetProperty("result");
-            if (result.TryGetProperty("exceptionDetails", out var exception)) throw new InvalidOperationException(exception.ToString());
-            if (result.TryGetProperty("result", out var remote) && remote.TryGetProperty("value", out var value))
-                return value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : value.ToString();
-            return "Connected.";
+                using var ms = new MemoryStream();
+                ValueWebSocketReceiveResult part;
+                do
+                {
+                    part = await socket.ReceiveAsync(buffer.AsMemory(), CancellationToken.None);
+                    if (part.MessageType == WebSocketMessageType.Close) throw new InvalidOperationException("Chrome closed the debugging connection.");
+                    ms.Write(buffer, 0, part.Count);
+                } while (!part.EndOfMessage);
+                using var doc = JsonDocument.Parse(ms.ToArray());
+                var root = doc.RootElement;
+                if (!root.TryGetProperty("id", out var gotId) || gotId.GetInt32() != id) continue;
+                if (root.TryGetProperty("error", out var error)) throw new InvalidOperationException(error.ToString());
+                var result = root.GetProperty("result");
+                if (result.TryGetProperty("exceptionDetails", out var exception)) throw new InvalidOperationException(exception.ToString());
+                if (result.TryGetProperty("result", out var remote) && remote.TryGetProperty("value", out var value))
+                    return value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : value.ToString();
+                return "Connected.";
+            }
         }
+        finally { commandLock.Release(); }
     }
 
     private static string ReadEmbeddedScript()
