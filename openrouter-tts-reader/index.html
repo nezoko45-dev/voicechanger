@@ -15,7 +15,7 @@
 
 <div class="notice">
  <strong>1. Load the voice engine</strong>
- <p class="muted">The first download is large (about 1.5 GB). Keep this tab open until the model finishes loading.</p>
+ <p class="muted">The first model download is about 350 MB (FP32). Keep this tab open until it finishes loading.</p>
  <button id="loadModel" type="button">Load Chatterbox model</button>
  <progress id="modelProgress" max="100" value="0"></progress>
  <p id="modelDetail" class="muted">Model not loaded.</p>
@@ -38,7 +38,7 @@
 <textarea id="text" placeholder="Speak into your microphone, or type/paste text here…"></textarea>
 <div class="row">
  <label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500"><input id="clearAfterRead" type="checkbox" checked style="width:auto"> Clear text after it is read</label>
- <label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500">Expressiveness <input id="exaggeration" type="range" min="0" max="1.5" step="0.05" value="0.5" style="width:130px"></label>
+ <label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500">Temperature <input id="exaggeration" type="range" min="0.1" max="1" step="0.05" value="0.2" style="width:130px"></label>
 </div>
 <div class="row"><button id="read" disabled>Generate & read aloud</button><button id="pause" disabled>Pause</button><button id="resume" disabled>Resume</button><button id="stopSpeech" disabled>Stop speech</button><button id="download" disabled>Download WAV</button><button id="clear">Clear text</button></div>
 <audio id="player" controls style="width:100%;display:none"></audio>
@@ -142,7 +142,7 @@
    const parts=chunks(value),waves=[];
    for(let i=0;i<parts.length;i++){
     status('Generating speech locally… part '+(i+1)+' of '+parts.length);
-    const result=await request('generate',{id:SPEAKER_ID,text:parts[i],exaggeration:Number($('exaggeration').value)},'audio');
+    const result=await request('generate',{id:SPEAKER_ID,text:parts[i],temperature:Number($('exaggeration').value),repetitionPenalty:1.2},'audio');
     waves.push(new Float32Array(result));
     if(i<parts.length-1)waves.push(new Float32Array(Math.round(SAMPLE_RATE*.18)));
    }
