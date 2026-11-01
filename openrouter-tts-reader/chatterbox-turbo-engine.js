@@ -1,6 +1,6 @@
 // Complete Chatterbox-Turbo TTS Engine using ONNX Runtime Web with WebGPU
 
-import * as ort from 'https://esm.sh/onnxruntime-web@1.17.0';
+import * as ort from 'https://esm.sh/onnxruntime-web@1.22.0';
 import { AutoTokenizer } from 'https://esm.sh/@xenova/transformers@2.17.1';
 
 // Configuration constants from config.json
@@ -285,7 +285,7 @@ export class ChatterboxTTSEngine {
 
             // Determine model suffix based on quantization preference
             // Note: FP32 models have NO suffix, quantized models have _fp16, _q4, etc.
-            const modelSuffix = useQuantized ? '_fp16' : '';
+            const modelSuffix = useQuantized ? '_q4' : ''; // Q4 weights keep browser downloads and memory use manageable.
             const baseUrl = `https://huggingface.co/${MODEL_ID}/resolve/main/onnx`;
 
             // Session options - Use WebGPU where possible, WASM as fallback
