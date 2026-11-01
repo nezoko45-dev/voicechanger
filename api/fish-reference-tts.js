@@ -1,14 +1,12 @@
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "https://nezoko45-dev.github.io");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Reader-Access-Code");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 export default async function handler(req, res) {
   cors(res);
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Use POST." });
-  if (!process.env.FISH_READER_ACCESS_CODE) return res.status(503).json({ error: "Add FISH_READER_ACCESS_CODE to your Vercel environment variables." });
-  if (req.headers["x-reader-access-code"] !== process.env.FISH_READER_ACCESS_CODE) return res.status(401).json({ error: "Reader access code is incorrect." });
   if (!process.env.FISH_AUDIO_API_KEY) return res.status(503).json({ error: "Add FISH_AUDIO_API_KEY to your Vercel environment variables." });
   try {
     const { text, reference_id, speed } = req.body || {};
