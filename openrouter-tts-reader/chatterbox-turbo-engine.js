@@ -209,7 +209,7 @@ async function loadTokenizerForRepo(repoId, progressCallback) {
 
 // Configure ONNX Runtime
 ort.env.wasm.numThreads = 1;
-ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/';
+ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/';
 ort.env.wasm.simd = true;
 ort.env.logLevel = 'warning';
 
