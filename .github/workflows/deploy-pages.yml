@@ -9,6 +9,7 @@ on:
       - "openrouter-tts-reader/**"
       - "pocket-tts-studio/**"
       - "pocket-tts-webgpu/**"
+      - "chatterbox-test/**"
       - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
@@ -46,6 +47,7 @@ jobs:
           cp -R openrouter-tts-reader _site/openrouter-tts-reader
           cp -R pocket-tts-studio _site/pocket-tts-studio
           cp -R pocket-tts-webgpu _site/pocket-tts-webgpu
+          cp -R chatterbox-test _site/chatterbox-test
           touch _site/.nojekyll
 
       - name: Configure Pages
