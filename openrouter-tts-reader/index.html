@@ -10,18 +10,25 @@
 </head>
 <body>
 <h1>Voice Dictation & Neural Reader</h1>
-<p class="muted">Microphone dictation with Microsoft Edge voices or LiveKit Fish Audio neural speech. LiveKit uses a private server endpoint so your API credentials are not exposed in this public page.</p>
+<p class="muted">Keep your existing microphone dictation. Upload a custom WAV once to create a private Fish Audio voice, then use that voice for natural read-aloud.</p>
 <div class="notice"><strong>Microphone:</strong> Open this GitHub Pages site over HTTPS, click Start microphone dictation, and allow microphone access. For best results while reading aloud, use headphones so the microphone does not hear the computer's speaker.</div>
 <div class="grid">
  <div><label for="voice">Microsoft Edge speech voice</label><select id="voice"><option>Loading Microsoft Edge voices…</option></select></div>
  <div><label for="language">Dictation language</label><select id="language"><option value="en-US">English (United States)</option><option value="en-GB">English (United Kingdom)</option><option value="en-AU">English (Australia)</option><option value="en-CA">English (Canada)</option><option value="en">English (automatic)</option></select></div>
 </div>
 <div class="grid">
- <div><label for="engine">Speech engine</label><select id="engine"><option value="edge">Microsoft Edge voices</option><option value="livekit">LiveKit — Fish Audio S2.1 Pro</option></select></div>
- <div><label for="livekitEndpoint">LiveKit TTS endpoint</label><input id="livekitEndpoint" type="url" placeholder="https://your-vercel-project.vercel.app/api/livekit-tts" style="box-sizing:border-box;width:100%;padding:10px;border-radius:9px;font:inherit"></div>
- <div><label for="livekitVoice">Fish Audio voice ID</label><input id="livekitVoice" type="text" value="b347db033a6549378b48d00acb0d06cd" style="box-sizing:border-box;width:100%;padding:10px;border-radius:9px;font:inherit"></div>
+ <div><label for="engine">Speech engine</label><select id="engine"><option value="edge">Microsoft Edge voices</option><option value="fish">Fish Audio — my custom WAV voice</option></select></div>
+ <div><label for="fishBackend">Private API backend URL</label><input id="fishBackend" type="url" placeholder="https://your-vercel-project.vercel.app" style="box-sizing:border-box;width:100%;padding:10px;border-radius:9px;font:inherit"></div>
+ <div><label for="fishVoiceId">Saved custom voice ID</label><input id="fishVoiceId" type="text" placeholder="Upload your WAV to create a voice" style="box-sizing:border-box;width:100%;padding:10px;border-radius:9px;font:inherit"></div>
 </div>
-<p class="muted"><small>For LiveKit, deploy the included /api/livekit-tts.js function to Vercel and add LIVEKIT_API_KEY and LIVEKIT_API_SECRET as encrypted Vercel environment variables. Then paste that function URL above. Your credentials must never be pasted into this page.</small></p>
+<div class="notice">
+ <strong>Custom reference voice</strong>
+ <p class="muted">Choose your own clean WAV recording. Fish Audio creates a private reusable voice ID from it. A clean 10–30 second sample is a good starting point; longer clean speech can help.</p>
+ <div class="row"><input id="referenceWav" type="file" accept=".wav,audio/wav,audio/x-wav"><button id="uploadReference" type="button">Upload WAV & create voice</button></div>
+ <label for="referenceTitle">Voice name</label><input id="referenceTitle" type="text" value="My custom voice" style="box-sizing:border-box;width:100%;padding:10px;border-radius:9px;font:inherit">
+ <label for="referenceTranscript">What is spoken in the WAV? (optional)</label><input id="referenceTranscript" type="text" placeholder="Transcript of the reference recording" style="box-sizing:border-box;width:100%;padding:10px;border-radius:9px;font:inherit">
+ <p class="muted"><small>For secure API access, deploy the included API routes to a Vercel project and set FISH_AUDIO_API_KEY there. The key is never placed in this GitHub Pages page.</small></p>
+</div>
 <div class="row">
  <button id="start">Start microphone dictation</button><button id="stopDictation" disabled>Stop dictation</button>
  <label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500"><input id="autoRead" type="checkbox" checked> Automatically read finished phrases</label>
@@ -38,7 +45,7 @@
 (()=>{
  const $=id=>document.getElementById(id),text=$('text'),voiceSelect=$('voice'),start=$('start'),stopDictation=$('stopDictation');
  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
- let availableVoices=[],recognition=null,listening=false,starting=false,pausedForSpeech=false,restartTimer=null,restartDelay=500,watchdog=null,sessionTimer=null,sessionId=0,finalText='',autoTimer=null,speaking=false,lastRead='',utterance=null,liveAudio=null;
+ let availableVoices=[],recognition=null,listening=false,starting=false,pausedForSpeech=false,restartTimer=null,restartDelay=500,watchdog=null,sessionTimer=null,sessionId=0,finalText='',autoTimer=null,speaking=false,lastRead='',utterance=null,liveAudio=null;\n const backend=()=>$('fishBackend').value.trim().replace(/\\/$/,'');
  const status=s=>$('status').textContent=s;
  function loadVoices(){
   availableVoices=window.speechSynthesis? speechSynthesis.getVoices():[];
@@ -86,22 +93,23 @@
  async function readText(value,automatic){
   if(!value)return;
   clearTimeout(autoTimer);
-  if($('engine').value==='livekit'){
-   const endpoint=$('livekitEndpoint').value.trim();
-   if(!endpoint){status('Paste your deployed LiveKit TTS endpoint first.');return}
+  if($('engine').value==='fish'){
+   const root=backend(),voiceId=$('fishVoiceId').value.trim();
+   if(!root){status('Enter your private API backend URL first.');return}
+   if(!voiceId){status('Upload your custom WAV and create a voice first.');return}
    speechSynthesis?.cancel();pauseRecognitionForSpeech();speaking=true;lastRead=value;
    $('read').disabled=true;$('pause').disabled=false;$('resume').disabled=true;$('stopSpeech').disabled=false;
-   status('Generating neural speech with LiveKit Fish Audio…');
+   status('Generating speech with your custom Fish Audio voice…');
    try{
-    const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:value,voice:$('livekitVoice').value.trim()})});
-    if(!response.ok){let message='LiveKit request failed ('+response.status+').';try{message=(await response.json()).error||message}catch{}throw new Error(message)}
-    const blob=await response.blob();if(!blob.size)throw new Error('LiveKit returned empty audio.');
+    const response=await fetch(root+'/api/fish-reference-tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:value,reference_id:voiceId,speed:1})});
+    if(!response.ok){let message='Fish Audio request failed ('+response.status+').';try{message=(await response.json()).error||message}catch{}throw new Error(message)}
+    const blob=await response.blob();if(!blob.size)throw new Error('Fish Audio returned empty audio.');
     liveAudio=new Audio(URL.createObjectURL(blob));
-    liveAudio.onended=()=>{if(liveAudio){URL.revokeObjectURL(liveAudio.src);liveAudio=null}finishSpeech('Finished reading with LiveKit Fish Audio.')};
-    liveAudio.onerror=()=>finishSpeech('LiveKit audio playback failed.');
+    liveAudio.onended=()=>{if(liveAudio){URL.revokeObjectURL(liveAudio.src);liveAudio=null}finishSpeech('Finished reading with your custom Fish Audio voice.')};
+    liveAudio.onerror=()=>finishSpeech('Custom voice audio playback failed.');
     await liveAudio.play();
-    status('Reading aloud with LiveKit Fish Audio…');
-   }catch(error){speaking=false;liveAudio=null;$('read').disabled=false;$('pause').disabled=true;$('resume').disabled=true;$('stopSpeech').disabled=true;status(error.message||'LiveKit speech failed.');resumeRecognition()}
+    status('Reading aloud with your custom Fish Audio voice…');
+   }catch(error){speaking=false;liveAudio=null;$('read').disabled=false;$('pause').disabled=true;$('resume').disabled=true;$('stopSpeech').disabled=true;status(error.message||'Fish Audio speech failed.');resumeRecognition()}
    return;
   }
   if(!window.speechSynthesis)return;
@@ -119,7 +127,31 @@
   if($('clearAfterRead').checked){text.value='';finalText='';lastRead=''}
   status(message);resumeRecognition()
  }
- $('read').addEventListener('click',()=>readText(text.value.trim(),false));
+
+ $('fishBackend').value=localStorage.getItem('fishBackend')||'';
+ $('fishVoiceId').value=localStorage.getItem('fishVoiceId')||'';
+ $('fishBackend').addEventListener('change',()=>localStorage.setItem('fishBackend',$('fishBackend').value.trim()));
+ $('fishVoiceId').addEventListener('change',()=>localStorage.setItem('fishVoiceId',$('fishVoiceId').value.trim()));
+ $('uploadReference').addEventListener('click',async()=>{
+  const file=$('referenceWav').files[0],root=backend();
+  if(!file){status('Choose your custom WAV file first.');return}
+  if(!root){status('Enter your private API backend URL first.');return}
+  if(!/\\.wav$/i.test(file.name)&&file.type!=='audio/wav'&&file.type!=='audio/x-wav'){status('Please select a WAV audio file.');return}
+  if(file.size>4*1024*1024){status('This upload is over 4 MB. Trim the WAV to a clean 10–30 second sample and try again.');return}
+  const button=$('uploadReference');button.disabled=true;status('Uploading WAV and creating your private Fish Audio voice…');
+  try{
+   const form=new FormData();form.append('type','tts');form.append('title',$('referenceTitle').value.trim()||'My custom voice');form.append('train_mode','fast');form.append('visibility','private');form.append('voices',file,file.name);
+   const transcript=$('referenceTranscript').value.trim();if(transcript)form.append('texts',transcript);
+   const response=await fetch(root+'/api/fish-create-voice',{method:'POST',body:form});
+   const data=await response.json().catch(()=>({}));
+   if(!response.ok)throw new Error(data.message||data.reason||data.error||('Voice creation failed ('+response.status+').'));
+   const id=data._id||data.id;if(!id)throw new Error('Fish Audio did not return a voice ID.');
+   $('fishVoiceId').value=id;localStorage.setItem('fishVoiceId',id);
+   $('engine').value='fish';status('Your custom voice is ready! Voice ID saved in this browser. You can now use Read aloud.');
+  }catch(error){status(error.message||'Could not create the custom voice.')}
+  finally{button.disabled=false}
+ });
+\n $('read').addEventListener('click',()=>readText(text.value.trim(),false));
  $('pause').addEventListener('click',()=>{if(liveAudio)liveAudio.pause();else speechSynthesis.pause();$('pause').disabled=true;$('resume').disabled=false;status('Speech paused.')});
  $('resume').addEventListener('click',()=>{if(liveAudio)liveAudio.play();else speechSynthesis.resume();$('pause').disabled=false;$('resume').disabled=true;status('Speech resumed.')});
  $('stopSpeech').addEventListener('click',()=>{speechSynthesis.cancel();if(liveAudio){liveAudio.pause();URL.revokeObjectURL(liveAudio.src);liveAudio=null}finishSpeech('Speech stopped.')});
