@@ -331,8 +331,19 @@ async function init() {
 
     } catch (error) {
         console.error('Error initializing application:', error);
-        updateModelProgress({ status: 'error', message: 'Initialization failed', progress: 0 });
-        alert('Failed to initialize application. Please refresh the page.');
+        const detail = error?.stack || error?.message || String(error);
+        updateModelProgress({
+            status: 'error',
+            message: 'Initialization failed: ' + (error?.message || String(error)),
+            progress: 0
+        });
+        const progressText = document.getElementById('model-progress-text');
+        if (progressText) {
+            progressText.title = detail;
+            progressText.style.whiteSpace = 'normal';
+            progressText.style.overflowWrap = 'anywhere';
+        }
+        alert('Chatterbox initialization failed:\n\n' + (error?.message || String(error)) + '\n\nOpen Chrome DevTools (F12) → Console for the full error.');
     }
 }
 
