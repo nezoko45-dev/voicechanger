@@ -5,166 +5,69 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Voice Dictation & Neural Reader</title>
 <style>
-:root{color-scheme:light dark;font:16px system-ui}body{max-width:850px;margin:28px auto;padding:0 18px}h1{font-size:1.7rem}.muted{opacity:.78;line-height:1.5}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}label{display:block;font-weight:600;margin:14px 0 6px}select,textarea,button{font:inherit;padding:10px;border-radius:9px;max-width:100%}select{box-sizing:border-box;width:100%}textarea{box-sizing:border-box;width:100%;min-height:230px;resize:vertical}button{cursor:pointer}button:disabled{opacity:.5}#status{padding:12px;border-radius:10px;background:color-mix(in srgb,CanvasText 8%,Canvas);white-space:pre-wrap}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.notice{border:1px solid color-mix(in srgb,CanvasText 20%,transparent);border-radius:10px;padding:12px}
+:root{color-scheme:light dark;font:16px system-ui}body{max-width:850px;margin:28px auto;padding:0 18px}h1{font-size:1.7rem}.muted{opacity:.78;line-height:1.5}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}label{display:block;font-weight:600;margin:14px 0 6px}select,input,textarea,button{font:inherit;padding:10px;border-radius:9px;max-width:100%;box-sizing:border-box}select,input{width:100%}textarea{width:100%;min-height:230px;resize:vertical}button{cursor:pointer;width:auto}button:disabled{opacity:.5}#status{padding:12px;border-radius:10px;background:color-mix(in srgb,CanvasText 8%,Canvas);white-space:pre-wrap}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.notice{border:1px solid color-mix(in srgb,CanvasText 20%,transparent);border-radius:10px;padding:12px}
 </style>
 </head>
 <body>
 <h1>Voice Dictation & Neural Reader</h1>
-<p class="muted">Keep your existing microphone dictation. Upload a custom WAV once to create a private Fish Audio voice, then use that voice for natural read-aloud.</p>
-<div class="notice"><strong>Microphone:</strong> Open this GitHub Pages site over HTTPS, click Start microphone dictation, and allow microphone access. For best results while reading aloud, use headphones so the microphone does not hear the computer's speaker.</div>
+<p class="muted">GitHub Pages only: dictate through your microphone, upload your own WAV to create a private Fish Audio voice, and read text aloud with that voice. No Vercel, backend, or EXE.</p>
+<div class="notice"><strong>Microphone:</strong> Open this HTTPS page, click Start microphone dictation, and allow microphone access. Use headphones to prevent the microphone from picking up the read-aloud audio.</div>
 <div class="grid">
- <div><label for="voice">Microsoft Edge speech voice</label><select id="voice"><option>Loading Microsoft Edge voices…</option></select></div>
+ <div><label for="voice">Microsoft Edge speech voice (fallback)</label><select id="voice"></select></div>
  <div><label for="language">Dictation language</label><select id="language"><option value="en-US">English (United States)</option><option value="en-GB">English (United Kingdom)</option><option value="en-AU">English (Australia)</option><option value="en-CA">English (Canada)</option><option value="en">English (automatic)</option></select></div>
 </div>
 <div class="grid">
- <div><label for="engine">Speech engine</label><select id="engine"><option value="edge">Microsoft Edge voices</option><option value="fish">Fish Audio — my custom WAV voice</option></select></div>
- <div><label for="fishBackend">Private API backend URL</label><input id="fishBackend" type="url" placeholder="https://your-vercel-project.vercel.app" style="box-sizing:border-box;width:100%;padding:10px;border-radius:9px;font:inherit"></div>
- <div><label for="fishVoiceId">Saved custom voice ID</label><input id="fishVoiceId" type="text" placeholder="Upload your WAV to create a voice" style="box-sizing:border-box;width:100%;padding:10px;border-radius:9px;font:inherit"></div>
- <div><label for="readerAccessCode">Private reader access code</label><input id="readerAccessCode" type="password" autocomplete="off" placeholder="Your private access code" style="box-sizing:border-box;width:100%;padding:10px;border-radius:9px;font:inherit"></div>
+ <div><label for="engine">Speech engine</label><select id="engine"><option value="fish">Fish Audio — my custom WAV voice</option><option value="edge">Microsoft Edge voices</option></select></div>
+ <div><label for="apiKey">Fish Audio API key (kept in this browser tab)</label><input id="apiKey" type="password" autocomplete="off" placeholder="Paste your Fish Audio API key here"></div>
+ <div><label for="fishVoiceId">Saved custom voice ID</label><input id="fishVoiceId" type="text" placeholder="Created after WAV upload"></div>
 </div>
 <div class="notice">
  <strong>Custom reference voice</strong>
- <p class="muted">Choose your own clean WAV recording. Fish Audio creates a private reusable voice ID from it. A clean 10–30 second sample is a good starting point; longer clean speech can help.</p>
+ <p class="muted">Choose a clean WAV recording with one speaker and minimal background noise. Fish Audio creates a private reusable voice model. Your WAV and API key are sent directly from this browser to Fish Audio.</p>
  <div class="row"><input id="referenceWav" type="file" accept=".wav,audio/wav,audio/x-wav"><button id="uploadReference" type="button">Upload WAV & create voice</button></div>
- <label for="referenceTitle">Voice name</label><input id="referenceTitle" type="text" value="My custom voice" style="box-sizing:border-box;width:100%;padding:10px;border-radius:9px;font:inherit">
- <label for="referenceTranscript">What is spoken in the WAV? (optional)</label><input id="referenceTranscript" type="text" placeholder="Transcript of the reference recording" style="box-sizing:border-box;width:100%;padding:10px;border-radius:9px;font:inherit">
- <p class="muted"><small>For secure API access, deploy the included API routes to a Vercel project and set FISH_AUDIO_API_KEY there. The key is never placed in this GitHub Pages page.</small></p>
+ <label for="referenceTitle">Voice name</label><input id="referenceTitle" type="text" value="My custom voice">
+ <label for="referenceTranscript">What is spoken in the WAV? (optional)</label><input id="referenceTranscript" type="text" placeholder="Transcript of the reference recording">
+ <p class="muted"><small>Security: the API key is only held in this tab's memory and is not saved to GitHub or browser storage. Anyone who can run scripts in this page can access it. Do not use this on a shared or untrusted computer. Fish Audio API access and billing limits still apply.</small></p>
 </div>
 <div class="row">
  <button id="start">Start microphone dictation</button><button id="stopDictation" disabled>Stop dictation</button>
- <label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500"><input id="autoRead" type="checkbox" checked> Automatically read finished phrases</label>
+ <label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500"><input id="autoRead" type="checkbox" checked style="width:auto"> Automatically read finished phrases</label>
 </div>
 <label for="text">Dictation / text to read aloud</label>
 <textarea id="text" placeholder="Start dictation and speak, or type/paste text here…"></textarea>
-<div class="row">
- <label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500"><input id="clearAfterRead" type="checkbox" checked> Clear text after it is read</label>
-</div>
+<div class="row"><label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500"><input id="clearAfterRead" type="checkbox" checked style="width:auto"> Clear text after it is read</label></div>
 <div class="row"><button id="read">Read aloud</button><button id="pause" disabled>Pause</button><button id="resume" disabled>Resume</button><button id="stopSpeech" disabled>Stop speech</button><button id="clear">Clear text</button></div>
-<p id="status" role="status">Ready. Open this page in Microsoft Edge, select a Microsoft voice, allow microphone access, then start dictation.</p>
-<p class="muted"><small>The voice list comes directly from Microsoft Edge and Windows. Microsoft online neural voices may appear after Edge finishes loading its voice service. If a voice is missing, Edge is not exposing it to this page.</small></p>
+<p id="status" role="status">Ready. Enter your Fish Audio API key, upload a WAV, and create your custom voice.</p>
 <script>
-(()=>{
- const $=id=>document.getElementById(id),text=$('text'),voiceSelect=$('voice'),start=$('start'),stopDictation=$('stopDictation');
+(()=> {
+ const $=id=>document.getElementById(id), text=$('text'), voiceSelect=$('voice');
  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
- let availableVoices=[],recognition=null,listening=false,starting=false,pausedForSpeech=false,restartTimer=null,restartDelay=500,watchdog=null,sessionTimer=null,sessionId=0,finalText='',autoTimer=null,speaking=false,lastRead='',utterance=null,liveAudio=null;\n const backend=()=>$('fishBackend').value.trim().replace(/\\/$/,'');
- const accessCode=()=>$('readerAccessCode').value.trim();
+ let voices=[], recognition=null, listening=false, pausedForSpeech=false, restartTimer=null, sessionTimer=null, autoTimer=null, finalText='', speaking=false, liveAudio=null, currentAudioUrl=null;
  const status=s=>$('status').textContent=s;
- function loadVoices(){
-  availableVoices=window.speechSynthesis? speechSynthesis.getVoices():[];
-  const previous=voiceSelect.value;voiceSelect.replaceChildren();
-  if(!availableVoices.length){const o=document.createElement('option');o.textContent='No Microsoft Edge speech voices available';voiceSelect.append(o);return}
-  availableVoices.forEach((v,i)=>{const o=document.createElement('option');o.value=String(i);o.textContent=v.name+' — '+v.lang+(v.default?' (default)':'');voiceSelect.append(o)});
-  const microsoftNatural=availableVoices.findIndex(v=>/^en/i.test(v.lang)&&/microsoft/i.test(v.name)&&/(online|natural)/i.test(v.name));
-  const preferred=availableVoices.findIndex(v=>v.lang==='en-GB'&&/female|zira|susan|hazel|libby|sonia|aria/i.test(v.name));
-  const fallback=availableVoices.findIndex(v=>v.lang.startsWith('en-'));
-  voiceSelect.value=availableVoices[Number(previous)]?previous:String(microsoftNatural>=0?microsoftNatural:preferred>=0?preferred:fallback>=0?fallback:0);
- }
+ function loadVoices(){voices=speechSynthesis?.getVoices()||[];voiceSelect.replaceChildren();if(!voices.length){voiceSelect.add(new Option('No Edge voices available',''));return}voices.forEach((v,i)=>voiceSelect.add(new Option(v.name+' — '+v.lang,String(i))));let preferred=voices.findIndex(v=>v.lang==='en-GB'&&/female|susan|hazel|libby|sonia|aria/i.test(v.name));if(preferred<0)preferred=voices.findIndex(v=>/^en/i.test(v.lang));voiceSelect.value=String(Math.max(0,preferred))}
  if(window.speechSynthesis){loadVoices();speechSynthesis.onvoiceschanged=loadVoices;setTimeout(loadVoices,700)}
- function chosenVoice(){return availableVoices[Number(voiceSelect.value)]||null}
- function scheduleRestart(delay=restartDelay){
-  clearTimeout(restartTimer);if(!listening||speaking||pausedForSpeech)return;
-  restartTimer=setTimeout(()=>{restartTimer=null;beginFreshSession()},delay)
- }
- function createSession(id){
-  const r=new SR();r.continuous=true;r.interimResults=true;r.lang=$('language').value;
-  r.onstart=()=>{if(id!==sessionId)return;starting=false;clearTimeout(watchdog);clearTimeout(sessionTimer);restartDelay=500;start.disabled=true;stopDictation.disabled=false;status('Listening to your microphone… Automatic recovery is enabled.');sessionTimer=setTimeout(()=>{if(id===sessionId&&listening&&!speaking&&!pausedForSpeech){status('Refreshing Edge speech session…');try{r.stop();watchdog=setTimeout(()=>{if(id===sessionId&&listening&&!speaking&&!pausedForSpeech){try{r.abort()}catch{}if(recognition===r)recognition=null;sessionId++;starting=false;scheduleRestart(500)}},3500)}catch{if(recognition===r)recognition=null;sessionId++;starting=false;scheduleRestart(500)} }},50000)};
-  r.onresult=e=>{if(id!==sessionId)return;let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const phrase=e.results[i][0].transcript;if(e.results[i].isFinal){finalText+=phrase.trim()+' ';scheduleAutoRead()}else interim+=phrase}text.value=finalText+interim;text.scrollTop=text.scrollHeight};
-  r.onerror=e=>{if(id!==sessionId)return;starting=false;clearTimeout(watchdog);if(e.error==='not-allowed'||e.error==='service-not-allowed'){listening=false;clearTimeout(restartTimer);clearTimeout(sessionTimer);start.disabled=false;stopDictation.disabled=true;status('Microsoft Edge blocked microphone recognition. Check site microphone permission and Edge speech service availability.')}else if(e.error!=='aborted'){status('Edge speech service interrupted ('+e.error+'). Reconnecting…');clearTimeout(watchdog);watchdog=setTimeout(()=>{if(id===sessionId&&listening&&!speaking&&!pausedForSpeech){try{r.abort()}catch{}if(recognition===r)recognition=null;starting=false;scheduleRestart(700)}},1800)}};
-  r.onend=()=>{if(id!==sessionId)return;recognition=null;starting=false;clearTimeout(watchdog);clearTimeout(sessionTimer);if(listening&&!speaking&&!pausedForSpeech){restartDelay=Math.min(Math.max(restartDelay*1.5,700),8000);status('Edge recognition ended. Automatically reconnecting…');scheduleRestart(restartDelay)}};
-  return r
- }
- function beginFreshSession(){
-  if(!SR||!listening||speaking||pausedForSpeech||starting)return;
-  clearTimeout(restartTimer);restartTimer=null;starting=true;const id=++sessionId,r=createSession(id);recognition=r;
-  try{r.start();watchdog=setTimeout(()=>{if(id!==sessionId||!starting)return;starting=false;try{r.abort()}catch{}recognition=null;restartDelay=Math.min(Math.max(restartDelay*2,1000),6000);scheduleRestart(restartDelay)},8000)}
-  catch(e){starting=false;recognition=null;restartDelay=Math.min(Math.max(restartDelay*2,1000),6000);scheduleRestart(restartDelay)}
- }
- start.addEventListener('click',async()=>{
-  if(!SR){status('Speech recognition is unavailable. Open this HTTPS page in desktop Microsoft Edge.');return}
-  listening=true;pausedForSpeech=false;restartDelay=500;finalText=text.value.trim()?text.value.trimEnd()+' ':'';beginFreshSession();
- });
- stopDictation.addEventListener('click',()=>{listening=false;pausedForSpeech=false;clearTimeout(restartTimer);clearTimeout(watchdog);clearTimeout(sessionTimer);sessionId++;const r=recognition;recognition=null;starting=false;try{r?.abort()}catch{}start.disabled=false;stopDictation.disabled=true;status('Microphone dictation stopped.')});
- function scheduleAutoRead(){clearTimeout(autoTimer);if(!$('autoRead').checked)return;autoTimer=setTimeout(()=>{const value=text.value.trim();if(value&&value!==lastRead)readText(value,true)},1250)}
- text.addEventListener('input',()=>{finalText=text.value; scheduleAutoRead()});
- function pauseRecognitionForSpeech(){
-  if(!listening)return;pausedForSpeech=true;clearTimeout(restartTimer);clearTimeout(watchdog);clearTimeout(sessionTimer);sessionId++;const r=recognition;recognition=null;starting=false;try{r?.stop()}catch{}
- }
- function resumeRecognition(){
-  if(listening){pausedForSpeech=false;finalText=text.value.trim()?text.value.trimEnd()+' ':'';scheduleRestart(500)}
- }
- async function readText(value,automatic){
-  if(!value)return;
-  clearTimeout(autoTimer);
-  if($('engine').value==='fish'){
-   const root=backend(),voiceId=$('fishVoiceId').value.trim();
-   if(!root){status('Enter your private API backend URL first.');return}
-   if(!accessCode()){status('Enter your private reader access code first.');return}
-   if(!voiceId){status('Upload your custom WAV and create a voice first.');return}
-   speechSynthesis?.cancel();pauseRecognitionForSpeech();speaking=true;lastRead=value;
-   $('read').disabled=true;$('pause').disabled=false;$('resume').disabled=true;$('stopSpeech').disabled=false;
-   status('Generating speech with your custom Fish Audio voice…');
-   try{
-    const response=await fetch(root+'/api/fish-reference-tts',{method:'POST',headers:{'Content-Type':'application/json','x-reader-access-code':accessCode()},body:JSON.stringify({text:value,reference_id:voiceId,speed:1})});
-    if(!response.ok){let message='Fish Audio request failed ('+response.status+').';try{message=(await response.json()).error||message}catch{}throw new Error(message)}
-    const blob=await response.blob();if(!blob.size)throw new Error('Fish Audio returned empty audio.');
-    liveAudio=new Audio(URL.createObjectURL(blob));
-    liveAudio.onended=()=>{if(liveAudio){URL.revokeObjectURL(liveAudio.src);liveAudio=null}finishSpeech('Finished reading with your custom Fish Audio voice.')};
-    liveAudio.onerror=()=>finishSpeech('Custom voice audio playback failed.');
-    await liveAudio.play();
-    status('Reading aloud with your custom Fish Audio voice…');
-   }catch(error){speaking=false;liveAudio=null;$('read').disabled=false;$('pause').disabled=true;$('resume').disabled=true;$('stopSpeech').disabled=true;status(error.message||'Fish Audio speech failed.');resumeRecognition()}
-   return;
-  }
-  if(!window.speechSynthesis)return;
-  speechSynthesis.cancel();liveAudio?.pause();liveAudio=null;pauseRecognitionForSpeech();
-  utterance=new SpeechSynthesisUtterance(value);const v=chosenVoice();if(v)utterance.voice=v;
-  utterance.rate=1;utterance.pitch=1;utterance.volume=1;speaking=true;lastRead=value;
-  $('read').disabled=true;$('pause').disabled=false;$('resume').disabled=true;$('stopSpeech').disabled=false;
-  utterance.onstart=()=>status('Reading aloud'+(v?' with '+v.name:'')+'…');
-  utterance.onend=()=>finishSpeech('Finished reading.');
-  utterance.onerror=e=>finishSpeech('Speech playback ended: '+e.error+'.');
-  speechSynthesis.speak(utterance);
- }
- function finishSpeech(message){
-  speaking=false;utterance=null;$('read').disabled=false;$('pause').disabled=true;$('resume').disabled=true;$('stopSpeech').disabled=true;
-  if($('clearAfterRead').checked){text.value='';finalText='';lastRead=''}
-  status(message);resumeRecognition()
- }
-
- $('fishBackend').value=localStorage.getItem('fishBackend')||'';
- $('fishVoiceId').value=localStorage.getItem('fishVoiceId')||'';
- $('readerAccessCode').value=sessionStorage.getItem('readerAccessCode')||'';
- $('fishBackend').addEventListener('change',()=>localStorage.setItem('fishBackend',$('fishBackend').value.trim()));
- $('fishVoiceId').addEventListener('change',()=>localStorage.setItem('fishVoiceId',$('fishVoiceId').value.trim()));
- $('readerAccessCode').addEventListener('change',()=>sessionStorage.setItem('readerAccessCode',$('readerAccessCode').value.trim()));
- $('uploadReference').addEventListener('click',async()=>{
-  const file=$('referenceWav').files[0],root=backend();
-  if(!file){status('Choose your custom WAV file first.');return}
-  if(!root){status('Enter your private API backend URL first.');return}
-  if(!accessCode()){status('Enter your private reader access code first.');return}
-  if(!/\\.wav$/i.test(file.name)&&file.type!=='audio/wav'&&file.type!=='audio/x-wav'){status('Please select a WAV audio file.');return}
-  if(file.size>4*1024*1024){status('This upload is over 4 MB. Trim the WAV to a clean 10–30 second sample and try again.');return}
-  const button=$('uploadReference');button.disabled=true;status('Uploading WAV and creating your private Fish Audio voice…');
-  try{
-   const form=new FormData();form.append('type','tts');form.append('title',$('referenceTitle').value.trim()||'My custom voice');form.append('train_mode','fast');form.append('visibility','private');form.append('voices',file,file.name);
-   const transcript=$('referenceTranscript').value.trim();if(transcript)form.append('texts',transcript);
-   const response=await fetch(root+'/api/fish-create-voice',{method:'POST',headers:{'x-reader-access-code':accessCode()},body:form});
-   const data=await response.json().catch(()=>({}));
-   if(!response.ok)throw new Error(data.message||data.reason||data.error||('Voice creation failed ('+response.status+').'));
-   const id=data._id||data.id;if(!id)throw new Error('Fish Audio did not return a voice ID.');
-   $('fishVoiceId').value=id;localStorage.setItem('fishVoiceId',id);
-   $('engine').value='fish';status('Your custom voice is ready! Voice ID saved in this browser. You can now use Read aloud.');
-  }catch(error){status(error.message||'Could not create the custom voice.')}
-  finally{button.disabled=false}
- });
-\n $('read').addEventListener('click',()=>readText(text.value.trim(),false));
- $('pause').addEventListener('click',()=>{if(liveAudio)liveAudio.pause();else speechSynthesis.pause();$('pause').disabled=true;$('resume').disabled=false;status('Speech paused.')});
- $('resume').addEventListener('click',()=>{if(liveAudio)liveAudio.play();else speechSynthesis.resume();$('pause').disabled=false;$('resume').disabled=true;status('Speech resumed.')});
- $('stopSpeech').addEventListener('click',()=>{speechSynthesis.cancel();if(liveAudio){liveAudio.pause();URL.revokeObjectURL(liveAudio.src);liveAudio=null}finishSpeech('Speech stopped.')});
- $('clear').addEventListener('click',()=>{clearTimeout(autoTimer);text.value='';finalText='';lastRead='';status('Text cleared.')});
- $('language').addEventListener('change',()=>{if(listening){const r=recognition;sessionId++;recognition=null;try{r?.abort()}catch{}starting=false;scheduleRestart(300)}});
- window.addEventListener('beforeunload',()=>{listening=false;clearTimeout(restartTimer);clearTimeout(watchdog);clearTimeout(sessionTimer);clearTimeout(autoTimer);try{recognition?.abort();speechSynthesis.cancel()}catch{}});
- if(!SR){start.disabled=true;stopDictation.disabled=true;status('Microsoft Edge Speech Recognition is unavailable in this browser.')}
+ function chosenVoice(){return voices[Number(voiceSelect.value)]||null}
+ function scheduleRestart(ms=700){clearTimeout(restartTimer);if(listening&&!speaking&&!pausedForSpeech)restartTimer=setTimeout(startRecognition,ms)}
+ function startRecognition(){if(!SR||!listening||speaking||pausedForSpeech)return;try{const r=new SR();recognition=r;r.continuous=true;r.interimResults=true;r.lang=$('language').value;r.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const s=e.results[i][0].transcript;if(e.results[i].isFinal){finalText+=s.trim()+' ';scheduleAutoRead()}else interim+=s}text.value=finalText+interim;text.scrollTop=text.scrollHeight};r.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed'){listening=false;$('start').disabled=false;$('stopDictation').disabled=true;status('Microphone permission or Edge speech service was denied. Check this site’s microphone permission.')}else status('Speech recognition interrupted; reconnecting…')};r.onend=()=>{if(recognition===r)recognition=null;if(listening&&!speaking&&!pausedForSpeech)scheduleRestart(700)};r.start();status('Listening to your microphone…')}catch(e){recognition=null;scheduleRestart(1200)}}
+ function pauseRecognition(){if(!listening)return;pausedForSpeech=true;clearTimeout(restartTimer);clearTimeout(sessionTimer);const r=recognition;recognition=null;try{r?.abort()}catch{}}
+ function resumeRecognition(){if(listening){pausedForSpeech=false;finalText=text.value.trim()?text.value.trimEnd()+' ':'';scheduleRestart(700)}}
+ $('start').onclick=()=>{if(!SR){status('Speech recognition is unavailable. Open this HTTPS page in desktop Chrome or Edge.');return}listening=true;pausedForSpeech=false;finalText=text.value.trim()?text.value.trimEnd()+' ':'';$('start').disabled=true;$('stopDictation').disabled=false;startRecognition()};
+ $('stopDictation').onclick=()=>{listening=false;pausedForSpeech=false;clearTimeout(restartTimer);const r=recognition;recognition=null;try{r?.abort()}catch{}$('start').disabled=false;$('stopDictation').disabled=true;status('Microphone dictation stopped.')};
+ function scheduleAutoRead(){clearTimeout(autoTimer);if($('autoRead').checked)autoTimer=setTimeout(()=>{const v=text.value.trim();if(v)readText(v,true)},1400)}
+ text.addEventListener('input',()=>{finalText=text.value;scheduleAutoRead()});
+ async function fishRequest(url,options){const key=$('apiKey').value.trim();if(!key)throw Error('Enter your Fish Audio API key first.');let res;try{res=await fetch(url,{...options,headers:{Authorization:'Bearer '+key,...(options.headers||{})}})}catch(e){throw Error('Browser could not connect to Fish Audio. This may be a CORS restriction on Fish Audio’s API; GitHub Pages cannot bypass it. Details: '+e.message)}if(!res.ok){let msg='Fish Audio request failed ('+res.status+').';try{const d=await res.json();msg=d.message||d.error||msg}catch{}throw Error(msg)}return res}
+ $('uploadReference').onclick=async()=>{const file=$('referenceWav').files[0];if(!file){status('Choose your WAV file first.');return}if(!/\.wav$/i.test(file.name)&&!['audio/wav','audio/x-wav'].includes(file.type)){status('Please select a WAV file.');return}if(file.size>15*1024*1024){status('WAV is over 15 MB. Please choose a shorter, clean sample.');return}const b=$('uploadReference');b.disabled=true;status('Uploading your WAV directly to Fish Audio…');try{const form=new FormData();form.append('type','tts');form.append('title',$('referenceTitle').value.trim()||'My custom voice');form.append('train_mode','fast');form.append('visibility','private');form.append('voices',file,file.name);const transcript=$('referenceTranscript').value.trim();if(transcript)form.append('texts',transcript);const res=await fishRequest('https://api.fish.audio/model',{method:'POST',body:form});const data=await res.json();const id=data._id||data.id;if(!id)throw Error('Fish Audio did not return a voice ID.');$('fishVoiceId').value=id;$('engine').value='fish';status('Your private custom voice was created! Voice ID: '+id)}catch(e){status(e.message||'Could not create your voice.')}finally{b.disabled=false}};
+ async function readText(value){if(!value)return;clearTimeout(autoTimer);pauseRecognition();speaking=true;$('read').disabled=true;$('pause').disabled=false;$('resume').disabled=true;$('stopSpeech').disabled=false;
+ try{if($('engine').value==='fish'){const id=$('fishVoiceId').value.trim();if(!id)throw Error('Upload your custom WAV and create a voice first.');status('Generating speech with your custom Fish Audio voice…');const res=await fishRequest('https://api.fish.audio/v1/tts',{method:'POST',headers:{'Content-Type':'application/json','model':'s2.1-pro'},body:JSON.stringify({text:value,reference_id:id,format:'mp3',prosody:{speed:1}})});const blob=await res.blob();if(!blob.size)throw Error('Fish Audio returned empty audio.');currentAudioUrl=URL.createObjectURL(blob);liveAudio=new Audio(currentAudioUrl);liveAudio.onended=()=>finishSpeech('Finished reading with your custom Fish Audio voice.');liveAudio.onerror=()=>finishSpeech('Audio playback failed.');await liveAudio.play();status('Reading aloud with your custom Fish Audio voice…')}else{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(value);const v=chosenVoice();if(v)u.voice=v;u.onend=()=>finishSpeech('Finished reading.');u.onerror=e=>finishSpeech('Speech playback ended: '+e.error);speechSynthesis.speak(u);status('Reading aloud with '+(v?.name||'the selected Edge voice')+'…')}}catch(e){speaking=false;$('read').disabled=false;$('pause').disabled=true;$('resume').disabled=true;$('stopSpeech').disabled=true;status(e.message||'Speech generation failed.');resumeRecognition()}}
+ function finishSpeech(message){speaking=false;liveAudio=null;if(currentAudioUrl){URL.revokeObjectURL(currentAudioUrl);currentAudioUrl=null}$('read').disabled=false;$('pause').disabled=true;$('resume').disabled=true;$('stopSpeech').disabled=true;if($('clearAfterRead').checked){text.value='';finalText=''}status(message);resumeRecognition()}
+ $('read').onclick=()=>readText(text.value.trim());
+ $('pause').onclick=()=>{if(liveAudio)liveAudio.pause();else speechSynthesis.pause();$('pause').disabled=true;$('resume').disabled=false;status('Speech paused.')};
+ $('resume').onclick=()=>{if(liveAudio)liveAudio.play();else speechSynthesis.resume();$('pause').disabled=false;$('resume').disabled=true;status('Speech resumed.')};
+ $('stopSpeech').onclick=()=>{speechSynthesis?.cancel();if(liveAudio){liveAudio.pause();liveAudio=null}finishSpeech('Speech stopped.')};
+ $('clear').onclick=()=>{clearTimeout(autoTimer);text.value='';finalText='';status('Text cleared.')};
+ $('language').onchange=()=>{if(listening){const r=recognition;recognition=null;try{r?.abort()}catch{}scheduleRestart(300)}};
+ window.addEventListener('beforeunload',()=>{listening=false;clearTimeout(restartTimer);clearTimeout(autoTimer);try{recognition?.abort();speechSynthesis?.cancel()}catch{}});
+ if(!SR){$('start').disabled=true;$('stopDictation').disabled=true;status('Speech recognition is unavailable in this browser.')};
 })();
 </script>
 </body>
