@@ -7,7 +7,7 @@ self.addEventListener("message", async event => {
  const { type, data } = event.data || {};
  try {
   if (type === "load") {
-   await engine.initialize(progress => self.postMessage({type:"progress",data:progress}), true);
+   await engine.initialize(progress => self.postMessage({type:"progress",data:progress}), false);
    self.postMessage({type:"loaded",data:{device:navigator.gpu?"webgpu":"wasm"}});
   } else if (type === "encode") {
    referenceAudio = new Float32Array(data.audio);
