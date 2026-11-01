@@ -24,7 +24,7 @@ function wavBuffer(frame) {
   h.writeUInt32LE(16,16); h.writeUInt16LE(1,20); h.writeUInt16LE(channels,22);
   h.writeUInt32LE(sampleRate,24); h.writeUInt32LE(sampleRate*channels*2,28);
   h.writeUInt16LE(channels*2,32); h.writeUInt16LE(16,34); h.write('data',36); h.writeUInt32LE(pcm.length,40);
-  return wav;
+  return Buffer.concat([h, pcm]);
 }
 function createWindow() {
   win = new BrowserWindow({width:1080,height:760,minWidth:760,minHeight:600,backgroundColor:'#10131c',
