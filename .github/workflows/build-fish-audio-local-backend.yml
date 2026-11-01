@@ -1,0 +1,37 @@
+name: Build Fish Audio Local Backend
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "fish-audio-local-backend/**"
+      - ".github/workflows/build-fish-audio-local-backend.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build Windows executable
+        working-directory: fish-audio-local-backend
+        run: cargo build --release
+      - name: Package backend
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path package | Out-Null
+          Copy-Item fish-audio-local-backend/target/release/fish-audio-local-backend.exe package/
+          Copy-Item fish-audio-local-backend/start.bat package/
+          Copy-Item fish-audio-local-backend/README.md package/
+          Compress-Archive -Path package/* -DestinationPath fish-audio-local-backend-windows.zip -Force
+      - name: Upload Windows backend
+        uses: actions/upload-artifact@v4
+        with:
+          name: fish-audio-local-backend-windows
+          path: fish-audio-local-backend-windows.zip
+          if-no-files-found: error
