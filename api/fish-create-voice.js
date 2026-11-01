@@ -4,7 +4,7 @@ const ORIGIN = "https://nezoko45-dev.github.io";
 function headers(res) {
   res.setHeader("Access-Control-Allow-Origin", ORIGIN);
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Reader-Access-Code");
 }
 async function readBody(req, maxBytes) {
   const chunks = [];
