@@ -1,17 +1,16 @@
 @echo off
 setlocal EnableExtensions
-title Chatterbox Launcher
+title Chatterbox Voice Cloning Launcher
+cd /d "%~dp0"
 
-set "APP_URL=https://nezoko45-dev.github.io/voicechanger/chatterbox-test/"
-set "ROOT=%~dp0"
 set "PYTHON="
+set "VENV=%~dp0.venv"
+set "APP_URL=https://nezoko45-dev.github.io/voicechanger/chatterbox-test/"
 
 echo.
 echo  ==========================================
-echo       CHATTERBOX - LOCAL PC LAUNCHER
+echo       CHATTERBOX - REAL VOICE CLONING
 echo  ==========================================
-echo.
-echo  Checking dependencies...
 echo.
 
 where py >nul 2>nul
@@ -28,51 +27,68 @@ if not defined PYTHON (
   )
 )
 
-if defined PYTHON (
-  echo [OK] Python 3.11 found.
-  %PYTHON% -m pip --version >nul 2>nul
-  if errorlevel 1 (
-    echo [MISSING] pip is not available for Python 3.11.
-  ) else (
-    echo [OK] pip found.
-  )
-  %PYTHON% -c "import torch" >nul 2>nul
-  if errorlevel 1 (
-    echo [MISSING] PyTorch is not installed.
-  ) else (
-    echo [OK] PyTorch found.
-    %PYTHON% -c "import torch; print('      PyTorch:',torch.__version__); print('      CUDA available:',torch.cuda.is_available()); print('      GPU:',torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'No CUDA GPU detected')" 2>nul
-  )
-  %PYTHON% -c "import chatterbox" >nul 2>nul
-  if errorlevel 1 (
-    echo [MISSING] Chatterbox TTS package is not installed.
-  ) else (
-    echo [OK] Chatterbox package found.
-  )
-) else (
-  echo [MISSING] Python 3.11 was not found.
-  echo          Install Python 3.11 before local Chatterbox setup.
+if not defined PYTHON (
+  echo [ERROR] Python 3.11 is required but was not found.
+  echo Install Python 3.11 x64 from https://www.python.org/downloads/
+  echo Enable "Add Python to PATH" during installation.
+  pause
+  exit /b 1
 )
 
+echo [OK] Python 3.11 found.
+if not exist "%VENV%\Scripts\python.exe" (
+  echo [SETUP] Creating isolated Chatterbox environment...
+  %PYTHON% -m venv "%VENV%"
+  if errorlevel 1 goto :fail
+)
+
+set "VPY=%VENV%\Scripts\python.exe"
+echo [CHECK] Checking pip...
+"%VPY%" -m pip --version >nul 2>nul
+if errorlevel 1 (
+  echo [SETUP] Repairing pip...
+  "%VPY%" -m ensurepip --upgrade
+  if errorlevel 1 goto :fail
+)
+
+echo [CHECK] Checking Chatterbox and server dependencies...
+"%VPY%" -c "import chatterbox, fastapi, uvicorn, multipart, torchaudio" >nul 2>nul
+if errorlevel 1 (
+  echo [SETUP] Installing Chatterbox voice cloning dependencies.
+  echo This first install is large and may take several minutes.
+  "%VPY%" -m pip install --upgrade pip
+  if errorlevel 1 goto :fail
+  "%VPY%" -m pip install -r requirements.txt
+  if errorlevel 1 goto :fail
+) else (
+  echo [OK] Chatterbox dependencies are installed.
+)
+
+echo.
+echo [CHECK] Detecting GPU...
 where nvidia-smi >nul 2>nul
 if not errorlevel 1 (
-  echo.
-  echo [GPU] NVIDIA driver information:
-  nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader 2>nul
+  nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 ) else (
-  echo.
-  echo [INFO] NVIDIA-SMI not found. This does not rule out AMD or Intel graphics.
+  echo [INFO] NVIDIA utility not found. Chatterbox will use CPU unless CUDA is available.
 )
 
 echo.
-echo  Opening the Chatterbox GitHub Pages interface...
+echo [START] Launching local Chatterbox API at http://127.0.0.1:8765
+start "Chatterbox Local Engine" cmd /k ""%VPY%" "%~dp0server.py""
+timeout /t 3 /nobreak >nul
+echo [OPEN] Opening the GitHub Pages voice-cloning app...
 start "" "%APP_URL%"
+echo.
+echo The local engine runs in its own window.
+echo Keep that window open while generating cloned speech.
+echo.
+pause
+exit /b 0
 
+:fail
 echo.
-echo  NOTE: This launcher currently checks prerequisites and opens
-echo  the web interface. The local inference server will be added
-echo  separately so the page can generate real cloned speech.
-echo.
-echo  Press any key to close this window.
-pause >nul
-endlocal
+echo [ERROR] Setup failed. The error above explains what went wrong.
+echo If this is a GPU/PyTorch compatibility issue, send me the error text.
+pause
+exit /b 1
