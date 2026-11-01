@@ -3,19 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Microsoft Edge Voice Dictation & Reader</title>
+<title>Voice Dictation & Neural Reader</title>
 <style>
 :root{color-scheme:light dark;font:16px system-ui}body{max-width:850px;margin:28px auto;padding:0 18px}h1{font-size:1.7rem}.muted{opacity:.78;line-height:1.5}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}label{display:block;font-weight:600;margin:14px 0 6px}select,textarea,button{font:inherit;padding:10px;border-radius:9px;max-width:100%}select{box-sizing:border-box;width:100%}textarea{box-sizing:border-box;width:100%;min-height:230px;resize:vertical}button{cursor:pointer}button:disabled{opacity:.5}#status{padding:12px;border-radius:10px;background:color-mix(in srgb,CanvasText 8%,Canvas);white-space:pre-wrap}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.notice{border:1px solid color-mix(in srgb,CanvasText 20%,transparent);border-radius:10px;padding:12px}
 </style>
 </head>
 <body>
-<h1>Microsoft Edge Voice Dictation & Reader</h1>
-<p class="muted">A browser-only voice page. Microsoft Edge handles microphone dictation and reads text aloud using voices available to Edge, including Microsoft online neural voices when exposed by your Edge installation. No EXE, API key, Python, or local server.</p>
+<h1>Voice Dictation & Neural Reader</h1>
+<p class="muted">Microphone dictation with Microsoft Edge voices or LiveKit Fish Audio neural speech. LiveKit uses a private server endpoint so your API credentials are not exposed in this public page.</p>
 <div class="notice"><strong>Microphone:</strong> Open this GitHub Pages site over HTTPS, click Start microphone dictation, and allow microphone access. For best results while reading aloud, use headphones so the microphone does not hear the computer's speaker.</div>
 <div class="grid">
  <div><label for="voice">Microsoft Edge speech voice</label><select id="voice"><option>Loading Microsoft Edge voices…</option></select></div>
  <div><label for="language">Dictation language</label><select id="language"><option value="en-US">English (United States)</option><option value="en-GB">English (United Kingdom)</option><option value="en-AU">English (Australia)</option><option value="en-CA">English (Canada)</option><option value="en">English (automatic)</option></select></div>
 </div>
+<div class="grid">
+ <div><label for="engine">Speech engine</label><select id="engine"><option value="edge">Microsoft Edge voices</option><option value="livekit">LiveKit — Fish Audio S2.1 Pro</option></select></div>
+ <div><label for="livekitEndpoint">LiveKit TTS endpoint</label><input id="livekitEndpoint" type="url" placeholder="https://your-vercel-project.vercel.app/api/livekit-tts" style="box-sizing:border-box;width:100%;padding:10px;border-radius:9px;font:inherit"></div>
+ <div><label for="livekitVoice">Fish Audio voice ID</label><input id="livekitVoice" type="text" value="b347db033a6549378b48d00acb0d06cd" style="box-sizing:border-box;width:100%;padding:10px;border-radius:9px;font:inherit"></div>
+</div>
+<p class="muted"><small>For LiveKit, deploy the included /api/livekit-tts.js function to Vercel and add LIVEKIT_API_KEY and LIVEKIT_API_SECRET as encrypted Vercel environment variables. Then paste that function URL above. Your credentials must never be pasted into this page.</small></p>
 <div class="row">
  <button id="start">Start microphone dictation</button><button id="stopDictation" disabled>Stop dictation</button>
  <label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500"><input id="autoRead" type="checkbox" checked> Automatically read finished phrases</label>
@@ -32,7 +38,7 @@
 (()=>{
  const $=id=>document.getElementById(id),text=$('text'),voiceSelect=$('voice'),start=$('start'),stopDictation=$('stopDictation');
  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
- let availableVoices=[],recognition=null,listening=false,starting=false,pausedForSpeech=false,restartTimer=null,restartDelay=500,watchdog=null,sessionTimer=null,sessionId=0,finalText='',autoTimer=null,speaking=false,lastRead='',utterance=null;
+ let availableVoices=[],recognition=null,listening=false,starting=false,pausedForSpeech=false,restartTimer=null,restartDelay=500,watchdog=null,sessionTimer=null,sessionId=0,finalText='',autoTimer=null,speaking=false,lastRead='',utterance=null,liveAudio=null;
  const status=s=>$('status').textContent=s;
  function loadVoices(){
   availableVoices=window.speechSynthesis? speechSynthesis.getVoices():[];
@@ -77,9 +83,29 @@
  function resumeRecognition(){
   if(listening){pausedForSpeech=false;finalText=text.value.trim()?text.value.trimEnd()+' ':'';scheduleRestart(500)}
  }
- function readText(value,automatic){
-  if(!value||!window.speechSynthesis)return;
-  clearTimeout(autoTimer);speechSynthesis.cancel();pauseRecognitionForSpeech();
+ async function readText(value,automatic){
+  if(!value)return;
+  clearTimeout(autoTimer);
+  if($('engine').value==='livekit'){
+   const endpoint=$('livekitEndpoint').value.trim();
+   if(!endpoint){status('Paste your deployed LiveKit TTS endpoint first.');return}
+   speechSynthesis?.cancel();pauseRecognitionForSpeech();speaking=true;lastRead=value;
+   $('read').disabled=true;$('pause').disabled=false;$('resume').disabled=true;$('stopSpeech').disabled=false;
+   status('Generating neural speech with LiveKit Fish Audio…');
+   try{
+    const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:value,voice:$('livekitVoice').value.trim()})});
+    if(!response.ok){let message='LiveKit request failed ('+response.status+').';try{message=(await response.json()).error||message}catch{}throw new Error(message)}
+    const blob=await response.blob();if(!blob.size)throw new Error('LiveKit returned empty audio.');
+    liveAudio=new Audio(URL.createObjectURL(blob));
+    liveAudio.onended=()=>{if(liveAudio){URL.revokeObjectURL(liveAudio.src);liveAudio=null}finishSpeech('Finished reading with LiveKit Fish Audio.')};
+    liveAudio.onerror=()=>finishSpeech('LiveKit audio playback failed.');
+    await liveAudio.play();
+    status('Reading aloud with LiveKit Fish Audio…');
+   }catch(error){speaking=false;liveAudio=null;$('read').disabled=false;$('pause').disabled=true;$('resume').disabled=true;$('stopSpeech').disabled=true;status(error.message||'LiveKit speech failed.');resumeRecognition()}
+   return;
+  }
+  if(!window.speechSynthesis)return;
+  speechSynthesis.cancel();liveAudio?.pause();liveAudio=null;pauseRecognitionForSpeech();
   utterance=new SpeechSynthesisUtterance(value);const v=chosenVoice();if(v)utterance.voice=v;
   utterance.rate=1;utterance.pitch=1;utterance.volume=1;speaking=true;lastRead=value;
   $('read').disabled=true;$('pause').disabled=false;$('resume').disabled=true;$('stopSpeech').disabled=false;
@@ -94,9 +120,9 @@
   status(message);resumeRecognition()
  }
  $('read').addEventListener('click',()=>readText(text.value.trim(),false));
- $('pause').addEventListener('click',()=>{speechSynthesis.pause();$('pause').disabled=true;$('resume').disabled=false;status('Speech paused.')});
- $('resume').addEventListener('click',()=>{speechSynthesis.resume();$('pause').disabled=false;$('resume').disabled=true;status('Speech resumed.')});
- $('stopSpeech').addEventListener('click',()=>{speechSynthesis.cancel();finishSpeech('Speech stopped.')});
+ $('pause').addEventListener('click',()=>{if(liveAudio)liveAudio.pause();else speechSynthesis.pause();$('pause').disabled=true;$('resume').disabled=false;status('Speech paused.')});
+ $('resume').addEventListener('click',()=>{if(liveAudio)liveAudio.play();else speechSynthesis.resume();$('pause').disabled=false;$('resume').disabled=true;status('Speech resumed.')});
+ $('stopSpeech').addEventListener('click',()=>{speechSynthesis.cancel();if(liveAudio){liveAudio.pause();URL.revokeObjectURL(liveAudio.src);liveAudio=null}finishSpeech('Speech stopped.')});
  $('clear').addEventListener('click',()=>{clearTimeout(autoTimer);text.value='';finalText='';lastRead='';status('Text cleared.')});
  $('language').addEventListener('change',()=>{if(listening){const r=recognition;sessionId++;recognition=null;try{r?.abort()}catch{}starting=false;scheduleRestart(300)}});
  window.addEventListener('beforeunload',()=>{listening=false;clearTimeout(restartTimer);clearTimeout(watchdog);clearTimeout(sessionTimer);clearTimeout(autoTimer);try{recognition?.abort();speechSynthesis.cancel()}catch{}});
