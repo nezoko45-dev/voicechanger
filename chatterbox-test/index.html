@@ -1,110 +1,81 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Chatterbox UI Test — VoiceChanger</title>
-  <style>
-    :root{color-scheme:dark;font-family:system-ui,sans-serif;background:#10131b;color:#f4f6fb}
-    *{box-sizing:border-box}
-    body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px}
-    main{width:min(620px,100%);padding:28px;border:1px solid #343d50;border-radius:18px;background:#191f2c}
-    h1{margin:0 0 8px;font-size:1.8rem}p{color:#b8c1d1;line-height:1.5}
-    label{display:block;margin:20px 0 8px;font-weight:600}
-    select,button{width:100%;padding:13px 14px;border-radius:10px;border:1px solid #46516a;background:#101722;color:#fff;font:inherit}
-    button{margin-top:14px;background:#586ce8;border-color:#586ce8;font-weight:700;cursor:pointer}
-    button:hover{background:#6c7df0}button:disabled{opacity:.55;cursor:not-allowed}
-    #status{margin-top:18px;padding:12px;border-radius:10px;background:#101722;color:#b8c1d1;min-height:48px}
-    .ok{color:#91e3b0!important}.error{color:#ff9c9c!important}
-    small{display:block;margin-top:18px;color:#8792a6}
-  </style>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Chatterbox Voice Cloning</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#10131b;color:#f4f6fb}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:22px}
+main{width:min(720px,100%);padding:28px;border:1px solid #343d50;border-radius:18px;background:#191f2c}
+h1{margin:0 0 8px;font-size:1.8rem}p{color:#b8c1d1;line-height:1.5}
+label{display:block;margin:20px 0 8px;font-weight:650}
+textarea,input,button{width:100%;padding:13px 14px;border-radius:10px;border:1px solid #46516a;background:#101722;color:#fff;font:inherit}
+textarea{min-height:145px;resize:vertical}button{margin-top:16px;background:#586ce8;border-color:#586ce8;font-weight:700;cursor:pointer}
+button:hover{background:#6c7df0}button:disabled{opacity:.55;cursor:not-allowed}
+#status{margin-top:18px;padding:13px;border-radius:10px;background:#101722;color:#b8c1d1;min-height:48px;white-space:pre-wrap}
+.ok{color:#91e3b0!important}.error{color:#ff9c9c!important}
+audio{width:100%;margin-top:18px}.hint,small{color:#8792a6}
+#download{display:none;color:#aebaff;margin-top:12px;display:none}
+</style>
 </head>
-<body>
-  <main>
-    <h1>Chatterbox UI Test</h1>
-    <p>This is a clean control test, separate from the existing Pocket TTS app. Choose a browser voice, then test the button.</p>
-    <label for="voice">Browser voice</label>
-    <select id="voice" aria-label="Browser voice">
-      <option value="">Loading browser voices…</option>
-    </select>
-    <button id="test" type="button">Test selected voice</button>
-    <div id="status" role="status" aria-live="polite">Page loaded. Waiting for browser voices…</div>
-    <small>No AI model, WebGPU, external library, or microphone permission is needed for this test.</small>
-  </main>
-  <script>
-    (() => {
-      const voiceSelect = document.getElementById('voice');
-      const testButton = document.getElementById('test');
-      const status = document.getElementById('status');
-      let voices = [];
-
-      function setStatus(message, kind = '') {
-        status.textContent = message;
-        status.className = kind;
-      }
-
-      function loadVoices() {
-        if (!('speechSynthesis' in window)) {
-          voiceSelect.innerHTML = '<option value="">Speech synthesis unavailable</option>';
-          testButton.disabled = true;
-          setStatus('This browser does not provide speech synthesis.', 'error');
-          return;
-        }
-        voices = window.speechSynthesis.getVoices();
-        voiceSelect.replaceChildren();
-        if (!voices.length) {
-          const option = document.createElement('option');
-          option.value = '';
-          option.textContent = 'No browser voices reported yet';
-          voiceSelect.append(option);
-          setStatus('The page is working, but Chrome has not reported any voices yet.');
-          return;
-        }
-        voices.forEach((voice, index) => {
-          const option = document.createElement('option');
-          option.value = String(index);
-          option.textContent = voice.name + (voice.lang ? ' — ' + voice.lang : '');
-          voiceSelect.append(option);
-        });
-        const preferred = voices.findIndex(v => /female|zira|sonia|aria|jenny|samantha|google.*us english/i.test(v.name));
-        voiceSelect.value = String(preferred >= 0 ? preferred : 0);
-        setStatus('Ready. Loaded ' + voices.length + ' browser voice(s).', 'ok');
-      }
-
-      testButton.addEventListener('click', () => {
-        if (!voices.length) {
-          loadVoices();
-          if (!voices.length) {
-            setStatus('No browser voices are available yet. Try again in a moment.', 'error');
-            return;
-          }
-        }
-        const selected = voices[Number(voiceSelect.value)];
-        if (!selected) {
-          setStatus('Select a voice first.', 'error');
-          return;
-        }
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance('Hello! This is the Chatterbox interface test.');
-        utterance.voice = selected;
-        utterance.onstart = () => setStatus('Speaking with ' + selected.name + '.', 'ok');
-        utterance.onend = () => setStatus('Test complete. The button and selected voice both work.', 'ok');
-        utterance.onerror = event => setStatus('Speech test failed: ' + event.error, 'error');
-        window.speechSynthesis.speak(utterance);
-      });
-
-      voiceSelect.addEventListener('change', () => {
-        const selected = voices[Number(voiceSelect.value)];
-        if (selected) setStatus('Selected: ' + selected.name + ' (' + selected.lang + ').', 'ok');
-      });
-
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.addEventListener('voiceschanged', loadVoices);
-      }
-      loadVoices();
-      setTimeout(loadVoices, 500);
-      setTimeout(loadVoices, 1500);
-    })();
-  </script>
-</body>
-</html>
+<body><main>
+<h1>Chatterbox Voice Cloning</h1>
+<p>Upload a clean reference recording, enter what you want spoken, and generate new speech in the reference speaker's voice using your PC's local Chatterbox engine.</p>
+<div id="status" role="status" aria-live="polite">Checking local Chatterbox engine…</div>
+<label for="reference">Reference voice (WAV)</label>
+<input id="reference" type="file" accept=".wav,audio/wav">
+<p class="hint">A clear recording of around 5–10 seconds works well. Use a voice you have permission to clone.</p>
+<label for="text">Text to speak</label>
+<textarea id="text" placeholder="Type the words you want the cloned voice to say…"></textarea>
+<button id="generate" type="button" disabled>Generate cloned voice</button>
+<audio id="player" controls hidden></audio>
+<a id="download" download="chatterbox-cloned-voice.wav">Download cloned WAV</a>
+<script>
+(() => {
+ const API='http://127.0.0.1:8765';
+ const status=document.getElementById('status');
+ const reference=document.getElementById('reference');
+ const text=document.getElementById('text');
+ const generate=document.getElementById('generate');
+ const player=document.getElementById('player');
+ const download=document.getElementById('download');
+ let engineReady=false, outputUrl=null;
+ function say(message,kind=''){status.textContent=message;status.className=kind;}
+ async function check(){
+   try{
+     const r=await fetch(API+'/api/status');
+     if(!r.ok) throw new Error('Local server returned HTTP '+r.status);
+     const s=await r.json();
+     engineReady=true;
+     say(s.model_loaded?'Local Chatterbox engine is loaded and ready.':'Local engine is connected. Chatterbox model will load on first generation.','ok');
+     generate.disabled=false;
+   }catch(e){
+     engineReady=false;generate.disabled=true;
+     say('Local Chatterbox engine is not running. Double-click Start-Chatterbox.bat and keep its engine window open. ('+e.message+')','error');
+   }
+ }
+ generate.addEventListener('click',async()=>{
+   if(!engineReady){await check();if(!engineReady)return;}
+   const file=reference.files[0], words=text.value.trim();
+   if(!file){say('Choose a reference WAV recording first.','error');return;}
+   if(!words){say('Enter the text you want the cloned voice to speak.','error');return;}
+   if(!file.name.toLowerCase().endsWith('.wav')){say('Please select a WAV reference file.','error');return;}
+   const data=new FormData();data.append('text',words);data.append('reference',file);
+   generate.disabled=true;generate.textContent='Generating cloned speech…';
+   say('Loading Chatterbox if needed, then generating speech from your reference voice. The first run may take longer while the model downloads. Please wait…');
+   try{
+     const r=await fetch(API+'/api/generate',{method:'POST',body:data});
+     if(!r.ok){let message='Generation failed (HTTP '+r.status+')';try{const j=await r.json();message=j.detail||message;}catch{}throw new Error(message);}
+     const blob=await r.blob();
+     if(outputUrl)URL.revokeObjectURL(outputUrl);
+     outputUrl=URL.createObjectURL(blob);
+     player.src=outputUrl;player.hidden=false;
+     download.href=outputUrl;download.style.display='inline-block';
+     say('Cloned voice generated successfully! Press Play or download the WAV.','ok');
+   }catch(e){say('Voice cloning failed: '+e.message,'error');}
+   finally{generate.disabled=false;generate.textContent='Generate cloned voice';}
+ });
+ check();setInterval(()=>{if(!engineReady)check();},5000);
+})();
+</script>
+</main></body></html>
