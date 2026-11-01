@@ -299,23 +299,22 @@ function setupMicrophoneDictation() {
 
 // Initialize application
 async function init() {
-    try {
-        // Initialize database
-        await db.init();
+    // Wire the interface first. Database or model startup failures must not
+    // leave every visible button inert.
+    setupNavigation();
+    setupHomePageEvents();
+    setupVoiceLibraryEvents();
+    setupHistoryPageEvents();
+    setupModalEvents();
+    setupMicrophoneDictation();
 
-        // Load voices and history
+    try {
+        // Initialize local storage and populate the voice/history views.
+        await db.init();
         await loadVoices();
         await loadHistory();
 
-        // Set up event listeners
-        setupNavigation();
-        setupHomePageEvents();
-        setupVoiceLibraryEvents();
-        setupHistoryPageEvents();
-        setupModalEvents();
-        setupMicrophoneDictation();
-
-        // Initialize TTS engine
+        // Initialize TTS in the background after the UI is already usable.
         console.log('Initializing TTS engine...');
         updateModelProgress({ status: 'loading', message: 'Initializing models...', progress: 5 });
         await state.ttsEngine.initialize((progress) => {
@@ -324,11 +323,10 @@ async function init() {
         updateModelProgress({ status: 'ready', message: 'Models ready', progress: 100 });
         console.log('TTS engine ready!');
 
-        // Create default voice if none exists
+        // Create a default voice only after the engine is ready.
         if (state.voices.length === 0) {
             await createDefaultVoice();
         }
-
     } catch (error) {
         console.error('Error initializing application:', error);
         const detail = error?.stack || error?.message || String(error);
@@ -343,7 +341,7 @@ async function init() {
             progressText.style.whiteSpace = 'normal';
             progressText.style.overflowWrap = 'anywhere';
         }
-        alert('Chatterbox initialization failed:\n\n' + (error?.message || String(error)) + '\n\nOpen Chrome DevTools (F12) → Console for the full error.');
+        console.error('Chatterbox startup failed. The controls remain available; check this error before generating audio.', detail);
     }
 }
 
