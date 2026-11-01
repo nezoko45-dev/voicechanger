@@ -122,6 +122,19 @@
                         </section>
                     </div>
 
+                    <!-- Microphone transcription bridge retained from the previous Pocket TTS Studio -->
+                    <section class="card">
+                        <div class="card-header"><i class="ti ti-microphone"></i><h2>Live microphone dictation</h2></div>
+                        <p class="control-desc">Speak here to insert your recognized words into the text box. If the PocketWebTools companion extension is installed, the transcript is also forwarded to its text field.</p>
+                        <div id="dictation-transcript" class="text-input" style="min-height:72px;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:8px;margin-bottom:12px;white-space:pre-wrap">Your words will appear here…</div>
+                        <div style="display:flex;gap:10px;flex-wrap:wrap">
+                            <button class="btn btn-primary" id="dictation-start">Start listening</button>
+                            <button class="btn btn-secondary" id="dictation-stop" disabled>Stop</button>
+                            <button class="btn btn-secondary" id="dictation-insert">Insert transcript</button>
+                        </div>
+                        <p id="dictation-status" class="control-desc" role="status">Speech recognition is idle.</p>
+                    </section>
+
                     <!-- Text Input -->
                     <section class="card">
                         <div class="card-header">
