@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "PocketWeb Dictation",
+  "version": "1.0.0",
+  "description": "Dictate into PocketWebTools Voice Cloning and auto-submit after speech silence.",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://pocketweb.tools/voice-cloning*"
+  ],
+  "action": {
+    "default_title": "PocketWeb Dictation",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://pocketweb.tools/voice-cloning*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
