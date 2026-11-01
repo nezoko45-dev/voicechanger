@@ -1,20 +1,28 @@
-import { ChatterboxTTSEngine, audioArrayToWav } from "./chatterbox-turbo-engine.js";
-
-let engine = new ChatterboxTTSEngine();
+let engine = null;
 let referenceAudio = null;
+let audioArrayToWav = null;
 
 self.addEventListener("message", async event => {
  const { type, data } = event.data || {};
  try {
   if (type === "load") {
+   // Load the engine dynamically so CDN/module import failures can be reported
+   // back to the page instead of killing the worker before its handler exists.
+   if (!engine) {
+    self.postMessage({type:"progress",data:{message:"Starting Chatterbox engine and loading browser dependencies…",status:"loading"}});
+    const module = await import("./chatterbox-turbo-engine.js");
+    engine = new module.ChatterboxTTSEngine();
+    audioArrayToWav = module.audioArrayToWav;
+   }
    await engine.initialize(progress => self.postMessage({type:"progress",data:progress}), false);
    self.postMessage({type:"loaded",data:{device:navigator.gpu?"webgpu":"wasm"}});
   } else if (type === "encode") {
+   if (!engine) throw new Error("Load the Chatterbox model before uploading a WAV.");
    referenceAudio = new Float32Array(data.audio);
    if (!referenceAudio.length) throw new Error("The reference WAV contains no audio.");
    self.postMessage({type:"speaker-ready",data:{samples:referenceAudio.length}});
   } else if (type === "generate") {
-   if (!referenceAudio) throw new Error("Upload your reference WAV again.");
+   if (!engine || !referenceAudio) throw new Error("Load the model and upload your reference WAV again.");
    const result = await engine.generate(data.text, referenceAudio, {
     maxNewTokens: 1024,
     temperature: Number(data.temperature ?? 0.2),
@@ -28,6 +36,7 @@ self.addEventListener("message", async event => {
    throw new Error("Unknown worker action: "+type);
   }
  } catch(error) {
-  self.postMessage({type:"failure",data:{message:error?.message||String(error)}});
+  const message = error?.stack || error?.message || String(error);
+  self.postMessage({type:"failure",data:{message}});
  }
 });
