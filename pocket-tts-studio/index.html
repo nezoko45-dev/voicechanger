@@ -31,29 +31,110 @@ main{width:min(1080px,calc(100% - 32px));margin:0 auto;padding:48px 0 64px}.top{
 <div class="step"><div class="num">1</div><div><strong>Open PocketWebTools Voice Cloning</strong><p>Load your reference WAV into its reference voice/upload area and make sure the voice is ready.</p></div></div>
 <div class="step"><div class="num">2</div><div><strong>Install the companion Chrome extension</strong><p>Load <code>extension/pocketweb-dictation</code> as an unpacked extension from this repository.</p></div></div>
 <div class="step"><div class="num">3</div><div><strong>Start transcription here</strong><p>Press Start listening above. After each recognized phrase, this page sends the text into the TTS text field on your open PocketWebTools tab. Then press Generate Speech there when you are ready.</p></div></div></div>
-<div class="actions"><a class="btn" href="https://pocketweb.tools/voice-cloning" target="_blank" rel="noopener">Open PocketWebTools ↗</a><a class="btn secondary" href="https://github.com/nezoko45-dev/voicechanger/tree/feature/pocket-tts-transcription-studio/extension/pocketweb-dictation" target="_blank" rel="noopener">Extension files ↗</a></div>
+<div class="actions"><a class="btn" href="https://pocketweb.tools/voice-cloning" target="_blank" rel="noopener">Open PocketWebTools ↗</a><a class="btn secondary" href="https://github.com/nezoko45-dev/voicechanger/tree/main/extension/pocketweb-dictation" target="_blank" rel="noopener">Extension files ↗</a></div>
 <p class="small">The companion extension is required because Chrome prevents one website from directly editing another website's fields. This page sends text only; it does not upload your WAV or automatically press Generate Speech. Only clone voices you own or have permission to use.</p></section>
 </div><div class="footer">VoiceChanger · Pocket TTS Studio · GitHub Pages</div></main>
 <script>
 (() => {
  const file=document.getElementById('reference'), audio=document.getElementById('preview'), fileStatus=document.getElementById('fileStatus');
  let objectUrl=null;
- file.addEventListener('change',()=>{const f=file.files&&file.files[0];if(!f)return;if(!/\.wav$/i.test(f.name)&&f.type!=='audio/wav'&&f.type!=='audio/x-wav'){fileStatus.textContent='Please choose a WAV file.';fileStatus.className='status bad';return;}if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(f);audio.src=objectUrl;audio.hidden=false;fileStatus.textContent=f.name+' · '+(f.size/1024/1024).toFixed(2)+' MB · ready to preview';fileStatus.className='status good';});
+ file.addEventListener('change',()=>{
+   const f=file.files&&file.files[0]; if(!f)return;
+   if(!/\\.wav$/i.test(f.name)&&f.type!=='audio/wav'&&f.type!=='audio/x-wav'){
+     fileStatus.textContent='Please choose a WAV file.'; fileStatus.className='status bad'; return;
+   }
+   if(objectUrl)URL.revokeObjectURL(objectUrl);
+   objectUrl=URL.createObjectURL(f); audio.src=objectUrl; audio.hidden=false;
+   fileStatus.textContent=f.name+' · '+(f.size/1024/1024).toFixed(2)+' MB · ready to preview'; fileStatus.className='status good';
+ });
  const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
- const transcript=document.getElementById('transcript'),status=document.getElementById('speechStatus'),transferStatus=document.getElementById('transferStatus'),listen=document.getElementById('listen'),stop=document.getElementById('stop');
- let recognition=null,running=false,finalText='',pendingSend='',sendTimer=null;
- function sendPhrase(text){const phrase=text.trim();if(!phrase)return;transferStatus.textContent='Sending to PocketWebTools…';transferStatus.className='status';window.postMessage({source:'voicechanger-pocket-tts-studio',type:'TRANSCRIPT',text:phrase},location.origin);}
- window.addEventListener('message',event=>{if(event.source!==window||event.origin!==location.origin)return;const d=event.data;if(d?.source!=='voicechanger-pocket-tts-bridge'||d.type!=='RESULT')return;transferStatus.textContent=d.message;transferStatus.className='status '+(d.ok?'good':'bad');});
- function setStatus(s,bad=false){status.textContent=s;status.className='status '+(bad?'bad':'');}
- function begin(){if(!SpeechRecognition){setStatus('Speech recognition is not supported in this browser. Use desktop Chrome.',true);return;}if(running)return;running=true;listen.disabled=true;stop.disabled=false;finalText='';recognition=new SpeechRecognition();recognition.lang=navigator.language||'en-US';recognition.continuous=true;recognition.interimResults=true;
- recognition.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const phrase=e.results[i][0].transcript;if(e.results[i].isFinal){finalText+=phrase+' ';pendingSend+=(pendingSend?' ':'')+phrase;clearTimeout(sendTimer);sendTimer=setTimeout(()=>{const text=pendingSend;pendingSend='';sendPhrase(text);},1100);}else interim+=phrase;}transcript.textContent=(finalText+interim).trim()||'Listening…';};
- recognition.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed'){running=false;listen.disabled=false;stop.disabled=true;setStatus('Microphone permission or Chrome speech service was denied: '+e.error,true);}else if(e.error!=='no-speech'&&e.error!=='aborted')setStatus('Recognition: '+e.error,true);};
- recognition.onend=()=>{if(running){try{recognition.start();}catch{}}else{listen.disabled=false;stop.disabled=true;}};
- try{recognition.start();setStatus('Listening. Speak naturally; your transcript appears above.');}catch(e){running=false;listen.disabled=false;stop.disabled=true;setStatus('Could not start recognition: '+e.message,true);}
+ const transcript=document.getElementById('transcript'),status=document.getElementById('speechStatus');
+ const transferStatus=document.getElementById('transferStatus'),listen=document.getElementById('listen'),stop=document.getElementById('stop');
+ let recognition=null,running=false,finalText='',pendingSend='',sendTimer=null,restartTimer=null,retryDelay=1000,lastError='';
+ function setStatus(message,bad=false){status.textContent=message;status.className='status '+(bad?'bad':'');}
+ function sendPhrase(text){
+   const phrase=String(text||'').trim(); if(!phrase)return;
+   transferStatus.textContent='Sending transcript to PocketWebTools…'; transferStatus.className='status';
+   window.postMessage({source:'voicechanger-pocket-tts-studio',type:'TRANSCRIPT',text:phrase},location.origin);
  }
- function halt(){running=false;clearTimeout(sendTimer);if(pendingSend.trim()){sendPhrase(pendingSend);pendingSend='';}try{recognition&&recognition.stop();}catch{}listen.disabled=false;stop.disabled=true;setStatus('Stopped.');}
- listen.addEventListener('click',begin);stop.addEventListener('click',halt);
- document.getElementById('copy').addEventListener('click',async()=>{const t=transcript.textContent;if(!t||t==='Your recognized words will appear here…')return;try{await navigator.clipboard.writeText(t);setStatus('Transcript copied.');}catch{setStatus('Clipboard access was blocked.',true);}});
- window.addEventListener('beforeunload',()=>{halt();if(objectUrl)URL.revokeObjectURL(objectUrl);});
+ window.addEventListener('message',event=>{
+   if(event.source!==window||event.origin!==location.origin)return;
+   const d=event.data;
+   if(d?.source!=='voicechanger-pocket-tts-bridge'||d.type!=='RESULT')return;
+   transferStatus.textContent=d.message|| (d.ok?'Transcript sent.':'Could not send transcript.');
+   transferStatus.className='status '+(d.ok?'good':'bad');
+ });
+ function scheduleRestart(){
+   if(!running||restartTimer)return;
+   restartTimer=setTimeout(()=>{
+     restartTimer=null;
+     if(!running||!recognition)return;
+     try{recognition.start();}
+     catch(e){lastError=e.message;setStatus('Restarting microphone recognition… '+e.message,true);scheduleRestart();}
+   },retryDelay);
+ }
+ function begin(){
+   if(!SpeechRecognition){setStatus('Speech recognition is unavailable. Please use desktop Google Chrome.',true);return;}
+   if(running)return;
+   running=true;retryDelay=1000;lastError='';finalText='';pendingSend='';
+   listen.disabled=true;stop.disabled=false;
+   transcript.textContent='Listening…';
+   recognition=new SpeechRecognition(); recognition.lang='en-US'; recognition.continuous=true; recognition.interimResults=true;
+   recognition.onresult=e=>{
+     let interim='';
+     for(let i=e.resultIndex;i<e.results.length;i++){
+       const phrase=e.results[i][0].transcript.trim();
+       if(e.results[i].isFinal&&phrase){
+         finalText+=(finalText?' ':'')+phrase;
+         pendingSend+=(pendingSend?' ':'')+phrase;
+         clearTimeout(sendTimer);
+         sendTimer=setTimeout(()=>{const text=pendingSend;pendingSend='';sendPhrase(text);},900);
+       }else if(phrase) interim+=(interim?' ':'')+phrase;
+     }
+     transcript.textContent=[finalText,interim].filter(Boolean).join(' ').trim()||'Listening…';
+   };
+   recognition.onerror=e=>{
+     lastError=e.error||'unknown';
+     if(lastError==='not-allowed'||lastError==='service-not-allowed'){
+       running=false;clearTimeout(restartTimer);restartTimer=null;
+       listen.disabled=false;stop.disabled=true;
+       setStatus('Microphone access was denied. Allow microphone access for this GitHub Pages site, then press Start listening.',true);
+     }else if(lastError==='network'){
+       retryDelay=Math.min(Math.max(retryDelay*2,2000),15000);
+       setStatus('Chrome speech service reported a network error. Retrying in '+Math.round(retryDelay/1000)+' seconds; check your internet connection.',true);
+     }else if(lastError!=='no-speech'&&lastError!=='aborted'){
+       setStatus('Speech recognition error: '+lastError,true);
+     }
+   };
+   recognition.onend=()=>{
+     if(running){
+       if(lastError!=='network')retryDelay=1000;
+       scheduleRestart();
+     }else{
+       listen.disabled=false;stop.disabled=true;
+     }
+   };
+   try{recognition.start();setStatus('Listening. Speak into your microphone; recognized phrases will be sent automatically.');}
+   catch(e){running=false;listen.disabled=false;stop.disabled=true;setStatus('Could not start recognition: '+e.message,true);}
+ }
+ function halt(){
+   running=false;clearTimeout(restartTimer);restartTimer=null;clearTimeout(sendTimer);
+   if(pendingSend.trim()){sendPhrase(pendingSend);pendingSend='';}
+   try{if(recognition)recognition.stop();}catch{}
+   listen.disabled=false;stop.disabled=true;setStatus('Stopped listening.');
+ }
+ listen.addEventListener('click',begin);
+ stop.addEventListener('click',halt);
+ document.getElementById('copy').addEventListener('click',async()=>{
+   const t=transcript.textContent;
+   if(!t||t==='Your recognized words will appear here…')return;
+   try{await navigator.clipboard.writeText(t);setStatus('Transcript copied.');}
+   catch{setStatus('Clipboard access was blocked. Select the transcript and copy it manually.',true);}
+ });
+ window.addEventListener('beforeunload',()=>{
+   running=false;clearTimeout(sendTimer);clearTimeout(restartTimer);
+   try{if(recognition)recognition.stop();}catch{}
+   if(objectUrl)URL.revokeObjectURL(objectUrl);
+ });
 })();
 </script></body></html>
