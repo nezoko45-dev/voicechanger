@@ -1,7 +1,10 @@
 // Complete Chatterbox-Turbo TTS Engine using ONNX Runtime Web with WebGPU
 
-import * as ort from 'https://esm.sh/onnxruntime-web@1.17.3';
-import { AutoTokenizer } from 'https://esm.sh/@xenova/transformers@2.17.1';
+// Heavy ML dependencies are loaded only when the user initializes the model.
+ // Keeping them out of static imports ensures the interface still boots and
+ // its buttons remain usable if a CDN/model dependency is temporarily offline.
+let ort;
+let AutoTokenizer;
 
 // Configuration constants from config.json
 const MODEL_ID = "ResembleAI/chatterbox-turbo-ONNX";
@@ -256,6 +259,16 @@ export class ChatterboxTTSEngine {
     }
 
     async initialize(progressCallback, useQuantized = false) {
+        if (!ort || !AutoTokenizer) {
+            progressCallback?.({ status: 'loading', message: 'Loading AI runtime libraries...', progress: 2 });
+            const [ortModule, tokenizerModule] = await Promise.all([
+                import('https://esm.sh/onnxruntime-web@1.17.3'),
+                import('https://esm.sh/@xenova/transformers@2.17.1')
+            ]);
+            ort = ortModule;
+            AutoTokenizer = tokenizerModule.AutoTokenizer;
+        }
+
         if (this.isInitialized) {
             progressCallback?.({ status: 'ready', message: 'Already initialized' });
             return;
