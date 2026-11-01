@@ -293,6 +293,68 @@
         </div>
     </div>
 
+    <script>
+    // Emergency UI fallback: navigation and the voice dialog remain usable
+    // even if a browser blocks a module/CDN dependency during startup.
+    (() => {
+      const byId = id => document.getElementById(id);
+      document.addEventListener('click', event => {
+        if (window.__voiceChangerBooted) return;
+        const button = event.target.closest('button');
+        if (!button) return;
+        if (button.matches('.nav-item')) {
+          const page = button.dataset.page;
+          document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el === button));
+          document.querySelectorAll('.page').forEach(el => el.classList.toggle('active', el.id === page + '-page'));
+          return;
+        }
+        if (button.id === 'create-voice-btn' || button.id === 'add-voice-btn') {
+          byId('voice-upload-modal')?.classList.add('active');
+          return;
+        }
+        if (button.id === 'close-modal-btn' || button.id === 'cancel-voice-btn') {
+          byId('voice-upload-modal')?.classList.remove('active');
+          return;
+        }
+        if (button.id === 'upload-file-btn') {
+          byId('file-input')?.click();
+          return;
+        }
+        if (button.classList.contains('tag-btn')) {
+          const input = byId('text-input');
+          if (!input) return;
+          const tag = '[' + button.textContent.trim() + ']';
+          const pos = input.selectionStart ?? input.value.length;
+          input.setRangeText(tag + ' ', pos, input.selectionEnd ?? pos, 'end');
+          input.focus();
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          return;
+        }
+        if (button.id === 'generate-btn') {
+          const status = byId('model-progress-text');
+          if (status) status.textContent = 'App startup did not finish. Refresh the page; see browser Console (F12).';
+        }
+      });
+      document.addEventListener('click', event => {
+        if (event.target === byId('voice-upload-modal') && !window.__voiceChangerBooted) {
+          byId('voice-upload-modal').classList.remove('active');
+        }
+      });
+      window.addEventListener('error', event => {
+        const status = byId('model-progress-text');
+        if (status && !window.__voiceChangerBooted) {
+          status.textContent = 'App script error: ' + (event.message || 'unknown error');
+          status.title = event.filename + ':' + event.lineno;
+        }
+      });
+      window.addEventListener('unhandledrejection', event => {
+        const status = byId('model-progress-text');
+        if (status && !window.__voiceChangerBooted) {
+          status.textContent = 'App startup error: ' + (event.reason?.message || String(event.reason));
+        }
+      });
+    })();
+    </script>
     <script type="module" src="./js/main.js"></script>
 </body>
 </html>
