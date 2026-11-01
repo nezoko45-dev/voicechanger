@@ -1,25 +1,25 @@
-# PocketWebTools continuous voice dictation
+# Pocket TTS Studio → PocketWebTools bridge
 
-This is a separate Chrome extension helper for https://pocketweb.tools/voice-cloning. It complements the main VoiceChanger extension; it does not replace the local voiceclonnx app.
+This Chrome extension connects the GitHub Pages transcription app to the PocketWebTools Voice Cloning page.
 
 ## Install
-1. Open the repository folder on your computer (or download this repository as a ZIP from GitHub).
-2. In Chrome, open `chrome://extensions` and enable **Developer mode**.
-3. Choose **Load unpacked** and select the `extension/pocketweb-dictation` folder.
-4. Open https://pocketweb.tools/voice-cloning and allow microphone access if prompted.
-5. Click the extension icon and choose **Start listening**.
+1. Download the repository ZIP from GitHub and extract it.
+2. In desktop Chrome, open `chrome://extensions` and turn on **Developer mode**.
+3. Click **Load unpacked** and select the `extension/pocketweb-dictation` folder.
+4. Open [PocketWebTools Voice Cloning](https://pocketweb.tools/voice-cloning) in one tab.
+5. Open [Pocket TTS Studio](https://nezoko45-dev.github.io/voicechanger/pocket-tts-studio/) in another tab. Reload both tabs after installing the extension.
+6. In PocketWebTools, upload your reference WAV using its own reference-audio control.
+7. On Pocket TTS Studio, choose your microphone language if needed and press **Start listening**.
 
-## How it works
-- Uses the browser's built-in Web Speech recognition to transcribe your speech.
-- After roughly 1.8 seconds of silence following a recognized phrase, puts that phrase in the page's text box and clicks **Generate Speech**.
-- Waits for an audio/video player to appear, attempts playback, and resumes listening after playback ends.
-- Click **Stop** in the extension popup to stop the loop.
+## What happens
+- Pocket TTS Studio uses Chrome's Web Speech Recognition to transcribe your microphone.
+- After a short pause in speech, it sends the recognized phrase through the extension bridge.
+- The extension finds the open PocketWebTools Voice Cloning tab and inserts the phrase into its TTS text field.
+- You press **Generate Speech** on PocketWebTools when ready.
 
-## Notes and limitations
-- Designed for desktop Chrome/Chromium; mobile browsers may not support extension installation or speech recognition.
-- Keep the PocketWebTools tab open and in the foreground while using it.
-- Website controls can change. If the helper cannot find the text field, Generate Speech button, or generated audio player, it will show a status message.
-- Browser speech recognition availability and accuracy depend on Chrome, language settings, network, and microphone permissions.
-- Autoplay may be blocked by the browser. If so, press Play on the page and then stop/restart the helper as needed.
-- The helper pauses recognition while generating and playing audio to avoid transcribing the generated voice back into the next phrase.
-- Use voice cloning only for your own voice or a voice you have permission to use.
+## Important
+- The extension is required: normal web pages cannot directly edit fields on another website because of browser origin isolation.
+- The page sends transcript text only. It does not transfer the reference WAV, click Generate Speech, or play the result.
+- Keep both tabs open. If you install/update the extension, reload both tabs.
+- Desktop Chrome is recommended. Chrome speech recognition availability depends on microphone permission, language and the browser's speech service.
+- Only clone voices you own or have permission to use.
