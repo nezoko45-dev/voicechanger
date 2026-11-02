@@ -10,6 +10,7 @@ on:
       - "pocket-tts-studio/**"
       - "pocket-tts-webgpu/**"
       - "chatterbox-test/**"
+      - "edge-reader-dictation/**"
       - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
@@ -38,6 +39,8 @@ jobs:
           test -s openrouter-tts-reader/index.html
           test -s pocket-tts-studio/index.html
           test -s pocket-tts-webgpu/index.html
+          test -s chatterbox-test/index.html
+          test -s edge-reader-dictation/index.html
           node --check pocket-tts-webgpu/js/main.js
           node --check pocket-tts-webgpu/js/audio.js
           node --check pocket-tts-webgpu/js/db.js
@@ -48,6 +51,7 @@ jobs:
           cp -R pocket-tts-studio _site/pocket-tts-studio
           cp -R pocket-tts-webgpu _site/pocket-tts-webgpu
           cp -R chatterbox-test _site/chatterbox-test
+          cp -R edge-reader-dictation _site/edge-reader-dictation
           touch _site/.nojekyll
 
       - name: Configure Pages
