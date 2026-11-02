@@ -4,7 +4,7 @@ const textBox = $("text"), status = $("status"), startBtn = $("start"), stopBtn 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition = null, listening = false, restarting = false, speaking = false;
 let restartTimer = null, refreshTimer = null, retryDelay = 800, selectedVoice = null;
-let lastAutoReadAt = 0;
+let autoQueue = [];
 
 function setStatus(message, active = listening) {
   status.innerHTML = '<span class="dot' + (active ? ' on' : '') + '"></span>';
@@ -45,7 +45,7 @@ function appendTranscript(value) {
     const parts = value.match(/[^.!?]+[.!?]+(?:[”"'’)]*)/g);
     if (parts) parts.forEach(sentence => {
       const clean = sentence.trim();
-      if (clean) speakText(clean, false);
+      if (clean) queueAutoSentence(clean);
     });
   }
 }
@@ -127,11 +127,32 @@ function stopRecognition() {
   if (recognition) { try { recognition.abort(); } catch {} recognition = null; }
   setListeningUI(); setStatus("Dictation stopped.", false);
 }
+function queueAutoSentence(sentence) {
+  autoQueue.push(sentence);
+  if (!speaking) playNextAutoSentence();
+}
+function playNextAutoSentence() {
+  if (!autoQueue.length) {
+    speaking = false;
+    if (listening) scheduleRestart(500);
+    return;
+  }
+  playUtterance(autoQueue.shift(), false);
+}
 function speakText(value, clearAfter) {
   const content = (value || "").trim();
   if (!content || !("speechSynthesis" in window)) return;
-  if (recognition && listening) { speaking = true; clearTimeout(restartTimer); clearTimeout(refreshTimer); try { recognition.stop(); } catch {} }
+  autoQueue = [];
   speechSynthesis.cancel();
+  speaking = false;
+  playUtterance(content, clearAfter);
+}
+function playUtterance(content, clearAfter) {
+  if (recognition && listening) {
+    speaking = true;
+    clearTimeout(restartTimer); clearTimeout(refreshTimer);
+    try { recognition.stop(); } catch {}
+  }
   const utterance = new SpeechSynthesisUtterance(content);
   const voices = speechSynthesis.getVoices();
   selectedVoice = voices[Number($("voice").value)] || selectedVoice;
@@ -140,15 +161,17 @@ function speakText(value, clearAfter) {
   utterance.pitch = Number($("pitch").value);
   utterance.onstart = () => setStatus("Reading aloud…", false);
   utterance.onend = () => {
-    speaking = false;
     if (clearAfter) textBox.value = "";
+    if (autoQueue.length) { playNextAutoSentence(); return; }
+    speaking = false;
     if (listening) { setStatus("Resuming dictation…"); scheduleRestart(500); }
     else setStatus("Finished reading.", false);
   };
   utterance.onerror = e => {
     speaking = false;
     setStatus("Speech playback error: " + e.error, false);
-    if (listening) scheduleRestart(700);
+    if (autoQueue.length) playNextAutoSentence();
+    else if (listening) scheduleRestart(700);
   };
   speechSynthesis.speak(utterance);
 }
@@ -158,7 +181,7 @@ $("clear").addEventListener("click", () => { textBox.value = ""; setStatus("Text
 $("speak").addEventListener("click", () => speakText(textBox.value, $("clearAfter").checked));
 $("pause").addEventListener("click", () => { speechSynthesis.pause(); $("pause").disabled = true; $("resume").disabled = false; });
 $("resume").addEventListener("click", () => { speechSynthesis.resume(); $("pause").disabled = false; $("resume").disabled = true; });
-$("cancel").addEventListener("click", () => { speechSynthesis.cancel(); speaking = false; if (listening) scheduleRestart(500); else setStatus("Reading stopped.", false); });
+$("cancel").addEventListener("click", () => { autoQueue = []; speechSynthesis.cancel(); speaking = false; if (listening) scheduleRestart(500); else setStatus("Reading stopped.", false); });
 $("voice").addEventListener("change", () => { selectedVoice = speechSynthesis.getVoices()[Number($("voice").value)] || null; });
 $("rate").addEventListener("input", e => $("rateValue").textContent = Number(e.target.value).toFixed(2) + "×");
 $("pitch").addEventListener("input", e => $("pitchValue").textContent = Number(e.target.value).toFixed(2));
