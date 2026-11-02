@@ -79,6 +79,9 @@ function startRecognitionSession() {
     instance.continuous = true;
     instance.interimResults = true;
     instance.maxAlternatives = 1;
+    // Keep the latest non-final hypothesis so words spoken just before a
+    // timeout/session rollover are not silently discarded.
+    let unfinalizedText = "";
 
     instance.onstart = () => {
       if (thisSession !== sessionNumber) return;
@@ -96,6 +99,10 @@ function startRecognitionSession() {
         else interim += result[0].transcript;
       }
       if (finalText) appendTranscript(finalText);
+      // Interim text is provisional and may change on the next event.
+      // Retain the latest version and commit it only if the session ends
+      // before the browser sends its final result.
+      unfinalizedText = interim;
       if (interim) setStatus("Listening… " + interim);
       else if (listening) setStatus("Listening…");
     };
@@ -126,8 +133,27 @@ function startRecognitionSession() {
     instance.onend = () => {
       if (thisSession !== sessionNumber) return;
       if (recognition === instance) recognition = null;
+
+      // Flush the last interim hypothesis before replacing this session.
+      // Avoid re-adding text that overlaps the end of the transcript.
+      if (unfinalizedText.trim()) {
+        const pending = unfinalizedText.trim();
+        const existing = textBox.value.trimEnd();
+        const maxOverlap = Math.min(existing.length, pending.length);
+        let overlap = 0;
+        for (let n = maxOverlap; n > 0; n--) {
+          if (existing.slice(-n).toLowerCase() === pending.slice(0, n).toLowerCase()) {
+            overlap = n;
+            break;
+          }
+        }
+        const remainder = pending.slice(overlap).trim();
+        if (remainder) appendTranscript(remainder);
+        unfinalizedText = "";
+      }
+
       if (!listening || speaking) return;
-      setStatus("Session ended — starting a fresh microphone recognition session…");
+      setStatus("Session ended — saving the last recognized words and starting a fresh microphone session…");
       scheduleNewSession(retryDelay);
     };
 
