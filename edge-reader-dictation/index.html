@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Microsoft Edge Reader · VoiceChanger</title>
+<style>
+:root{color-scheme:dark;--bg:#0c1220;--panel:#151f33;--line:#2b3a56;--text:#edf2ff;--muted:#a5b2ca;--accent:#8da2ff;--green:#68d6a0}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#1d2b4b 0,#0c1220 58%);color:var(--text);font:15px/1.5 system-ui,"Segoe UI",sans-serif;min-height:100vh}
+main{width:min(900px,100%);margin:auto;padding:30px 18px 55px}h1{font-size:clamp(25px,4vw,36px);margin:0}.sub{color:var(--muted);margin:6px 0 22px}
+.panel{background:#151f33eF;border:1px solid var(--line);border-radius:17px;padding:18px;margin:14px 0;box-shadow:0 12px 35px #0003}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.row>*{flex:1}button{border:0;border-radius:10px;padding:11px 15px;font:600 14px system-ui;cursor:pointer;background:var(--accent);color:#10182e}button.secondary{background:#263652;color:var(--text);border:1px solid #405170}button.stop{background:#713c50;color:#fff}button:disabled{opacity:.45;cursor:not-allowed}
+label{display:block;color:var(--muted);font-size:12px;margin:0 0 6px}select,textarea,input[type=range]{width:100%}select,textarea{background:#0c1425;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:11px;font:inherit}textarea{min-height:250px;resize:vertical;line-height:1.6}
+#status{font-size:13px;color:var(--muted);min-height:22px;margin-top:12px}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#78849a;margin-right:7px}.dot.on{background:var(--green);box-shadow:0 0 10px #68d6a077}
+.grid{display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:12px}.check{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;margin-top:13px}.check input{accent-color:var(--accent)}
+.small{font-size:12px;color:var(--muted);margin-top:12px}.actions{display:flex;gap:10px;flex-wrap:wrap}.actions button{flex:1;min-width:125px}
+@media(max-width:620px){.grid{grid-template-columns:1fr}.actions{display:grid;grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body><main>
+<h1>Microsoft Edge Reader</h1>
+<p class="sub">Continuous browser dictation and text-to-speech. No executable, local server, or API key.</p>
+<section class="panel">
+<div class="actions">
+<button id="start">Start dictation</button>
+<button id="stop" class="stop" disabled>Stop dictation</button>
+<button id="clear" class="secondary">Clear text</button>
+</div>
+<div id="status"><span class="dot"></span>Ready. Press Start dictation and allow microphone access.</div>
+<p class="small">Dictation uses your browser's speech-recognition service. It automatically restarts after recognition sessions end and refreshes the session about every 50 seconds to keep it going.</p>
+</section>
+<section class="panel">
+<label for="text">DICTATED TEXT / READER TEXT</label>
+<textarea id="text" placeholder="Your recognized words will appear here. You can also type or edit text here…"></textarea>
+<div class="actions" style="margin-top:12px">
+<button id="speak">Read text aloud</button>
+<button id="pause" class="secondary" disabled>Pause</button>
+<button id="resume" class="secondary" disabled>Resume</button>
+<button id="cancel" class="stop">Stop reading</button>
+</div>
+</section>
+<section class="panel">
+<div class="grid">
+<div><label for="voice">MICROSOFT / BROWSER VOICE</label><select id="voice"><option value="">Loading available voices…</option></select></div>
+<div><label for="rate">SPEECH RATE · <span id="rateValue">1.0×</span></label><input id="rate" type="range" min="0.65" max="1.5" value="1" step="0.05"></div>
+<div><label for="pitch">PITCH · <span id="pitchValue">1.0</span></label><input id="pitch" type="range" min="0.7" max="1.4" value="1" step="0.05"></div>
+</div>
+<label class="check"><input id="autoRead" type="checkbox"> Automatically read each completed dictated sentence</label>
+<label class="check"><input id="clearAfter" type="checkbox"> Clear the text box after manually reading all text</label>
+<p class="small">Voice choices depend on voices installed or made available by Microsoft Edge and Windows. This page uses the browser's built-in speech synthesis; it does not call a paid TTS API.</p>
+</section>
+</main>
+<script src="./reader.js"></script>
+</body></html>
