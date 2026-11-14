@@ -9,34 +9,32 @@ const string SpeechPage = """
 <style>body{font:16px system-ui;background:#17171b;color:#eee;max-width:600px;margin:40px auto;padding:20px}button{font-size:18px;padding:12px 20px}#status{color:#9f9;margin:15px 0}#heard{white-space:pre-wrap;background:#24242a;padding:12px;border-radius:8px;min-height:70px}</style></head>
 <body><h2>Character.AI Speech Bridge</h2><button id="toggle">Start Chrome Speech Recognition</button><div id="status">Idle — click Start and allow microphone</div><h3>Recognized words</h3><div id="heard"></div>
 <script>
-const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,enabled=false,speaking=false,idleTimer=null,finalText='';
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,enabled=false,speaking=false,idleTimer=null,finalText='',restartTimer=null;
 const status=document.querySelector('#status'),heard=document.querySelector('#heard'),btn=document.querySelector('#toggle');
-function idle(){clearTimeout(idleTimer);if(!speaking&&enabled){status.textContent='Listening…';idleTimer=setTimeout(()=>{if(!speaking)status.textContent='Listening… (mic active)'},5000)}}
-async function pollStatus(){try{const x=await fetch('/status.txt');const s=await x.text();if(s)status.textContent=s;}catch{}}
-setInterval(pollStatus,1000);
+function say(s){status.textContent=s;console.log('[CAI Voice Bridge]',s)}
+async function pollStatus(){try{const x=await fetch('/status.txt');const s=await x.text();if(s)say(s)}catch{}}
+setInterval(pollStatus,1200);
 function start(){
- if(!enabled)return;
- if(!SR){status.textContent='ERROR: Chrome SpeechRecognition unavailable';return;}
- rec=new SR();rec.continuous=true;rec.interimResults=true;rec.lang='en-US';
- rec.onstart=()=>{status.textContent='MIC ACTIVE — listening';idle()};
- rec.onaudiostart=()=>{status.textContent='Microphone audio received…'};
- rec.onspeechstart=()=>{speaking=true;clearTimeout(idleTimer);status.textContent='Speech detected…'};
- rec.onspeechend=()=>{speaking=false;status.textContent='Speech ended — finalizing words…';idle()};
- rec.onresult=async e=>{
+ if(!enabled)return;if(!SR){say('ERROR: Chrome SpeechRecognition unavailable');return}
+ rec=new SR();rec.continuous=true;rec.interimResults=true;rec.maxAlternatives=1;rec.lang='en-US';
+ rec.onstart=()=>say('LISTENING — speak now');rec.onaudiostart=()=>say('Mic stream active — waiting for speech');
+ rec.onspeechstart=()=>{speaking=true;say('Speech detected — transcribing…')};
+ rec.onspeechend=()=>{speaking=false;say('Speech ended — waiting for transcript…')};
+ rec.onresult=e=>{
   let interim='',final='';
-  for(let i=e.resultIndex;i<e.results.length;i++){const phrase=e.results[i][0].transcript;if(e.results[i].isFinal)final+=phrase;else interim+=phrase;}
-  if(interim)heard.textContent=finalText+' '+interim;
-  if(final.trim()){finalText+=(finalText?' ':'')+final.trim();heard.textContent=finalText;status.textContent='Recognized: '+final.trim()+' — sending…';
-   try{const r=await fetch('/speech',{method:'POST',headers:{'Content-Type':'text/plain'},body:final.trim()});if(!r.ok)throw Error('HTTP '+r.status);status.textContent='Sent to Character.AI — waiting for reply';}
-   catch(err){status.textContent='Bridge error: '+err.message;}
+  for(let i=e.resultIndex;i<e.results.length;i++){const r=e.results[i],t=r[0]?.transcript||'';if(r.isFinal)final+=t;else interim+=t;}
+  if(interim)heard.textContent=finalText+(finalText?' ':'')+'[LIVE] '+interim;
+  if(final.trim()){
+   finalText+=(finalText?' ':'')+final.trim();heard.textContent=finalText;say('Recognized: '+final.trim());
+   fetch('/speech',{method:'POST',headers:{'Content-Type':'text/plain'},body:final.trim()}).then(r=>{if(!r.ok)throw Error('HTTP '+r.status);say('Sent to Character.AI — waiting for reply')}).catch(err=>say('Paste error: '+err.message));
   }
  };
- rec.onerror=e=>{status.textContent='Speech recognition ERROR: '+e.error+(e.message?' / '+e.message:'');};
- rec.onend=()=>{if(enabled){status.textContent='Recognition restarting…';setTimeout(()=>{if(enabled)start()},500)}};
- try{rec.start();status.textContent='Starting microphone…';}catch(err){status.textContent='Could not start recognition: '+err.message;}
+ rec.onerror=e=>{say('RECOGNITION ERROR: '+e.error+' (check Chrome internet/mic permissions)');console.error(e)};
+ rec.onend=()=>{if(enabled){say('Recognizer ended; restarting…');restartTimer=setTimeout(()=>{if(enabled)start()},700)}};
+ try{rec.start();say('Starting recognition…')}catch(e){say('START ERROR: '+e.message)}
 }
-btn.onclick=()=>{enabled=!enabled;btn.textContent=enabled?'Stop Recognition':'Start Chrome Speech Recognition';if(enabled){finalText='';heard.textContent='';start()}else{clearTimeout(idleTimer);rec?.stop();status.textContent='Stopped'}};
-if(!SR){btn.disabled=true;status.textContent='ERROR: Chrome SpeechRecognition unavailable';}
+btn.onclick=()=>{enabled=!enabled;btn.textContent=enabled?'Stop Recognition':'Start Chrome Speech Recognition';if(enabled){finalText='';heard.textContent='';start()}else{clearTimeout(restartTimer);rec?.stop();say('Stopped')}};
+if(!SR){btn.disabled=true;say('ERROR: Chrome SpeechRecognition API missing')}
 </script></body></html>
 """;
 
