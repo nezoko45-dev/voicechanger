@@ -20,7 +20,7 @@ function start(){
  if(!SR){say('ERROR: This Chrome build does not expose SpeechRecognition.');return}
 rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=true;rec.maxAlternatives=1;
  rec.onstart=()=>say('Chrome is listening. Speak naturally.');
- rec.onresult=e=>{let partial='';for(let i=e.resultIndex;i<e.results.length;i++){const words=e.results[i][0].transcript.trim();if(!words)continue;if(e.results[i].isFinal){add(words);say('Final: '+words+' · sending to Character.AI…');post('/speech',words).then(()=>say('Sent: '+words+' · listening')).catch(x=>say('Send error: '+x.message));}else partial+=words+' ';}if(partial)say('Hearing: '+partial.trim());};
+ rec.onresult=e=>{let partial='';for(let i=e.resultIndex;i<e.results.length;i++){const words=e.results[i][0].transcript.trim();if(!words)continue;if(e.results[i].isFinal){add(words);say('Final: '+words+' · sending to Character.AI…');post('/speech',words).then(async r=>{const result=await r.text();say(result+' · '+words)}).catch(x=>say('Send error: '+x.message));}else partial+=words+' ';}if(partial)say('Hearing: '+partial.trim());};
  rec.onerror=e=>{say('Chrome Speech error: '+e.error+(e.error==='network'?' — Chrome speech service needs internet access.':''));if(e.error==='not-allowed'||e.error==='service-not-allowed'){active=false;btn.textContent='Start Chrome Recognition'}};
  rec.onend=()=>{if(active){say('Recognition paused; restarting Chrome speech…');setTimeout(()=>{if(active)try{rec.start()}catch{}},700)}else say('Recognition stopped.')};
  active=true;btn.textContent='Stop Recognition';try{rec.start()}catch(e){say('Start failed: '+e.message);active=false;btn.textContent='Start Chrome Recognition'}
@@ -54,20 +54,25 @@ async Task Server(){
  while(true){var c=await l.GetContextAsync();_=Task.Run(async()=>{try{
   var path=c.Request.Url?.AbsolutePath??"/";
   if(c.Request.HttpMethod=="GET"&&(path=="/"||path=="/index.html")){c.Response.ContentType="text/html; charset=utf-8";await c.Response.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(Page));}
-  else if(c.Request.HttpMethod=="POST"&&path=="/speech"){using var rd=new StreamReader(c.Request.InputStream);var s=(await rd.ReadToEndAsync()).Trim();if(s.Length>0)await SendToCai(s);c.Response.StatusCode=204;}
+  else if(c.Request.HttpMethod=="POST"&&path=="/speech"){using var rd=new StreamReader(c.Request.InputStream);var words=(await rd.ReadToEndAsync()).Trim();if(words.Length>0){var result=await SendToCai(words);c.Response.ContentType="text/plain; charset=utf-8";await c.Response.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(result));}else c.Response.StatusCode=204;}
   else if(c.Request.HttpMethod=="GET"&&path=="/status.txt"){c.Response.ContentType="text/plain";await c.Response.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(state.Message));}
   else if(c.Request.HttpMethod=="POST"&&path=="/status"){using var rd=new StreamReader(c.Request.InputStream);state.Message=await rd.ReadToEndAsync();c.Response.StatusCode=204;}
   else c.Response.StatusCode=404;
  }catch(Exception e){Console.WriteLine("HTTP: "+e.Message);c.Response.StatusCode=500;}finally{c.Response.Close();}});}
 }
-async Task SendToCai(string words){
- var t=target;if(t.ValueKind==JsonValueKind.Undefined){Console.WriteLine("No Character.AI tab yet: "+words);return;}
- // Use a separate CDP socket for commands so reply-monitor reads cannot steal command responses.
+async Task<string> SendToCai(string words){
+ for(int i=0;i<30&&target.ValueKind==JsonValueKind.Undefined;i++)await Task.Delay(300);
+ var t=target;if(t.ValueKind==JsonValueKind.Undefined)return "EXE ERROR: Character.AI tab not connected";
  using var ws=new ClientWebSocket();await ws.ConnectAsync(new Uri(t.GetProperty("webSocketDebuggerUrl").GetString()!),CancellationToken.None);
- var js="(()=>{const e=document.querySelector('[contenteditable=true][data-placeholder]')||document.querySelector('textarea')||document.querySelector('[contenteditable=true]');if(!e)return 'COMPOSER_NOT_FOUND';e.focus();const t="+JsonSerializer.Serialize(words)+";if(e.tagName==='TEXTAREA'){const p=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;p.call(e,(e.value?e.value+' ':'')+t);e.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:t}));}else{document.execCommand('insertText',false,(e.innerText?' ':'')+t);}const b=[...document.querySelectorAll('button')].find(x=>/send/i.test((x.getAttribute('aria-label')||'')+' '+(x.innerText||''))&&!x.disabled);if(b)b.click();return b?'PASTED_AND_SENT':'PASTED (send button not found)'})()";
- var payload=JsonSerializer.Serialize(new{id=Interlocked.Increment(ref id),method="Runtime.evaluate",@params=new{expression=js,returnByValue=true}});
+ var js="(()=>{const e=document.querySelector('[contenteditable=true][data-placeholder]')||document.querySelector('textarea')||document.querySelector('[contenteditable=true]');if(!e)return 'COMPOSER_NOT_FOUND';e.focus();const t="+JsonSerializer.Serialize(words)+";if(e.tagName==='TEXTAREA'){const p=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;p.call(e,(e.value?e.value+' ':'')+t);e.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:t}));}else{document.execCommand('insertText',false,(e.innerText?' ':'')+t);e.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:t}));}const b=[...document.querySelectorAll('button')].find(x=>/send/i.test((x.getAttribute('aria-label')||'')+' '+(x.innerText||''))&&!x.disabled);if(b)b.click();return b?'EXE: PASTED AND SENT':'EXE: PASTED, SEND BUTTON NOT FOUND'})()";
+ var commandId=Interlocked.Increment(ref id);
+ var payload=JsonSerializer.Serialize(new{id=commandId,method="Runtime.evaluate",@params=new{expression=js,returnByValue=true}});
  await ws.SendAsync(Encoding.UTF8.GetBytes(payload),WebSocketMessageType.Text,true,CancellationToken.None);
- Console.WriteLine("Chrome transcript → CAI: "+words);state.Awaiting=true;
+ var buf=new byte[65536];using var ms=new MemoryStream();
+ while(true){var rr=await ws.ReceiveAsync(buf,CancellationToken.None);ms.Write(buf,0,rr.Count);if(rr.EndOfMessage)break;}
+ using var response=JsonDocument.Parse(ms.ToArray());
+ var result=response.RootElement.GetProperty("result").GetProperty("result").GetProperty("value").GetString()??"EXE: No result";
+ Console.WriteLine("Transcript → EXE → CAI: "+words+" | "+result);state.Awaiting=true;return result;
 }
 async Task Watch(ClientWebSocket ws){
  string last="";DateTime changed=DateTime.UtcNow;bool saw=false;
