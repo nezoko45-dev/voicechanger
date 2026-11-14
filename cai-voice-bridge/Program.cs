@@ -188,9 +188,35 @@ class volatileState { public volatile bool AwaitingReply; public volatile string
 class LocalWhisper {
 readonly Func<string,Task> sendToCai;
 public LocalWhisper(Func<string,Task> sendToCai){this.sendToCai=sendToCai;}
-WaveInEvent? mic; WhisperProcessor? processor; WhisperFactory? factory; readonly object gate=new(); readonly List<float> audio=new(); readonly StringBuilder output=new(); bool running; public string Status {get;private set;}="Whisper model not loaded yet.";
-public async Task Start(){if(running)return;Status="Downloading/loading local Whisper model (first run can take a minute)…";var d=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"CAIVoiceBridge","models");Directory.CreateDirectory(d);var m=Path.Combine(d,"ggml-base.en.bin");if(!File.Exists(m)){using var c=new HttpClient();using var s=await c.GetStreamAsync("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin");using var o=File.Create(m);await s.CopyToAsync(o);}factory=WhisperFactory.FromPath(m);processor=factory.CreateBuilder().WithLanguage("en").Build();mic=new WaveInEvent{WaveFormat=new WaveFormat(16000,16,1),BufferMilliseconds=250};mic.DataAvailable+=(a,e)=>{lock(gate)for(int i=0;i<e.BytesRecorded/2;i++)audio.Add(BitConverter.ToInt16(e.Buffer,i*2)/32768f);};mic.StartRecording();running=true;Status="Mic is active. Speak; transcription runs every 4 seconds.";_ = Loop();Console.WriteLine("Local Whisper listening.");}
+WaveInEvent? mic; WhisperProcessor? processor; WhisperFactory? factory; readonly object gate=new(); readonly List<float> audio=new(); readonly StringBuilder output=new(); bool running; public string Status {get;private set;}="Model not initialized. Click Start Local Recognition.";
+const long ExpectedModelBytes=147_000_000;
+public async Task Start(){
+ if(running)return;
+ Status="Preparing Whisper model…";
+ var d=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"CAIVoiceBridge","models");Directory.CreateDirectory(d);
+ var m=Path.Combine(d,"ggml-base.en.bin");
+ if(File.Exists(m)&&new FileInfo(m).Length<100_000_000){File.Delete(m);Status="Removed incomplete Whisper model download.";}
+ if(!File.Exists(m)){
+  Status="Connecting to Hugging Face to download Whisper model…";
+  using var c=new HttpClient{Timeout=TimeSpan.FromMinutes(15)};
+  c.DefaultRequestHeaders.UserAgent.ParseAdd("CAIVoiceBridge/1.0");
+  using var response=await c.GetAsync("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",HttpCompletionOption.ResponseHeadersRead);
+  response.EnsureSuccessStatusCode();
+  var total=response.Content.Headers.ContentLength??ExpectedModelBytes;long read=0;var sw=System.Diagnostics.Stopwatch.StartNew();
+  await using var source=await response.Content.ReadAsStreamAsync();await using var dest=new FileStream(m,FileMode.Create,FileAccess.Write,FileShare.None,81920,true);
+  var buffer=new byte[81920];int n;
+  while((n=await source.ReadAsync(buffer))>0){await dest.WriteAsync(buffer.AsMemory(0,n));read+=n;if(sw.ElapsedMilliseconds>500){Status=$"Downloading Whisper model: {read/1_000_000} MB / {total/1_000_000} MB ({Math.Min(99,read*100/Math.Max(1,total))}%)";sw.Restart();}}
+  if(read<100_000_000){File.Delete(m);throw new InvalidDataException($"Model download incomplete ({read} bytes).");}
+  Status="Whisper model downloaded. Initializing…";
+ }
+ Status="Loading Whisper model into memory (can take 20–60 seconds)…";
+ factory=WhisperFactory.FromPath(m);processor=factory.CreateBuilder().WithLanguage("en").Build();
+ Status="Whisper loaded. Opening microphone…";
+ mic=new WaveInEvent{DeviceNumber=-1,WaveFormat=new WaveFormat(16000,16,1),BufferMilliseconds=250};
+ mic.DataAvailable+=(a,e)=>{lock(gate)for(int i=0;i<e.BytesRecorded/2;i++)audio.Add(BitConverter.ToInt16(e.Buffer,i*2)/32768f);};
+ mic.StartRecording();running=true;Status="Mic active. Speak; local transcription runs every 4 seconds.";_ = Loop();Console.WriteLine("Local Whisper listening.");
+}
 public async Task Stop(){running=false;mic?.StopRecording();mic?.Dispose();mic=null;Status="Recognition stopped.";await Task.Delay(100);}
-async Task Loop(){while(running){await Task.Delay(4000);float[] data;lock(gate){data=audio.ToArray();audio.Clear();}if(data.Length<16000){Status="Mic active; waiting for speech/audio…";continue;}try{Status=$"Transcribing {data.Length/16000}s of mic audio locally…";bool got=false;await foreach(var x in processor!.ProcessAsync(data)){var t=x.Text.Trim();if(t.Length>0){got=true;lock(gate)output.AppendLine(t);Console.WriteLine("Whisper: "+t);Status="Recognized: "+t;await sendToCai(t);}}if(!got)Status="Audio captured, but Whisper returned no words. Keep speaking for a few seconds.";}catch(Exception e){Status="WHISPER ERROR: "+e.Message;Console.WriteLine("Whisper error: "+e);}}}
+async Task Loop(){while(running){await Task.Delay(4000);float[] data;lock(gate){data=audio.ToArray();audio.Clear();}if(data.Length<16000){Status="Mic active; waiting for speech/audio…";continue;}try{Status=$"Whisper transcribing {data.Length/16000}s of audio…";bool got=false;await foreach(var x in processor!.ProcessAsync(data)){var t=x.Text.Trim();if(t.Length>0){got=true;lock(gate)output.AppendLine(t);Console.WriteLine("Whisper: "+t);Status="Recognized: "+t;await sendToCai(t);}}if(!got)Status="Captured audio, but Whisper heard no words. Speak clearly for 4+ seconds.";}catch(Exception e){Status="WHISPER ERROR: "+e.Message;Console.WriteLine("Whisper error: "+e);}}}
 public string TakeTranscript(){lock(gate){var s=output.ToString();output.Clear();return s;}}
 }
