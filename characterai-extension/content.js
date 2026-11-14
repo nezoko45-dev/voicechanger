@@ -5,12 +5,16 @@
  const $=s=>document.querySelector(s);
  const visible=e=>!!e&&e.getClientRects().length>0&&!e.disabled;
  function voiceButton(){
-  return [...document.querySelectorAll('button,[role="button"]')].find(e=>{
-    if(!visible(e))return false;
-    const label=((e.getAttribute('aria-label')||'')+' '+(e.getAttribute('title')||'')+' '+(e.innerText||e.textContent||'')).trim().toLowerCase();
-    return /(^|\\s)voice(\\s|$)/.test(label)||label.includes('voice mode');
-  })
-}
+  const nodes=[...document.querySelectorAll('button,[role="button"]')].filter(visible);
+  // Character.AI renders this control as an icon + "Voice" text; accessible
+  // labels vary between builds, so match the button's own text too.
+  return nodes.find(e=>{
+    const txt=(e.innerText||e.textContent||'').replace(/\\s+/g,' ').trim().toLowerCase();
+    const aria=(e.getAttribute('aria-label')||'').trim().toLowerCase();
+    const title=(e.getAttribute('title')||'').trim().toLowerCase();
+    return txt==='voice'||aria==='voice'||title==='voice'||txt==='start voice'||aria.includes('start voice');
+  });
+ }
  function textbox(){
   // Character.AI composer is normally the textbox/contenteditable with a message placeholder.
   const all=[...document.querySelectorAll('textarea,[contenteditable="true"],[role="textbox"]')].filter(visible);
@@ -59,7 +63,16 @@
  }
  function pauseVoiceForSpeech(){speechNow=true;clearInterval(voiceTimer);voiceTimer=null;voiceOn=false;log('speech detected: voice timer paused')}
  function beginGenerationWait(){speechNow=false;genObserved=false;clearInterval(voiceTimer);voiceTimer=null;const poll=setInterval(()=>{if(!active){clearInterval(poll);return}if(generating()){genObserved=true;return}if(genObserved){clearInterval(poll);log('generation complete; starting 5-sec voice toggles');startVoiceTimer() }},900);setTimeout(()=>{clearInterval(poll);if(active&&!genObserved){log('generation indicator unavailable; starting voice timer');startVoiceTimer()}},90000)}
- function startVoiceTimer(){if(!active)return;clearInterval(voiceTimer);voiceTimer=setInterval(()=>{if(!active||speechNow||generating())return;const b=voiceButton();if(!b){log('Voice button not found');return}b.click();voiceOn=!voiceOn;log('Voice toggle click; state '+(voiceOn?'ON':'OFF'))},5000)}
+ function startVoiceTimer(){if(!active)return;clearInterval(voiceTimer);voiceTimer=setInterval(()=>{
+  if(!active||speechNow||generating())return;
+  const b=voiceButton();
+  if(!b){log('Voice button not found; visible buttons: '+[...document.querySelectorAll('button,[role="button"]')].filter(visible).map(e=>(e.innerText||e.getAttribute('aria-label')||'').trim()).slice(0,30).join(' | '));return}
+  b.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));
+  b.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
+  b.dispatchEvent(new PointerEvent('pointerup',{bubbles:true}));
+  b.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));
+  b.click();voiceOn=!voiceOn;log('Voice button clicked; toggle '+(voiceOn?'ON':'OFF'));
+},5000)}
  function startRec(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){log('Chrome SpeechRecognition unavailable');return}
   try{rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=true;rec.maxAlternatives=1;
