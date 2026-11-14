@@ -102,6 +102,12 @@ async Task RunLocalSpeechServer()
                     ctx.Response.ContentType = "text/html; charset=utf-8";
                     await ctx.Response.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(SpeechPage));
                 }
+                else if (ctx.Request.HttpMethod == "GET" && ctx.Request.Url?.AbsolutePath == "/status.txt")
+                {
+                    ctx.Response.ContentType = "text/plain; charset=utf-8";
+                    var message = idleState.UiMessage; idleState.UiMessage = "";
+                    await ctx.Response.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(message));
+                }
                 else if (ctx.Request.HttpMethod == "POST" && ctx.Request.Url?.AbsolutePath == "/speech")
                 {
                     using var reader = new StreamReader(ctx.Request.InputStream, ctx.Request.ContentEncoding);
@@ -151,8 +157,6 @@ string? FindChrome()
     var paths=new[]{Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"Google","Chrome","Application","chrome.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),"Google","Chrome","Application","chrome.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Google","Chrome","Application","chrome.exe")};
     return paths.FirstOrDefault(File.Exists);
 }
-class volatileState { public volatile bool AwaitingReply; public volatile string UiMessage=""; }
-
 const string SpeechPage = """
 <!doctype html><html><head><meta charset="utf-8"><title>CAI Speech Bridge</title>
 <style>body{font:16px system-ui;background:#17171b;color:#eee;max-width:600px;margin:40px auto;padding:20px}button{font-size:18px;padding:12px 20px}#status{color:#9f9;margin:15px 0}#heard{white-space:pre-wrap;background:#24242a;padding:12px;border-radius:8px;min-height:70px}</style></head>
@@ -173,3 +177,6 @@ btn.onclick=()=>{enabled=!enabled;btn.textContent=enabled?'Stop Recognition':'St
 if(!SR){btn.disabled=true;status.textContent='Chrome SpeechRecognition unavailable';}
 </script></body></html>
 """;
+
+
+class volatileState { public volatile bool AwaitingReply; public volatile string UiMessage=""; }
