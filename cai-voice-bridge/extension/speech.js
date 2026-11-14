@@ -1,0 +1,7 @@
+const status=document.querySelector('#status'),heard=document.querySelector('#heard'),btn=document.querySelector('#toggle');let rec,active=false,port;
+function connect(){try{port=chrome.runtime.connectNative('org.cai.voicebridge');port.onDisconnect=()=>status.textContent='Native host disconnected. Install native host and reopen this page.';port.onMessage=m=>{if(m.received)status.textContent='EXE received: '+m.received}}catch(e){status.textContent='Native host error: '+e.message}}
+connect();
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(!SR){status.textContent='Chrome SpeechRecognition unavailable';btn.disabled=true}
+function start(){rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=true;rec.onstart=()=>status.textContent='Listening continuously…';rec.onerror=e=>status.textContent='Speech error: '+e.error;rec.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal){const text=t.trim();if(text){heard.textContent+=text+'\n';port?.postMessage({text});chrome.runtime.sendMessage({type:'recognized',text})}}else interim+=t}if(interim)status.textContent='Hearing: '+interim};rec.onend=()=>{if(active)setTimeout(()=>{try{rec.start()}catch{}},400)};active=true;btn.textContent='Stop listening';rec.start()}
+btn.onclick=()=>{if(active){active=false;rec?.stop();btn.textContent='Start listening';status.textContent='Stopped'}else start()};
