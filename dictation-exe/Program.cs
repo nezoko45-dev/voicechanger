@@ -31,7 +31,7 @@ namespace ChatGPTDictation
 
         public MainForm()
         {
-            Text = "ChatGPT Dictation EXE";
+            Text = "ChatGPT Dictation EXE"; // Windows-native, no Python runtime
             Width = 430; Height = 210;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
