@@ -5,13 +5,21 @@
  const $=s=>document.querySelector(s);
  const visible=e=>!!e&&e.getClientRects().length>0&&!e.disabled;
  function voiceButton(){return [...document.querySelectorAll('button,[role="button"]')].find(e=>visible(e)&&((e.getAttribute('aria-label')||'').trim().toLowerCase()==='voice'||(e.innerText||e.textContent||'').trim().toLowerCase()==='voice'||(e.getAttribute('title')||'').trim().toLowerCase()==='voice'))}
- function textbox(){return [...document.querySelectorAll('textarea,input,[contenteditable="true"],[role="textbox"]')].find(visible)}
- function sendButton(){return [...document.querySelectorAll('button,[role="button"]')].find(e=>visible(e)&&(/send/i.test((e.getAttribute('aria-label')||'')+' '+(e.innerText||e.textContent||''))||e.querySelector('svg[data-testid*="send"]'))}
+ function textbox(){
+  // Character.AI composer is normally the textbox/contenteditable with a message placeholder.
+  const all=[...document.querySelectorAll('textarea,[contenteditable="true"],[role="textbox"]')].filter(visible);
+  return all.find(e=>/message|chat|talk|reply/i.test((e.getAttribute('placeholder')||'')+' '+(e.getAttribute('data-placeholder')||'')+' '+(e.getAttribute('aria-label')||'')))||all.find(e=>e.matches('[contenteditable="true"],[role="textbox"]'))||all.find(e=>e.tagName==='TEXTAREA');
+ }
+ function sendButton(el){
+  const form=el?.closest('form');
+  const candidates=[...(form||document).querySelectorAll('button,[role="button"]')].filter(visible);
+  return candidates.find(e=>/send/i.test((e.getAttribute('aria-label')||'')+' '+(e.getAttribute('title')||'')+' '+(e.innerText||e.textContent||'')))||
+   candidates.find(e=>e.type==='submit'||e.getAttribute('type')==='submit')||
+   candidates.find(e=>e.querySelector('svg[data-testid*="send"],svg[aria-label*="send" i]'));
+ }
  function generating(){return [...document.querySelectorAll('button,[role="button"]')].some(e=>visible(e)&&/stop generating|stop response|cancel generation/i.test((e.getAttribute('aria-label')||'')+' '+(e.innerText||e.textContent||'')))}
  function insertAndSend(text){
-  // Prefer the active Character.AI composer; avoid unrelated textboxes.
-  const el=document.querySelector('textarea[ placeholder],textarea,[contenteditable="true"][data-placeholder],[contenteditable="true"],[role="textbox"]');
-  if(!visible(el)){log('Chat composer not found');return}
+  const el=textbox();if(!el){log('Character.AI composer not found');return}
   el.focus();
   if(el.isContentEditable){
     el.replaceChildren(document.createTextNode(text));
@@ -21,22 +29,25 @@
     const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
     if(setter)setter.call(el,text);else el.value=text;
     el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}));
-    el.dispatchEvent(new Event('change',{bubbles:true}));
   }
-  // First try the page's Send control. If it is absent or the click fails,
-  // press Enter as the requested fallback after the final transcript arrives.
   setTimeout(()=>{
-    let sent=false;
-    const b=sendButton();
-    if(b){try{b.click();sent=true}catch(e){log('Send click failed: '+e)}}
-    if(!sent||!b){
-      el.focus();
-      for(const type of ['keydown','keypress','keyup'])
-        el.dispatchEvent(new KeyboardEvent(type,{key:'Enter',code:'Enter',which:13,keyCode:13,bubbles:true,cancelable:true}));
+    const form=el.closest('form');let submitted=false;
+    // Submit through the actual composer form first (React listens to submit).
+    if(form&&typeof form.requestSubmit==='function'){
+      try{form.requestSubmit();submitted=true;log('submitted via composer form')}catch(err){log('form submit failed '+err)}
+    }
+    if(!submitted){
+      const b=sendButton(el);
+      if(b){try{b.click();submitted=true;log('submitted via Send button')}catch(err){log('Send click failed '+err)}}
+    }
+    if(!submitted){
+      // Last-resort Enter event sequence; form submission above is the trusted DOM path.
+      el.focus();el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true,cancelable:true}));
+      el.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',code:'Enter',bubbles:true,cancelable:true}));
       log('Enter fallback dispatched');
     }
-    log('transcript submitted: '+text);
-  },180);
+    log('final transcript: '+text);
+  },250);
  }
  function pauseVoiceForSpeech(){speechNow=true;clearInterval(voiceTimer);voiceTimer=null;voiceOn=false;log('speech detected: voice timer paused')}
  function beginGenerationWait(){speechNow=false;genObserved=false;clearInterval(voiceTimer);voiceTimer=null;const poll=setInterval(()=>{if(!active){clearInterval(poll);return}if(generating()){genObserved=true;return}if(genObserved){clearInterval(poll);log('generation complete; starting 5-sec voice toggles');startVoiceTimer() }},900);setTimeout(()=>{clearInterval(poll);if(active&&!genObserved){log('generation indicator unavailable; starting voice timer');startVoiceTimer()}},90000)}
