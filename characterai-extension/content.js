@@ -9,11 +9,34 @@
  function sendButton(){return [...document.querySelectorAll('button,[role="button"]')].find(e=>visible(e)&&(/send/i.test((e.getAttribute('aria-label')||'')+' '+(e.innerText||e.textContent||''))||e.querySelector('svg[data-testid*="send"]'))}
  function generating(){return [...document.querySelectorAll('button,[role="button"]')].some(e=>visible(e)&&/stop generating|stop response|cancel generation/i.test((e.getAttribute('aria-label')||'')+' '+(e.innerText||e.textContent||'')))}
  function insertAndSend(text){
-  const el=textbox();if(!el){log('Chat input not found');return}
+  // Prefer the active Character.AI composer; avoid unrelated textboxes.
+  const el=document.querySelector('textarea[ placeholder],textarea,[contenteditable="true"][data-placeholder],[contenteditable="true"],[role="textbox"]');
+  if(!visible(el)){log('Chat composer not found');return}
   el.focus();
-  if(el.isContentEditable){el.textContent=text;el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}))}
-  else {const p=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),'value')?.set;p?p.call(el,text):el.value=text;el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}))}
-  setTimeout(()=>{const b=sendButton();if(b)b.click();else el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true}));log('sent: '+text)},120);
+  if(el.isContentEditable){
+    el.replaceChildren(document.createTextNode(text));
+    el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}));
+  }else{
+    const proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
+    const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
+    if(setter)setter.call(el,text);else el.value=text;
+    el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}));
+    el.dispatchEvent(new Event('change',{bubbles:true}));
+  }
+  // First try the page's Send control. If it is absent or the click fails,
+  // press Enter as the requested fallback after the final transcript arrives.
+  setTimeout(()=>{
+    let sent=false;
+    const b=sendButton();
+    if(b){try{b.click();sent=true}catch(e){log('Send click failed: '+e)}}
+    if(!sent||!b){
+      el.focus();
+      for(const type of ['keydown','keypress','keyup'])
+        el.dispatchEvent(new KeyboardEvent(type,{key:'Enter',code:'Enter',which:13,keyCode:13,bubbles:true,cancelable:true}));
+      log('Enter fallback dispatched');
+    }
+    log('transcript submitted: '+text);
+  },180);
  }
  function pauseVoiceForSpeech(){speechNow=true;clearInterval(voiceTimer);voiceTimer=null;voiceOn=false;log('speech detected: voice timer paused')}
  function beginGenerationWait(){speechNow=false;genObserved=false;clearInterval(voiceTimer);voiceTimer=null;const poll=setInterval(()=>{if(!active){clearInterval(poll);return}if(generating()){genObserved=true;return}if(genObserved){clearInterval(poll);log('generation complete; starting 5-sec voice toggles');startVoiceTimer() }},900);setTimeout(()=>{clearInterval(poll);if(active&&!genObserved){log('generation indicator unavailable; starting voice timer');startVoiceTimer()}},90000)}
