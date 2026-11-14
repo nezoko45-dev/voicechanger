@@ -43,5 +43,75 @@
    },450);
   }catch(e){external=false;if(SR)listen();else log("Start ChatGPTDictation.exe first (or enable Chrome SpeechRecognition)")}
  }
- chrome.runtime.onMessage.addListener((m,s,reply)=>{if(m.action==="START"){active=true;waiting=false;startExternal();reply({status:"Started"});}else if(m.action==="STOP"){active=false;waiting=false;external=false;clearTimeout(restart);clearInterval(answerPoll);clearInterval(playPoll);clearInterval(externalPoll);try{rec&&rec.stop()}catch{}rec=null;log("Stopped");reply({status:"Stopped"})}return true});
+ 
+ // Character.AI: keep its voice control alive without interrupting generation.
+ let caiMode=false,caiKeep=null,caiBusy=false,caiLastSpeech=0,caiPoll=null,caiToggleBusy=false;
+ const isCAI=()=>location.hostname==="character.ai"||location.hostname.endsWith(".character.ai");
+ function caiVoiceButton(){
+  const all=[...document.querySelectorAll("button,[role=button]")];
+  const ranked=all.map(b=>{
+   const s=[b.getAttribute("aria-label"),b.getAttribute("title"),b.getAttribute("data-testid"),b.innerText,b.querySelector("svg")?.outerHTML].filter(Boolean).join(" ").toLowerCase();
+   let score=0;
+   if(/voice|call/.test(s))score+=8;
+   if(/start|end|turn on|turn off|enable|disable/.test(s))score+=3;
+   if(/microphone|mic/.test(s))score+=2;
+   if(/send|message|record|listen|mute|speaker|audio output/.test(s))score-=8;
+   if(b.querySelector("svg"))score+=1;
+   return {b,score,s};
+  }).filter(x=>x.score>=8).sort((a,b)=>b.score-a.score);
+  return ranked[0]?.b||null;
+ }
+ function caiVoiceOn(b){
+  const s=[b?.getAttribute("aria-label"),b?.getAttribute("title"),b?.innerText,b?.dataset.testid].filter(Boolean).join(" ").toLowerCase();
+  if(/end voice|end call|stop voice|turn off voice|disable voice/.test(s))return true;
+  if(/start voice|start call|turn on voice|enable voice/.test(s))return false;
+  return null;
+ }
+ async function caiToggle(){
+  if(!active||!caiMode||caiBusy||caiToggleBusy)return;
+  const b=caiVoiceButton();if(!b){log("Character.AI voice toggle not found; keepalive skipped");return}
+  caiToggleBusy=true;
+  try{
+   const on=caiVoiceOn(b);
+   // Pulse only when it is currently active; never accidentally start a call from off.
+   if(on===false){log("Character.AI voice is off; leaving it off");return}
+   b.click();log("Character.AI voice refresh: OFF");
+   setTimeout(()=>{if(active&&caiMode&&!caiBusy){const fresh=caiVoiceButton();if(fresh&&caiVoiceOn(fresh)!==true)fresh.click();log("Character.AI voice refresh: ON")}caiToggleBusy=false},450);
+  }catch(e){caiToggleBusy=false;log("c.ai voice refresh error: "+e.message)}
+ }
+ function caiSchedule(){clearTimeout(caiKeep);if(active&&caiMode&&!caiBusy)caiKeep=setTimeout(caiToggle,5000)}
+ function caiGeneration(){
+  return !!document.querySelector('button[aria-label*="Stop generating" i],button[data-testid*="stop" i]')||
+   [...document.querySelectorAll("button")].some(b=>/stop generating|cancel generation/i.test((b.getAttribute("aria-label")||"")+" "+b.innerText));
+ }
+ function caiWaitGeneration(){
+  caiBusy=true;clearTimeout(caiKeep);let seen=caiGeneration(),stable=0;
+  clearInterval(caiPoll);caiPoll=setInterval(()=>{if(!active||!caiMode){clearInterval(caiPoll);return}
+   const g=caiGeneration();if(g){seen=true;stable=0;return}
+   if(seen){if(++stable>=3){clearInterval(caiPoll);caiBusy=false;log("Character.AI generation finished; keepalive resumed");caiSchedule()}}
+   else if(Date.now()-caiLastSpeech>15000){clearInterval(caiPoll);caiBusy=false;caiSchedule()}
+  },700);
+ }
+ function caiSubmit(text){
+  caiBusy=true;clearTimeout(caiKeep);caiLastSpeech=Date.now();
+  const el=document.querySelector('textarea')||document.querySelector('[contenteditable="true"]')||document.querySelector('[role="textbox"]');
+  if(!el){log("Character.AI chat input not found");caiBusy=false;caiSchedule();return}
+  put(el,text);
+  setTimeout(()=>{
+   const send=[...document.querySelectorAll("button")].find(b=>/send|submit/i.test((b.getAttribute("aria-label")||"")+" "+(b.title||""))&&!b.disabled);
+   if(send)send.click();else{el.focus();el.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",code:"Enter",bubbles:true}));el.dispatchEvent(new KeyboardEvent("keyup",{key:"Enter",code:"Enter",bubbles:true}))}
+   log("Character.AI sent dictation: "+text);caiWaitGeneration();
+  },250);
+ }
+ function caiListen(){
+  if(!active||!caiMode||waiting||rec||!SR)return;clearTimeout(restart);
+  try{const r=new SR();rec=r;r.lang="en-US";r.continuous=true;r.interimResults=true;r.maxAlternatives=1;let sent=false;
+   r.onresult=e=>{if(!active||sent)return;let phrase="";for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)phrase+=e.results[i][0].transcript+" ";phrase=phrase.trim();if(phrase){sent=true;caiSubmit(phrase)}};
+   r.onerror=e=>log("c.ai speech recognition: "+e.error);r.onend=()=>{if(rec===r)rec=null;if(active&&caiMode&&!caiBusy)restart=setTimeout(caiListen,650)};
+   r.start();log("Character.AI Chrome mic listening");caiSchedule();
+  }catch(e){rec=null;restart=setTimeout(caiListen,1000);log("c.ai mic: "+e.message)}
+ }
+ function startCAI(){caiMode=true;active=true;caiBusy=false;caiLastSpeech=Date.now();clearTimeout(caiKeep);caiListen();log("Character.AI mode started (5s idle voice pulse)")}
+ 
+ chrome.runtime.onMessage.addListener((m,s,reply)=>{if(m.action==="START_CAI"){startCAI();reply({status:"Character.AI started"});}else if(m.action==="START"){caiMode=false;active=true;waiting=false;startExternal();reply({status:"Started"});}else if(m.action==="STOP"){active=false;waiting=false;external=false;caiMode=false;caiBusy=false;clearTimeout(caiKeep);clearInterval(caiPoll);clearTimeout(restart);clearInterval(answerPoll);clearInterval(playPoll);clearInterval(externalPoll);try{rec&&rec.stop()}catch{}rec=null;log("Stopped");reply({status:"Stopped"})}return true});
 })();
