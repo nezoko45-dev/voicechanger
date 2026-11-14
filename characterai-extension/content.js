@@ -10,12 +10,14 @@
   const all=[...document.querySelectorAll('textarea,[contenteditable="true"],[role="textbox"]')].filter(visible);
   return all.find(e=>/message|chat|talk|reply/i.test((e.getAttribute('placeholder')||'')+' '+(e.getAttribute('data-placeholder')||'')+' '+(e.getAttribute('aria-label')||'')))||all.find(e=>e.matches('[contenteditable="true"],[role="textbox"]'))||all.find(e=>e.tagName==='TEXTAREA');
  }
- function sendButton(el){
-  const form=el?.closest('form');
-  const candidates=[...(form||document).querySelectorAll('button,[role="button"]')].filter(visible);
-  return candidates.find(e=>/send/i.test((e.getAttribute('aria-label')||'')+' '+(e.getAttribute('title')||'')+' '+(e.innerText||e.textContent||'')))||
-   candidates.find(e=>e.type==='submit'||e.getAttribute('type')==='submit')||
-   candidates.find(e=>e.querySelector('svg[data-testid*="send"],svg[aria-label*="send" i]'));
+ function sendButton(){
+  const composer=textbox();
+  const scope=composer?.closest('form')||document;
+  const candidates=[...scope.querySelectorAll('button,[role="button"]')].filter(visible);
+  return candidates.find(e=>{
+    const label=(e.getAttribute('aria-label')||'')+' '+(e.getAttribute('title')||'')+' '+(e.innerText||e.textContent||'');
+    return /send/i.test(label)||!!e.querySelector('svg[data-testid*="send"],svg[aria-label*="send" i]');
+  })||candidates.find(e=>e.getAttribute('type')==='submit');
  }
  function generating(){return [...document.querySelectorAll('button,[role="button"]')].some(e=>visible(e)&&/stop generating|stop response|cancel generation/i.test((e.getAttribute('aria-label')||'')+' '+(e.innerText||e.textContent||'')))}
  function insertAndSend(text){
@@ -37,7 +39,7 @@
       try{form.requestSubmit();submitted=true;log('submitted via composer form')}catch(err){log('form submit failed '+err)}
     }
     if(!submitted){
-      const b=sendButton(el);
+      const b=sendButton();
       if(b){try{b.click();submitted=true;log('submitted via Send button')}catch(err){log('Send click failed '+err)}}
     }
     if(!submitted){
