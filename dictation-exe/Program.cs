@@ -24,7 +24,8 @@ namespace ChatGPTDictation
         private readonly CheckBox auto = new CheckBox { Text = "Send transcript to ChatGPT automatically", Dock = DockStyle.Top, Height = 36, Checked = true };
         private readonly Label status = new Label { Text = "Ready. Click Start, then allow microphone access in Chrome.", Dock = DockStyle.Fill, Padding = new Padding(12) };
         private LocalBridge bridge;
-        private readonly System.Windows.Forms.Timer readTimer = new System.Windows.Forms.Timer { Interval = 1000 };\n        private bool waitingForResponse; private int responseWaitTicks;
+        private readonly System.Windows.Forms.Timer readTimer = new System.Windows.Forms.Timer { Interval = 1000 };
+        private bool waitingForResponse; private int responseWaitTicks;
 
         public MainForm()
         {
