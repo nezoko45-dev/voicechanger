@@ -13,7 +13,8 @@ const string Page = """
 const btn=document.querySelector('#toggle'),status=document.querySelector('#status'),heard=document.querySelector('#heard');
 let rec=null,active=false,restarting=false;
 function say(s){status.textContent=s}
-function add(s){heard.value+=(heard.value?'\n':'')+s;heard.scrollTop=heard.scrollHeight}
+function add(s){heard.value+=(heard.value?'
+':'')+s;heard.scrollTop=heard.scrollHeight}
 function post(path,data=''){return fetch(path,{method:'POST',body:data})}
 function start(){
  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -25,7 +26,10 @@ rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=true;rec.ma
  rec.onend=()=>{if(active){say('Recognition paused; restarting Chrome speech…');setTimeout(()=>{if(active)try{rec.start()}catch{}},700)}else say('Recognition stopped.')};
  active=true;btn.textContent='Stop Recognition';try{rec.start()}catch(e){say('Start failed: '+e.message);active=false;btn.textContent='Start Chrome Recognition'}
 }
-btn.onclick=()=>{if(active){active=false;try{rec.stop()}catch{}btn.textContent='Start Chrome Recognition'}else start()};\n// Automatically begin listening when the localhost page opens. The button remains\n// available if Chrome requires a user gesture or microphone permission.\nwindow.addEventListener('load',()=>{setTimeout(()=>{if(!active)start()},900)});
+btn.onclick=()=>{if(active){active=false;try{rec.stop()}catch{}btn.textContent='Start Chrome Recognition'}else start()};
+// Automatically begin listening when the localhost page opens. The button remains
+// available if Chrome requires a user gesture or microphone permission.
+window.addEventListener('load',()=>{setTimeout(()=>{if(!active)start()},900)});
 </script></html>
 """;
 Console.Title="CAI Chrome Speech Bridge";
