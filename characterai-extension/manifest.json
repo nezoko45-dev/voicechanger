@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Character.AI Voice Keepalive + Dictation",
+  "version": "1.0.0",
+  "description": "Toggle Character.AI Voice every 5 seconds, pausing while you speak or the character generates.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://character.ai/*", "https://*.character.ai/*"],
+  "content_scripts": [{
+    "matches": ["https://character.ai/*", "https://*.character.ai/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle"
+  }],
+  "action": {"default_popup": "popup.html", "default_title": "Character.AI Voice Keepalive"}
+}
