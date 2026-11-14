@@ -1,4 +1,4 @@
 const state=document.getElementById('state'),btn=document.getElementById('toggle');
-chrome.storage.local.get({enabled:false},v=>paint(v.enabled));
-function paint(on){state.textContent=on?'🟢 Keep-alive ON':'⚪ Keep-alive OFF';btn.textContent=on?'Disable keep-alive':'Enable keep-alive';btn.style.background=on?'#ef4444':'#22c55e';}
-btn.onclick=async()=>{const {enabled=false}=await chrome.storage.local.get({enabled:false});const next=!enabled;await chrome.storage.local.set({enabled:next});paint(next);const tabs=await chrome.tabs.query({url:['https://character.ai/*','https://*.character.ai/*']});for(const t of tabs)chrome.tabs.sendMessage(t.id,{type:'SET',enabled:next}).catch(()=>{});};
+async function paint(){const {enabled=false}=await chrome.storage.local.get({enabled:false});state.textContent=enabled?'🟢 Continuous dictation ON':'⚪ Dictation OFF';btn.textContent=enabled?'Stop listening':'Start listening';btn.style.background=enabled?'#ef4444':'#22c55e';}
+btn.onclick=async()=>{const {enabled=false}=await chrome.storage.local.get({enabled:false});const next=!enabled;await chrome.storage.local.set({enabled:next});await paint();const tabs=await chrome.tabs.query({url:['https://character.ai/*','https://*.character.ai/*']});for(const t of tabs)chrome.tabs.sendMessage(t.id,{type:'SET',enabled:next}).catch(()=>{});};
+chrome.storage.onChanged.addListener(paint);paint();
