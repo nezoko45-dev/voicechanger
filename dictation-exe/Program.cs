@@ -55,7 +55,7 @@ namespace ChatGPTDictation
                     if (e.Result == null || String.IsNullOrWhiteSpace(e.Result.Text)) return;
                     string phrase = e.Result.Text.Trim();
                     bridge?.Enqueue(phrase);
-                    BeginInvoke((Action)(() => { status.Text = "Recognized: " + phrase + " (confidence " + e.Result.Confidence.ToString("0.00") + ")"; if(auto.Checked) SendToChatGPT(phrase); }));
+                    BeginInvoke((Action)(() => { status.Text = "Recognized: " + phrase + " (confidence " + e.Result.Confidence.ToString("0.00") + ")"; /* auto-send removed to prevent focus theft */ }));
                 };
                 recognizer.RecognizeAsync(RecognizeMode.Multiple);
                 start.Enabled=false; stop.Enabled=true;
@@ -73,9 +73,7 @@ namespace ChatGPTDictation
 
                 // Critical: bring Chrome to the foreground so keyboard paste goes into its composer,
                 // not into this EXE's own window.
-                ShowWindow(hwnd, SW_RESTORE);
-                SetForegroundWindow(hwnd);
-                Thread.Sleep(350);
+                // Never activate or restore Chrome from recognition.
 
                 // Click inside ChatGPT's composer (bottom-center of Chrome client area).
                 int x = rect.Left + (rect.Right-rect.Left)/2;
