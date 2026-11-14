@@ -61,7 +61,7 @@ namespace CharacterAIDictation
         }
         private void DeliverToCharacterAI(string phrase)
         {
-            if(waitingForResponse){pendingPhrases.Enqueue(phrase);status.Text="Queued while Character.AI responds ("+pendingPhrases.Count+"): "+phrase;return;}
+            // Send every finalized Chrome SpeechRecognition result immediately.\n            // Character.AI generation detection is unreliable across UI versions;\n            // gating on its Stop button caused all later phrases to remain queued.
             try {
                 AutomationElement chrome=FindChrome();
                 if(chrome==null){status.Text="Chrome window not found.";return;}
