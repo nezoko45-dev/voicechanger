@@ -1,17 +1,21 @@
-# ChatGPT Dictation EXE
+# ChatGPT Dictation EXE (Windows UI Automation)
 
-A Windows desktop microphone dictation app for the ChatGPT Voice Dictator Chrome extension.
+Standalone Windows app: mic transcription + direct desktop automation. No Tampermonkey and no Chrome extension required for the automation path.
 
-## Run
+## Test it
 1. Download **ChatGPTDictation.exe** from the GitHub Actions artifact.
-2. Run it and click **START LISTENING**. Windows may prompt for microphone access.
-3. Open ChatGPT in Chrome and load this repository as an unpacked extension.
-4. Click the extension's **START LOOP**. It checks the local EXE bridge for recognized phrases, sends them to ChatGPT, then clicks Read Aloud after the answer completes.
-5. Click STOP in either app to stop the respective loop.
+2. Run it and allow microphone access.
+3. Open ChatGPT in Chrome. Click the ChatGPT composer once so it is visible.
+4. Leave the checkbox **Send transcript to ChatGPT + Read Aloud** checked, then press **START LISTENING**.
+5. Speak. The EXE attempts to focus ChatGPT's accessible composer, paste the recognized phrase, press Enter, then invoke a Read Aloud button after 6.5 seconds.
+6. Test the local bridge independently at http://127.0.0.1:8765/health and http://127.0.0.1:8765/next.
 
-## Bridge
-The EXE listens on `127.0.0.1:8765`:
-- `GET /health` reports service status.
-- `GET /next` returns one queued recognition as `{"text":"..." }` or `{"text":null}`.
+## Local API
+- GET /health -> service status JSON
+- GET /next -> consumes one queued transcript, or {"text":null}
 
-Speech uses Windows' built-in System.Speech recognizer (English US), no Python or model download. The EXE is a separate mic listener; ChatGPT webpage automation remains in the Chrome extension.
+## Notes / limitations
+- Uses Windows System.Speech (English US), no Python or separate model download.
+- Chrome and ChatGPT must be open and accessible. UI Automation accessibility names can vary; if composer/button lookup fails, the app reports it in its status.
+- Read Aloud timing is currently a simple 6.5-second delay, not a reliable response-completion detector.
+- Windows UI automation may require Chrome to be foregrounded/unlocked.
