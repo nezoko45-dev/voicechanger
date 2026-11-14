@@ -6,8 +6,8 @@ using System.Text.Json;
 
 const string SpeechPage = """
 <!doctype html><html><head><meta charset="utf-8"><title>CAI Speech Bridge</title>
-<style>body{font:16px system-ui;background:#17171b;color:#eee;max-width:600px;margin:40px auto;padding:20px}button{font-size:18px;padding:12px 20px}#status{color:#9f9;margin:15px 0}#heard{white-space:pre-wrap;background:#24242a;padding:12px;border-radius:8px;min-height:70px}</style></head>
-<body><h2>Character.AI Speech Bridge</h2><button id="toggle">Start Chrome Speech Recognition</button><div id="status">Idle — click Start and allow microphone</div><h3>Recognized words</h3><div id="heard"></div>
+<style>body{font:16px system-ui;background:#17171b;color:#eee;max-width:600px;margin:40px auto;padding:20px}button{font-size:18px;padding:12px 20px}#status{color:#9f9;margin:15px 0}#heard{display:block;box-sizing:border-box;width:100%;height:130px;resize:vertical;white-space:pre-wrap;background:#24242a;color:#eee;padding:12px;border:0;border-radius:8px;font:16px system-ui}</style></head>
+<body><h2>Character.AI Speech Bridge</h2><button id="toggle">Start Chrome Speech Recognition</button><div id="status">Idle — click Start and allow microphone</div><h3>Recognized words</h3><textarea id="heard" placeholder="Your recognized words appear here…" readonly></textarea>
 <script>
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,enabled=false,speaking=false,idleTimer=null,finalText='',restartTimer=null;
 const status=document.querySelector('#status'),heard=document.querySelector('#heard'),btn=document.querySelector('#toggle');
@@ -23,10 +23,10 @@ function start(){
  rec.onresult=e=>{
   let interim='',final='';
   for(let i=e.resultIndex;i<e.results.length;i++){const r=e.results[i],t=r[0]?.transcript||'';if(r.isFinal)final+=t;else interim+=t;}
-  if(interim)heard.textContent=finalText+(finalText?' ':'')+'[LIVE] '+interim;
+  heard.value=finalText+(finalText?' ':'')+(interim?'[LIVE] '+interim:'');
   if(final.trim()){
-   finalText+=(finalText?' ':'')+final.trim();heard.textContent=finalText;say('Recognized: '+final.trim());
-   fetch('/speech',{method:'POST',headers:{'Content-Type':'text/plain'},body:final.trim()}).then(r=>{if(!r.ok)throw Error('HTTP '+r.status);say('Sent to Character.AI — waiting for reply')}).catch(err=>say('Paste error: '+err.message));
+   finalText+=(finalText?' ':'')+final.trim();heard.value=finalText;say('Transcription captured in box → sending to EXE…');
+   fetch('/speech',{method:'POST',headers:{'Content-Type':'text/plain'},body:final.trim()}).then(r=>{if(!r.ok)throw Error('HTTP '+r.status);say('EXE received transcript and sent it to Character.AI')}).catch(err=>say('EXE send failed: '+err.message));
   }
  };
  rec.onerror=e=>{say('RECOGNITION ERROR: '+e.error+' (check Chrome internet/mic permissions)');console.error(e)};
