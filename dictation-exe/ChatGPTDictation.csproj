@@ -8,7 +8,6 @@
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="System.Speech" />
     <Reference Include="UIAutomationClient" />
     <Reference Include="UIAutomationTypes" />
   </ItemGroup>
