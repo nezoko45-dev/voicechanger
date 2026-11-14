@@ -12,10 +12,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
-      - name: Publish single-file EXE
-        run: dotnet publish cai-voice-bridge/CaiVoiceBridge.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
+          dotnet-version: '8.0.x'
+      - name: Restore
+        run: dotnet restore cai-voice-bridge/CaiVoiceBridge.csproj
+      - name: Publish self-contained EXE
+        run: dotnet publish cai-voice-bridge/CaiVoiceBridge.csproj --configuration Release --runtime win-x64 --self-contained true --output cai-voice-bridge/out /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true
       - uses: actions/upload-artifact@v4
         with:
           name: CaiVoiceBridge-win-x64
-          path: cai-voice-bridge/bin/Release/net8.0/win-x64/publish/
+          path: cai-voice-bridge/out/CaiVoiceBridge.exe
+          if-no-files-found: error
