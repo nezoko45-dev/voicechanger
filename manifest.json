@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "ChatGPT Voice Dictator",
-  "version": "1.0.1",
-  "description": "Continuous mic dictation that sends messages and triggers ChatGPT Read Aloud.",
+  "name": "Voice Dictator (ChatGPT + Character.AI)",
+  "version": "1.1.0",
+  "description": "Hands-free dictation for ChatGPT plus Character.AI voice keepalive.",
   "permissions": ["activeTab", "scripting"],
-  "host_permissions": ["https://chatgpt.com/*", "https://chat.openai.com/*", "http://127.0.0.1:8765/*"],
+  "host_permissions": ["https://chatgpt.com/*", "https://chat.openai.com/*", "https://character.ai/*", "https://*.character.ai/*", "http://127.0.0.1:8765/*"],
   "action": {"default_popup": "popup.html", "default_title": "Voice Dictator"},
-  "content_scripts": [{"matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"], "js": ["content.js"], "run_at": "document_idle"}]
+  "content_scripts": [{"matches": ["https://chatgpt.com/*", "https://chat.openai.com/*", "https://character.ai/*", "https://*.character.ai/*"], "js": ["content.js"], "run_at": "document_idle"}]
 }
