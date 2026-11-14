@@ -36,17 +36,7 @@
   })||candidates.find(e=>e.getAttribute('type')==='submit');
  }
  function generating(){return [...document.querySelectorAll('button,[role="button"]')].some(e=>visible(e)&&/stop generating|stop response|cancel generation/i.test((e.getAttribute('aria-label')||'')+' '+(e.innerText||e.textContent||'')))}
- function generateResponseButton(){
-  return [...document.querySelectorAll('button,[role="button"]')].filter(visible).find(e=>{
-    const label=((e.getAttribute('aria-label')||'')+' '+(e.getAttribute('title')||'')+' '+(e.innerText||e.textContent||'')).replace(/\\s+/g,' ').trim().toLowerCase();
-    return /^(generate response|generate|continue response|continue)$/i.test(label);
-  })||null;
- }
- function clickGenerateResponse(){
-  const b=generateResponseButton();
-  if(!b){log('Generate response action not present (message may already be generating)');return false}
-  b.click();log('Clicked Generate response action');return true;
- }
+
  function insertAndSend(text){
   const el=textbox();if(!el){log('Character.AI composer not found');return}
   el.focus();
@@ -76,9 +66,6 @@
       log('Enter fallback dispatched');
     }
     log('final transcript: '+text);
-    // Character.AI sometimes leaves an explicit Generate response action after
-    // accepting a message; click it once if it appears.
-    setTimeout(()=>clickGenerateResponse(),900);
   },250);
  }
  function pauseVoiceForSpeech(){speechNow=true;clearInterval(voiceTimer);voiceTimer=null;voiceOn=false;log('speech detected: voice timer paused')}
