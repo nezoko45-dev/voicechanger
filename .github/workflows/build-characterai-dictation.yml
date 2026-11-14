@@ -1,0 +1,22 @@
+name: Build Character.AI Dictation EXE
+on:
+  push:
+    branches: [feature/characterai-dictation-exe]
+    paths: ["characterai-exe/**", ".github/workflows/build-characterai-dictation.yml"]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Windows EXE
+        run: dotnet build characterai-exe/CharacterAIDictation.csproj -c Release
+      - name: Package EXE
+        run: |
+          New-Item -ItemType Directory -Force artifacts
+          Copy-Item characterai-exe/bin/Release/net48/CharacterAIDictation.exe artifacts/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CharacterAIDictation-Windows
+          path: artifacts/CharacterAIDictation.exe
+          if-no-files-found: error
