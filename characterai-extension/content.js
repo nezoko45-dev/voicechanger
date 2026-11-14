@@ -5,30 +5,21 @@
  const $=s=>document.querySelector(s);
  const visible=e=>!!e&&e.getClientRects().length>0&&!e.disabled;
  function voiceButton(){
-  // Inspect likely Voice controls by exact text and icon/accessible attributes.
-  const candidates=[...document.querySelectorAll('button,[role="button"],[role="switch"],[tabindex="0"]')].filter(visible);
-  const score=e=>{
-    const text=(e.innerText||e.textContent||'').replace(/\\s+/g,' ').trim().toLowerCase();
-    const aria=(e.getAttribute('aria-label')||'').toLowerCase();
-    const title=(e.getAttribute('title')||'').toLowerCase();
-    const testid=(e.getAttribute('data-testid')||'').toLowerCase();
-    const cls=(typeof e.className==='string'?e.className:'').toLowerCase();
-    let n=0;
-    if(text==='voice')n+=10;
-    if(aria==='voice'||title==='voice')n+=10;
-    if(/voice/.test(aria+' '+title+' '+testid+' '+cls))n+=4;
-    if(e.querySelector('svg'))n+=1;
-    if(text.length<30)n+=1;
-    return n;
-  };
-  const ranked=candidates.map(e=>({e,n:score(e)})).sort((x,y)=>y.n-x.n);
-  const top=ranked[0];
-  if(top&&top.n>=10){
-    log('Voice control identified', {tag:top.e.tagName,text:(top.e.innerText||top.e.textContent||'').trim(),aria:top.e.getAttribute('aria-label'),title:top.e.getAttribute('title'),testid:top.e.getAttribute('data-testid'),html:top.e.outerHTML.slice(0,500)});
-    return top.e;
-  }
-  log('VOICE CONTROL DIAGNOSTIC — candidates',ranked.slice(0,12).map(x=>({score:x.n,tag:x.e.tagName,text:(x.e.innerText||x.e.textContent||'').trim().slice(0,60),aria:x.e.getAttribute('aria-label'),title:x.e.getAttribute('title'),testid:x.e.getAttribute('data-testid'),html:x.e.outerHTML.slice(0,240)})));
-  return null;
+  // Target the exact button whose visible label is "Voice" and whose SVG is
+  // the waveform icon shown in the user's inspector screenshot.
+  const buttons=[...document.querySelectorAll('button')].filter(visible);
+  const exact=buttons.find(b=>{
+    const text=(b.innerText||b.textContent||'').replace(/\\s+/g,' ').trim().toLowerCase();
+    return text==='voice'&&!!b.querySelector('svg');
+  });
+  if(exact)return exact;
+  // fallback: button with waveform-like SVG and nearby Voice label
+  return buttons.find(b=>{
+    const t=(b.innerText||b.textContent||'').replace(/\\s+/g,' ').trim().toLowerCase();
+    const svg=b.querySelector('svg');
+    const markup=svg?.outerHTML.toLowerCase()||'';
+    return /voice/.test(t)&&svg&&(/wave|audio|mic|voice/.test(markup)||svg.querySelectorAll('path,line,rect').length>=3);
+  })||null;
  }
  function textbox(){
   // Character.AI composer is normally the textbox/contenteditable with a message placeholder.
