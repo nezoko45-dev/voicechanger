@@ -59,18 +59,88 @@ namespace CharacterAIDictation
         }
         private void DeliverToCharacterAI(string phrase)
         {
+            if(waitingForResponse){status.Text="Queued while Character.AI responds: "+phrase;return;}
             try {
-                Process p=FindChromeProcess(); if(p==null){status.Text="Chrome window not found.";return;}
-                RECT r; if(!GetWindowRect(p.MainWindowHandle,out r)){status.Text="Could not locate Chrome window.";return;}
-                SetCursorPos(r.Left+(r.Right-r.Left)/2,r.Bottom-115);
-                mouse_event(0x0002,0,0,0,UIntPtr.Zero); mouse_event(0x0004,0,0,0,UIntPtr.Zero);
-                Thread.Sleep(120);
-                Clipboard.SetText(phrase.Trim());
-                keybd_event(0x11,0,0,UIntPtr.Zero);keybd_event(0x56,0,0,UIntPtr.Zero);keybd_event(0x56,0,2,UIntPtr.Zero);keybd_event(0x11,0,2,UIntPtr.Zero);
-                Thread.Sleep(100);keybd_event(0x0D,0,0,UIntPtr.Zero);keybd_event(0x0D,0,2,UIntPtr.Zero);
-                status.Text="Transcript delivered to Character.AI: "+phrase;
-                waitingForResponse=false;
-            } catch(Exception ex){status.Text="Send failed: "+ex.Message;}
+                AutomationElement chrome=FindChrome();
+                if(chrome==null){status.Text="Chrome window not found.";return;}
+                AutomationElement field=FindCharacterTextbox(chrome);
+                if(field==null){status.Text="Character.AI textbox not found. Open its chat tab and try again.";return;}
+
+                // First try UI Automation's ValuePattern: this writes directly to the
+                // actual accessible textbox and does not require coordinate clicking.
+                object valuePattern;
+                bool setDirectly=field.TryGetCurrentPattern(ValuePattern.Pattern,out valuePattern)
+                    && !((ValuePattern)valuePattern).Current.IsReadOnly;
+                if(setDirectly){
+                    ((ValuePattern)valuePattern).SetValue(phrase.Trim());
+                    AutomationElement send=FindSendButton(chrome);
+                    object invokePattern;
+                    if(send!=null && send.TryGetCurrentPattern(InvokePattern.Pattern,out invokePattern)){
+                        ((InvokePattern)invokePattern).Invoke();
+                    } else {
+                        // Contenteditable implementations may expose ValuePattern but no
+                        // accessible send button. Enter is the least invasive fallback.
+                        field.SetFocus(); keybd_event(0x0D,0,0,UIntPtr.Zero);keybd_event(0x0D,0,2,UIntPtr.Zero);
+                    }
+                } else {
+                    // Fallback for Chromium contenteditable fields without ValuePattern.
+                    // SetFocus targets the discovered textbox (never a guessed screen point).
+                    field.SetFocus();
+                    Clipboard.SetText(phrase.Trim());
+                    keybd_event(0x11,0,0,UIntPtr.Zero);keybd_event(0x56,0,0,UIntPtr.Zero);
+                    keybd_event(0x56,0,2,UIntPtr.Zero);keybd_event(0x11,0,2,UIntPtr.Zero);
+                    Thread.Sleep(80);
+                    keybd_event(0x0D,0,0,UIntPtr.Zero);keybd_event(0x0D,0,2,UIntPtr.Zero);
+                }
+                waitingForResponse=true;generationSeen=false;responseWaitTicks=0;readTimer.Start();
+                status.Text="Sent to Character.AI textbox: "+phrase;
+            } catch(Exception ex){status.Text="Textbox send failed: "+ex.Message;}
+        }
+
+        private static AutomationElement FindCharacterTextbox(AutomationElement root)
+        {
+            AutomationElement best=null;int bestScore=-1;
+            AutomationElementCollection all=root.FindAll(TreeScope.Descendants,Condition.TrueCondition);
+            for(int i=0;i<all.Count;i++){
+                try{
+                    AutomationElement e=all[i];ControlType type=e.Current.ControlType;
+                    if(type!=ControlType.Edit && type!=ControlType.Document && type!=ControlType.Custom)continue;
+                    string name=(e.Current.Name??"").ToLowerInvariant();
+                    string aid=(e.Current.AutomationId??"").ToLowerInvariant();
+                    string help=(e.Current.HelpText??"").ToLowerInvariant();
+                    System.Windows.Rect b=e.Current.BoundingRectangle;
+                    if(b.IsEmpty||b.Width<80||b.Height<15)continue;
+                    if(name.Contains("address")||name.Contains("search")||aid.Contains("omnibox"))continue;
+                    int score=0;
+                    if(name.Contains("message"))score+=100;
+                    if(name.Contains("chat"))score+=70;
+                    if(name.Contains("type"))score+=45;
+                    if(name.Contains("reply"))score+=40;
+                    if(name.Contains("input"))score+=30;
+                    if(aid.Contains("message")||aid.Contains("chat"))score+=60;
+                    if(help.Contains("message")||help.Contains("chat"))score+=40;
+                    if(e.Current.IsKeyboardFocusable)score+=10;
+                    // Character.AI's composer is near the bottom of the page.
+                    if(b.Top>root.Current.BoundingRectangle.Top+80)score+=5;
+                    if(score>bestScore){best=e;bestScore=score;}
+                }catch{}
+            }
+            return bestScore>=10?best:null;
+        }
+
+        private static AutomationElement FindSendButton(AutomationElement root)
+        {
+            AutomationElementCollection all=root.FindAll(TreeScope.Descendants,Condition.TrueCondition);
+            for(int i=all.Count-1;i>=0;i--){
+                try{
+                    string n=(all[i].Current.Name??"").Trim();
+                    if((n.Equals("Send",StringComparison.OrdinalIgnoreCase)||
+                        n.Equals("Send message",StringComparison.OrdinalIgnoreCase)||
+                        n.Equals("Send chat",StringComparison.OrdinalIgnoreCase))&&
+                        all[i].Current.ControlType==ControlType.Button)return all[i];
+                }catch{}
+            }
+            return null;
         }
         private void CheckResponseAndReadAloud()
         {
@@ -132,7 +202,17 @@ namespace CharacterAIDictation
         }
         private static Process FindChromeProcess()
         {
-            foreach(Process p in Process.GetProcessesByName("chrome")) { try { if(p.MainWindowHandle!=IntPtr.Zero)return p; } catch {} } return null;
+            Process fallback=null;
+            foreach(Process p in Process.GetProcessesByName("chrome")) {
+                try {
+                    if(p.MainWindowHandle==IntPtr.Zero)continue;
+                    if(fallback==null)fallback=p;
+                    string title=p.MainWindowTitle??"";
+                    if(title.IndexOf("Character.AI",StringComparison.OrdinalIgnoreCase)>=0||
+                       title.IndexOf("character.ai",StringComparison.OrdinalIgnoreCase)>=0)return p;
+                } catch {}
+            }
+            return fallback;
         }
         private static AutomationElement FindChrome()
         {
