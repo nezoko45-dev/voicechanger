@@ -10,7 +10,7 @@ using System.Windows.Automation;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace ChatGPTDictation
+namespace CharacterAIDictation
 {
     internal static class Program
     {
@@ -19,9 +19,9 @@ namespace ChatGPTDictation
 
     public sealed class MainForm : Form
     {
-        private readonly Button start = new Button { Text = "START CHROME RECOGNITION", Dock = DockStyle.Top, Height = 45 };
+        private readonly Button start = new Button { Text = "START CONTINUOUS LISTENING", Dock = DockStyle.Top, Height = 45 };
         private readonly Button stop = new Button { Text = "STOP", Dock = DockStyle.Top, Height = 35, Enabled = false };
-        private readonly CheckBox auto = new CheckBox { Text = "Send transcript to ChatGPT automatically", Dock = DockStyle.Top, Height = 36, Checked = true };
+        private readonly CheckBox auto = new CheckBox { Text = "Send transcript to Character.AI automatically", Dock = DockStyle.Top, Height = 36, Checked = true };
         private readonly Label status = new Label { Text = "Ready. Click Start, then allow microphone access in Chrome.", Dock = DockStyle.Fill, Padding = new Padding(12) };
         private LocalBridge bridge;
         private readonly System.Windows.Forms.Timer readTimer = new System.Windows.Forms.Timer { Interval = 1000 };
@@ -29,7 +29,7 @@ namespace ChatGPTDictation
 
         public MainForm()
         {
-            Text = "ChatGPT Dictation — Chrome Speech"; Width = 560; Height = 250;
+            Text = "Character.AI Dictation — Chrome Speech"; Width = 560; Height = 250;
             FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false;
             Controls.Add(status); Controls.Add(auto); Controls.Add(stop); Controls.Add(start);
             start.Click += (s,e) => StartListening(); stop.Click += (s,e) => StopListening();
@@ -37,7 +37,7 @@ namespace ChatGPTDictation
             FormClosing += (s,e) => { readTimer.Stop(); try { bridge?.Dispose(); } catch {} };
             try {
                 bridge = new LocalBridge();
-                bridge.Transcript += phrase => { if (!IsDisposed) BeginInvoke((Action)(() => { status.Text = "Chrome recognized: " + phrase; if(auto.Checked) DeliverToChatGPT(phrase); })); };
+                bridge.Transcript += phrase => { if (!IsDisposed) BeginInvoke((Action)(() => { status.Text = "Chrome recognized: " + phrase; if(auto.Checked) DeliverToCharacterAI(phrase); })); };
                 bridge.Start();
                 status.Text += Environment.NewLine + "Local API: http://127.0.0.1:8765/health";
             } catch (Exception ex) { status.Text += Environment.NewLine + "Bridge error: " + ex.Message; }
@@ -57,7 +57,7 @@ namespace ChatGPTDictation
             start.Enabled=true; stop.Enabled=false; readTimer.Stop();
             status.Text="Stopped Chrome recognition.";
         }
-        private void DeliverToChatGPT(string phrase)
+        private void DeliverToCharacterAI(string phrase)
         {
             try {
                 Process p=FindChromeProcess(); if(p==null){status.Text="Chrome window not found.";return;}
@@ -65,11 +65,11 @@ namespace ChatGPTDictation
                 SetCursorPos(r.Left+(r.Right-r.Left)/2,r.Bottom-115);
                 mouse_event(0x0002,0,0,0,UIntPtr.Zero); mouse_event(0x0004,0,0,0,UIntPtr.Zero);
                 Thread.Sleep(120);
-                Clipboard.SetText("repeat " + phrase.Trim());
+                Clipboard.SetText(phrase.Trim());
                 keybd_event(0x11,0,0,UIntPtr.Zero);keybd_event(0x56,0,0,UIntPtr.Zero);keybd_event(0x56,0,2,UIntPtr.Zero);keybd_event(0x11,0,2,UIntPtr.Zero);
                 Thread.Sleep(100);keybd_event(0x0D,0,0,UIntPtr.Zero);keybd_event(0x0D,0,2,UIntPtr.Zero);
                 status.Text="Sent to ChatGPT: "+phrase+"\r\nWaiting for response to finish...";
-                waitingForResponse=true;generationSeen=false;responseWaitTicks=0;readTimer.Start();
+                waitingForResponse=false;
             } catch(Exception ex){status.Text="Send failed: "+ex.Message;}
         }
         private void CheckResponseAndReadAloud()
@@ -81,7 +81,7 @@ namespace ChatGPTDictation
                 AutomationElement stopButton=chrome==null?null:FindNamedButton(chrome,"Stop generating");
                 if(stopButton!=null){generationSeen=true;responseWaitTicks=0;status.Text="ChatGPT is responding…";return;}
                 // Do not mistake the initial delay before generation for a completed response.
-                if(generationSeen && responseWaitTicks>=3){waitingForResponse=false;readTimer.Stop();status.Text="Response finished. Starting Read Aloud…";InvokeReadAloud();return;}
+                if(generationSeen && responseWaitTicks>=3){waitingForResponse=false;readTimer.Stop();status.Text="Character.AI response finished.";return;}
                 if(responseWaitTicks>90){waitingForResponse=false;readTimer.Stop();status.Text="Timed out waiting for ChatGPT response."; }
             } catch { if(responseWaitTicks>90){waitingForResponse=false;readTimer.Stop();status.Text="Timed out waiting for ChatGPT.";}}
         }
