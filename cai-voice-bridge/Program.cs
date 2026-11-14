@@ -16,7 +16,8 @@ function say(s){status.textContent=s}
 async function poll(){try{let r=await fetch('/status.txt');let s=await r.text();if(s)say(s)}catch{}}
 setInterval(async()=>{await poll();try{let r=await fetch('/micstatus');let x=await r.text();if(x)say(x)}catch{}},1000);
 btn.onclick=async()=>{enabled=!enabled;btn.textContent=enabled?'Stop Recognition':'Start Local Recognition';try{await fetch('/mic',{method:'POST',body:enabled?'start':'stop'});say(enabled?'LOCAL WHISPER LISTENING — speak normally':'Recognition stopped')}catch(e){say('Local recognizer error: '+e)}};
-async function transcript(){try{let r=await fetch('/transcript');let t=await r.text();if(t){heard.value+=(heard.value?'\n':'')+t;say('Whisper recognized: '+t)}}catch{}}
+async function transcript(){try{let r=await fetch('/transcript');let t=await r.text();if(t){heard.value+=(heard.value?'
+':'')+t;say('Whisper recognized: '+t)}}catch{}}
 setInterval(transcript,500);
 </script></body></html>
 """;
@@ -121,7 +122,8 @@ async Task RunLocalSpeechServer()
                     await ctx.Response.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(SpeechPage));
                 }
                 else if(ctx.Request.HttpMethod=="POST"&&ctx.Request.Url?.AbsolutePath=="/mic"){using var rd=new StreamReader(ctx.Request.InputStream);var act=await rd.ReadToEndAsync();if(act=="start")await speech.Start();else await speech.Stop();ctx.Response.StatusCode=204;}
-                else if(ctx.Request.HttpMethod=="GET"&&ctx.Request.Url?.AbsolutePath=="/transcript"){ctx.Response.ContentType="text/plain";await ctx.Response.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(speech.TakeTranscript()));}\n                else if(ctx.Request.HttpMethod=="GET"&&ctx.Request.Url?.AbsolutePath=="/micstatus"){ctx.Response.ContentType="text/plain";await ctx.Response.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(speech.Status));}
+                else if(ctx.Request.HttpMethod=="GET"&&ctx.Request.Url?.AbsolutePath=="/transcript"){ctx.Response.ContentType="text/plain";await ctx.Response.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(speech.TakeTranscript()));}
+                else if(ctx.Request.HttpMethod=="GET"&&ctx.Request.Url?.AbsolutePath=="/micstatus"){ctx.Response.ContentType="text/plain";await ctx.Response.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(speech.Status));}
                 else if (ctx.Request.HttpMethod == "GET" && ctx.Request.Url?.AbsolutePath == "/status.txt")
                 {
                     ctx.Response.ContentType = "text/plain; charset=utf-8";
