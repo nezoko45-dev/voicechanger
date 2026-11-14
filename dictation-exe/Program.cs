@@ -43,15 +43,23 @@ namespace ChatGPTDictation
         private async Task StartListening()
         {
             try {
-                StopRecognizer(); recognizer = new SpeechRecognitionEngine(CultureInfo.GetCultureInfo("en-US"));
-                recognizer.SetInputToDefaultAudioDevice(); recognizer.LoadGrammar(new DictationGrammar());
+                StopRecognizer();
+                recognizer = new SpeechRecognitionEngine(CultureInfo.GetCultureInfo("en-US"));
+                recognizer.SetInputToDefaultAudioDevice();
+                recognizer.LoadGrammar(new DictationGrammar());
+                recognizer.AudioStateChanged += (s,e) => BeginInvoke((Action)(() => status.Text = "Mic state: " + e.AudioState + " — speak now."));
+                recognizer.SpeechDetected += (s,e) => BeginInvoke((Action)(() => status.Text = "🎙 Speech detected by microphone…"));
+                recognizer.SpeechHypothesized += (s,e) => BeginInvoke((Action)(() => status.Text = "Recognizing: " + (e.Result?.Text ?? "(partial)")));
+                recognizer.SpeechRecognitionRejected += (s,e) => BeginInvoke((Action)(() => status.Text = "Speech heard, but rejected. Try speaking clearly/closer."));
                 recognizer.SpeechRecognized += (s,e) => {
-                    if (e.Result == null || e.Result.Confidence < .55 || String.IsNullOrWhiteSpace(e.Result.Text)) return;
-                    string phrase = e.Result.Text.Trim(); bridge?.Enqueue(phrase);
-                    BeginInvoke((Action)(() => { status.Text = "Heard: " + phrase + "\r\nLocalhost queue updated."; if(auto.Checked) SendToChatGPT(phrase); }));
+                    if (e.Result == null || String.IsNullOrWhiteSpace(e.Result.Text)) return;
+                    string phrase = e.Result.Text.Trim();
+                    bridge?.Enqueue(phrase);
+                    BeginInvoke((Action)(() => { status.Text = "Recognized: " + phrase + " (confidence " + e.Result.Confidence.ToString("0.00") + ")"; if(auto.Checked) SendToChatGPT(phrase); }));
                 };
-                recognizer.RecognizeAsync(RecognizeMode.Multiple); start.Enabled=false; stop.Enabled=true;
-                status.Text="🎙 Listening… Speak. Transcripts are also available at localhost /next.";
+                recognizer.RecognizeAsync(RecognizeMode.Multiple);
+                start.Enabled=false; stop.Enabled=true;
+                status.Text="🎙 Starting microphone…";
             } catch(Exception ex) { status.Text="Mic/recognition error: "+ex.Message; StopListening(); }
             await Task.CompletedTask;
         }
