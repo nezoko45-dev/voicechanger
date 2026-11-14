@@ -36,7 +36,7 @@ while (true)
 
         while (ws.State == WebSocketState.Open)
         {
-            var js = "(()=>{const b=document.querySelector('button[aria-label=\\\"Toggle Character Voice\\\"]');if(!b)return 'Voice button NOT FOUND';b.click();return 'Voice clicked; class='+b.className+'; state='+b.getAttribute('data-state')})()";
+            var js = "(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.getAttribute('aria-label')==='Toggle Character Voice');if(!b)return 'Voice button NOT FOUND';b.click();return 'Voice clicked; class='+b.className+'; state='+b.getAttribute('data-state')})()";
             var payload = JsonSerializer.Serialize(new { id = ++commandId, method = "Runtime.evaluate", @params = new { expression = js, returnByValue = true, awaitPromise = true } });
             var bytes = Encoding.UTF8.GetBytes(payload);
             await ws.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
