@@ -5,15 +5,18 @@
  const $=s=>document.querySelector(s);
  const visible=e=>!!e&&e.getClientRects().length>0&&!e.disabled;
  function voiceButton(){
-  const nodes=[...document.querySelectorAll('button,[role="button"]')].filter(visible);
-  // Character.AI renders this control as an icon + "Voice" text; accessible
-  // labels vary between builds, so match the button's own text too.
-  return nodes.find(e=>{
-    const txt=(e.innerText||e.textContent||'').replace(/\\s+/g,' ').trim().toLowerCase();
-    const aria=(e.getAttribute('aria-label')||'').trim().toLowerCase();
-    const title=(e.getAttribute('title')||'').trim().toLowerCase();
-    return txt==='voice'||aria==='voice'||title==='voice'||txt==='start voice'||aria.includes('start voice');
-  });
+  // Find the visible "Voice" label itself, then climb to its clickable ancestor.
+  const labels=[...document.querySelectorAll('button,[role="button"],[aria-label],[title],span,div')]
+   .filter(visible).filter(e=>{
+    const t=(e.innerText||e.textContent||'').replace(/\\s+/g,' ').trim().toLowerCase();
+    return t==='voice'||(e.getAttribute('aria-label')||'').trim().toLowerCase()==='voice'||(e.getAttribute('title')||'').trim().toLowerCase()==='voice';
+   });
+  for(const e of labels){
+    const clickable=e.closest('button,[role="button"]');
+    if(clickable&&visible(clickable))return clickable;
+    if(e.matches('button,[role="button"]'))return e;
+  }
+  return null;
  }
  function textbox(){
   // Character.AI composer is normally the textbox/contenteditable with a message placeholder.
