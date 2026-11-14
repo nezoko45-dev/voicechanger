@@ -1,6 +1,6 @@
 (() => {
  if(window.__caiVoiceDictation)return;window.__caiVoiceDictation=true;
- let active=false,rec=null,restartTimer=null,voiceTimer=null,voiceOn=false,speechNow=false,genObserved=false,finalText='';
+ let active=false,voiceAutomation=false,rec=null,restartTimer=null,voiceTimer=null,voiceOn=false,speechNow=false,genObserved=false,finalText='';
  const log=(...a)=>console.debug('[CAI Voice Dictation]',...a);
  const $=s=>document.querySelector(s);
  const visible=e=>!!e&&e.getClientRects().length>0&&!e.disabled;
@@ -70,7 +70,7 @@
  }
  function pauseVoiceForSpeech(){speechNow=true;clearInterval(voiceTimer);voiceTimer=null;voiceOn=false;log('speech detected: voice timer paused')}
  function beginGenerationWait(){speechNow=false;genObserved=false;clearInterval(voiceTimer);voiceTimer=null;const poll=setInterval(()=>{if(!active){clearInterval(poll);return}if(generating()){genObserved=true;return}if(genObserved){clearInterval(poll);log('generation complete; starting 5-sec voice toggles');startVoiceTimer() }},900);setTimeout(()=>{clearInterval(poll);if(active&&!genObserved){log('generation indicator unavailable; starting voice timer');startVoiceTimer()}},90000)}
- function startVoiceTimer(){if(!active)return;clearInterval(voiceTimer);voiceTimer=setInterval(()=>{
+ function startVoiceTimer(){if(!active||!voiceAutomation)return;clearInterval(voiceTimer);voiceTimer=setInterval(()=>{
   if(!active||speechNow||generating())return;
   const b=voiceButton();
   if(!b){log('Voice button not found; visible buttons: '+[...document.querySelectorAll('button,[role="button"]')].filter(visible).map(e=>(e.innerText||e.getAttribute('aria-label')||'').trim()).slice(0,30).join(' | '));return}
@@ -92,7 +92,9 @@
    rec.start();
   }catch(e){log('start recognition: '+e.message);restartTimer=setTimeout(startRec,1200)}
  }
- function set(v){active=!!v;chrome.storage.local.set({enabled:active});if(active){startRec();startVoiceTimer();log('enabled; idle Voice toggling started')}else{try{rec&&rec.stop()}catch{}clearTimeout(restartTimer);clearInterval(voiceTimer);voiceTimer=null;log('disabled')}}
+ function set(v){active=!!v;chrome.storage.local.set({enabled:active});if(active){startRec();if(voiceAutomation)startVoiceTimer();log('enabled; idle Voice toggling '+(voiceAutomation?'ON':'OFF'))}else{try{rec&&rec.stop()}catch{}clearTimeout(restartTimer);clearInterval(voiceTimer);voiceTimer=null;log('disabled')}}
+ chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&changes.voiceAutomation){voiceAutomation=!!changes.voiceAutomation.newValue;if(!voiceAutomation){clearInterval(voiceTimer);voiceTimer=null}else if(active&&!speechNow&&!generating())startVoiceTimer();log('Voice automation '+(voiceAutomation?'enabled':'disabled'))}});
+ chrome.storage.local.get({voiceAutomation:false},v=>{voiceAutomation=!!v.voiceAutomation});
  chrome.runtime.onMessage.addListener(m=>{if(m.type==='SET')set(m.enabled)});
  chrome.storage.local.get({enabled:false},x=>{if(x.enabled)set(true)});
 })();
