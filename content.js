@@ -74,7 +74,7 @@
   try{
    const on=caiVoiceOn(b);
    // Pulse only when it is currently active; never accidentally start a call from off.
-   if(on===false){log("Character.AI voice is off; leaving it off");return}
+   if(on===false){log("Character.AI voice is off; leaving it off");caiToggleBusy=false;return}
    b.click();log("Character.AI voice refresh: OFF");
    setTimeout(()=>{if(active&&caiMode&&!caiBusy){const fresh=caiVoiceButton();if(fresh&&caiVoiceOn(fresh)!==true)fresh.click();log("Character.AI voice refresh: ON")}caiToggleBusy=false},450);
   }catch(e){caiToggleBusy=false;log("c.ai voice refresh error: "+e.message)}
