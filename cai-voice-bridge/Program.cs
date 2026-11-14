@@ -15,7 +15,7 @@ let enabled=false;const status=document.querySelector('#status'),heard=document.
 function say(s){status.textContent=s}
 async function poll(){try{let r=await fetch('/status.txt');let s=await r.text();if(s)say(s)}catch{}}
 setInterval(async()=>{await poll();try{let r=await fetch('/micstatus');let x=await r.text();if(x)say(x)}catch{}},1000);
-btn.onclick=async()=>{enabled=!enabled;btn.textContent=enabled?'Stop Recognition':'Start Local Recognition';try{await fetch('/mic',{method:'POST',body:enabled?'start':'stop'});say(enabled?'LOCAL WHISPER LISTENING — speak normally':'Recognition stopped')}catch(e){say('Local recognizer error: '+e)}};
+btn.onclick=async()=>{if(!enabled){btn.disabled=true;btn.textContent='Loading Whisper…';say('Starting local Whisper (download/load may take time)…');try{let r=await fetch('/mic',{method:'POST',body:'start'});if(!r.ok)throw new Error(await r.text()||('HTTP '+r.status));enabled=true;btn.textContent='Stop Recognition';say('Local Whisper started. Speak now.')}catch(e){enabled=false;btn.textContent='Start Local Recognition';say('START FAILED: '+e.message)}finally{btn.disabled=false}}else{enabled=false;btn.textContent='Start Local Recognition';try{await fetch('/mic',{method:'POST',body:'stop'});say('Recognition stopped')}catch(e){say('Stop error: '+e.message)}}};
 async function transcript(){try{let r=await fetch('/transcript');let t=await r.text();if(t){heard.value+=(heard.value?'
 ':'')+t;say('Whisper recognized: '+t)}}catch{}}
 setInterval(transcript,500);
