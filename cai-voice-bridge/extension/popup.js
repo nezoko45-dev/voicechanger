@@ -1,0 +1,1 @@
+document.querySelector('#go').onclick=()=>chrome.tabs.create({url:chrome.runtime.getURL('speech.html')});
