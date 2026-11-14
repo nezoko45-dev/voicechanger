@@ -93,12 +93,41 @@ namespace ChatGPTDictation
         private void InvokeReadAloud()
         {
             try {
-                AutomationElement chrome=FindChrome(); if(chrome==null)return;
-                AutomationElement button=FindNamedButton(chrome,"Read aloud");
-                if(button!=null && button.TryGetCurrentPattern(InvokePattern.Pattern,out object pattern)) {
-                    ((InvokePattern)pattern).Invoke(); status.Text += "\r\nRead Aloud clicked.";
-                } else status.Text += "\r\nRead Aloud button not found yet.";
-            } catch(Exception ex) { status.Text += "\r\nRead Aloud: "+ex.Message; }
+                AutomationElement chrome=FindChrome();
+                if(chrome==null){status.Text += "\\r\\nChrome UI not available.";return;}
+
+                // Search every accessible element, not only Button controls:
+                // Chromium sometimes exposes the speaker toolbar as a custom control.
+                AutomationElement target=null;
+                var all=chrome.FindAll(TreeScope.Descendants,Condition.TrueCondition);
+                for(int i=all.Count-1;i>=0;i--){
+                    try {
+                        string name=all[i].Current.Name??"";
+                        if(name.IndexOf("Read aloud",StringComparison.OrdinalIgnoreCase)>=0 ||
+                           name.IndexOf("Read Aloud",StringComparison.OrdinalIgnoreCase)>=0){
+                            target=all[i];break;
+                        }
+                    } catch {}
+                }
+                if(target==null){status.Text += "\\r\\nCould not locate the Read aloud icon in Chrome UI.";return;}
+
+                // Preferred: invoke the actual accessible icon.
+                object pattern;
+                if(target.TryGetCurrentPattern(InvokePattern.Pattern,out pattern)){
+                    ((InvokePattern)pattern).Invoke();
+                    status.Text += "\\r\\nRead Aloud icon invoked.";
+                    return;
+                }
+
+                // Fallback: click the exact icon's UIA bounding rectangle.
+                System.Windows.Rect bounds=target.Current.BoundingRectangle;
+                if(!bounds.IsEmpty && bounds.Width>0 && bounds.Height>0){
+                    SetCursorPos((int)(bounds.Left+bounds.Width/2),(int)(bounds.Top+bounds.Height/2));
+                    mouse_event(0x0002,0,0,0,UIntPtr.Zero);
+                    mouse_event(0x0004,0,0,0,UIntPtr.Zero);
+                    status.Text += "\\r\\nClicked Read Aloud icon.";
+                } else status.Text += "\\r\\nRead Aloud icon has no clickable bounds.";
+            } catch(Exception ex) { status.Text += "\\r\\nRead Aloud click failed: "+ex.Message; }
         }
         private static Process FindChromeProcess()
         {
