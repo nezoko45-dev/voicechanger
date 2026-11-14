@@ -71,8 +71,8 @@ namespace CharacterAIDictation
             // Character.AI generation detection is unreliable across UI versions;
             // gating on its Stop button caused all later phrases to remain queued.
             try {
-                AutomationElement chrome=FindChrome();
-                if(chrome==null){status.Text="Chrome window not found.";return;}
+                AutomationElement chrome=FindCharacterAIChrome();
+                if(chrome==null){status.Text="Character.AI Chrome window not found.";return;}
                 AutomationElement field=FindCharacterTextbox(chrome);
                 if(field==null){status.Text="Character.AI textbox not found. Open its chat tab and try again.";return;}
 
