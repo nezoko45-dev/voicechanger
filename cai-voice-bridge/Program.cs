@@ -22,7 +22,9 @@ function status(s){chrome.webview.postMessage('status:'+s)}
 function start(){const SR=SpeechRecognition||webkitSpeechRecognition;if(!SR){status('SpeechRecognition unavailable');return}
 r=new SR();r.lang='en-US';r.continuous=true;r.interimResults=true;r.onstart=()=>status('Embedded Chrome listening…');r.onerror=e=>status('Speech error: '+e.error);r.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal){const t=e.results[i][0].transcript.trim();if(t)chrome.webview.postMessage(t)}};r.onend=()=>{if(active)setTimeout(()=>{try{r.start()}catch{}},500)};active=true;b.textContent='Stop Recognition';r.start()}
 b.onclick=()=>{if(active){active=false;r.stop();b.textContent='Start Chrome Recognition'}else start()};setTimeout(()=>{try{start()}catch{}},800);
-</script>""");}else status.Text="WebView2 init failed: "+e.InitializationException?.Message;};
+</script>
+"""
+); }else status.Text="WebView2 init failed: "+e.InitializationException?.Message;};
 form.Shown+=async(_,_)=>{try{await web.EnsureCoreWebView2Async();}catch(e){status.Text="Install Microsoft Edge WebView2 Runtime: "+e.Message;}};
 Application.Run(form);
 
