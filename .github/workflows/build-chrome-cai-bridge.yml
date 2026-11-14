@@ -1,0 +1,21 @@
+name: Build Chrome c.ai Voice Bridge
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'tools/ChromeCaiBridge/**'
+      - '.github/workflows/build-chrome-cai-bridge.yml'
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Publish self-contained EXE
+        run: dotnet publish tools/ChromeCaiBridge/ChromeCaiBridge.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/ChromeCaiBridge
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ChromeCaiBridge-win-x64
+          path: artifacts/ChromeCaiBridge/**
