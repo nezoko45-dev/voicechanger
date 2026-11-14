@@ -1,9 +1,0 @@
-{
-  "private": true,
-  "engines": {
-    "node": "22.x"
-  },
-  "dependencies": {
-    "@livekit/agents": "^1.0.0"
-  }
-}

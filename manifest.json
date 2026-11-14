@@ -1,19 +1,26 @@
 {
   "manifest_version": 3,
-  "name": "VoiceChanger — voiceclonnx",
-  "version": "1.0.2",
-  "description": "Convert a source recording using a selected reference voice with a local voiceclonnx service.",
-  "background": {
-    "service_worker": "background.js"
-  },
-  "action": {
-    "default_title": "Open VoiceChanger in a tab"
-  },
-  "permissions": [],
-  "host_permissions": [
-    "http://127.0.0.1:8765/*"
+  "name": "ChatGPT Voice Dictator",
+  "version": "1.0.0",
+  "description": "Continuous microphone dictation into ChatGPT, auto-send, and Read Aloud loop.",
+  "permissions": [
+    "activeTab",
+    "storage"
   ],
-  "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://127.0.0.1:8765 ws://127.0.0.1:8765;"
-  }
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Voice Dictator"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
 }
