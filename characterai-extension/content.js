@@ -5,17 +5,29 @@
  const $=s=>document.querySelector(s);
  const visible=e=>!!e&&e.getClientRects().length>0&&!e.disabled;
  function voiceButton(){
-  // Find the visible "Voice" label itself, then climb to its clickable ancestor.
-  const labels=[...document.querySelectorAll('button,[role="button"],[aria-label],[title],span,div')]
-   .filter(visible).filter(e=>{
-    const t=(e.innerText||e.textContent||'').replace(/\\s+/g,' ').trim().toLowerCase();
-    return t==='voice'||(e.getAttribute('aria-label')||'').trim().toLowerCase()==='voice'||(e.getAttribute('title')||'').trim().toLowerCase()==='voice';
-   });
-  for(const e of labels){
-    const clickable=e.closest('button,[role="button"]');
-    if(clickable&&visible(clickable))return clickable;
-    if(e.matches('button,[role="button"]'))return e;
+  // Inspect likely Voice controls by exact text and icon/accessible attributes.
+  const candidates=[...document.querySelectorAll('button,[role="button"],[role="switch"],[tabindex="0"]')].filter(visible);
+  const score=e=>{
+    const text=(e.innerText||e.textContent||'').replace(/\\s+/g,' ').trim().toLowerCase();
+    const aria=(e.getAttribute('aria-label')||'').toLowerCase();
+    const title=(e.getAttribute('title')||'').toLowerCase();
+    const testid=(e.getAttribute('data-testid')||'').toLowerCase();
+    const cls=(typeof e.className==='string'?e.className:'').toLowerCase();
+    let n=0;
+    if(text==='voice')n+=10;
+    if(aria==='voice'||title==='voice')n+=10;
+    if(/voice/.test(aria+' '+title+' '+testid+' '+cls))n+=4;
+    if(e.querySelector('svg'))n+=1;
+    if(text.length<30)n+=1;
+    return n;
+  };
+  const ranked=candidates.map(e=>({e,n:score(e)})).sort((x,y)=>y.n-x.n);
+  const top=ranked[0];
+  if(top&&top.n>=10){
+    log('Voice control identified', {tag:top.e.tagName,text:(top.e.innerText||top.e.textContent||'').trim(),aria:top.e.getAttribute('aria-label'),title:top.e.getAttribute('title'),testid:top.e.getAttribute('data-testid'),html:top.e.outerHTML.slice(0,500)});
+    return top.e;
   }
+  log('VOICE CONTROL DIAGNOSTIC — candidates',ranked.slice(0,12).map(x=>({score:x.n,tag:x.e.tagName,text:(x.e.innerText||x.e.textContent||'').trim().slice(0,60),aria:x.e.getAttribute('aria-label'),title:x.e.getAttribute('title'),testid:x.e.getAttribute('data-testid'),html:x.e.outerHTML.slice(0,240)})));
   return null;
  }
  function textbox(){
