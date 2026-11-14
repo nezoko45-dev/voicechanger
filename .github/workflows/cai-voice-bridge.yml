@@ -1,0 +1,21 @@
+name: Build Character AI Voice Bridge
+on:
+  push:
+    paths:
+      - 'cai-voice-bridge/**'
+      - '.github/workflows/cai-voice-bridge.yml'
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Publish single-file EXE
+        run: dotnet publish cai-voice-bridge/CaiVoiceBridge.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CaiVoiceBridge-win-x64
+          path: cai-voice-bridge/bin/Release/net8.0/win-x64/publish/
