@@ -4,7 +4,7 @@
   "version": "1.0.1",
   "description": "Continuous mic dictation that sends messages and triggers ChatGPT Read Aloud.",
   "permissions": ["activeTab", "scripting"],
-  "host_permissions": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
+  "host_permissions": ["https://chatgpt.com/*", "https://chat.openai.com/*", "http://127.0.0.1:8765/*"],
   "action": {"default_popup": "popup.html", "default_title": "Voice Dictator"},
   "content_scripts": [{"matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"], "js": ["content.js"], "run_at": "document_idle"}]
 }
