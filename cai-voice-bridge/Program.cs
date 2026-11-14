@@ -14,8 +14,9 @@ int commandId = 0;
 ClientWebSocket? caiSocket = null;
 JsonElement caiTarget = default;
 
-EnsureDebugBrowser();
 _ = RunLocalSpeechServer();
+EnsureDebugBrowser();
+OpenSpeechPage();
 Console.WriteLine($"Speech page: http://127.0.0.1:{LocalPort}/");
 Console.WriteLine("Waiting for Character.AI tab...");
 
@@ -86,6 +87,14 @@ async Task PasteIntoCai(string words)
     var payload = JsonSerializer.Serialize(new { id = ++commandId, method = "Runtime.evaluate", @params = new { expression = js, returnByValue = true } });
     await ws.SendAsync(Encoding.UTF8.GetBytes(payload), WebSocketMessageType.Text, true, CancellationToken.None);
     Console.WriteLine("Speech → Character.AI: " + words);
+}
+
+void OpenSpeechPage()
+{
+    var browser = FindChrome();
+    if (browser is null) return;
+    var profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CAIVoiceBridge", "ChromeProfile");
+    Process.Start(new ProcessStartInfo { FileName = browser, Arguments = $"--remote-debugging-port={DebugPort} --user-data-dir=\\\"{profile}\\\" http://127.0.0.1:{LocalPort}/", UseShellExecute = true });
 }
 
 void EnsureDebugBrowser()
