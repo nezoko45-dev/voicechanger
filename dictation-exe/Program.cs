@@ -63,16 +63,21 @@ namespace ChatGPTDictation
                 IntPtr hwnd = chromeProcess.MainWindowHandle;
                 RECT rect; if(!GetWindowRect(hwnd,out rect)) { status.Text += "\r\nCould not get Chrome window bounds."; return; }
 
-                // ChatGPT's composer is at the bottom-center of the browser viewport.
-                // UIA focus on Chrome's web textarea is unreliable, so click it directly.
+                // Critical: bring Chrome to the foreground so keyboard paste goes into its composer,
+                // not into this EXE's own window.
+                ShowWindow(hwnd, SW_RESTORE);
+                SetForegroundWindow(hwnd);
+                Thread.Sleep(350);
+
+                // Click inside ChatGPT's composer (bottom-center of Chrome client area).
                 int x = rect.Left + (rect.Right-rect.Left)/2;
                 int y = rect.Bottom - 115;
                 SetCursorPos(x,y); mouse_event(MOUSEEVENTF_LEFTDOWN,0,0,0,UIntPtr.Zero);
                 mouse_event(MOUSEEVENTF_LEFTUP,0,0,0,UIntPtr.Zero);
-                Thread.Sleep(250);
+                Thread.Sleep(300);
                 Clipboard.SetText(phrase);
                 SendKey(VK_CONTROL, true); SendKey(VK_V, true); SendKey(VK_V, false); SendKey(VK_CONTROL, false);
-                Thread.Sleep(180); SendKey(VK_RETURN, true); SendKey(VK_RETURN, false);
+                Thread.Sleep(250); SendKey(VK_RETURN, true); SendKey(VK_RETURN, false);
                 status.Text = "Pasted + sent to ChatGPT: " + phrase + "\r\nRead Aloud automation scheduled…";
                 readTimer.Stop(); readTimer.Start();
             } catch(Exception ex) { status.Text="UI automation error: "+ex.Message; }
@@ -101,6 +106,9 @@ namespace ChatGPTDictation
         [StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left,Top,Right,Bottom; }
         [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hwnd,out RECT rect);
         [DllImport("user32.dll")] private static extern bool SetCursorPos(int x,int y);
+        [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
+        [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hwnd,int command);
+        private const int SW_RESTORE=9;
         [DllImport("user32.dll")] private static extern void mouse_event(uint flags,uint dx,uint dy,uint data,UIntPtr extra);
         private const uint MOUSEEVENTF_LEFTDOWN=0x0002,MOUSEEVENTF_LEFTUP=0x0004;
         private static AutomationElement FindComposer(AutomationElement root)
