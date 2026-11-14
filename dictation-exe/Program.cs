@@ -22,7 +22,7 @@ namespace ChatGPTDictation
     {
         private readonly Button start = new Button { Text = "START LISTENING", Dock = DockStyle.Top, Height = 45 };
         private readonly Button stop = new Button { Text = "STOP", Dock = DockStyle.Top, Height = 35, Enabled = false };
-        private readonly CheckBox auto = new CheckBox { Text = "Send transcript to ChatGPT + Read Aloud (Windows UI Automation)", Dock = DockStyle.Top, Height = 36, Checked = true };
+        private readonly CheckBox auto = new CheckBox { Text = "Send transcript to ChatGPT + Read Aloud (Windows UI Automation)", Dock = DockStyle.Top, Height = 36, Checked = false };
         private readonly Label status = new Label { Text = "Ready. Open ChatGPT in Chrome, click its composer once, then Start.", Dock = DockStyle.Fill, Padding = new Padding(12) };
         private SpeechRecognitionEngine recognizer;
         private LocalBridge bridge;
@@ -30,7 +30,7 @@ namespace ChatGPTDictation
 
         public MainForm()
         {
-            Text = "ChatGPT Dictation — Windows UI Automation"; Width = 560; Height = 250;
+            Text = "ChatGPT Dictation — Chrome Speech"; Width = 560; Height = 250;
             FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false;
             Controls.Add(status); Controls.Add(auto); Controls.Add(stop); Controls.Add(start);
             start.Click += async (s,e) => await StartListening(); stop.Click += (s,e) => StopListening();
