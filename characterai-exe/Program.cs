@@ -61,7 +61,9 @@ namespace CharacterAIDictation
         }
         private void DeliverToCharacterAI(string phrase)
         {
-            // Send every finalized Chrome SpeechRecognition result immediately.\n            // Character.AI generation detection is unreliable across UI versions;\n            // gating on its Stop button caused all later phrases to remain queued.
+            // Send every finalized Chrome SpeechRecognition result immediately.
+            // Character.AI generation detection is unreliable across UI versions;
+            // gating on its Stop button caused all later phrases to remain queued.
             try {
                 AutomationElement chrome=FindChrome();
                 if(chrome==null){status.Text="Chrome window not found.";return;}
@@ -94,8 +96,8 @@ namespace CharacterAIDictation
                     Thread.Sleep(80);
                     keybd_event(0x0D,0,0,UIntPtr.Zero);keybd_event(0x0D,0,2,UIntPtr.Zero);
                 }
-                waitingForResponse=true;generationSeen=false;responseWaitTicks=0;readTimer.Start();
-                status.Text="Sent to Character.AI textbox: "+phrase;
+                waitingForResponse=false;generationSeen=false;responseWaitTicks=0;readTimer.Stop();
+                status.Text="Sent transcript to Character.AI: "+phrase;
             } catch(Exception ex){status.Text="Textbox send failed: "+ex.Message;}
         }
 
