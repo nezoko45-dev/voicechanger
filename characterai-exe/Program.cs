@@ -28,7 +28,7 @@ namespace CharacterAIDictation
         private readonly Label status = new Label { Text = "Ready. Click Start, then allow microphone access in Chrome.", Dock = DockStyle.Fill, Padding = new Padding(12) };
         private LocalBridge bridge;
         private readonly System.Windows.Forms.Timer readTimer = new System.Windows.Forms.Timer { Interval = 1000 };
-        private bool waitingForResponse; private bool generationSeen; private int responseWaitTicks;
+        private bool waitingForResponse; private bool generationSeen; private int responseWaitTicks; private bool userSpeaking;
         private readonly Queue<string> pendingPhrases=new Queue<string>();
 
         public MainForm()
@@ -43,7 +43,8 @@ namespace CharacterAIDictation
             FormClosing += (s,e) => { readTimer.Stop(); voiceTimer.Stop(); try { bridge?.Dispose(); } catch {} };
             try {
                 bridge = new LocalBridge();
-                bridge.Transcript += phrase => { if (!IsDisposed) BeginInvoke((Action)(() => { status.Text = "Chrome recognized: " + phrase; if(auto.Checked) DeliverToCharacterAI(phrase); })); };
+                bridge.Transcript += phrase => { if (!IsDisposed) BeginInvoke((Action)(() => { userSpeaking=false; status.Text = "Chrome recognized: " + phrase; if(auto.Checked) DeliverToCharacterAI(phrase); })); };
+                bridge.SpeechStarted += () => { if(!IsDisposed) BeginInvoke((Action)(() => { userSpeaking=true; voiceTimer.Stop(); if(!waitingForResponse)status.Text="You are speaking — Voice keep-alive paused."; })); };
                 bridge.Start();
                 status.Text += Environment.NewLine + "Local API: http://127.0.0.1:8765/health";
             } catch (Exception ex) { status.Text += Environment.NewLine + "Bridge error: " + ex.Message; }
@@ -286,6 +287,7 @@ namespace CharacterAIDictation
         private readonly ConcurrentQueue<string> queue=new ConcurrentQueue<string>();
         private HttpListener listener; private CancellationTokenSource cancel;
         public event Action<string> Transcript;
+        public event Action SpeechStarted;
         public void Start(){listener=new HttpListener();listener.Prefixes.Add("http://127.0.0.1:8765/");listener.Start();cancel=new CancellationTokenSource();Task.Run(()=>Serve(cancel.Token));}
         public void Enqueue(string text){queue.Enqueue(text);Transcript?.Invoke(text);}
         private async Task Serve(CancellationToken token){
@@ -304,7 +306,8 @@ namespace CharacterAIDictation
                     if(path=="/transcript"&&c.Request.HttpMethod=="POST"){
                         using(var reader=new StreamReader(c.Request.InputStream,c.Request.ContentEncoding)){string phrase=(await reader.ReadToEndAsync()).Trim();if(phrase.Length>0)Enqueue(phrase);}
                         body="{\"ok\":true}"; 
-                    } else if(path=="/stop"){body="{\"ok\":true,\"stop\":true}";}
+                    } else if(path=="/speech-start"&&c.Request.HttpMethod=="POST"){SpeechStarted?.Invoke();body="{\"ok\":true}";}
+                    else if(path=="/stop"){body="{\"ok\":true,\"stop\":true}";}
                     else if(path=="/health")body="{\"ok\":true,\"service\":\"Chrome Web Speech Recognition localhost bridge\"}";
                     else if(path=="/next"){string x;body=queue.TryDequeue(out x)?"{\"text\":"+Json(x)+"}":"{\"text\":null}";}
                     else {c.Response.StatusCode=404;body="{\"error\":\"Use /health, /next, /recognizer or POST /transcript\"}";}
@@ -313,12 +316,12 @@ namespace CharacterAIDictation
             }
         }
         private const string Page = @"<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width'><title>Chrome Dictation</title><style>body{font:16px system-ui;max-width:700px;margin:35px auto;padding:15px;background:#111827;color:#f9fafb}button{font-size:18px;padding:12px 18px;margin:8px;border:0;border-radius:9px}#start{background:#22c55e}#stop{background:#ef4444;color:white}#status{padding:12px;background:#263244;border-radius:8px;margin:15px 0}#text{white-space:pre-wrap;min-height:100px;padding:14px;background:#0b1220;border-radius:8px}</style></head><body><h1>🎙 Chrome Speech Recognition</h1><p>Allow microphone permission when Chrome asks. Keep this tab open while dictating.</p><button id='start'>Start Mic</button><button id='stop'>Stop</button><div id='status'>Ready. Click Start Mic.</div><h3>Transcript</h3><div id='text'></div><script>
-const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,running=false,restart=null;
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,running=false,restart=null;window.speaking=false;
 const status=document.getElementById('status'),out=document.getElementById('text');
 function say(s){status.textContent=s}
 async function post(t){try{await fetch('/transcript',{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:t})}catch(e){say('Local EXE bridge error: '+e.message)}}
 function start(){if(!SR){say('SpeechRecognition unavailable. Use Google Chrome desktop.');return}running=true;clearTimeout(restart);rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=true;rec.maxAlternatives=1;
-rec.onstart=()=>say('🎤 Listening with Chrome…');rec.onerror=e=>say('Recognition error: '+e.error+' (check microphone permission)');rec.onresult=e=>{let interim='',finals='';for(let i=e.resultIndex;i<e.results.length;i++){let t=e.results[i][0].transcript;if(e.results[i].isFinal)finals+=t;else interim+=t}if(interim)out.textContent=interim;if(finals){out.textContent=finals;post(finals.trim());say('Sent transcript to EXE: '+finals.trim())}};
+rec.onstart=()=>say('🎤 Listening with Chrome…');rec.onerror=e=>say('Recognition error: '+e.error+' (check microphone permission)');rec.onresult=e=>{let interim='',finals='';for(let i=e.resultIndex;i<e.results.length;i++){let t=e.results[i][0].transcript;if(e.results[i].isFinal)finals+=t;else interim+=t}if(interim){out.textContent=interim;if(!window.speaking){window.speaking=true;fetch('/speech-start',{method:'POST'}).catch(()=>{})}}if(finals){window.speaking=false;out.textContent=finals;post(finals.trim());say('Sent transcript to EXE: '+finals.trim())}};
 rec.onend=()=>{if(running){say('Chrome recognition restarting…');restart=setTimeout(()=>{try{rec.start()}catch(e){start()}},350)}else say('Stopped.')};try{rec.start()}catch(e){say('Could not start: '+e.message)}}
 document.getElementById('start').onclick=start;document.getElementById('stop').onclick=()=>{running=false;clearTimeout(restart);try{rec&&rec.stop()}catch{}say('Stopped.')};
 </script></body></html>";
