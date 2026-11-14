@@ -8,13 +8,13 @@ using System.Speech.Recognition;
 const string SpeechPage = """
 <!doctype html><html><head><meta charset="utf-8"><title>CAI Local Whisper</title>
 <style>body{font:16px system-ui;background:#17171b;color:#eee;max-width:650px;margin:40px auto;padding:20px}button{font-size:18px;padding:12px 20px}#status{color:#9f9;margin:15px 0}textarea{box-sizing:border-box;width:100%;height:150px;background:#24242a;color:#eee;padding:12px;border:0;border-radius:8px;font:16px system-ui}</style></head>
-<body><h2>Character.AI — Offline Whisper</h2><button id="toggle">Start Local Recognition</button><div id="status">Loading local Whisper model…</div><h3>Whisper transcription</h3><textarea id="heard" placeholder="Local Whisper output appears here…" readonly></textarea>
+<body><h2>Character.AI — Windows Speech Recognition</h2><button id="toggle">Start Windows Recognition</button><div id="status">Windows speech recognition ready — click Start</div><h3>Whisper transcription</h3><textarea id="heard" placeholder="Local Whisper output appears here…" readonly></textarea>
 <script>
 let enabled=false;const status=document.querySelector('#status'),heard=document.querySelector('#heard'),btn=document.querySelector('#toggle');
 function say(s){status.textContent=s}
 async function poll(){try{let r=await fetch('/status.txt');let s=await r.text();if(s)say(s)}catch{}}
 setInterval(async()=>{await poll();try{let r=await fetch('/micstatus');let x=await r.text();if(x)say(x)}catch{}},1000);
-btn.onclick=async()=>{if(!enabled){btn.disabled=true;btn.textContent='Loading Whisper…';say('Starting local Whisper (download/load may take time)…');try{let r=await fetch('/mic',{method:'POST',body:'start'});if(!r.ok)throw new Error(await r.text()||('HTTP '+r.status));enabled=true;btn.textContent='Stop Recognition';say('Local Whisper started. Speak now.')}catch(e){enabled=false;btn.textContent='Start Local Recognition';say('START FAILED: '+e.message)}finally{btn.disabled=false}}else{enabled=false;btn.textContent='Start Local Recognition';try{await fetch('/mic',{method:'POST',body:'stop'});say('Recognition stopped')}catch(e){say('Stop error: '+e.message)}}};
+btn.onclick=async()=>{if(!enabled){btn.disabled=true;btn.textContent='Starting Windows Speech…';say('Starting Windows speech recognition…');try{let r=await fetch('/mic',{method:'POST',body:'start'});if(!r.ok)throw new Error(await r.text()||('HTTP '+r.status));enabled=true;btn.textContent='Stop Recognition';say('Windows speech recognition started. Speak now.')}catch(e){enabled=false;btn.textContent='Start Local Recognition';say('START FAILED: '+e.message)}finally{btn.disabled=false}}else{enabled=false;btn.textContent='Start Local Recognition';try{await fetch('/mic',{method:'POST',body:'stop'});say('Recognition stopped')}catch(e){say('Stop error: '+e.message)}}};
 async function transcript(){try{let r=await fetch('/transcript');let t=await r.text();if(t){heard.value+=(heard.value?'
 ':'')+t;say('Whisper recognized: '+t)}}catch{}}
 setInterval(transcript,500);
