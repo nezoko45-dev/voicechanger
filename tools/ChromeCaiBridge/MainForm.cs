@@ -22,8 +22,8 @@ public sealed class MainForm : Form {
   var open=new Button{Text="Open Chrome recognition",AutoSize=true};open.Click+=(s,e)=>Process.Start(new ProcessStartInfo("http://127.0.0.1:8765/"){UseShellExecute=true});
   bar.Controls.Add(open);bar.Controls.Add(send);bar.Controls.Add(keepalive);bar.Controls.Add(new Label{Text="Voice name",AutoSize=true});bar.Controls.Add(voiceName);bar.Controls.Add(status);Controls.Add(output);Controls.Add(bar);
   Shown+=(s,e)=>{try{listener.Prefixes.Add("http://127.0.0.1:8765/");listener.Start();status.Text="localhost:8765 ready";_=Serve();}catch(Exception ex){Log("Listener failed: "+ex.Message);}};
-  var timer=new Timer{Interval=5000};timer.Tick+=(s,e)=>{if(keepalive.Checked&&isIdle)VoiceToggle();};timer.Start();
-  var monitor=new Timer{Interval=1000};monitor.Tick+=(s,e)=>CheckGeneration();monitor.Start();
+  var timer=new System.Windows.Forms.Timer{Interval=5000};timer.Tick+=(s,e)=>{if(keepalive.Checked&&isIdle)VoiceToggle();};timer.Start();
+  var monitor=new System.Windows.Forms.Timer{Interval=1000};monitor.Tick+=(s,e)=>CheckGeneration();monitor.Start();
   FormClosing+=(s,e)=>{disposed=true;try{listener.Stop();}catch{}};
  }
  void Log(string m){if(disposed)return;BeginInvoke(()=>output.AppendText(DateTime.Now.ToString("HH:mm:ss")+" "+m+Environment.NewLine));}
