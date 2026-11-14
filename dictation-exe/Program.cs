@@ -21,10 +21,10 @@ namespace ChatGPTDictation
     {
         private readonly Button start = new Button { Text = "START CHROME RECOGNITION", Dock = DockStyle.Top, Height = 45 };
         private readonly Button stop = new Button { Text = "STOP", Dock = DockStyle.Top, Height = 35, Enabled = false };
-        private readonly CheckBox auto = new CheckBox { Text = "Auto-send to ChatGPT (experimental; may focus Chrome)", Dock = DockStyle.Top, Height = 36, Checked = false };
+        private readonly CheckBox auto = new CheckBox { Text = "Send transcript to ChatGPT automatically", Dock = DockStyle.Top, Height = 36, Checked = true };
         private readonly Label status = new Label { Text = "Ready. Click Start, then allow microphone access in Chrome.", Dock = DockStyle.Fill, Padding = new Padding(12) };
         private LocalBridge bridge;
-        private readonly System.Windows.Forms.Timer readTimer = new System.Windows.Forms.Timer { Interval = 6500 };
+        private readonly System.Windows.Forms.Timer readTimer = new System.Windows.Forms.Timer { Interval = 1000 };\n        private bool waitingForResponse; private int responseWaitTicks;
 
         public MainForm()
         {
@@ -32,11 +32,11 @@ namespace ChatGPTDictation
             FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false;
             Controls.Add(status); Controls.Add(auto); Controls.Add(stop); Controls.Add(start);
             start.Click += (s,e) => StartListening(); stop.Click += (s,e) => StopListening();
-            readTimer.Tick += (s,e) => { readTimer.Stop(); InvokeReadAloud(); };
+            readTimer.Tick += (s,e) => CheckResponseAndReadAloud();
             FormClosing += (s,e) => { readTimer.Stop(); try { bridge?.Dispose(); } catch {} };
             try {
                 bridge = new LocalBridge();
-                bridge.Transcript += phrase => { if (!IsDisposed) BeginInvoke((Action)(() => status.Text = "Chrome recognized: " + phrase)); };
+                bridge.Transcript += phrase => { if (!IsDisposed) BeginInvoke((Action)(() => { status.Text = "Chrome recognized: " + phrase; if(auto.Checked) DeliverToChatGPT(phrase); })); };
                 bridge.Start();
                 status.Text += Environment.NewLine + "Local API: http://127.0.0.1:8765/health";
             } catch (Exception ex) { status.Text += Environment.NewLine + "Bridge error: " + ex.Message; }
