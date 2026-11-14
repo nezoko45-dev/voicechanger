@@ -12,13 +12,24 @@
  function startRead(m){
   if(!active)return;
   const turn=m.closest('[data-testid^="conversation-turn"]')||m.closest("article")||m.parentElement?.parentElement||m;
-  // ChatGPT reveals action buttons on hover; trigger that state first.
-  for(const target of [m,turn]){target.dispatchEvent(new MouseEvent("mouseenter",{bubbles:true}));target.dispatchEvent(new MouseEvent("mouseover",{bubbles:true,view:window}));}
-  const find=()=>{const scopes=[turn,document];for(const scope of scopes){const arr=[...scope.querySelectorAll('button,[role="button"]')];let b=arr.find(x=>/read aloud|read-aloud|voice playback|play audio/i.test([x.getAttribute("aria-label"),x.getAttribute("title"),x.getAttribute("data-testid"),x.getAttribute("data-state"),x.innerText].filter(Boolean).join(" ")));if(b)return b}
-   // Stable ChatGPT action test IDs have varied; accept explicit read/audio IDs.
-   return [...turn.querySelectorAll('button,[role="button"]')].find(x=>/read.?aloud|audio.?play|voice.?play/i.test(x.getAttribute("data-testid")||""))||null};
-  setTimeout(()=>{if(!active)return;let b=find();if(!b){log("Read aloud unavailable after hover. Action buttons: "+[...turn.querySelectorAll("button")].map(x=>x.getAttribute("aria-label")||x.title||x.dataset.testid||x.innerText).filter(Boolean).join(" / "));waiting=false;restart=setTimeout(listen,1200);return}
-   b.click();log("Clicked Read aloud: "+(b.getAttribute("aria-label")||b.title||b.dataset.testid||"toolbar button"));monitorPlayback()},500)
+  // Hover the response to expose its toolbar, including icon-only controls.
+  for(const target of [m,turn])for(const type of ["mouseenter","mouseover","mousemove"])
+   target.dispatchEvent(new MouseEvent(type,{bubbles:true,view:window}));
+  const score=x=>{
+   const svg=x.querySelector("svg");
+   const label=[x.getAttribute("aria-label"),x.getAttribute("title"),x.getAttribute("data-testid"),x.getAttribute("data-tooltip"),x.innerText,svg?.getAttribute("aria-label"),svg?.getAttribute("data-testid"),svg?.getAttribute("title")].filter(Boolean).join(" ").toLowerCase();
+   if(/read.?aloud|audio.?play|voice.?play|play.?audio|tts/.test(label))return 100;
+   if(/copy|share|edit|regenerate|thumb|report|more|menu|stop|pause/.test(label))return -1;
+   const markup=(svg?.outerHTML||"").toLowerCase();
+   if(/speaker|volume|audio|sound|headphones/.test(markup))return 30;
+   return 0;
+  };
+  const find=()=>{
+   const scopes=[turn,document],buttons=[...new Set(scopes.flatMap(s=>[...s.querySelectorAll('button,[role="button"]')]))];
+   return buttons.map(b=>({b,s:score(b)})).filter(x=>x.s>0).sort((a,b)=>b.s-a.s)[0]?.b||null;
+  };
+  setTimeout(()=>{if(!active)return;const b=find();if(!b){log("Read aloud control not found. Buttons: "+[...turn.querySelectorAll("button")].map(x=>x.getAttribute("aria-label")||x.title||x.dataset.testid||x.innerText||"icon").join(" | "));waiting=false;restart=setTimeout(listen,900);return}
+   b.click();log("Clicked Read aloud (button/SVG control)");monitorPlayback()},650)
  }
  function monitorPlayback(){let quiet=0;clearInterval(playPoll);playPoll=setInterval(()=>{if(!active)return clearInterval(playPoll);let audio=[...document.querySelectorAll("audio")].some(a=>!a.paused&&!a.ended),reading=[...document.querySelectorAll("button,[role=button]")].some(b=>/pause reading|stop reading|stop playback/i.test((b.getAttribute("aria-label")||"")+" "+(b.title||"")));if(audio||reading){quiet=0;return}if(++quiet>=8){clearInterval(playPoll);waiting=false;log("Playback done; mic resumes");restart=setTimeout(listen,700)}},1000)}
  chrome.runtime.onMessage.addListener((m,s,reply)=>{if(m.action==="START"){active=true;waiting=false;if(!SR){reply({status:"SpeechRecognition unavailable"});return}listen();reply({status:"Started"})}else if(m.action==="STOP"){active=false;waiting=false;clearTimeout(restart);clearInterval(answerPoll);clearInterval(playPoll);try{rec&&rec.stop()}catch{}rec=null;log("Stopped");reply({status:"Stopped"})}return true});
