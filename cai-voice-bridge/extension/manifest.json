@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "CAI Voice Bridge",
+  "version": "1.0.0",
+  "description": "Chrome speech recognition → native CAI Voice Bridge EXE",
+  "permissions": [
+    "nativeMessaging",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://character.ai/*",
+    "https://*.character.ai/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}
