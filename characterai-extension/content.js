@@ -5,21 +5,8 @@
  const $=s=>document.querySelector(s);
  const visible=e=>!!e&&e.getClientRects().length>0&&!e.disabled;
  function voiceButton(){
-  // Target the exact button whose visible label is "Voice" and whose SVG is
-  // the waveform icon shown in the user's inspector screenshot.
-  const buttons=[...document.querySelectorAll('button')].filter(visible);
-  const exact=buttons.find(b=>{
-    const text=(b.innerText||b.textContent||'').replace(/\\s+/g,' ').trim().toLowerCase();
-    return text==='voice'&&!!b.querySelector('svg');
-  });
-  if(exact)return exact;
-  // fallback: button with waveform-like SVG and nearby Voice label
-  return buttons.find(b=>{
-    const t=(b.innerText||b.textContent||'').replace(/\\s+/g,' ').trim().toLowerCase();
-    const svg=b.querySelector('svg');
-    const markup=svg?.outerHTML.toLowerCase()||'';
-    return /voice/.test(t)&&svg&&(/wave|audio|mic|voice/.test(markup)||svg.querySelectorAll('path,line,rect').length>=3);
-  })||null;
+  // Exact Character.AI Voice control identified from its inspected outerHTML.
+  return [...document.querySelectorAll('button[aria-label="Toggle Character Voice"]')].find(visible)||null;
  }
  function textbox(){
   // Character.AI composer is normally the textbox/contenteditable with a message placeholder.
