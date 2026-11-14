@@ -1,4 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
-<PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net8.0-windows</TargetFramework><UseWindowsForms>true</UseWindowsForms><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><AssemblyName>ChromeCaiBridge</AssemblyName></PropertyGroup>
-<ItemGroup><Content Include="www\index.html"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content></ItemGroup>
+<PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net8.0-windows</TargetFramework><UseWindowsForms>true</UseWindowsForms><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><AssemblyName>ChromeCaiBridge</AssemblyName><EnableWindowsTargeting>true</EnableWindowsTargeting></PropertyGroup>
+<ItemGroup>
+<Reference Include="UIAutomationClient" />
+<Reference Include="UIAutomationTypes" />
+<Content Include="www\index.html"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
+</ItemGroup>
 </Project>
