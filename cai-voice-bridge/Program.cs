@@ -15,7 +15,7 @@ var web=new WebView2{Visible=false,Width=1,Height=1};
 form.Controls.Add(web);
 string latest="";
 send.Click+=async(_,_)=>{if(latest.Length>0)status.Text=await SendToCai(latest);};
-web.CoreWebView2InitializationCompleted+=(_,e)=>{if(e.IsSuccess){web.CoreWebView2.WebMessageReceived+=async(_,a)=>{try{var msg=a.TryGetWebMessageAsString();if(msg.StartsWith("status:"))status.Text=msg[7..];else{latest=msg;transcript.AppendText(msg+Environment.NewLine);status.Text="Recognized → ready to send";await SendToCai(msg);}}catch(ex){status.Text=ex.Message;}};web.CoreWebView2.NavigateToString("""
+web.CoreWebView2InitializationCompleted+=(_,e)=>{if(e.IsSuccess){web.CoreWebView2.WebMessageReceived+=async(_,a)=>{try{var msg=a.TryGetWebMessageAsString();if(msg.StartsWith("status:"))status.Text=msg[7..];else{latest=msg;transcript.AppendText(msg+Environment.NewLine);status.Text="Recognized → ready to send";await SendToCai(msg);}}catch(Exception ex){status.Text=ex.Message;}};web.CoreWebView2.NavigateToString("""
 <!doctype html><meta charset="utf-8"><button id="start">Start Chrome Recognition</button><script>
 const b=document.querySelector('#start');let r,active=false;
 function status(s){chrome.webview.postMessage('status:'+s)}
@@ -25,7 +25,7 @@ b.onclick=()=>{if(active){active=false;r.stop();b.textContent='Start Chrome Reco
 </script>
 """
 ); }else status.Text="WebView2 init failed: "+e.InitializationException?.Message;};
-form.Shown+=async(_,_)=>{try{await web.EnsureCoreWebView2Async();}catch(e){status.Text="Install Microsoft Edge WebView2 Runtime: "+e.Message;}};
+form.Shown+=async(_,_)=>{try{await web.EnsureCoreWebView2Async();}catch(Exception e){status.Text="Install Microsoft Edge WebView2 Runtime: "+e.Message;}};
 Application.Run(form);
 
 async Task<string> SendToCai(string words){
