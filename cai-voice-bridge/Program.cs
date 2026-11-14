@@ -4,6 +4,27 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 
+const string SpeechPage = """
+<!doctype html><html><head><meta charset="utf-8"><title>CAI Speech Bridge</title>
+<style>body{font:16px system-ui;background:#17171b;color:#eee;max-width:600px;margin:40px auto;padding:20px}button{font-size:18px;padding:12px 20px}#status{color:#9f9;margin:15px 0}#heard{white-space:pre-wrap;background:#24242a;padding:12px;border-radius:8px;min-height:70px}</style></head>
+<body><h2>Character.AI Speech Bridge</h2><button id="toggle">Start Chrome Speech Recognition</button><div id="status">Idle — click Start and allow microphone</div><h3>Recognized words</h3><div id="heard"></div>
+<script>
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,enabled=false,speaking=false,idleTimer=null;
+const status=document.querySelector('#status'),heard=document.querySelector('#heard'),btn=document.querySelector('#toggle');
+function idle(){clearTimeout(idleTimer);if(!speaking&&enabled){status.textContent='Idle — listening';idleTimer=setTimeout(()=>{if(!speaking)status.textContent='Idle — listening'},5000)}}
+async function pollStatus(){try{const x=await fetch('/status.txt');const s=await x.text();if(s)status.textContent=s;}catch{}}
+setInterval(pollStatus,1000);
+function start(){if(!enabled||!SR)return;rec=new SR();rec.continuous=true;rec.interimResults=false;rec.lang='en-US';
+rec.onstart=()=>{status.textContent='Listening…';idle()};
+rec.onspeechstart=()=>{speaking=true;clearTimeout(idleTimer);status.textContent='Speaking — timer paused'};
+rec.onspeechend=()=>{speaking=false;status.textContent='Speech ended — waiting for Character.AI reply';idle()};
+rec.onresult=async e=>{let text='';for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)text+=e.results[i][0].transcript;text=text.trim();if(!text)return;heard.textContent+=(heard.textContent?'\n':'')+text;status.textContent='Pasting…';try{await fetch('/speech',{method:'POST',headers:{'Content-Type':'text/plain'},body:text});status.textContent='Sent to Character.AI — waiting for reply';}catch(err){status.textContent='Bridge error: '+err;}};
+rec.onerror=e=>{status.textContent='Recognition: '+e.error};rec.onend=()=>{if(enabled)setTimeout(start,300)};try{rec.start()}catch{}}
+btn.onclick=()=>{enabled=!enabled;btn.textContent=enabled?'Stop Recognition':'Start Chrome Speech Recognition';if(enabled)start();else{clearTimeout(idleTimer);rec?.stop();status.textContent='Stopped'}};
+if(!SR){btn.disabled=true;status.textContent='Chrome SpeechRecognition unavailable';}
+</script></body></html>
+""";
+
 const int DebugPort = 9222;
 const int LocalPort = 8765;
 const string DebugEndpoint = "http://127.0.0.1:9222/json";
@@ -97,7 +118,7 @@ async Task RunLocalSpeechServer()
         {
             try
             {
-                if (ctx.Request.HttpMethod == "GET")
+                if (ctx.Request.HttpMethod == "GET" && (ctx.Request.Url?.AbsolutePath == "/" || ctx.Request.Url?.AbsolutePath == "/index.html"))
                 {
                     ctx.Response.ContentType = "text/html; charset=utf-8";
                     await ctx.Response.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(SpeechPage));
@@ -157,26 +178,7 @@ string? FindChrome()
     var paths=new[]{Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"Google","Chrome","Application","chrome.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),"Google","Chrome","Application","chrome.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Google","Chrome","Application","chrome.exe")};
     return paths.FirstOrDefault(File.Exists);
 }
-const string SpeechPage = """
-<!doctype html><html><head><meta charset="utf-8"><title>CAI Speech Bridge</title>
-<style>body{font:16px system-ui;background:#17171b;color:#eee;max-width:600px;margin:40px auto;padding:20px}button{font-size:18px;padding:12px 20px}#status{color:#9f9;margin:15px 0}#heard{white-space:pre-wrap;background:#24242a;padding:12px;border-radius:8px;min-height:70px}</style></head>
-<body><h2>Character.AI Speech Bridge</h2><button id="toggle">Start Chrome Speech Recognition</button><div id="status">Idle — click Start and allow microphone</div><h3>Recognized words</h3><div id="heard"></div>
-<script>
-const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,enabled=false,speaking=false,idleTimer=null;
-const status=document.querySelector('#status'),heard=document.querySelector('#heard'),btn=document.querySelector('#toggle');
-function idle(){clearTimeout(idleTimer);if(!speaking&&enabled){status.textContent='Idle — listening';idleTimer=setTimeout(()=>{if(!speaking)status.textContent='Idle — listening'},5000)}}
-async function pollStatus(){try{const x=await fetch('/status.txt');const s=await x.text();if(s)status.textContent=s;}catch{}}
-setInterval(pollStatus,1000);
-function start(){if(!enabled||!SR)return;rec=new SR();rec.continuous=true;rec.interimResults=false;rec.lang='en-US';
-rec.onstart=()=>{status.textContent='Listening…';idle()};
-rec.onspeechstart=()=>{speaking=true;clearTimeout(idleTimer);status.textContent='Speaking — timer paused'};
-rec.onspeechend=()=>{speaking=false;status.textContent='Speech ended — waiting for Character.AI reply';idle()};
-rec.onresult=async e=>{let text='';for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)text+=e.results[i][0].transcript;text=text.trim();if(!text)return;heard.textContent+=(heard.textContent?'\n':'')+text;status.textContent='Pasting…';try{await fetch('/speech',{method:'POST',headers:{'Content-Type':'text/plain'},body:text});status.textContent='Sent to Character.AI — waiting for reply';}catch(err){status.textContent='Bridge error: '+err;}};
-rec.onerror=e=>{status.textContent='Recognition: '+e.error};rec.onend=()=>{if(enabled)setTimeout(start,300)};try{rec.start()}catch{}}
-btn.onclick=()=>{enabled=!enabled;btn.textContent=enabled?'Stop Recognition':'Start Chrome Speech Recognition';if(enabled)start();else{clearTimeout(idleTimer);rec?.stop();status.textContent='Stopped'}};
-if(!SR){btn.disabled=true;status.textContent='Chrome SpeechRecognition unavailable';}
-</script></body></html>
-""";
+
 
 
 class volatileState { public volatile bool AwaitingReply; public volatile string UiMessage=""; }
