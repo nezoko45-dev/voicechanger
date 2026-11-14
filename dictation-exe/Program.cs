@@ -25,7 +25,7 @@ namespace ChatGPTDictation
         private readonly Label status = new Label { Text = "Ready. Click Start, then allow microphone access in Chrome.", Dock = DockStyle.Fill, Padding = new Padding(12) };
         private LocalBridge bridge;
         private readonly System.Windows.Forms.Timer readTimer = new System.Windows.Forms.Timer { Interval = 1000 };
-        private bool waitingForResponse; private int responseWaitTicks;
+        private bool waitingForResponse; private bool generationSeen; private int responseWaitTicks;
 
         public MainForm()
         {
@@ -69,7 +69,7 @@ namespace ChatGPTDictation
                 keybd_event(0x11,0,0,UIntPtr.Zero);keybd_event(0x56,0,0,UIntPtr.Zero);keybd_event(0x56,0,2,UIntPtr.Zero);keybd_event(0x11,0,2,UIntPtr.Zero);
                 Thread.Sleep(100);keybd_event(0x0D,0,0,UIntPtr.Zero);keybd_event(0x0D,0,2,UIntPtr.Zero);
                 status.Text="Sent to ChatGPT: "+phrase+"\r\nWaiting for response to finish...";
-                waitingForResponse=true;responseWaitTicks=0;readTimer.Start();
+                waitingForResponse=true;generationSeen=false;responseWaitTicks=0;readTimer.Start();
             } catch(Exception ex){status.Text="Send failed: "+ex.Message;}
         }
         private void CheckResponseAndReadAloud()
@@ -79,8 +79,9 @@ namespace ChatGPTDictation
             try {
                 AutomationElement chrome=FindChrome();
                 AutomationElement stopButton=chrome==null?null:FindNamedButton(chrome,"Stop generating");
-                if(stopButton!=null){responseWaitTicks=0;status.Text="ChatGPT is responding…";return;}
-                if(responseWaitTicks>=3){waitingForResponse=false;readTimer.Stop();status.Text="Response finished. Starting Read Aloud…";InvokeReadAloud();return;}
+                if(stopButton!=null){generationSeen=true;responseWaitTicks=0;status.Text="ChatGPT is responding…";return;}
+                // Do not mistake the initial delay before generation for a completed response.
+                if(generationSeen && responseWaitTicks>=3){waitingForResponse=false;readTimer.Stop();status.Text="Response finished. Starting Read Aloud…";InvokeReadAloud();return;}
                 if(responseWaitTicks>90){waitingForResponse=false;readTimer.Stop();status.Text="Timed out waiting for ChatGPT response."; }
             } catch { if(responseWaitTicks>90){waitingForResponse=false;readTimer.Stop();status.Text="Timed out waiting for ChatGPT.";}}
         }
