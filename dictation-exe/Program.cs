@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Diagnostics;
 using System.Net;
 using System.Speech.Recognition;
 using System.Text;
@@ -26,7 +27,6 @@ namespace ChatGPTDictation
         private SpeechRecognitionEngine recognizer;
         private LocalBridge bridge;
         private readonly System.Windows.Forms.Timer readTimer = new System.Windows.Forms.Timer { Interval = 6500 };
-        private string lastPhrase = "";
 
         public MainForm()
         {
@@ -102,7 +102,7 @@ namespace ChatGPTDictation
         private void StopListening(){StopRecognizer();readTimer.Stop();start.Enabled=true;stop.Enabled=false;if(!IsDisposed)status.Text="Stopped. Localhost remains available until the app closes.";}
         private const byte VK_CONTROL=0x11,VK_V=0x56,VK_RETURN=0x0D;
         [DllImport("user32.dll")] private static extern void keybd_event(byte key,byte scan,uint flags,UIntPtr extra);
-        private static void SendKey(byte key,bool down)=>keybd_event(key,0,down?0:2,UIntPtr.Zero);
+        private static void SendKey(byte key,bool down)=>keybd_event(key,0,down?0u:2u,UIntPtr.Zero);
     }
 
     public sealed class LocalBridge
