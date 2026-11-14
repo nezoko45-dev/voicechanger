@@ -18,14 +18,14 @@ function post(path,data=''){return fetch(path,{method:'POST',body:data})}
 function start(){
  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
  if(!SR){say('ERROR: This Chrome build does not expose SpeechRecognition.');return}
- rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=false;rec.maxAlternatives=1;
+ try{await navigator.mediaDevices.getUserMedia({audio:true});}catch(e){say('MICROPHONE BLOCKED: '+e.name+' — allow Microphone for 127.0.0.1 in Chrome site settings, then click Start.');return}\n rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=true;rec.maxAlternatives=1;
  rec.onstart=()=>say('Chrome is listening. Speak naturally.');
- rec.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++){if(!e.results[i].isFinal)continue;const words=e.results[i][0].transcript.trim();if(!words)continue;add(words);say('Recognized: '+words+' · sending to Character.AI…');post('/speech',words).then(()=>say('Sent: '+words+' · listening')).catch(x=>say('Send error: '+x.message));}};
+ rec.onresult=e=>{let partial='';for(let i=e.resultIndex;i<e.results.length;i++){const words=e.results[i][0].transcript.trim();if(!words)continue;if(e.results[i].isFinal){add(words);say('Final: '+words+' · sending to Character.AI…');post('/speech',words).then(()=>say('Sent: '+words+' · listening')).catch(x=>say('Send error: '+x.message));}else partial+=words+' ';}if(partial)say('Hearing: '+partial.trim());};
  rec.onerror=e=>{say('Chrome Speech error: '+e.error+(e.error==='network'?' — Chrome speech service needs internet access.':''));if(e.error==='not-allowed'||e.error==='service-not-allowed'){active=false;btn.textContent='Start Chrome Recognition'}};
  rec.onend=()=>{if(active){say('Recognition paused; restarting Chrome speech…');setTimeout(()=>{if(active)try{rec.start()}catch{}},700)}else say('Recognition stopped.')};
  active=true;btn.textContent='Stop Recognition';try{rec.start()}catch(e){say('Start failed: '+e.message);active=false;btn.textContent='Start Chrome Recognition'}
 }
-btn.onclick=()=>{if(active){active=false;try{rec.stop()}catch{}btn.textContent='Start Chrome Recognition'}else start()};\n// Automatically begin listening when the localhost page opens. The button remains\n// available if Chrome requires a user gesture or microphone permission.\nwindow.addEventListener('load',()=>{setTimeout(()=>{if(!active)start()},500)});
+btn.onclick=()=>{if(active){active=false;try{rec.stop()}catch{}btn.textContent='Start Chrome Recognition'}else start()};\n// Automatically begin listening when the localhost page opens. The button remains\n// available if Chrome requires a user gesture or microphone permission.\nwindow.addEventListener('load',()=>{setTimeout(()=>{if(!active)start()},900)});
 </script></html>
 """;
 Console.Title="CAI Chrome Speech Bridge";
