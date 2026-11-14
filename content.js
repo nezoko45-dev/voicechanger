@@ -1,32 +1,22 @@
 (() => {
 if(window.__voiceDictatorLoaded)return;window.__voiceDictatorLoaded=true;
-let active=false,recognition=null,waiting=false,lastAssistantText="",pollTimer=null,readTimer=null;
+let active=false,recognition=null,waiting=false,listenRestart=null,pollTimer=null,readTimer=null,readStartedAt=0;
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-function status(s){chrome.runtime.sendMessage({type:"STATUS",status:s}).catch(()=>{});console.log("[Voice Dictator]",s)}
-function composer(){return document.querySelector("#prompt-textarea")||document.querySelector('[contenteditable="true"][data-testid="composer"]')||document.querySelector('div[contenteditable="true"]. ProseMirror')}
-function getComposer(){return document.querySelector("#prompt-textarea")||document.querySelector('[contenteditable="true"][data-testid="composer"]')||document.querySelector('div[contenteditable="true"]')}
-function setText(el,text){el.focus();if(el.tagName==="TEXTAREA"){const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value").set;setter.call(el,text);el.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:text}))}else{document.execCommand("insertText",false,text);if(!el.textContent.trim())el.textContent=text;el.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:text}))}}
-function sendMessage(){const b=document.querySelector('button[data-testid="send-button"]')||[...document.querySelectorAll("button")].find(x=>/send/i.test(x.getAttribute("aria-label")||"")&&!x.disabled);if(b&&!b.disabled){b.click();return true}return false}
-function startRecognition(){if(!active||waiting||!SR)return;try{recognition=new SR();recognition.lang="en-US";recognition.continuous=false;recognition.interimResults=false;recognition.maxAlternatives=1;
-recognition.onresult=e=>{const text=e.results[e.results.length-1][0].transcript.trim();if(!text||!active)return;const el=getComposer();if(!el){status("Can't find ChatGPT message box.");restartListen();return}setText(el,text);waiting=true;status("Sending: "+text);setTimeout(()=>{if(sendMessage()){status("Sent. Waiting for ChatGPT response…");waitForAnswer()}else{waiting=false;status("Send button not found.");restartListen()}},250)};
-recognition.onerror=e=>{status("Speech recognition: "+e.error);if(active&&!waiting)setTimeout(startRecognition,900)};
-recognition.onend=()=>{if(active&&!waiting)setTimeout(startRecognition,350)};
-recognition.start();status("Listening… speak a sentence.")}catch(e){status("Mic start failed: "+e.message);setTimeout(startRecognition,1200)}}
-function restartListen(){waiting=false;if(active)setTimeout(startRecognition,500)}
-function assistantMessages(){return [...document.querySelectorAll('[data-message-author-role="assistant"]')]}
-function waitForAnswer(){let prior=assistantMessages().length,seenText="",stable=0;clearInterval(pollTimer);pollTimer=setInterval(()=>{if(!active){clearInterval(pollTimer);return}
-const msgs=assistantMessages(),last=msgs.at(-1);if(!last||msgs.length<=prior){return}
-const text=last.innerText.trim();const stopBtn=[...document.querySelectorAll("button")].find(b=>/stop generating/i.test(b.getAttribute("aria-label")||""));
-if(text&&text===seenText)stable++;else{seenText=text;stable=0}
-if(text&&stable>=3&&!stopBtn){clearInterval(pollTimer);lastAssistantText=text;clickReadAloud(last);}},1000)}
-function clickReadAloud(message){if(!active)return;status("Response ready. Starting Read Aloud…");
-const buttons=[...message.querySelectorAll("button")];let read=buttons.find(b=>/read aloud|speaker|listen/i.test((b.getAttribute("aria-label")||"")+" "+(b.getAttribute("data-testid")||"")));
-if(!read){read=[...document.querySelectorAll("button")].find(b=>/read aloud/i.test(b.getAttribute("aria-label")||""))}
-if(read){read.click();status("Read Aloud playing. Waiting for playback to finish…");monitorPlayback()}else{status("Couldn't locate Read Aloud; restarting mic.");restartListen()}}
-function monitorPlayback(){let last=0,stable=0;clearInterval(readTimer);readTimer=setInterval(()=>{if(!active){clearInterval(readTimer);return}
-const stop=[...document.querySelectorAll("button")].find(b=>/stop reading|stop playback|pause/i.test(b.getAttribute("aria-label")||""));
-const audio=[...document.querySelectorAll("audio")].find(a=>!a.paused&&!a.ended);
-if(stop||audio){stable=0;return}
-stable++;if(stable>=4){clearInterval(readTimer);status("Read Aloud finished. Listening again…");restartListen()}},1000)}
-chrome.runtime.onMessage.addListener((msg,_sender,reply)=>{if(msg.action==="START"){if(!SR){reply({status:"Chrome Speech Recognition unavailable. Use Chrome."});return}active=true;waiting=false;startRecognition();reply({status:"Loop started. Grant microphone access if prompted."})}else if(msg.action==="STOP"){active=false;waiting=false;recognition?.stop();clearInterval(pollTimer);clearInterval(readTimer);status("Stopped.");reply({status:"Stopped."})}return true});
+const $=(s,r=document)=>r.querySelector(s);
+function status(s){console.log("[Voice Dictator]",s)}
+function composer(){return $("#prompt-textarea")||$(' [contenteditable="true"][data-testid="composer"]'.trim())||$('div[contenteditable="true"][role="textbox"]')}
+function setText(el,text){el.focus();if(el.tagName==="TEXTAREA"){const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value").set;setter.call(el,text);el.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:text}))}else{el.textContent=text;el.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:text}));el.dispatchEvent(new Event("change",{bubbles:true}))}}
+function clickSend(){const b=$('button[data-testid="send-button"]')||$('button[aria-label*="Send"]');if(b&&!b.disabled){b.click();return true}return false}
+function scheduleListen(ms=500){clearTimeout(listenRestart);if(active&&!waiting)listenRestart=setTimeout(startRecognition,ms)}
+function startRecognition(){if(!active||waiting||!SR||recognition)return;try{const r=new SR();recognition=r;r.lang="en-US";r.continuous=false;r.interimResults=false;r.maxAlternatives=1;
+r.onresult=e=>{if(!active||waiting)return;const text=e.results[e.results.length-1][0].transcript.trim();if(!text)return;const el=composer();if(!el){status("Message composer not found.");return}setText(el,text);waiting=true;status("Transcribed: "+text);setTimeout(()=>{if(!active)return;if(clickSend()){status("Sent. Waiting for answer…");waitAnswer()}else{status("Send button not found (composer may be empty).");waiting=false;scheduleListen(1200)}},350)};
+r.onerror=e=>{status("Speech recognition error: "+e.error)};
+r.onend=()=>{recognition=null;if(active&&!waiting)scheduleListen(700)};
+r.start();status("Listening (one recognition session)…")}catch(e){recognition=null;status("Recognition start failed: "+e.message);scheduleListen(1500)}}
+function messages(){return [...document.querySelectorAll('[data-message-author-role="assistant"]')]}
+function waitAnswer(){const before=messages().length;let previous="",stable=0;clearInterval(pollTimer);pollTimer=setInterval(()=>{if(!active){clearInterval(pollTimer);return}const all=messages(),m=all.at(-1);if(!m||all.length<=before)return;const text=m.innerText.trim();const generating=$('button[data-testid="stop-button"]')||[...document.querySelectorAll("button")].find(b=>/stop generating/i.test(b.getAttribute("aria-label")||""));if(!text||generating){stable=0;return}stable=text===previous?stable+1:0;previous=text;if(stable>=4){clearInterval(pollTimer);clickRead(m)}},900)}
+function clickRead(m){if(!active)return;const btns=[...m.querySelectorAll("button")];let b=btns.find(x=>/read aloud/i.test(x.getAttribute("aria-label")||"")||/read aloud/i.test(x.getAttribute("data-testid")||""));if(!b){b=btns.find(x=>/speaker|listen/i.test(x.getAttribute("aria-label")||""))}if(!b){const row=m.parentElement; b=[...(row||m).querySelectorAll("button")].find(x=>/read aloud/i.test(x.getAttribute("aria-label")||""))}
+if(!b){status("Read Aloud button not found; resume mic.");waiting=false;scheduleListen(1000);return}b.click();readStartedAt=Date.now();status("Read Aloud clicked.");monitorRead()}
+function monitorRead(){let quiet=0;clearInterval(readTimer);readTimer=setInterval(()=>{if(!active){clearInterval(readTimer);return}const buttons=[...document.querySelectorAll("button")];const pause=buttons.find(b=>/pause reading|stop reading|stop playback/i.test(b.getAttribute("aria-label")||""));const audio=[...document.querySelectorAll("audio")].find(a=>!a.paused&&!a.ended);if(pause||audio){quiet=0;return}if(Date.now()-readStartedAt<5000)return;quiet++;if(quiet>=5){clearInterval(readTimer);waiting=false;status("Playback ended; restarting mic.");scheduleListen(700)}},1000)}
+chrome.runtime.onMessage.addListener((msg,_sender,reply)=>{if(msg.action==="START"){active=true;waiting=false;if(!SR){reply({status:"SpeechRecognition unavailable"});return}startRecognition();reply({status:"Loop started. Mic will restart only after each session ends."})}else if(msg.action==="STOP"){active=false;waiting=false;clearTimeout(listenRestart);clearInterval(pollTimer);clearInterval(readTimer);recognition?.stop();recognition=null;status("Stopped.");reply({status:"Stopped."})}return true});
 })();
