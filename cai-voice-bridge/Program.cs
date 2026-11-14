@@ -9,10 +9,11 @@ const int LocalPort = 8765;
 const string DebugEndpoint = "http://127.0.0.1:9222/json";
 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
 Console.Title = "Character.AI Voice Bridge";
-Console.WriteLine("Character.AI Voice Bridge — Chrome speech recognition + paste bridge");
+Console.WriteLine("Character.AI Voice Bridge — Chrome speech recognition + reply-aware idle");
 int commandId = 0;
 ClientWebSocket? caiSocket = null;
 JsonElement caiTarget = default;
+volatileState idleState = new();
 
 _ = RunLocalSpeechServer();
 EnsureDebugBrowser();
@@ -38,10 +39,50 @@ while (true)
         caiSocket.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
         caiTarget = target.Clone();
         await caiSocket.ConnectAsync(new Uri(target.GetProperty("webSocketDebuggerUrl").GetString()!), CancellationToken.None);
-        Console.WriteLine("Connected to Character.AI tab. Speech will be pasted into its message box.");
+        Console.WriteLine("Connected to Character.AI. Listening for reply completion...");
+        _ = MonitorCaiReplies(caiSocket);
     }
     catch (Exception ex) { Console.WriteLine($"CDP reconnect: {ex.Message}"); EnsureDebugBrowser(); }
     await Task.Delay(1500);
+}
+
+async Task MonitorCaiReplies(ClientWebSocket socket)
+{
+    // Track the assistant's latest message text and streaming indicator. Idle resumes only after
+    // assistant output stops changing and the UI no longer shows a generating/stop button.
+    string lastText = "";
+    DateTime lastChange = DateTime.UtcNow;
+    bool sawGeneration = false;
+    while (socket.State == WebSocketState.Open)
+    {
+        try
+        {
+            var js = @"(()=>{const turns=[...document.querySelectorAll('[data-testid^=conversation-turn]')];const last=turns[turns.length-1];const text=last?.innerText||'';const stop=[...document.querySelectorAll('button')].some(b=>/stop|cancel generation/i.test((b.getAttribute('aria-label')||'')+' '+b.innerText));const busy=document.querySelector('[aria-busy=true]')!==null;return JSON.stringify({text,stop,busy})})()";
+            var id=Interlocked.Increment(ref commandId);
+            var cmd=JsonSerializer.Serialize(new { id, method="Runtime.evaluate", @params=new { expression=js, returnByValue=true }});
+            await socket.SendAsync(Encoding.UTF8.GetBytes(cmd),WebSocketMessageType.Text,true,CancellationToken.None);
+            var buf=new byte[65536]; string raw="";
+            using var ms=new MemoryStream();
+            while(true){var r=await socket.ReceiveAsync(buf,CancellationToken.None);ms.Write(buf,0,r.Count);if(r.EndOfMessage)break;}
+            raw=Encoding.UTF8.GetString(ms.ToArray());
+            using var outer=JsonDocument.Parse(raw);
+            if(!outer.RootElement.TryGetProperty("result",out var result)||!result.TryGetProperty("result",out var value)||!value.TryGetProperty("value",out var v)){await Task.Delay(900);continue;}
+            using var stateDoc=JsonDocument.Parse(v.GetString()??"{}");
+            var root=stateDoc.RootElement;var textNow=root.GetProperty("text").GetString()??"";var generating=root.GetProperty("stop").GetBoolean()||root.GetProperty("busy").GetBoolean();
+            if(generating){sawGeneration=true;lastChange=DateTime.UtcNow;lastText=textNow;idleState.AwaitingReply=true;}
+            else if(textNow!=lastText){lastText=textNow;lastChange=DateTime.UtcNow;if(idleState.AwaitingReply)sawGeneration=true;}
+            else if(idleState.AwaitingReply&&sawGeneration&&(DateTime.UtcNow-lastChange).TotalSeconds>=2){
+                idleState.AwaitingReply=false;sawGeneration=false;Console.WriteLine("AI reply finished → speech idle resumed.");
+                await NotifySpeechPage("AI finished replying. Idle/listening resumed.");
+            }
+            await Task.Delay(900);
+        }catch(Exception ex){Console.WriteLine("Reply monitor: "+ex.Message);break;}
+    }
+}
+
+async Task NotifySpeechPage(string msg)
+{
+    try{using var c=new HttpClient();await c.PostAsync($"http://127.0.0.1:{LocalPort}/status",new StringContent(msg));}catch{}
 }
 
 async Task RunLocalSpeechServer()
@@ -58,10 +99,8 @@ async Task RunLocalSpeechServer()
             {
                 if (ctx.Request.HttpMethod == "GET")
                 {
-                    var html = SpeechPage;
                     ctx.Response.ContentType = "text/html; charset=utf-8";
-                    var bytes = Encoding.UTF8.GetBytes(html);
-                    await ctx.Response.OutputStream.WriteAsync(bytes);
+                    await ctx.Response.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(SpeechPage));
                 }
                 else if (ctx.Request.HttpMethod == "POST" && ctx.Request.Url?.AbsolutePath == "/speech")
                 {
@@ -70,9 +109,14 @@ async Task RunLocalSpeechServer()
                     if (transcript.Length > 0) await PasteIntoCai(transcript);
                     ctx.Response.StatusCode = 204;
                 }
+                else if(ctx.Request.HttpMethod=="POST"&&ctx.Request.Url?.AbsolutePath=="/status")
+                {
+                    using var reader=new StreamReader(ctx.Request.InputStream,ctx.Request.ContentEncoding);
+                    idleState.UiMessage=await reader.ReadToEndAsync();ctx.Response.StatusCode=204;
+                }
                 else ctx.Response.StatusCode = 404;
             }
-            catch (Exception e) { Console.WriteLine("Local speech request: " + e.Message); ctx.Response.StatusCode = 500; }
+            catch (Exception e) { Console.WriteLine("Local request: " + e.Message); ctx.Response.StatusCode = 500; }
             finally { ctx.Response.Close(); }
         });
     }
@@ -82,40 +126,32 @@ async Task PasteIntoCai(string words)
 {
     var ws = caiSocket;
     if (ws?.State != WebSocketState.Open) { Console.WriteLine("Transcript received but Character.AI is not connected: " + words); return; }
-    // Paste into the composer without sending. Preserve existing text by appending.
     var js = @"(()=>{const e=document.querySelector('[contenteditable=true][data-placeholder],textarea')||document.querySelector('[contenteditable=true]');if(!e)return 'COMPOSER_NOT_FOUND';e.focus();const t=" + JsonSerializer.Serialize(words) + @";if(e.tagName==='TEXTAREA'){const s=e.value;const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;setter.call(e,(s?s+' ':'')+t);e.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:t}));}else{document.execCommand('insertText',false,(e.innerText?' ':'')+t);}return 'PASTED: '+t})()";
-    var payload = JsonSerializer.Serialize(new { id = ++commandId, method = "Runtime.evaluate", @params = new { expression = js, returnByValue = true } });
+    var payload = JsonSerializer.Serialize(new { id = Interlocked.Increment(ref commandId), method = "Runtime.evaluate", @params = new { expression = js, returnByValue = true } });
     await ws.SendAsync(Encoding.UTF8.GetBytes(payload), WebSocketMessageType.Text, true, CancellationToken.None);
-    Console.WriteLine("Speech → Character.AI: " + words);
+    idleState.AwaitingReply = true;
+    Console.WriteLine("Speech → Character.AI: " + words + " (waiting for AI reply before idle)");
 }
 
 void OpenSpeechPage()
 {
-    var browser = FindChrome();
-    if (browser is null) return;
+    var browser = FindChrome(); if (browser is null) return;
     var profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CAIVoiceBridge", "ChromeProfile");
-    Process.Start(new ProcessStartInfo { FileName = browser, Arguments = $"--remote-debugging-port={DebugPort} --user-data-dir=\\\"{profile}\\\" http://127.0.0.1:{LocalPort}/", UseShellExecute = true });
+    Process.Start(new ProcessStartInfo { FileName = browser, Arguments = $"--remote-debugging-port={DebugPort} --user-data-dir=\"{profile}\" http://127.0.0.1:{LocalPort}/", UseShellExecute = true });
 }
-
 void EnsureDebugBrowser()
 {
     try { using var check = new HttpClient { Timeout = TimeSpan.FromSeconds(1) }; check.GetAsync(DebugEndpoint).GetAwaiter().GetResult(); return; } catch { }
-    var browser = FindChrome();
-    if (browser is null) { Console.WriteLine("Chrome not found. Install Google Chrome and restart."); return; }
-    var profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CAIVoiceBridge", "ChromeProfile");
-    Directory.CreateDirectory(profile);
-    Console.WriteLine("Starting dedicated Chrome automatically...");
+    var browser = FindChrome(); if (browser is null) { Console.WriteLine("Chrome not found. Install Google Chrome and restart."); return; }
+    var profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CAIVoiceBridge", "ChromeProfile");Directory.CreateDirectory(profile);
     Process.Start(new ProcessStartInfo { FileName = browser, Arguments = $"--remote-debugging-port={DebugPort} --user-data-dir=\"{profile}\" https://character.ai", UseShellExecute = true });
 }
 string? FindChrome()
 {
-    var paths = new[] {
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Google", "Chrome", "Application", "chrome.exe"),
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Google", "Chrome", "Application", "chrome.exe"),
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Google", "Chrome", "Application", "chrome.exe")
-    };
+    var paths=new[]{Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"Google","Chrome","Application","chrome.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),"Google","Chrome","Application","chrome.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Google","Chrome","Application","chrome.exe")};
     return paths.FirstOrDefault(File.Exists);
 }
+class volatileState { public volatile bool AwaitingReply; public volatile string UiMessage=""; }
 
 const string SpeechPage = """
 <!doctype html><html><head><meta charset="utf-8"><title>CAI Speech Bridge</title>
@@ -124,15 +160,16 @@ const string SpeechPage = """
 <script>
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,enabled=false,speaking=false,idleTimer=null;
 const status=document.querySelector('#status'),heard=document.querySelector('#heard'),btn=document.querySelector('#toggle');
-function idle(){clearTimeout(idleTimer);if(!speaking&&enabled){status.textContent='Idle — listening';idleTimer=setTimeout(()=>{if(!speaking)status.textContent='Idle — listening (timer resumed)'},5000)}}
+function idle(){clearTimeout(idleTimer);if(!speaking&&enabled){status.textContent='Idle — listening';idleTimer=setTimeout(()=>{if(!speaking)status.textContent='Idle — listening'},5000)}}
+async function pollStatus(){try{const x=await fetch('/status.txt');const s=await x.text();if(s)status.textContent=s;}catch{}}
+setInterval(pollStatus,1000);
 function start(){if(!enabled||!SR)return;rec=new SR();rec.continuous=true;rec.interimResults=false;rec.lang='en-US';
 rec.onstart=()=>{status.textContent='Listening…';idle()};
-rec.onspeechstart=()=>{speaking=true;clearTimeout(idleTimer);status.textContent='Speaking — idle timer PAUSED'};
-rec.onspeechend=()=>{speaking=false;status.textContent='Speech ended — returning to idle';idle()};
-rec.onresult=async e=>{let text='';for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)text+=e.results[i][0].transcript;
-text=text.trim();if(!text)return;heard.textContent+=(heard.textContent?'\n':'')+text;status.textContent='Pasting recognized speech…';try{await fetch('/speech',{method:'POST',headers:{'Content-Type':'text/plain'},body:text});status.textContent=speaking?'Speaking — idle timer PAUSED':'Pasted — idle';}catch(err){status.textContent='Local bridge error: '+err;}};
+rec.onspeechstart=()=>{speaking=true;clearTimeout(idleTimer);status.textContent='Speaking — timer paused'};
+rec.onspeechend=()=>{speaking=false;status.textContent='Speech ended — waiting for Character.AI reply';idle()};
+rec.onresult=async e=>{let text='';for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)text+=e.results[i][0].transcript;text=text.trim();if(!text)return;heard.textContent+=(heard.textContent?'\n':'')+text;status.textContent='Pasting…';try{await fetch('/speech',{method:'POST',headers:{'Content-Type':'text/plain'},body:text});status.textContent='Sent to Character.AI — waiting for reply';}catch(err){status.textContent='Bridge error: '+err;}};
 rec.onerror=e=>{status.textContent='Recognition: '+e.error};rec.onend=()=>{if(enabled)setTimeout(start,300)};try{rec.start()}catch{}}
 btn.onclick=()=>{enabled=!enabled;btn.textContent=enabled?'Stop Recognition':'Start Chrome Speech Recognition';if(enabled)start();else{clearTimeout(idleTimer);rec?.stop();status.textContent='Stopped'}};
-if(!SR){btn.disabled=true;status.textContent='Chrome SpeechRecognition is unavailable';}
+if(!SR){btn.disabled=true;status.textContent='Chrome SpeechRecognition unavailable';}
 </script></body></html>
 """;
