@@ -3,6 +3,8 @@ using System.Net;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using NAudio.Wave;
+using Whisper.net;
 
 const string SpeechPage = """
 <!doctype html><html><head><meta charset="utf-8"><title>CAI Local Whisper</title>
@@ -29,6 +31,7 @@ int commandId = 0;
 ClientWebSocket? caiSocket = null;
 JsonElement caiTarget = default;
 volatileState idleState = new();
+var speech = new LocalWhisper();
 
 _ = RunLocalSpeechServer();
 EnsureDebugBrowser();
@@ -117,6 +120,8 @@ async Task RunLocalSpeechServer()
                     ctx.Response.ContentType = "text/html; charset=utf-8";
                     await ctx.Response.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(SpeechPage));
                 }
+                else if(ctx.Request.HttpMethod=="POST"&&ctx.Request.Url?.AbsolutePath=="/mic"){using var rd=new StreamReader(ctx.Request.InputStream);var act=await rd.ReadToEndAsync();if(act=="start")await speech.Start();else await speech.Stop();ctx.Response.StatusCode=204;}
+                else if(ctx.Request.HttpMethod=="GET"&&ctx.Request.Url?.AbsolutePath=="/transcript"){ctx.Response.ContentType="text/plain";await ctx.Response.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(speech.TakeTranscript()));}
                 else if (ctx.Request.HttpMethod == "GET" && ctx.Request.Url?.AbsolutePath == "/status.txt")
                 {
                     ctx.Response.ContentType = "text/plain; charset=utf-8";
@@ -176,3 +181,12 @@ string? FindChrome()
 
 
 class volatileState { public volatile bool AwaitingReply; public volatile string UiMessage=""; }
+
+
+class LocalWhisper {
+WaveInEvent? mic; WhisperProcessor? processor; WhisperFactory? factory; readonly object gate=new(); readonly List<float> audio=new(); readonly StringBuilder output=new(); bool running;
+public async Task Start(){if(running)return;var d=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"CAIVoiceBridge","models");Directory.CreateDirectory(d);var m=Path.Combine(d,"ggml-base.en.bin");if(!File.Exists(m)){using var c=new HttpClient();using var s=await c.GetStreamAsync("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin");using var o=File.Create(m);await s.CopyToAsync(o);}factory=WhisperFactory.FromPath(m);processor=factory.CreateBuilder().WithLanguage("en").Build();mic=new WaveInEvent{WaveFormat=new WaveFormat(16000,16,1),BufferMilliseconds=250};mic.DataAvailable+=(a,e)=>{lock(gate)for(int i=0;i<e.BytesRecorded/2;i++)audio.Add(BitConverter.ToInt16(e.Buffer,i*2)/32768f);};mic.StartRecording();running=true;_ = Loop();Console.WriteLine("Local Whisper listening.");}
+public async Task Stop(){running=false;mic?.StopRecording();mic?.Dispose();mic=null;await Task.Delay(100);}
+async Task Loop(){while(running){await Task.Delay(5000);float[] data;lock(gate){data=audio.ToArray();audio.Clear();}if(data.Length<16000)continue;try{await foreach(var x in processor!.ProcessAsync(data)){var t=x.Text.Trim();if(t.Length>0){lock(gate)output.AppendLine(t);Console.WriteLine("Whisper: "+t);await PasteIntoCai(t);}}}catch(Exception e){Console.WriteLine("Whisper error: "+e.Message);}}}
+public string TakeTranscript(){lock(gate){var s=output.ToString();output.Clear();return s;}}
+}
