@@ -5,8 +5,18 @@
  const $=s=>document.querySelector(s);
  const visible=e=>!!e&&e.getClientRects().length>0&&!e.disabled;
  function voiceButton(){
-  // Exact Character.AI Voice control identified from its inspected outerHTML.
   return [...document.querySelectorAll('button[aria-label="Toggle Character Voice"]')].find(visible)||null;
+ }
+ function voiceIsActive(b){
+  // Character.AI changes button styling when voice is active; inspect current state.
+  return !!b && (b.getAttribute('data-state')==='open' || b.getAttribute('aria-pressed')==='true' || b.classList.contains('bg-outline'));
+ }
+ function ensureVoiceOn(){
+  const b=voiceButton();if(!b){log('Voice control not found');return}
+  const activeNow=voiceIsActive(b);
+  log('Voice button found; active styling='+activeNow+'; classes='+b.className);
+  if(!activeNow){b.click();log('Clicked Voice to activate')}
+  else log('Voice already active; leaving it on');
  }
  function textbox(){
   // Character.AI composer is normally the textbox/contenteditable with a message placeholder.
@@ -59,13 +69,7 @@
  function beginGenerationWait(){speechNow=false;genObserved=false;clearInterval(voiceTimer);voiceTimer=null;const poll=setInterval(()=>{if(!active){clearInterval(poll);return}if(generating()){genObserved=true;return}if(genObserved){clearInterval(poll);log('generation complete; starting 5-sec voice toggles');startVoiceTimer() }},900);setTimeout(()=>{clearInterval(poll);if(active&&!genObserved){log('generation indicator unavailable; starting voice timer');startVoiceTimer()}},90000)}
  function startVoiceTimer(){if(!active||!voiceAutomation)return;clearInterval(voiceTimer);voiceTimer=setInterval(()=>{
   if(!active||speechNow||generating())return;
-  const b=voiceButton();
-  if(!b){log('Voice button not found; visible buttons: '+[...document.querySelectorAll('button,[role="button"]')].filter(visible).map(e=>(e.innerText||e.getAttribute('aria-label')||'').trim()).slice(0,30).join(' | '));return}
-  b.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));
-  b.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
-  b.dispatchEvent(new PointerEvent('pointerup',{bubbles:true}));
-  b.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));
-  b.click();voiceOn=!voiceOn;log('Voice button clicked; toggle '+(voiceOn?'ON':'OFF'));
+  ensureVoiceOn();
 },5000)}
  function startRec(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){log('Chrome SpeechRecognition unavailable');return}
