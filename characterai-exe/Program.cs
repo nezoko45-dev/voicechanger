@@ -23,6 +23,8 @@ namespace CharacterAIDictation
         private readonly Button start = new Button { Text = "START CONTINUOUS LISTENING", Dock = DockStyle.Top, Height = 45 };
         private readonly Button stop = new Button { Text = "STOP", Dock = DockStyle.Top, Height = 35, Enabled = false };
         private readonly CheckBox auto = new CheckBox { Text = "Send transcript to Character.AI automatically", Dock = DockStyle.Top, Height = 36, Checked = true };
+        private readonly CheckBox keepVoice = new CheckBox { Text = "Keep Voice active (toggle every 5 seconds)", Dock = DockStyle.Top, Height = 36, Checked = false };
+        private readonly System.Windows.Forms.Timer voiceTimer = new System.Windows.Forms.Timer { Interval = 5000 };
         private readonly Label status = new Label { Text = "Ready. Click Start, then allow microphone access in Chrome.", Dock = DockStyle.Fill, Padding = new Padding(12) };
         private LocalBridge bridge;
         private readonly System.Windows.Forms.Timer readTimer = new System.Windows.Forms.Timer { Interval = 1000 };
@@ -33,10 +35,12 @@ namespace CharacterAIDictation
         {
             Text = "Character.AI Dictation — Chrome Speech"; Width = 560; Height = 250;
             FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false;
-            Controls.Add(status); Controls.Add(auto); Controls.Add(stop); Controls.Add(start);
+            Controls.Add(status); Controls.Add(keepVoice); Controls.Add(auto); Controls.Add(stop); Controls.Add(start);
             start.Click += (s,e) => StartListening(); stop.Click += (s,e) => StopListening();
             readTimer.Tick += (s,e) => CheckResponseAndReadAloud();
-            FormClosing += (s,e) => { readTimer.Stop(); try { bridge?.Dispose(); } catch {} };
+            voiceTimer.Tick += (s,e) => ToggleVoiceButton();
+            keepVoice.CheckedChanged += (s,e) => { if(keepVoice.Checked && !waitingForResponse) { voiceTimer.Start(); status.Text = "Voice keep-alive enabled (5-second cycle)."; } else voiceTimer.Stop(); };
+            FormClosing += (s,e) => { readTimer.Stop(); voiceTimer.Stop(); try { bridge?.Dispose(); } catch {} };
             try {
                 bridge = new LocalBridge();
                 bridge.Transcript += phrase => { if (!IsDisposed) BeginInvoke((Action)(() => { status.Text = "Chrome recognized: " + phrase; if(auto.Checked) DeliverToCharacterAI(phrase); })); };
@@ -61,6 +65,7 @@ namespace CharacterAIDictation
         }
         private void DeliverToCharacterAI(string phrase)
         {
+            voiceTimer.Stop(); waitingForResponse=true; generationSeen=false; responseWaitTicks=0; readTimer.Start();
             // Send every finalized Chrome SpeechRecognition result immediately.
             // Character.AI generation detection is unreliable across UI versions;
             // gating on its Stop button caused all later phrases to remain queued.
@@ -96,8 +101,7 @@ namespace CharacterAIDictation
                     Thread.Sleep(80);
                     keybd_event(0x0D,0,0,UIntPtr.Zero);keybd_event(0x0D,0,2,UIntPtr.Zero);
                 }
-                waitingForResponse=false;generationSeen=false;responseWaitTicks=0;readTimer.Stop();
-                status.Text="Sent transcript to Character.AI: "+phrase;
+                status.Text="Sent transcript to Character.AI: "+phrase+" — waiting for response…";
             } catch(Exception ex){status.Text="Textbox send failed: "+ex.Message;}
         }
 
@@ -151,13 +155,45 @@ namespace CharacterAIDictation
             if(!waitingForResponse)return;
             responseWaitTicks++;
             try {
-                AutomationElement chrome=FindChrome();
+                AutomationElement chrome=FindCharacterAIChrome();
                 AutomationElement stopButton=chrome==null?null:FindNamedButton(chrome,"Stop generating");
                 if(stopButton!=null){generationSeen=true;responseWaitTicks=0;status.Text="Character.AI is generating…";return;}
-                // Do not mistake the initial delay before generation for a completed response.
-                if(generationSeen && responseWaitTicks>=3){waitingForResponse=false;readTimer.Stop();status.Text="Character.AI response finished.";SendNextQueued();return;}
-                if(responseWaitTicks>90){waitingForResponse=false;readTimer.Stop();status.Text="Generation detection timed out.";SendNextQueued(); }
-            } catch { if(responseWaitTicks>90){waitingForResponse=false;readTimer.Stop();status.Text="Generation detection timed out.";SendNextQueued();}}
+                if(generationSeen && responseWaitTicks>=3){
+                    waitingForResponse=false;readTimer.Stop();
+                    status.Text="Response finished. Voice keep-alive resumed.";
+                    if(keepVoice.Checked)voiceTimer.Start();
+                    return;
+                }
+                if(responseWaitTicks>90){
+                    waitingForResponse=false;readTimer.Stop();status.Text="Response wait timed out; Voice keep-alive resumed.";
+                    if(keepVoice.Checked)voiceTimer.Start();
+                }
+            } catch { if(responseWaitTicks>90){waitingForResponse=false;readTimer.Stop();if(keepVoice.Checked)voiceTimer.Start();} }
+        }
+        private void ToggleVoiceButton()
+        {
+            if(!keepVoice.Checked || waitingForResponse)return;
+            try {
+                AutomationElement chrome=FindCharacterAIChrome();
+                if(chrome==null){status.Text="Voice keep-alive: Character.AI Chrome window not found.";return;}
+                AutomationElement voice=null;
+                var all=chrome.FindAll(TreeScope.Descendants,Condition.TrueCondition);
+                for(int i=all.Count-1;i>=0;i--){
+                    try {
+                        string n=(all[i].Current.Name??"").Trim();
+                        if(all[i].Current.ControlType==ControlType.Button &&
+                           (n.Equals("Voice",StringComparison.OrdinalIgnoreCase) ||
+                            n.Equals("Voice chat",StringComparison.OrdinalIgnoreCase) ||
+                            n.Equals("Talk",StringComparison.OrdinalIgnoreCase))){voice=all[i];break;}
+                    }catch{}
+                }
+                if(voice==null){status.Text="Voice keep-alive: Voice button not exposed by Character.AI UI.";return;}
+                object pattern;
+                if(voice.TryGetCurrentPattern(InvokePattern.Pattern,out pattern)){
+                    ((InvokePattern)pattern).Invoke();
+                    status.Text="Character.AI Voice button toggled (5-second keep-alive).";
+                } else status.Text="Voice button found, but UI Automation cannot invoke it.";
+            }catch(Exception ex){status.Text="Voice keep-alive error: "+ex.Message;}
         }
         private void SendNextQueued(){if(pendingPhrases.Count>0){string next=pendingPhrases.Dequeue();DeliverToCharacterAI(next);}}
         [StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left,Top,Right,Bottom; }
@@ -218,6 +254,19 @@ namespace CharacterAIDictation
                 } catch {}
             }
             return fallback;
+        }
+        private static AutomationElement FindCharacterAIChrome()
+        {
+            foreach(Process p in Process.GetProcessesByName("chrome")){
+                try{
+                    if(p.MainWindowHandle==IntPtr.Zero)continue;
+                    string title=p.MainWindowTitle??"";
+                    if(title.IndexOf("Character.AI",StringComparison.OrdinalIgnoreCase)>=0 ||
+                       title.IndexOf("character.ai",StringComparison.OrdinalIgnoreCase)>=0)
+                        return AutomationElement.FromHandle(p.MainWindowHandle);
+                }catch{}
+            }
+            return FindChrome();
         }
         private static AutomationElement FindChrome()
         {
