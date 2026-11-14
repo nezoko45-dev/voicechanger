@@ -48,7 +48,7 @@ void EnsureDebugBrowser()
     var profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CAIVoiceBridge", "ChromeProfile");
     Directory.CreateDirectory(profile);
     Console.WriteLine("Starting dedicated Chrome automatically...");
-    Process.Start(new ProcessStartInfo { FileName = browser, Arguments = $"--remote-debugging-port={DebugPort} --user-data-dir=\\"{profile}\\" https://character.ai", UseShellExecute = true });
+    Process.Start(new ProcessStartInfo { FileName = browser, Arguments = $"--remote-debugging-port={DebugPort} --user-data-dir=\"{profile}\" https://character.ai", UseShellExecute = true });
 }
 string? FindChrome()
 {
