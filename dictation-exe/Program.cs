@@ -58,15 +58,22 @@ namespace ChatGPTDictation
         private void SendToChatGPT(string phrase)
         {
             try {
-                AutomationElement chrome = FindChrome();
-                if(chrome == null) { status.Text += "\r\nChrome window not found—open ChatGPT."; return; }
-                AutomationElement composer = FindComposer(chrome);
-                if(composer == null) { status.Text += "\r\nComposer not found. Click ChatGPT's message box once, then speak."; return; }
-                composer.SetFocus();
+                Process chromeProcess = FindChromeProcess();
+                if(chromeProcess == null) { status.Text += "\r\nChrome window not found—open ChatGPT."; return; }
+                IntPtr hwnd = chromeProcess.MainWindowHandle;
+                RECT rect; if(!GetWindowRect(hwnd,out rect)) { status.Text += "\r\nCould not get Chrome window bounds."; return; }
+
+                // ChatGPT's composer is at the bottom-center of the browser viewport.
+                // UIA focus on Chrome's web textarea is unreliable, so click it directly.
+                int x = rect.Left + (rect.Right-rect.Left)/2;
+                int y = rect.Bottom - 115;
+                SetCursorPos(x,y); mouse_event(MOUSEEVENTF_LEFTDOWN,0,0,0,UIntPtr.Zero);
+                mouse_event(MOUSEEVENTF_LEFTUP,0,0,0,UIntPtr.Zero);
+                Thread.Sleep(250);
                 Clipboard.SetText(phrase);
                 SendKey(VK_CONTROL, true); SendKey(VK_V, true); SendKey(VK_V, false); SendKey(VK_CONTROL, false);
-                Thread.Sleep(120); SendKey(VK_RETURN, true); SendKey(VK_RETURN, false);
-                status.Text = "Sent to ChatGPT: " + phrase + "\r\nRead Aloud automation scheduled…";
+                Thread.Sleep(180); SendKey(VK_RETURN, true); SendKey(VK_RETURN, false);
+                status.Text = "Pasted + sent to ChatGPT: " + phrase + "\r\nRead Aloud automation scheduled…";
                 readTimer.Stop(); readTimer.Start();
             } catch(Exception ex) { status.Text="UI automation error: "+ex.Message; }
         }
@@ -80,12 +87,22 @@ namespace ChatGPTDictation
                 } else status.Text += "\r\nRead Aloud button not found yet (try again after response finishes).";
             } catch(Exception ex) { status.Text += "\r\nRead Aloud: "+ex.Message; }
         }
-        private static AutomationElement FindChrome()
+        private static Process FindChromeProcess()
         {
-            foreach(Process p in System.Diagnostics.Process.GetProcessesByName("chrome")) {
-                try { if(p.MainWindowHandle!=IntPtr.Zero) { var el=AutomationElement.FromHandle(p.MainWindowHandle); if(el!=null)return el; } } catch {}
+            foreach(Process p in Process.GetProcessesByName("chrome")) {
+                try { if(p.MainWindowHandle!=IntPtr.Zero)return p; } catch {}
             } return null;
         }
+        private static AutomationElement FindChrome()
+        {
+            Process p=FindChromeProcess(); if(p==null)return null;
+            try{return AutomationElement.FromHandle(p.MainWindowHandle);}catch{return null;}
+        }
+        [StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left,Top,Right,Bottom; }
+        [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hwnd,out RECT rect);
+        [DllImport("user32.dll")] private static extern bool SetCursorPos(int x,int y);
+        [DllImport("user32.dll")] private static extern void mouse_event(uint flags,uint dx,uint dy,uint data,UIntPtr extra);
+        private const uint MOUSEEVENTF_LEFTDOWN=0x0002,MOUSEEVENTF_LEFTUP=0x0004;
         private static AutomationElement FindComposer(AutomationElement root)
         {
             var cond=new OrCondition(new PropertyCondition(AutomationElement.NameProperty,"Message ChatGPT"),new PropertyCondition(AutomationElement.NameProperty,"Ask anything"));
