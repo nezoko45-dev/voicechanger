@@ -14,7 +14,7 @@ const string SpeechPage = """
 let enabled=false;const status=document.querySelector('#status'),heard=document.querySelector('#heard'),btn=document.querySelector('#toggle');
 function say(s){status.textContent=s}
 async function poll(){try{let r=await fetch('/status.txt');let s=await r.text();if(s)say(s)}catch{}}
-setInterval(poll,1000);
+setInterval(async()=>{await poll();try{let r=await fetch('/micstatus');let x=await r.text();if(x)say(x)}catch{}},1000);
 btn.onclick=async()=>{enabled=!enabled;btn.textContent=enabled?'Stop Recognition':'Start Local Recognition';try{await fetch('/mic',{method:'POST',body:enabled?'start':'stop'});say(enabled?'LOCAL WHISPER LISTENING — speak normally':'Recognition stopped')}catch(e){say('Local recognizer error: '+e)}};
 async function transcript(){try{let r=await fetch('/transcript');let t=await r.text();if(t){heard.value+=(heard.value?'\n':'')+t;say('Whisper recognized: '+t)}}catch{}}
 setInterval(transcript,500);
@@ -121,7 +121,7 @@ async Task RunLocalSpeechServer()
                     await ctx.Response.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(SpeechPage));
                 }
                 else if(ctx.Request.HttpMethod=="POST"&&ctx.Request.Url?.AbsolutePath=="/mic"){using var rd=new StreamReader(ctx.Request.InputStream);var act=await rd.ReadToEndAsync();if(act=="start")await speech.Start();else await speech.Stop();ctx.Response.StatusCode=204;}
-                else if(ctx.Request.HttpMethod=="GET"&&ctx.Request.Url?.AbsolutePath=="/transcript"){ctx.Response.ContentType="text/plain";await ctx.Response.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(speech.TakeTranscript()));}
+                else if(ctx.Request.HttpMethod=="GET"&&ctx.Request.Url?.AbsolutePath=="/transcript"){ctx.Response.ContentType="text/plain";await ctx.Response.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(speech.TakeTranscript()));}\n                else if(ctx.Request.HttpMethod=="GET"&&ctx.Request.Url?.AbsolutePath=="/micstatus"){ctx.Response.ContentType="text/plain";await ctx.Response.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(speech.Status));}
                 else if (ctx.Request.HttpMethod == "GET" && ctx.Request.Url?.AbsolutePath == "/status.txt")
                 {
                     ctx.Response.ContentType = "text/plain; charset=utf-8";
@@ -186,9 +186,9 @@ class volatileState { public volatile bool AwaitingReply; public volatile string
 class LocalWhisper {
 readonly Func<string,Task> sendToCai;
 public LocalWhisper(Func<string,Task> sendToCai){this.sendToCai=sendToCai;}
-WaveInEvent? mic; WhisperProcessor? processor; WhisperFactory? factory; readonly object gate=new(); readonly List<float> audio=new(); readonly StringBuilder output=new(); bool running;
-public async Task Start(){if(running)return;var d=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"CAIVoiceBridge","models");Directory.CreateDirectory(d);var m=Path.Combine(d,"ggml-base.en.bin");if(!File.Exists(m)){using var c=new HttpClient();using var s=await c.GetStreamAsync("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin");using var o=File.Create(m);await s.CopyToAsync(o);}factory=WhisperFactory.FromPath(m);processor=factory.CreateBuilder().WithLanguage("en").Build();mic=new WaveInEvent{WaveFormat=new WaveFormat(16000,16,1),BufferMilliseconds=250};mic.DataAvailable+=(a,e)=>{lock(gate)for(int i=0;i<e.BytesRecorded/2;i++)audio.Add(BitConverter.ToInt16(e.Buffer,i*2)/32768f);};mic.StartRecording();running=true;_ = Loop();Console.WriteLine("Local Whisper listening.");}
-public async Task Stop(){running=false;mic?.StopRecording();mic?.Dispose();mic=null;await Task.Delay(100);}
-async Task Loop(){while(running){await Task.Delay(5000);float[] data;lock(gate){data=audio.ToArray();audio.Clear();}if(data.Length<16000)continue;try{await foreach(var x in processor!.ProcessAsync(data)){var t=x.Text.Trim();if(t.Length>0){lock(gate)output.AppendLine(t);Console.WriteLine("Whisper: "+t);await sendToCai(t);}}}catch(Exception e){Console.WriteLine("Whisper error: "+e.Message);}}}
+WaveInEvent? mic; WhisperProcessor? processor; WhisperFactory? factory; readonly object gate=new(); readonly List<float> audio=new(); readonly StringBuilder output=new(); bool running; public string Status {get;private set;}="Whisper model not loaded yet.";
+public async Task Start(){if(running)return;Status="Downloading/loading local Whisper model (first run can take a minute)…";var d=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"CAIVoiceBridge","models");Directory.CreateDirectory(d);var m=Path.Combine(d,"ggml-base.en.bin");if(!File.Exists(m)){using var c=new HttpClient();using var s=await c.GetStreamAsync("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin");using var o=File.Create(m);await s.CopyToAsync(o);}factory=WhisperFactory.FromPath(m);processor=factory.CreateBuilder().WithLanguage("en").Build();mic=new WaveInEvent{WaveFormat=new WaveFormat(16000,16,1),BufferMilliseconds=250};mic.DataAvailable+=(a,e)=>{lock(gate)for(int i=0;i<e.BytesRecorded/2;i++)audio.Add(BitConverter.ToInt16(e.Buffer,i*2)/32768f);};mic.StartRecording();running=true;Status="Mic is active. Speak; transcription runs every 4 seconds.";_ = Loop();Console.WriteLine("Local Whisper listening.");}
+public async Task Stop(){running=false;mic?.StopRecording();mic?.Dispose();mic=null;Status="Recognition stopped.";await Task.Delay(100);}
+async Task Loop(){while(running){await Task.Delay(4000);float[] data;lock(gate){data=audio.ToArray();audio.Clear();}if(data.Length<16000){Status="Mic active; waiting for speech/audio…";continue;}try{Status=$"Transcribing {data.Length/16000}s of mic audio locally…";bool got=false;await foreach(var x in processor!.ProcessAsync(data)){var t=x.Text.Trim();if(t.Length>0){got=true;lock(gate)output.AppendLine(t);Console.WriteLine("Whisper: "+t);Status="Recognized: "+t;await sendToCai(t);}}if(!got)Status="Audio captured, but Whisper returned no words. Keep speaking for a few seconds.";}catch(Exception e){Status="WHISPER ERROR: "+e.Message;Console.WriteLine("Whisper error: "+e);}}}
 public string TakeTranscript(){lock(gate){var s=output.ToString();output.Clear();return s;}}
 }
