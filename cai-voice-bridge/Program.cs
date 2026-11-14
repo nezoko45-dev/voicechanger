@@ -13,8 +13,7 @@ const string Page = """
 const btn=document.querySelector('#toggle'),status=document.querySelector('#status'),heard=document.querySelector('#heard');
 let rec=null,active=false,restarting=false;
 function say(s){status.textContent=s}
-function add(s){heard.value+=(heard.value?'
-':'')+s;heard.scrollTop=heard.scrollHeight}
+function add(s){heard.value+=(heard.value?String.fromCharCode(10):'')+s;heard.scrollTop=heard.scrollHeight}
 function post(path,data=''){return fetch(path,{method:'POST',body:data})}
 function start(){
  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
