@@ -25,7 +25,7 @@ function start(){
  rec.onend=()=>{if(active){say('Recognition paused; restarting Chrome speech…');setTimeout(()=>{if(active)try{rec.start()}catch{}},700)}else say('Recognition stopped.')};
  active=true;btn.textContent='Stop Recognition';try{rec.start()}catch(e){say('Start failed: '+e.message);active=false;btn.textContent='Start Chrome Recognition'}
 }
-btn.onclick=()=>{if(active){active=false;try{rec.stop()}catch{}btn.textContent='Start Chrome Recognition'}else start()};
+btn.onclick=()=>{if(active){active=false;try{rec.stop()}catch{}btn.textContent='Start Chrome Recognition'}else start()};\n// Automatically begin listening when the localhost page opens. The button remains\n// available if Chrome requires a user gesture or microphone permission.\nwindow.addEventListener('load',()=>{setTimeout(()=>{if(!active)start()},500)});
 </script></html>
 """;
 Console.Title="CAI Chrome Speech Bridge";
