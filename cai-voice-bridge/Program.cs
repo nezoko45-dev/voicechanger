@@ -34,6 +34,7 @@ using var http=new HttpClient{Timeout=TimeSpan.FromSeconds(4)};
 var state=new BridgeState();ClientWebSocket? monitor=null;JsonElement target=default;int id=0;
 _ = Server();
 EnsureBrowser();
+OpenSpeechPage();
 while(true){
  try{
   using var res=await http.GetAsync("http://127.0.0.1:9222/json");res.EnsureSuccessStatusCode();
@@ -79,6 +80,7 @@ async Task Watch(ClientWebSocket ws){
   await Task.Delay(900);
  }catch(Exception e){Console.WriteLine("Reply monitor: "+e.Message);break;}}
 }
+void OpenSpeechPage(){var chrome=FindChrome();if(chrome==null)return;var profile=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"CAIVoiceBridge","ChromeProfile");Directory.CreateDirectory(profile);Process.Start(new ProcessStartInfo{FileName=chrome,Arguments=$"--remote-debugging-port=9222 --user-data-dir=\\"{profile}\\\" http://127.0.0.1:8765/",UseShellExecute=true});}
 void EnsureBrowser(){try{using var c=new HttpClient{Timeout=TimeSpan.FromSeconds(1)};c.GetAsync("http://127.0.0.1:9222/json").GetAwaiter().GetResult();return;}catch{}
  var chrome=FindChrome();if(chrome==null){Console.WriteLine("Google Chrome not found.");return;}
  var profile=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"CAIVoiceBridge","ChromeProfile");Directory.CreateDirectory(profile);
