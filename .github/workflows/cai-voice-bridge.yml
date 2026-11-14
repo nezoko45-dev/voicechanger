@@ -17,8 +17,16 @@ jobs:
         run: dotnet restore cai-voice-bridge/CaiVoiceBridge.csproj
       - name: Publish self-contained EXE
         run: dotnet publish cai-voice-bridge/CaiVoiceBridge.csproj --configuration Release --runtime win-x64 --self-contained true --output cai-voice-bridge/out /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true
+      - name: Package EXE and extension
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force cai-voice-bridge/package/extension | Out-Null
+          Copy-Item cai-voice-bridge/out/CaiVoiceBridge.exe cai-voice-bridge/package/
+          Copy-Item cai-voice-bridge/Install-NativeHost.ps1 cai-voice-bridge/package/
+          Copy-Item cai-voice-bridge/extension/* cai-voice-bridge/package/extension/
+          Compress-Archive -Path cai-voice-bridge/package/* -DestinationPath cai-voice-bridge/CaiVoiceBridge-NativeMessaging.zip -Force
       - uses: actions/upload-artifact@v4
         with:
-          name: CaiVoiceBridge-win-x64
-          path: cai-voice-bridge/out/CaiVoiceBridge.exe
+          name: CaiVoiceBridge-NativeMessaging
+          path: cai-voice-bridge/CaiVoiceBridge-NativeMessaging.zip
           if-no-files-found: error
