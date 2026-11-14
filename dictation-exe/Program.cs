@@ -65,7 +65,7 @@ namespace ChatGPTDictation
                 SetCursorPos(r.Left+(r.Right-r.Left)/2,r.Bottom-115);
                 mouse_event(0x0002,0,0,0,UIntPtr.Zero); mouse_event(0x0004,0,0,0,UIntPtr.Zero);
                 Thread.Sleep(120);
-                Clipboard.SetText(phrase);
+                Clipboard.SetText("repeat " + phrase.Trim());
                 keybd_event(0x11,0,0,UIntPtr.Zero);keybd_event(0x56,0,0,UIntPtr.Zero);keybd_event(0x56,0,2,UIntPtr.Zero);keybd_event(0x11,0,2,UIntPtr.Zero);
                 Thread.Sleep(100);keybd_event(0x0D,0,0,UIntPtr.Zero);keybd_event(0x0D,0,2,UIntPtr.Zero);
                 status.Text="Sent to ChatGPT: "+phrase+"\r\nWaiting for response to finish...";
