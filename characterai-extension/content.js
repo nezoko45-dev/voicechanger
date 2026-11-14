@@ -4,7 +4,13 @@
  const log=(...a)=>console.debug('[CAI Voice Dictation]',...a);
  const $=s=>document.querySelector(s);
  const visible=e=>!!e&&e.getClientRects().length>0&&!e.disabled;
- function voiceButton(){return [...document.querySelectorAll('button,[role="button"]')].find(e=>visible(e)&&((e.getAttribute('aria-label')||'').trim().toLowerCase()==='voice'||(e.innerText||e.textContent||'').trim().toLowerCase()==='voice'||(e.getAttribute('title')||'').trim().toLowerCase()==='voice'))}
+ function voiceButton(){
+  return [...document.querySelectorAll('button,[role="button"]')].find(e=>{
+    if(!visible(e))return false;
+    const label=((e.getAttribute('aria-label')||'')+' '+(e.getAttribute('title')||'')+' '+(e.innerText||e.textContent||'')).trim().toLowerCase();
+    return /(^|\\s)voice(\\s|$)/.test(label)||label.includes('voice mode');
+  })
+}
  function textbox(){
   // Character.AI composer is normally the textbox/contenteditable with a message placeholder.
   const all=[...document.querySelectorAll('textarea,[contenteditable="true"],[role="textbox"]')].filter(visible);
@@ -66,7 +72,7 @@
    rec.start();
   }catch(e){log('start recognition: '+e.message);restartTimer=setTimeout(startRec,1200)}
  }
- function set(v){active=!!v;chrome.storage.local.set({enabled:active});if(active){startRec();log('enabled')}else{try{rec&&rec.stop()}catch{}clearTimeout(restartTimer);clearInterval(voiceTimer);voiceTimer=null;log('disabled')}}
+ function set(v){active=!!v;chrome.storage.local.set({enabled:active});if(active){startRec();startVoiceTimer();log('enabled; idle Voice toggling started')}else{try{rec&&rec.stop()}catch{}clearTimeout(restartTimer);clearInterval(voiceTimer);voiceTimer=null;log('disabled')}}
  chrome.runtime.onMessage.addListener(m=>{if(m.type==='SET')set(m.enabled)});
  chrome.storage.local.get({enabled:false},x=>{if(x.enabled)set(true)});
 })();
