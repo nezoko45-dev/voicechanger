@@ -26,6 +26,7 @@ namespace CharacterAIDictation
         private LocalBridge bridge;
         private readonly System.Windows.Forms.Timer readTimer = new System.Windows.Forms.Timer { Interval = 1000 };
         private bool waitingForResponse; private bool generationSeen; private int responseWaitTicks;
+        private readonly Queue<string> pendingPhrases=new Queue<string>();
 
         public MainForm()
         {
@@ -59,7 +60,7 @@ namespace CharacterAIDictation
         }
         private void DeliverToCharacterAI(string phrase)
         {
-            if(waitingForResponse){status.Text="Queued while Character.AI responds: "+phrase;return;}
+            if(waitingForResponse){pendingPhrases.Enqueue(phrase);status.Text="Queued while Character.AI responds ("+pendingPhrases.Count+"): "+phrase;return;}
             try {
                 AutomationElement chrome=FindChrome();
                 if(chrome==null){status.Text="Chrome window not found.";return;}
@@ -151,10 +152,11 @@ namespace CharacterAIDictation
                 AutomationElement stopButton=chrome==null?null:FindNamedButton(chrome,"Stop generating");
                 if(stopButton!=null){generationSeen=true;responseWaitTicks=0;status.Text="Character.AI is generating…";return;}
                 // Do not mistake the initial delay before generation for a completed response.
-                if(generationSeen && responseWaitTicks>=3){waitingForResponse=false;readTimer.Stop();status.Text="Character.AI response finished.";return;}
-                if(responseWaitTicks>90){waitingForResponse=false;readTimer.Stop();status.Text="Generation detection timed out."; }
-            } catch { if(responseWaitTicks>90){waitingForResponse=false;readTimer.Stop();status.Text="Generation detection timed out.";}}
+                if(generationSeen && responseWaitTicks>=3){waitingForResponse=false;readTimer.Stop();status.Text="Character.AI response finished.";SendNextQueued();return;}
+                if(responseWaitTicks>90){waitingForResponse=false;readTimer.Stop();status.Text="Generation detection timed out.";SendNextQueued(); }
+            } catch { if(responseWaitTicks>90){waitingForResponse=false;readTimer.Stop();status.Text="Generation detection timed out.";SendNextQueued();}}
         }
+        private void SendNextQueued(){if(pendingPhrases.Count>0){string next=pendingPhrases.Dequeue();DeliverToCharacterAI(next);}}
         [StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left,Top,Right,Bottom; }
         [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd,out RECT rect);
         [DllImport("user32.dll")] private static extern bool SetCursorPos(int X,int Y);
