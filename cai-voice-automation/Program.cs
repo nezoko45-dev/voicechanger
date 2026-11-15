@@ -49,8 +49,14 @@ rec.onend=()=>{if(active)setTimeout(()=>{try{rec.start()}catch{}},400)};try{rec.
    for(int i=0;i<30&&!ct.IsCancellationRequested;i++){try{using var p=await http.GetAsync("http://127.0.0.1:9222/json/version",ct);if(p.IsSuccessStatusCode){debugReady=true;break;}}catch{}await Task.Delay(500,ct);}
   }else L("Found existing Chrome DevTools endpoint :9222.");
   if(!debugReady)throw new Exception("Chrome Debug did not start on port 9222.");
-  Process.Start(new ProcessStartInfo("http://127.0.0.1:8765/"){UseShellExecute=true});
-  status.Text="RUNNING • Chrome DEBUG :9222 • speech page :8765";L("Speech bridge page opened.");
+  // Explicitly create both pages inside THIS debug Chrome profile.
+  async Task OpenDebugTab(string url){try{using var resp=await http.PutAsync("http://127.0.0.1:9222/json/new?"+url,null,ct);L("Chrome Debug tab "+url+" => "+(int)resp.StatusCode);}catch(Exception ex){L("Could not create debug tab "+url+": "+ex.Message);}}
+  var initialTabs=JsonDocument.Parse(await http.GetStringAsync("http://127.0.0.1:9222/json"));
+  bool hasCai=initialTabs.RootElement.EnumerateArray().Any(x=>((x.TryGetProperty("url",out var u)?u.GetString():"")??"").Contains("character.ai",StringComparison.OrdinalIgnoreCase));
+  bool hasBridge=initialTabs.RootElement.EnumerateArray().Any(x=>((x.TryGetProperty("url",out var u)?u.GetString():"")??"").Contains("127.0.0.1:8765",StringComparison.OrdinalIgnoreCase));
+  if(!hasCai)await OpenDebugTab("https://character.ai/");
+  if(!hasBridge)await OpenDebugTab("http://127.0.0.1:8765/");
+  status.Text="RUNNING • Chrome DEBUG :9222 • CAI + Bridge tabs";L("Character.AI and Speech Bridge tabs created in dedicated Chrome Debug.");
 
   async Task<bool> Connect(){
    try{var tabs=JsonDocument.Parse(await http.GetStringAsync("http://127.0.0.1:9222/json"));JsonElement tab=default;
