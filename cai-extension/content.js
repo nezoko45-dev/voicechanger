@@ -9,21 +9,22 @@
  // Locate the voice playback control robustly (CAI's SVG often has no useful aria label).
  // Find the blue Read Aloud play triangle attached to the newest assistant reply.
  function replyReadAloudButton(){
-  const replyNodes=[...document.querySelectorAll('[data-message-author-role="assistant"],[data-testid*="message"],.message')];
-  const reply=replyNodes.filter(n=>n.querySelector("button svg")).at(-1);
-  const scope=reply||document;
-  const buttons=[...scope.querySelectorAll("button")];
-  return buttons.find(b=>{
-   if(b.disabled)return false;
+  // CAI's reply playback control is the small blue triangular SVG shown below
+  // assistant messages. Prefer explicit playback labels, then the blue triangle.
+  const buttons=[...document.querySelectorAll("button,[role=button]")].filter(b=>!b.disabled);
+  const labeled=buttons.filter(b=>/read aloud|listen|play audio|play response/i.test((b.getAttribute("aria-label")||"")+" "+(b.title||"")+" "+(b.getAttribute("data-testid")||"")));
+  if(labeled.length)return labeled.at(-1);
+  const blueTriangle=buttons.filter(b=>{
    const svg=b.querySelector("svg");if(!svg)return false;
-   const label=((b.getAttribute("aria-label")||"")+" "+(b.title||"")+" "+(b.getAttribute("data-testid")||"")).toLowerCase();
-   if(/read aloud|listen|play audio|play response/.test(label))return true;
-   if(/pause|stop|wave|voice|send/.test(label))return false;
-   return [...svg.querySelectorAll("path,polygon")].some(p=>{
-    const d=(p.getAttribute("d")||"").trim();
-    return /z$/i.test(d)&&((d.match(/[ML]/gi)||[]).length<=5);
+   const paths=[...svg.querySelectorAll("path,polygon")];
+   return paths.some(p=>{
+    const d=(p.getAttribute("d")||"").trim(),fill=(p.getAttribute("fill")||getComputedStyle(p).fill||"").toLowerCase(),style=(p.getAttribute("style")||"").toLowerCase();
+    const isBlue=/(#4f|#5[0-9a-f]|#5865f2|rgb\\(\s*(7[0-9]|8[0-9]|9[0-9]|[12][0-9]{2})\s*,\s*(7[0-9]|8[0-9]|9[0-9]|[12][0-9]{2})\s*,\s*(1[0-9]{2}|2[0-5][0-9])\s*\))/i.test(fill+" "+style)||fill.includes("blue");
+    const triangle= p.tagName.toLowerCase()==="polygon" || (/z$/i.test(d)&&((d.match(/[ML]/gi)||[]).length<=4));
+    return isBlue&&triangle;
    });
   });
+  return blueTriangle.at(-1)||null;
  }
  // Track both media elements and CAI's playback button state/DOM changes.
  let audioMonitorObserver=null, audioStateSignature="";
