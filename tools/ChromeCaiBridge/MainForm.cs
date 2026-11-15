@@ -72,7 +72,7 @@ public sealed class MainForm : Form {
  static void Reply(HttpListenerContext c,string text,string type){var b=Encoding.UTF8.GetBytes(text);c.Response.ContentType=type;c.Response.OutputStream.Write(b);c.Response.Close();}
  void SendToCai(string phrase){
   // Avoid a full desktop UI Automation tree scan on every transcript; CDP handles the composer.
-  Log("Sending recognized phrase twice as two separate Character.AI messages.");
+  Log("Sending recognized phrase once to Character.AI.");
   _=EnsureVoiceAndSendAsync(phrase);
  }
  bool HasButton(string name){try{return AutomationElement.RootElement.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.NameProperty,name))!=null;}catch{return false;}}
@@ -89,19 +89,8 @@ public sealed class MainForm : Form {
     try{BeginInvoke(new Action(()=>status.Text=audible?"IDLE — c.ai audio playing; Voice stays ON":"IDLE — generation finished; Voice stays ON"));}catch{}
     Log("Generation finished; Voice remains ON.");
    }
-   // Smart recovery: only after generation is complete and playback has been silent for 10 seconds.
-   // Make one OFF -> ON attempt per reply; never touch Voice while c.ai is generating or audio is active.
-   bool stalledAfterGeneration=waitingReply&&replyGenerationFinished&&!audible&&generationFinishedAt!=DateTime.MinValue&&DateTime.UtcNow-generationFinishedAt>=TimeSpan.FromSeconds(10);
-   if(stalledAfterGeneration&&!recoveryAttempted){
-    recoveryAttempted=true;
-    Log("SMART RECOVERY: generation ended but no voice audio after 10s; one Voice restart attempt.");
-    await VoiceToggleAsync(false);
-    await Task.Delay(700);
-    await VoiceToggleAsync(true);
-    lastChromeAudio=DateTime.UtcNow;
-    try{BeginInvoke(new Action(()=>status.Text="Smart recovery attempted once — waiting for c.ai audio"));}catch{}
-   }
-   if(audioSeen&&!audible&&!caiPlaying&&waitingReply&&!replyGenerationFinished)Log("c.ai audio quiet during generation; leaving Voice untouched.");
+   // Voice toggles ONLY on transcript send (ensure-on); mic silence and audio silence never toggle it.
+   if(audioSeen&&!audible&&!caiPlaying&&waitingReply&&!replyGenerationFinished)Log("c.ai audio quiet during generation; Voice remains ON.");
   }catch(Exception ex){Log("Audio recovery: "+ex.Message);}
   finally{Interlocked.Exchange(ref voiceBusy,0);}
  }
