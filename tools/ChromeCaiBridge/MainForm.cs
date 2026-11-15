@@ -15,9 +15,11 @@ using System.Windows.Automation;
 namespace ChromeCaiBridge;
 public sealed class MainForm : Form {
  [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hWnd,int nCmdShow);
+ [DllImport("kernel32.dll")] static extern bool SetPriorityClass(IntPtr hProcess,uint dwPriorityClass);
+ [DllImport("kernel32.dll")] static extern bool SetProcessPriorityBoost(IntPtr hProcess,bool DisablePriorityBoost);
  [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hWnd);
  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
- const int SW_SHOWNOACTIVATE=4, SW_MINIMIZE=6;
+ const int SW_SHOWNOACTIVATE=4, SW_MINIMIZE=6; const uint NORMAL_PRIORITY_CLASS=0x20, ABOVE_NORMAL_PRIORITY_CLASS=0x8000;
  Process debugChrome; bool minimizedAfterComposerClick; int composerWatchBusy;
  ClientWebSocket sendSocket; readonly SemaphoreSlim cdpSendLock=new(1,1); int cdpCommandId=100;
  readonly HttpListener listener=new();
@@ -48,7 +50,7 @@ public sealed class MainForm : Form {
    string chrome=Array.Find(paths,File.Exists);
    if(chrome==null){Log("Chrome executable not found. Install Google Chrome.");return;}
    var psi=new ProcessStartInfo(chrome,"--remote-debugging-port=9222 --remote-allow-origins=* --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling --disable-features=CalculateNativeWinOcclusion --window-size=900,700 --user-data-dir=\""+profile+"\" https://character.ai/"){UseShellExecute=true,WindowStyle=ProcessWindowStyle.Normal};
-   var proc=Process.Start(psi);debugChrome=proc;minimizedAfterComposerClick=false;
+   var proc=Process.Start(psi);debugChrome=proc;minimizedAfterComposerClick=false;\n   try{SetPriorityClass(proc.Handle,ABOVE_NORMAL_PRIORITY_CLASS);SetProcessPriorityBoost(proc.Handle,true);Log("Chrome process priority set to ABOVE NORMAL (VRChat remains foreground).");}catch(Exception px){Log("Chrome priority adjustment: "+px.Message);}\n   _=Task.Run(async()=>{for(int n=0;n<20&&!proc.HasExited;n++){try{foreach(var child in Process.GetProcessesByName("chrome")){try{SetPriorityClass(child.Handle,ABOVE_NORMAL_PRIORITY_CLASS);SetProcessPriorityBoost(child.Handle,true);}catch{}}}catch{}await Task.Delay(1500);}});
    // Keep Chrome un-minimized but parked off-screen. SW_SHOWNOACTIVATE avoids taking focus,
    // while an un-minimized browser window allows Character.AI audio to keep playing.
    // Do not call SW_SHOWNOACTIVATE at launch; wait until the chat composer is clicked.
