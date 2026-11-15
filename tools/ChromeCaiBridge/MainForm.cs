@@ -64,21 +64,13 @@ public sealed class MainForm : Form {
   }catch(Exception ex){Log("HTTP error: "+ex.Message);try{c.Response.Close();}catch{}}
  });}}
  static void Reply(HttpListenerContext c,string text,string type){var b=Encoding.UTF8.GetBytes(text);c.Response.ContentType=type;c.Response.OutputStream.Write(b);c.Response.Close();}
- void SendToCai(string phrase){try{
-  var root=AutomationElement.RootElement;
-  var edits=root.FindAll(TreeScope.Descendants,new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Edit));
-  AutomationElement composer=null;
-  for(int i=0;i<edits.Count;i++){var candidate=edits[i];string name="";try{name=candidate.Current.Name??"";}catch{}if(name.Contains("message",StringComparison.OrdinalIgnoreCase)||name.Contains("chat",StringComparison.OrdinalIgnoreCase)||name.Contains("reply",StringComparison.OrdinalIgnoreCase)){composer=candidate;break;}}
-  if(composer==null&&edits.Count>0)composer=edits[edits.Count-1];
-  if(composer==null){Log("Background c.ai composer not exposed by UI Automation.");waitingReply=false;isIdle=true;return;}
-  // Do NOT use UIA ValuePattern.SetValue here: it can focus the composer and
-  // reposition the user's caret. CDP injects the transcript and submits it
-  // directly in the page without changing Windows foreground focus/cursor.
+ void SendToCai(string phrase){
+  // Avoid a full desktop UI Automation tree scan on every transcript; it is
+  // expensive and delays sending. CDP handles composer lookup/injection itself.
   _pendingPhrase=phrase;
-  Log("Transcript queued for background CDP injection (no UIA focus/caret changes).");
+  Log("Sending transcript immediately through Chrome CDP (no UIA scan).");
   _=SendEnterAsync();
-  Log("Enter dispatched; waiting for Character.AI reply…");
- }catch(Exception ex){Log("Background UIA send error: "+ex.Message);waitingReply=false;isIdle=true;}}
+ }
  bool HasButton(string name){try{return AutomationElement.RootElement.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.NameProperty,name))!=null;}catch{return false;}}
  async Task CheckGenerationGuardedAsync(){try{await Task.Run(()=>{if(!waitingReply)return;generationPolls++;bool generating=HasButton("Stop generating")||HasButton("Stop response")||HasButton("Stop");if(generating){sawGenerating=true;return;}if((sawGenerating&&generationPolls>=2)||generationPolls>=120){waitingReply=false;isIdle=true;try{BeginInvoke(new Action(()=>status.Text="IDLE — reply complete"));}catch{}Log("c.ai reply finished; bridge returned to IDLE.");}});}finally{Interlocked.Exchange(ref monitorBusy,0);}}
  async Task VoiceToggleGuardedAsync(){try{await VoiceToggleAsync();}finally{Interlocked.Exchange(ref voiceBusy,0);}}
