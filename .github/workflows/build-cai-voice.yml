@@ -13,25 +13,17 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Download offline Whisper small.en model
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path "cai-voice-automation/model" | Out-Null
-          Invoke-WebRequest -Uri "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin?download=true" -OutFile "cai-voice-automation/model/ggml-small.en.bin"
-          if ((Get-Item "cai-voice-automation/model/ggml-small.en.bin").Length -lt 400000000) { throw "Whisper model download incomplete" }
       - name: Publish self-contained EXE and PDB
         run: dotnet publish cai-voice-automation/CaiVoiceAutomation.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=portable -p:DebugSymbols=true
-      - name: Assemble and ZIP all deliverables
+      - name: Assemble ZIP
         shell: pwsh
         run: |
           $pub = "cai-voice-automation/bin/Release/net8.0-windows/win-x64/publish"
-          $dist = "dist/CaiVoiceAutomation"
-          New-Item -ItemType Directory -Force -Path "$dist/model" | Out-Null
-          Copy-Item "$pub/CaiVoiceAutomation.exe" "$dist/CaiVoiceAutomation.exe"
-          Copy-Item "$pub/CaiVoiceAutomation.pdb" "$dist/CaiVoiceAutomation.pdb"
-          Copy-Item "cai-voice-automation/model/ggml-small.en.bin" "$dist/model/ggml-small.en.bin"
-          Compress-Archive -Path "$dist/*" -DestinationPath "dist/CaiVoiceAutomation-Complete.zip" -Force
-      - name: Upload ONE ZIP with everything
+          New-Item -ItemType Directory -Force -Path "dist/CaiVoiceAutomation" | Out-Null
+          Copy-Item "$pub/CaiVoiceAutomation.exe" "dist/CaiVoiceAutomation/CaiVoiceAutomation.exe"
+          Copy-Item "$pub/CaiVoiceAutomation.pdb" "dist/CaiVoiceAutomation/CaiVoiceAutomation.pdb"
+          Compress-Archive -Path "dist/CaiVoiceAutomation/*" -DestinationPath "dist/CaiVoiceAutomation-Complete.zip" -Force
+      - name: Upload ZIP
         uses: actions/upload-artifact@v4
         with:
           name: CaiVoiceAutomation-Complete
