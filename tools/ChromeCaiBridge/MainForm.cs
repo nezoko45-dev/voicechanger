@@ -39,7 +39,8 @@ public sealed class MainForm : Form {
    string chrome=Array.Find(paths,File.Exists);
    if(chrome==null){Log("Chrome executable not found. Install Google Chrome.");return;}
    Process.Start(new ProcessStartInfo(chrome,"--remote-debugging-port=9222 --remote-allow-origins=* --user-data-dir=\""+profile+"\" https://character.ai/"){UseShellExecute=false,WindowStyle=ProcessWindowStyle.Minimized});
-   status.Text="Debug Chrome launched (CDP :9222)";\n  // Keep the bridge as the foreground app only at initial launch; Chrome starts minimized.
+   status.Text="Debug Chrome launched (CDP :9222)";
+   // Chrome starts minimized so VRChat retains foreground focus.
    Log("Launched debug Chrome profile. Sign into Character.AI in that window once.");
   }catch(Exception ex){Log("Debug Chrome launch failed: "+ex.Message);}
  }
