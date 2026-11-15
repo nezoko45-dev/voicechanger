@@ -3,6 +3,8 @@
   window.__caiVoiceLoopInstalled = true;
 
   const PLAY_PATH = 'M9.576 2.534C7.578 1.299 5 2.737 5 5.086v13.828c0 2.35 2.578 3.787 4.576 2.552l11.194-6.914c1.899-1.172 1.899-3.932 0-5.104z';
+  const normalizeSvgPath = d => (d || '').trim().replace(/\\s+/g, ' ');
+  const isCaiPlayTriangle = path => normalizeSvgPath(path.getAttribute('d')) === normalizeSvgPath(PLAY_PATH);
   let recognition = null, listening = false, busy = false, lastReplyText = '';
   let generationTimer = null, generationStarted = false;
   const panel = document.createElement('div');
@@ -53,7 +55,7 @@
       .filter(el => el.getClientRects().length && !el.closest('#cai-voice-loop-panel') && el.innerText?.trim());
   }
   function newestPlayButton() {
-    const paths = [...document.querySelectorAll('path')].filter(p => (p.getAttribute('d')||'').trim() === PLAY_PATH);
+    const paths = [...document.querySelectorAll('svg path')].filter(isCaiPlayTriangle);
     for (const p of paths.reverse()) {
       const btn = p.closest('button,[role="button"]');
       if (btn && btn.getClientRects().length && !btn.disabled) return btn;
