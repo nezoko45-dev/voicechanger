@@ -49,7 +49,7 @@ public sealed class MainForm : Form {
    var proc=Process.Start(psi);debugChrome=proc;minimizedAfterComposerClick=false;
    // Keep Chrome un-minimized but parked off-screen. SW_SHOWNOACTIVATE avoids taking focus,
    // while an un-minimized browser window allows Character.AI audio to keep playing.
-   Task.Run(async()=>{await Task.Delay(1200);try{if(proc!=null&&!proc.HasExited&&proc.MainWindowHandle!=IntPtr.Zero)ShowWindow(proc.MainWindowHandle,SW_SHOWNOACTIVATE);}catch{}});
+   // Do not call SW_SHOWNOACTIVATE at launch; wait until the chat composer is clicked.
    status.Text="Debug Chrome running off-screen (audio enabled; CDP :9222)";
    Log("Chrome window parked off-screen; it will minimize automatically after you click the c.ai chat field.");
   }catch(Exception ex){Log("Debug Chrome launch failed: "+ex.Message);}
@@ -119,7 +119,7 @@ public sealed class MainForm : Form {
    using var doc=JsonDocument.Parse(sb.ToString());
    bool focused=doc.RootElement.GetProperty("result").GetProperty("result").TryGetProperty("value",out var val)&&val.ValueKind==JsonValueKind.True;
    await socket.CloseAsync(WebSocketCloseStatus.NormalClosure,"done",CancellationToken.None);
-   if(focused&&debugChrome!=null&&!debugChrome.HasExited&&debugChrome.MainWindowHandle!=IntPtr.Zero){minimizedAfterComposerClick=true;ShowWindow(debugChrome.MainWindowHandle,SW_MINIMIZE);Log("Chat field focused — Chrome minimized automatically.");}
+   if(focused&&debugChrome!=null&&!debugChrome.HasExited&&debugChrome.MainWindowHandle!=IntPtr.Zero){minimizedAfterComposerClick=true;ShowWindow(debugChrome.MainWindowHandle,SW_SHOWNOACTIVATE);ShowWindow(debugChrome.MainWindowHandle,SW_MINIMIZE);Log("Chat field focused — SW_SHOWNOACTIVATE applied, then Chrome minimized.");}
   }catch{}finally{Interlocked.Exchange(ref composerWatchBusy,0);}
  }
  async Task VoiceToggleAsync(){
