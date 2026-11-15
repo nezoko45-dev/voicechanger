@@ -73,7 +73,7 @@ public sealed class MainForm : Form {
  }
  bool HasButton(string name){try{return AutomationElement.RootElement.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.NameProperty,name))!=null;}catch{return false;}}
  async Task CheckGenerationGuardedAsync(){try{await Task.Run(()=>{if(!waitingReply)return;generationPolls++;bool generating=HasButton("Stop generating")||HasButton("Stop response")||HasButton("Stop");if(generating){sawGenerating=true;return;}if((sawGenerating&&generationPolls>=2)||generationPolls>=120){waitingReply=false;isIdle=true;try{BeginInvoke(new Action(()=>status.Text="IDLE — reply complete"));}catch{}Log("c.ai reply finished; bridge returned to IDLE.");}});}finally{Interlocked.Exchange(ref monitorBusy,0);}}
- async Task EnsureVoiceAndSendAsync(string phrase){try{await VoiceToggleAsync();_pendingPhrase=phrase;await SendEnterAsync();}catch(Exception ex){Log("Voice pre-send error: "+ex.Message);}}
+ async Task EnsureVoiceAndSendAsync(string phrase){try{await VoiceToggleAsync(true);_pendingPhrase=phrase;await SendEnterAsync();}catch(Exception ex){Log("Voice pre-send error: "+ex.Message);}}
  async Task AudioRecoveryTickAsync(){try{if(!isIdle||waitingReply)return;float peak=ChromeAudioPeak();if(peak>0.002f){lastChromeAudio=DateTime.UtcNow;audioSeen=true;return;}if(audioSeen&&(DateTime.UtcNow-lastChromeAudio).TotalSeconds>12){Log("Chrome silent 12s; toggling Voice to recover.");await VoiceToggleAsync();await Task.Delay(700);await VoiceToggleAsync();lastChromeAudio=DateTime.UtcNow;}}catch(Exception ex){Log("Audio recovery: "+ex.Message);}finally{Interlocked.Exchange(ref voiceBusy,0);}}
  float ChromeAudioPeak(){try{using var en=new NAudio.CoreAudioApi.MMDeviceEnumerator();using var dev=en.GetDefaultAudioEndpoint(NAudio.CoreAudioApi.DataFlow.Render,NAudio.CoreAudioApi.Role.Multimedia);float peak=0;var sessions=dev.AudioSessionManager.Sessions;for(int i=0;i<sessions.Count;i++){var a=sessions[i];if(Process.GetProcessesByName("chrome").Any(p=>p.Id==a.GetProcessID))peak=Math.Max(peak,a.AudioMeterInformation.MasterPeakValue);}return peak;}catch{return 0;}}
  async Task SendEnterAsync(){
@@ -118,7 +118,7 @@ public sealed class MainForm : Form {
    if(focused&&debugChrome!=null&&!debugChrome.HasExited&&debugChrome.MainWindowHandle!=IntPtr.Zero){minimizedAfterComposerClick=true;ShowWindow(debugChrome.MainWindowHandle,SW_SHOWNOACTIVATE);ShowWindow(debugChrome.MainWindowHandle,SW_MINIMIZE);Log("Chat field focused — SW_SHOWNOACTIVATE applied, then Chrome minimized.");}
   }catch{}finally{Interlocked.Exchange(ref composerWatchBusy,0);}
  }
- async Task VoiceToggleAsync(){
+ async Task VoiceToggleAsync(bool ensureOn=false){
   try{
    using var http=new HttpClient{Timeout=TimeSpan.FromSeconds(3)};
    var targets=JsonDocument.Parse(await http.GetStringAsync("http://127.0.0.1:9222/json/list"));
@@ -126,7 +126,7 @@ public sealed class MainForm : Form {
    foreach(var t in targets.RootElement.EnumerateArray()){if(t.TryGetProperty("type",out var typ)&&typ.GetString()=="page"&&t.TryGetProperty("url",out var u)&&u.GetString()?.Contains("character.ai",StringComparison.OrdinalIgnoreCase)==true&&t.TryGetProperty("webSocketDebuggerUrl",out var w)){ws=w.GetString();break;}}
    if(ws==null){Log("CDP: no Character.AI tab found in debug Chrome.");return;}
    using var socket=new ClientWebSocket();socket.Options.SetRequestHeader("Origin","http://localhost");await socket.ConnectAsync(new Uri(ws),CancellationToken.None);
-   string js="(()=>{const s=[...document.querySelectorAll('svg')].find(x=>[...x.querySelectorAll('path')].some(p=>(p.getAttribute('d')||'').startsWith('"+SvgPathPrefix+"')));const b=s?.closest('button,[role=button]');if(!b)return 'VOICE_SVG_NOT_FOUND';b.click();return 'VOICE_CLICKED';})()";
+   string js=ensureOn?"(()=>{const s=[...document.querySelectorAll('svg')].find(x=>[...x.querySelectorAll('path')].some(p=>(p.getAttribute('d')||'').startsWith('"+SvgPathPrefix+"')));const b=s?.closest('button,[role=button]');if(!b)return 'VOICE_SVG_NOT_FOUND';const a=(b.getAttribute('aria-label')||'').toLowerCase(),t=(b.getAttribute('title')||'').toLowerCase(),st=(b.getAttribute('data-state')||'').toLowerCase(),p=b.getAttribute('aria-pressed');const on=p==='true'||st==='on'||st==='active'||/disable|turn off|stop voice/.test(a+' '+t);if(on)return 'VOICE_ALREADY_ON';b.click();return 'VOICE_ENABLED';})()":"(()=>{const s=[...document.querySelectorAll('svg')].find(x=>[...x.querySelectorAll('path')].some(p=>(p.getAttribute('d')||'').startsWith('"+SvgPathPrefix+"')));const b=s?.closest('button,[role=button]');if(!b)return 'VOICE_SVG_NOT_FOUND';b.click();return 'VOICE_CLICKED';})()";
    var payload=JsonSerializer.Serialize(new{id=1,method="Runtime.evaluate",params_=new{expression=js,returnByValue=true}});
    payload=payload.Replace("params_", "params");
    await socket.SendAsync(Encoding.UTF8.GetBytes(payload),WebSocketMessageType.Text,true,CancellationToken.None);
@@ -134,8 +134,8 @@ public sealed class MainForm : Form {
    do{result=await socket.ReceiveAsync(buffer,CancellationToken.None);response.Append(Encoding.UTF8.GetString(buffer,0,result.Count));}while(!result.EndOfMessage);
    using var doc=JsonDocument.Parse(response.ToString());
    string value=doc.RootElement.GetProperty("result").GetProperty("result").TryGetProperty("value",out var v)?v.GetString()??"":"";
-   Log(value=="VOICE_CLICKED"?"Character.AI Voice SVG button clicked via CDP.":value=="VOICE_SVG_NOT_FOUND"?"Voice SVG signature not found on current c.ai page.":"CDP response: "+value);
-   if(value=="VOICE_CLICKED")try{BeginInvoke(new Action(()=>status.Text="Voice toggled (CDP)"));}catch{}
+   Log(value=="VOICE_CLICKED"?"Character.AI Voice SVG button clicked via CDP.":value=="VOICE_ENABLED"?"Character.AI Voice enabled (state-aware).":value=="VOICE_ALREADY_ON"?"Character.AI Voice already enabled; left ON.":value=="VOICE_SVG_NOT_FOUND"?"Voice SVG signature not found on current c.ai page.":"CDP response: "+value);
+   if(value=="VOICE_CLICKED"||value=="VOICE_ENABLED"||value=="VOICE_ALREADY_ON")try{BeginInvoke(new Action(()=>status.Text=ensureOn?"Voice ON — sending transcript":"Voice toggled (CDP)"));}catch{}
    await socket.CloseAsync(WebSocketCloseStatus.NormalClosure,"done",CancellationToken.None);
   }catch(Exception ex){Log("CDP Voice toggle error: "+ex.Message+" (debug Chrome must be running)");}
  }
