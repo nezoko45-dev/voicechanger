@@ -89,15 +89,8 @@ public sealed class MainForm : Form {
     try{BeginInvoke(new Action(()=>status.Text=audible?"IDLE — c.ai audio playing; Voice stays ON":"IDLE — generation finished; Voice stays ON"));}catch{}
     Log("Generation finished; Voice remains ON.");
    }
-   // While audio is idle, pulse Voice OFF then ON every 5 seconds.
-   // CDP operates on the background tab; it never focuses Chrome or steals VRChat.
-   if(audioSeen&&!audible&&!caiPlaying){
-    Log("c.ai audio idle: refreshing Voice state (OFF → ON).");
-    await VoiceToggleAsync(false);
-    await Task.Delay(450);
-    await VoiceToggleAsync(true);
-    try{BeginInvoke(new Action(()=>status.Text="Voice refreshed — Chrome background / VRChat foreground"));}catch{}
-   }
+   // Avoid OFF/ON pulses during idle: they can tear down the active c.ai voice session.
+   if(audioSeen&&!audible&&!caiPlaying&&waitingReply)Log("c.ai audio went silent while awaiting reply; leaving Voice ON (no disruptive toggle).");
   }catch(Exception ex){Log("Audio recovery: "+ex.Message);}
   finally{Interlocked.Exchange(ref voiceBusy,0);}
  }
