@@ -2,9 +2,4 @@
 <PropertyGroup>
 <OutputType>WinExe</OutputType><TargetFramework>net8.0-windows</TargetFramework><UseWindowsForms>true</UseWindowsForms><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><PublishSingleFile>true</PublishSingleFile>
 </PropertyGroup>
-<ItemGroup>
-<PackageReference Include="Whisper.net" Version="1.9.1" />
-<PackageReference Include="Whisper.net.Runtime" Version="1.9.1" />
-<PackageReference Include="NAudio" Version="2.2.1" />
-</ItemGroup>
 </Project>
