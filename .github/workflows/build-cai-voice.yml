@@ -1,5 +1,4 @@
 name: Build CAI Voice Automation EXE
-# One ZIP containing EXE, PDB, and CharacterAI Website HTML folder.
 on:
   workflow_dispatch:
   push:
@@ -14,6 +13,12 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+      - name: Download offline Whisper small.en model
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "cai-voice-automation/model" | Out-Null
+          Invoke-WebRequest -Uri "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin?download=true" -OutFile "cai-voice-automation/model/ggml-small.en.bin"
+          if ((Get-Item "cai-voice-automation/model/ggml-small.en.bin").Length -lt 400000000) { throw "Whisper model download incomplete" }
       - name: Publish self-contained EXE and PDB
         run: dotnet publish cai-voice-automation/CaiVoiceAutomation.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=portable -p:DebugSymbols=true
       - name: Assemble and ZIP all deliverables
@@ -21,10 +26,11 @@ jobs:
         run: |
           $pub = "cai-voice-automation/bin/Release/net8.0-windows/win-x64/publish"
           $dist = "dist/CaiVoiceAutomation"
-          New-Item -ItemType Directory -Force -Path "$dist/CharacterAI Website" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$dist/CharacterAI Website","$dist/model" | Out-Null
           Copy-Item "$pub/CaiVoiceAutomation.exe" "$dist/CaiVoiceAutomation.exe"
           Copy-Item "$pub/CaiVoiceAutomation.pdb" "$dist/CaiVoiceAutomation.pdb"
           Copy-Item "cai-voice-automation/CharacterAI-Website/index.html" "$dist/CharacterAI Website/index.html"
+          Copy-Item "cai-voice-automation/model/ggml-small.en.bin" "$dist/model/ggml-small.en.bin"
           Compress-Archive -Path "$dist/*" -DestinationPath "dist/CaiVoiceAutomation-Complete.zip" -Force
       - name: Upload ONE ZIP with everything
         uses: actions/upload-artifact@v4
