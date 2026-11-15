@@ -19,7 +19,7 @@ public sealed class MainForm : Form {
  readonly CheckBox keepalive=new(){Text="Toggle Voice every 5 seconds while IDLE",Checked=true,AutoSize=true};
  readonly Label status=new(){AutoSize=true,Text="Starting…"};
  readonly string profile=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"ChromeCaiBridge","DebugProfile");
- DateTime lastSpeech=DateTime.UtcNow; bool disposed,waitingReply,sawGenerating,isIdle=true; int generationPolls;
+ DateTime lastSpeech=DateTime.UtcNow; bool disposed,waitingReply,sawGenerating,isIdle=true; int generationPolls; int monitorBusy,voiceBusy;
  const string SvgPathPrefix="M8 3a1 1 0 0 1 1 1v7.105l2-1.473";
  public MainForm(){
   Text="Chrome c.ai Voice Bridge (Debug Chrome)";Width=820;Height=540;
@@ -28,8 +28,8 @@ public sealed class MainForm : Form {
   var open=new Button{Text="Open Chrome recognition",AutoSize=true};open.Click+=(s,e)=>Process.Start(new ProcessStartInfo("http://127.0.0.1:8765/"){UseShellExecute=true});
   bar.Controls.Add(launch);bar.Controls.Add(open);bar.Controls.Add(send);bar.Controls.Add(keepalive);bar.Controls.Add(status);Controls.Add(output);Controls.Add(bar);
   Shown+=(s,e)=>{try{listener.Prefixes.Add("http://127.0.0.1:8765/");listener.Start();status.Text="Speech bridge ready";_=Serve();}catch(Exception ex){Log("Listener failed: "+ex.Message);} LaunchDebugChrome();};
-  var timer=new System.Windows.Forms.Timer{Interval=5000};timer.Tick+=(s,e)=>{if(keepalive.Checked&&isIdle)_=VoiceToggleAsync();};timer.Start();
-  var monitor=new System.Windows.Forms.Timer{Interval=1000};monitor.Tick+=(s,e)=>CheckGeneration();monitor.Start();
+  var timer=new System.Windows.Forms.Timer{Interval=5000};timer.Tick+=(s,e)=>{if(keepalive.Checked&&isIdle&&Interlocked.Exchange(ref voiceBusy,1)==0)_=VoiceToggleGuardedAsync();};timer.Start();
+  var monitor=new System.Windows.Forms.Timer{Interval=1500};monitor.Tick+=(s,e)=>{if(waitingReply&&Interlocked.Exchange(ref monitorBusy,1)==0)_=CheckGenerationGuardedAsync();};monitor.Start();
   FormClosing+=(s,e)=>{disposed=true;try{listener.Stop();}catch{}};
  }
  void LaunchDebugChrome(){
@@ -67,13 +67,8 @@ public sealed class MainForm : Form {
   Log("Enter dispatched; waiting for Character.AI reply…");
  }catch(Exception ex){Log("Background UIA send error: "+ex.Message);waitingReply=false;isIdle=true;}}
  bool HasButton(string name){try{return AutomationElement.RootElement.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.NameProperty,name))!=null;}catch{return false;}}
- void CheckGeneration(){
-  if(!waitingReply)return;generationPolls++;
-  bool generating=HasButton("Stop generating")||HasButton("Stop response")||HasButton("Stop");
-  if(generating){sawGenerating=true;return;}
-  // Only return to idle after this message's generation was observed and its stop control vanished.
-  if((sawGenerating&&generationPolls>=2)||generationPolls>=120){waitingReply=false;isIdle=true;status.Text="IDLE — reply complete";Log("c.ai reply finished; bridge returned to IDLE.");}
- }
+ async Task CheckGenerationGuardedAsync(){try{await Task.Run(()=>{if(!waitingReply)return;generationPolls++;bool generating=HasButton("Stop generating")||HasButton("Stop response")||HasButton("Stop");if(generating){sawGenerating=true;return;}if((sawGenerating&&generationPolls>=2)||generationPolls>=120){waitingReply=false;isIdle=true;try{BeginInvoke(new Action(()=>status.Text="IDLE — reply complete"));}catch{}Log("c.ai reply finished; bridge returned to IDLE.");}});}finally{Interlocked.Exchange(ref monitorBusy,0);}}
+ async Task VoiceToggleGuardedAsync(){try{await VoiceToggleAsync();}finally{Interlocked.Exchange(ref voiceBusy,0);}}
  async Task SendEnterAsync(){
   try{
    using var http=new HttpClient{Timeout=TimeSpan.FromSeconds(3)};
