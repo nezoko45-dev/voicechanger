@@ -80,18 +80,28 @@ public sealed class MainForm : Form {
  async Task VoiceToggleGuardedAsync(){try{await VoiceToggleAsync();}finally{Interlocked.Exchange(ref voiceBusy,0);}}
  async Task SendEnterAsync(){
   try{
-   using var http=new HttpClient{Timeout=TimeSpan.FromSeconds(3)};
+   using var http=new HttpClient{Timeout=TimeSpan.FromSeconds(5)};
    using var targets=JsonDocument.Parse(await http.GetStringAsync("http://127.0.0.1:9222/json/list"));
    string ws=null;
    foreach(var t in targets.RootElement.EnumerateArray()){if(t.TryGetProperty("type",out var typ)&&typ.GetString()=="page"&&t.TryGetProperty("url",out var u)&&u.GetString()?.Contains("character.ai",StringComparison.OrdinalIgnoreCase)==true&&t.TryGetProperty("webSocketDebuggerUrl",out var w)){ws=w.GetString();break;}}
-   if(ws==null){Log("CDP Enter: no Character.AI tab found.");return;}
+   if(ws==null){Log("CDP send: no Character.AI tab found.");return;}
    using var socket=new ClientWebSocket();socket.Options.SetRequestHeader("Origin","http://localhost");await socket.ConnectAsync(new Uri(ws),CancellationToken.None);
-   // Enter keyDown + keyUp in the c.ai page (no focus stealing).
+   // UIA SetValue does not focus the composer. Focus it in-page before sending Enter.
+   string js="(()=>{const e=document.querySelector('textarea,[contenteditable=true],[role=textbox]');if(!e)return 'COMPOSER_NOT_FOUND';e.focus();return 'FOCUSED:'+((e.getAttribute('placeholder')||e.getAttribute('aria-label')||e.tagName));})()";
+   var eval=JsonSerializer.Serialize(new{id=20,method="Runtime.evaluate",@params=new{expression=js,returnByValue=true}});
+   await socket.SendAsync(Encoding.UTF8.GetBytes(eval),WebSocketMessageType.Text,true,CancellationToken.None);
+   var buffer=new byte[8192];var response=new StringBuilder();WebSocketReceiveResult result;
+   do{result=await socket.ReceiveAsync(buffer,CancellationToken.None);response.Append(Encoding.UTF8.GetString(buffer,0,result.Count));}while(!result.EndOfMessage);
+   using(var doc=JsonDocument.Parse(response.ToString())){
+    string value=doc.RootElement.GetProperty("result").GetProperty("result").TryGetProperty("value",out var v)?v.GetString()??"":"";
+    if(value=="COMPOSER_NOT_FOUND"){Log("CDP send failed: couldn't find/focus c.ai composer.");await socket.CloseAsync(WebSocketCloseStatus.NormalClosure,"done",CancellationToken.None);return;}
+    Log("CDP composer focus: "+value);
+   }
    foreach(var type in new[]{"keyDown","keyUp"}){
-    var msg=JsonSerializer.Serialize(new{id=type=="keyDown"?11:12,method="Input.dispatchKeyEvent",@params=new{type,key="Enter",code="Enter",windowsVirtualKeyCode=13,nativeVirtualKeyCode=13}});
+    var msg=JsonSerializer.Serialize(new{id=type=="keyDown"?21:22,method="Input.dispatchKeyEvent",@params=new{type,key="Enter",code="Enter",windowsVirtualKeyCode=13,nativeVirtualKeyCode=13}});
     await socket.SendAsync(Encoding.UTF8.GetBytes(msg),WebSocketMessageType.Text,true,CancellationToken.None);
    }
-   Log("Enter sent to Character.AI via CDP.");
+   Log("Enter sent to focused Character.AI composer.");
    await socket.CloseAsync(WebSocketCloseStatus.NormalClosure,"done",CancellationToken.None);
   }catch(Exception ex){Log("CDP Enter error: "+ex.Message);}
  }
