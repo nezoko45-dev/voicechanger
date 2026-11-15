@@ -9,22 +9,17 @@
  // Locate the voice playback control robustly (CAI's SVG often has no useful aria label).
  // Find the blue Read Aloud play triangle attached to the newest assistant reply.
  function replyReadAloudButton(){
-  // CAI's reply playback control is the small blue triangular SVG shown below
-  // assistant messages. Prefer explicit playback labels, then the blue triangle.
-  const buttons=[...document.querySelectorAll("button,[role=button]")].filter(b=>!b.disabled);
-  const labeled=buttons.filter(b=>/read aloud|listen|play audio|play response/i.test((b.getAttribute("aria-label")||"")+" "+(b.title||"")+" "+(b.getAttribute("data-testid")||"")));
+  // Find the visible triangular playback SVG beneath CAI assistant messages.
+  const all=[...document.querySelectorAll("button,[role=button]")].filter(b=>!b.disabled&&b.querySelector("svg")&&b.getClientRects().length);
+  const labeled=all.filter(b=>/read aloud|listen|play audio|play response/i.test((b.getAttribute("aria-label")||"")+" "+(b.title||"")+" "+(b.getAttribute("data-testid")||"")));
   if(labeled.length)return labeled.at(-1);
-  const blueTriangle=buttons.filter(b=>{
-   const svg=b.querySelector("svg");if(!svg)return false;
-   const paths=[...svg.querySelectorAll("path,polygon")];
-   return paths.some(p=>{
-    const d=(p.getAttribute("d")||"").trim(),fill=(p.getAttribute("fill")||getComputedStyle(p).fill||"").toLowerCase(),style=(p.getAttribute("style")||"").toLowerCase();
-    const isBlue=fill.includes("#")||fill.includes("rgb(")||fill.includes("blue")||style.includes("#")||style.includes("rgb(");
-    const triangle= p.tagName.toLowerCase()==="polygon" || (/z$/i.test(d)&&((d.match(/[ML]/gi)||[]).length<=4));
-    return isBlue&&triangle;
-   });
-  });
-  return blueTriangle.at(-1)||null;
+  const triangle=all.filter(b=>[...b.querySelectorAll("svg path,svg polygon")].some(p=>{
+   if(p.tagName.toLowerCase()==="polygon")return p.getAttribute("points")?.trim().split(/[ ,]+/).length>=6;
+   const d=(p.getAttribute("d")||"").replace(/[\\s,]+/g,"");
+   return /M[^A-Z]*L[^A-Z]*L[^A-Z]*Z/i.test(d)||/M[^A-Z]*l[^A-Z]*l[^A-Z]*z/i.test(d);
+  }));
+  // CAI places the Read Aloud control last among the reply's action buttons.
+  return triangle.at(-1)||null;
  }
  // Track both media elements and CAI's playback button state/DOM changes.
  let audioMonitorObserver=null, audioStateSignature="";
