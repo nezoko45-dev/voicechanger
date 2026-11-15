@@ -19,6 +19,7 @@ public sealed class MainForm : Form {
  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
  const int SW_SHOWNOACTIVATE=4, SW_MINIMIZE=6;
  Process debugChrome; bool minimizedAfterComposerClick; int composerWatchBusy;
+ ClientWebSocket sendSocket; readonly SemaphoreSlim cdpSendLock=new(1,1); int cdpCommandId=100;
  readonly HttpListener listener=new();
  readonly TextBox output=new(){Multiline=true,ScrollBars=ScrollBars.Vertical,Dock=DockStyle.Fill};
  readonly CheckBox send=new(){Text="Send recognized final phrases to c.ai",Checked=true,AutoSize=true};
@@ -76,26 +77,26 @@ public sealed class MainForm : Form {
  async Task VoiceToggleGuardedAsync(){try{await VoiceToggleAsync();}finally{Interlocked.Exchange(ref voiceBusy,0);}}
  async Task SendEnterAsync(){
   try{
-   using var http=new HttpClient{Timeout=TimeSpan.FromSeconds(8)};
-   using var targets=JsonDocument.Parse(await http.GetStringAsync("http://127.0.0.1:9222/json/list"));
-   string ws=null;
-   foreach(var t in targets.RootElement.EnumerateArray()){if(t.TryGetProperty("type",out var typ)&&typ.GetString()=="page"&&t.TryGetProperty("url",out var u)&&u.GetString()?.Contains("character.ai",StringComparison.OrdinalIgnoreCase)==true&&t.TryGetProperty("webSocketDebuggerUrl",out var w)){ws=w.GetString();break;}}
-   if(ws==null){Log("CDP send: no Character.AI tab found.");return;}
-   using var socket=new ClientWebSocket();socket.Options.SetRequestHeader("Origin","http://localhost");await socket.ConnectAsync(new Uri(ws),CancellationToken.None);
-   // Locate the actual chat composer, update React's value, then submit its form.
-   string js="(()=>{const all=[...document.querySelectorAll('textarea,[contenteditable=true],[role=textbox]')];const e=all.filter(x=>{const r=x.getBoundingClientRect();return r.width>0&&r.height>0&&!x.disabled}).at(-1);if(!e)return 'COMPOSER_NOT_FOUND';const v="+JsonSerializer.Serialize(_pendingPhrase)+";if(e.isContentEditable||e.getAttribute('contenteditable')==='true'){e.textContent=v;}else{const p=Object.getPrototypeOf(e),d=Object.getOwnPropertyDescriptor(p,'value');if(d&&d.set)d.set.call(e,v);else e.value=v;}e.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:v}));e.dispatchEvent(new Event('change',{bubbles:true}));const f=e.closest('form');if(f){f.requestSubmit();return 'FORM_SUBMITTED';}const b=[...document.querySelectorAll('button')].filter(x=>{const r=x.getBoundingClientRect();return r.width>0&&r.height>0&&!x.disabled&&(x.getAttribute('aria-label')||'').toLowerCase().match(/send|submit/)}).at(-1);if(b){b.click();return 'SEND_BUTTON_CLICKED';}e.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true}));e.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',code:'Enter',bubbles:true}));return 'ENTER_EVENTS_DISPATCHED';})()";
-   // phrase is passed as a JS string literal safely.
-   var eval=JsonSerializer.Serialize(new{id=31,method="Runtime.evaluate",@params=new{expression=js,returnByValue=true}});
-   await socket.SendAsync(Encoding.UTF8.GetBytes(eval),WebSocketMessageType.Text,true,CancellationToken.None);
-   var buffer=new byte[8192];var response=new StringBuilder();WebSocketReceiveResult result;
-   do{result=await socket.ReceiveAsync(buffer,CancellationToken.None);response.Append(Encoding.UTF8.GetString(buffer,0,result.Count));}while(!result.EndOfMessage);
-   using(var doc=JsonDocument.Parse(response.ToString())){
-    string value=doc.RootElement.GetProperty("result").GetProperty("result").TryGetProperty("value",out var v)?v.GetString()??"":"";
-    Log("Character.AI submit result: "+value);
-    if(value=="COMPOSER_NOT_FOUND")Log("Send failed: no visible c.ai composer found.");
-   }
-   await socket.CloseAsync(WebSocketCloseStatus.NormalClosure,"done",CancellationToken.None);
-  }catch(Exception ex){Log("CDP send error: "+ex.Message);}
+   await cdpSendLock.WaitAsync();
+   try{
+    if(sendSocket==null||sendSocket.State!=WebSocketState.Open){
+     using var http=new HttpClient{Timeout=TimeSpan.FromSeconds(3)};
+     using var targets=JsonDocument.Parse(await http.GetStringAsync("http://127.0.0.1:9222/json/list"));
+     string ws=null;
+     foreach(var t in targets.RootElement.EnumerateArray())if(t.TryGetProperty("type",out var typ)&&typ.GetString()=="page"&&t.TryGetProperty("url",out var u)&&u.GetString()?.Contains("character.ai",StringComparison.OrdinalIgnoreCase)==true&&t.TryGetProperty("webSocketDebuggerUrl",out var w)){ws=w.GetString();break;}
+     if(ws==null){Log("CDP send: no Character.AI tab found.");return;}
+     sendSocket=new ClientWebSocket();sendSocket.Options.SetRequestHeader("Origin","http://localhost");await sendSocket.ConnectAsync(new Uri(ws),CancellationToken.None);_=DrainCdpResponsesAsync(sendSocket);
+    }
+    string js="(()=>{const all=[...document.querySelectorAll('textarea,[contenteditable=true],[role=textbox]')];const e=all.filter(x=>{const r=x.getBoundingClientRect();return r.width>0&&r.height>0&&!x.disabled}).at(-1);if(!e)return 'COMPOSER_NOT_FOUND';const v="+JsonSerializer.Serialize(_pendingPhrase)+";if(e.isContentEditable||e.getAttribute('contenteditable')==='true'){e.textContent=v;}else{const p=Object.getPrototypeOf(e),d=Object.getOwnPropertyDescriptor(p,'value');if(d&&d.set)d.set.call(e,v);else e.value=v;}e.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:v}));e.dispatchEvent(new Event('change',{bubbles:true}));const f=e.closest('form');if(f){f.requestSubmit();return 'FORM_SUBMITTED';}const b=[...document.querySelectorAll('button')].filter(x=>{const r=x.getBoundingClientRect();return r.width>0&&r.height>0&&!x.disabled&&(x.getAttribute('aria-label')||'').toLowerCase().match(/send|submit/)}).at(-1);if(b){b.click();return 'SEND_BUTTON_CLICKED';}e.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true}));e.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',code:'Enter',bubbles:true}));return 'ENTER_EVENTS_DISPATCHED';})()";
+    var payload=JsonSerializer.Serialize(new{id=Interlocked.Increment(ref cdpCommandId),method="Runtime.evaluate",@params=new{expression=js,returnByValue=true}});
+    await sendSocket.SendAsync(Encoding.UTF8.GetBytes(payload),WebSocketMessageType.Text,true,CancellationToken.None);
+    Log("CDP send dispatched over persistent connection.");
+   }finally{cdpSendLock.Release();}
+  }catch(Exception ex){Log("CDP send error: "+ex.Message);try{sendSocket?.Dispose();}catch{}sendSocket=null;}
+ }
+ async Task DrainCdpResponsesAsync(ClientWebSocket socket){
+  var buffer=new byte[8192];
+  try{while(socket.State==WebSocketState.Open){var sb=new StringBuilder();WebSocketReceiveResult r;do{r=await socket.ReceiveAsync(buffer,CancellationToken.None);sb.Append(Encoding.UTF8.GetString(buffer,0,r.Count));}while(!r.EndOfMessage);try{using var d=JsonDocument.Parse(sb.ToString());if(d.RootElement.TryGetProperty("id",out var id)&&d.RootElement.TryGetProperty("result",out var res)&&res.TryGetProperty("result",out var rr)&&rr.TryGetProperty("value",out var v)&&v.ValueKind==JsonValueKind.String){var value=v.GetString();if(value=="COMPOSER_NOT_FOUND")Log("CDP: composer not found.");else Log("c.ai submitted: "+value);}}catch{}}}catch{}
  }
  string _pendingPhrase="";
  async Task WatchComposerFocusAsync(){
