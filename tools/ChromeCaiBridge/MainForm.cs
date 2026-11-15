@@ -38,7 +38,7 @@ public sealed class MainForm : Form {
   var open=new Button{Text="Open Chrome recognition",AutoSize=true};open.Click+=(s,e)=>Process.Start(new ProcessStartInfo("http://127.0.0.1:8765/"){UseShellExecute=true});
   bar.Controls.Add(launch);bar.Controls.Add(open);bar.Controls.Add(send);bar.Controls.Add(keepalive);bar.Controls.Add(status);Controls.Add(output);Controls.Add(bar);
   Shown+=(s,e)=>{try{listener.Prefixes.Add("http://127.0.0.1:8765/");listener.Start();status.Text="Speech bridge ready";_=Serve();}catch(Exception ex){Log("Listener failed: "+ex.Message);} LaunchDebugChrome();};
-  var timer=new System.Windows.Forms.Timer{Interval=5000};timer.Tick+=(s,e)=>{if(keepalive.Checked&&Interlocked.Exchange(ref voiceBusy,1)==0)_=AudioRecoveryTickAsync();};timer.Start();
+  var timer=new System.Windows.Forms.Timer{Interval=1000};timer.Tick+=(s,e)=>{if(keepalive.Checked&&Interlocked.Exchange(ref voiceBusy,1)==0)_=AudioRecoveryTickAsync();};timer.Start();
   var composerWatch=new System.Windows.Forms.Timer{Interval=2500};composerWatch.Tick+=(s,e)=>{if(!minimizedAfterComposerClick&&debugChrome!=null&&Interlocked.Exchange(ref composerWatchBusy,1)==0)_=WatchComposerFocusAsync();};composerWatch.Start();
   var monitor=new System.Windows.Forms.Timer{Interval=4000};monitor.Tick+=(s,e)=>{if(waitingReply&&Interlocked.Exchange(ref monitorBusy,1)==0)_=CheckGenerationGuardedAsync();};monitor.Start();
   FormClosing+=(s,e)=>{disposed=true;try{listener.Stop();}catch{}};
@@ -86,8 +86,9 @@ public sealed class MainForm : Form {
    bool audible=caiPlaying||peak>0.012f;
    if(audible){audioSeen=true;lastChromeAudio=DateTime.UtcNow;replyAudioStarted=true;}
    if(waitingReply&&replyGenerationFinished){
-    // If Chrome output meters missed playback, begin a silence fallback from generation completion.
-    if(!audioSeen){audioSeen=true;lastChromeAudio=generationFinishedAt==DateTime.MinValue?DateTime.UtcNow:generationFinishedAt;Log("No Chrome audio meter event detected; starting post-generation silence fallback.");}
+    // Generation completion is our reliable fallback when Chrome/WebAudio meters are unavailable.
+    audioSeen=true;lastChromeAudio=generationFinishedAt==DateTime.MinValue?DateTime.UtcNow:generationFinishedAt;
+    Log("Generation ended; starting 6-second audio-silence recovery clock.");
     waitingReply=false;isIdle=true;
     try{BeginInvoke(new Action(()=>status.Text=audible?"IDLE — c.ai audio playing; Voice stays ON":"IDLE — generation finished; Voice stays ON"));}catch{}
     Log("Generation finished; Voice remains ON.");
@@ -97,7 +98,7 @@ public sealed class MainForm : Form {
    if(keepalive.Checked&&audioSeen&&!audible&&!caiPlaying&&DateTime.UtcNow-lastChromeAudio>=TimeSpan.FromSeconds(6)&&DateTime.UtcNow-lastRecovery>=TimeSpan.FromSeconds(6)){
     lastRecovery=DateTime.UtcNow;
     recover=true;
-    Log("c.ai Chrome audio is still OFF (6s). Scheduling Voice OFF→ON recovery pulse.");
+    Log($"c.ai silence confirmed (peak={peak:F4}, mediaPlaying={caiPlaying}, silentFor={(DateTime.UtcNow-lastChromeAudio).TotalSeconds:F1}s); scheduling Voice OFF→ON.");
    }
   }catch(Exception ex){Log("Audio recovery monitor: "+ex.Message);}
   finally{Interlocked.Exchange(ref voiceBusy,0);}
