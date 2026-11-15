@@ -19,9 +19,9 @@
   if(!active)return;
   const playing=audioPlaying();
   if(playing){if(!audioWasPlaying)log("Character.AI audio started; pausing voice-wave toggles.");audioWasPlaying=true;return}
-  if(audioWasPlaying){audioWasPlaying=false;log("Character.AI audio finished; restarting 5-second voice-wave recovery.");return}
+  if(audioWasPlaying){audioWasPlaying=false;log("Character.AI audio finished; restarting 8-second voice-wave recovery.");return}
   const b=voiceWaveButton();
-  if(b){b.click();log("Clicked voice-wave SVG button (5-second audio recovery).")}
+  if(b){b.click();log("Clicked voice-wave SVG button (8-second audio recovery).")}
   else log("Voice-wave SVG button not found; will retry in 5 seconds.");
  }
  function startRecognition(){
@@ -42,7 +42,7 @@
    log("Sent: "+text);busy=false;submitLock=false;startRecognition();
   },250);
  }
- function start(){if(!SR){log("SpeechRecognition unavailable. Use Chrome.");return}active=true;busy=false;submitLock=false;startRecognition();clearInterval(monitorTimer);monitorTimer=setInterval(monitorVoice,5000);log("Continuous mic + 5-second voice-wave audio recovery enabled.")}
+ function start(){if(!SR){log("SpeechRecognition unavailable. Use Chrome.");return}active=true;busy=false;submitLock=false;startRecognition();clearInterval(monitorTimer);monitorTimer=setInterval(monitorVoice,8000);log("Continuous mic + 8-second voice-wave audio recovery enabled.")}
  function stop(){active=false;busy=false;submitLock=false;clearTimeout(restartTimer);clearInterval(monitorTimer);try{recognition?.stop()}catch{}recognition=null;audioWasPlaying=false;log("Stopped listening.")}
  chrome.runtime.onMessage.addListener(m=>{if(m.action==="START")start();if(m.action==="STOP")stop()});
 })();
