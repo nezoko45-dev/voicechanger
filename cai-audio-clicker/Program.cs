@@ -16,7 +16,7 @@ namespace CaiReplyAudioClicker
         static int commandId;
         const string DebugAddress = "http://127.0.0.1:9222";
         const string CaiUrl = "https://character.ai/";
-        static bool voiceEnabled;
+        static bool voiceEnabled;\n        static string lastBridgeStatus = "";
 
         static async Task Main()
         {
@@ -36,18 +36,24 @@ namespace CaiReplyAudioClicker
                         using var ws=new ClientWebSocket();
                         await ws.ConnectAsync(new Uri(target),CancellationToken.None);
                         string bridge=await Evaluate(ws, @"(() => {
-                          if(window.__caiSpeechBridge) return window.__caiSpeechBridge.status||'bridge-present';
                           const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
                           if(!SR) return 'SpeechRecognition-unavailable';
-                          const r=new SR();r.continuous=true;r.interimResults=false;r.lang='en-US';
-                          window.__caiSpeechBridge={recognition:r,latest:'',status:'starting'};
-                          r.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)window.__caiSpeechBridge.latest=e.results[i][0].transcript.trim();};
-                          r.onerror=e=>window.__caiSpeechBridge.status='error:'+e.error;
-                          r.onstart=()=>window.__caiSpeechBridge.status='listening';
-                          r.onend=()=>{window.__caiSpeechBridge.status='ended';setTimeout(()=>{try{r.start();}catch(e){}},800);};
-                          try{r.start();return 'bridge-started';}catch(e){window.__caiSpeechBridge.status='start-error:'+e.message;return window.__caiSpeechBridge.status;}
+                          let b=window.__caiSpeechBridge;
+                          if(!b){
+                            const r=new SR();r.continuous=true;r.interimResults=false;r.lang='en-US';
+                            b=window.__caiSpeechBridge={recognition:r,latest:'',status:'created',restartAt:0};
+                            r.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)b.latest=e.results[i][0].transcript.trim();};
+                            r.onerror=e=>{b.status='error:'+e.error;b.restartAt=Date.now()+1200;};
+                            r.onstart=()=>{b.status='listening';b.restartAt=0;};
+                            r.onend=()=>{b.status='ended';b.restartAt=Date.now()+900;};
+                          }
+                          if((b.status==='created'||b.status==='ended'||b.status.startsWith('error:')||b.status.startsWith('start-error:'))&&Date.now()>=(b.restartAt||0)){
+                            try{b.status='starting';b.recognition.start();return 'restart-attempt';}
+                            catch(e){b.status='start-error:'+e.message;b.restartAt=Date.now()+1500;}
+                          }
+                          return b.status;
                         })()");
-                        if(bridge!="listening"&&bridge!="bridge-present")Console.WriteLine("Speech bridge: "+bridge);
+                        if(bridge!=lastBridgeStatus){Console.WriteLine("Speech bridge: "+bridge);lastBridgeStatus=bridge;}
                         string words=await Evaluate(ws,"(()=>{const b=window.__caiSpeechBridge;if(!b)return '';const t=b.latest||'';b.latest='';return t;})()");
                         if(!string.IsNullOrWhiteSpace(words)){Console.WriteLine("Recognized: "+words);await SetVoiceToggle(true,ws);}
                         string audio=await Evaluate(ws,@"(()=>{const a=[...document.querySelectorAll('audio,video')];return a.some(x=>!x.paused&&!x.ended&&x.currentTime>0&&!x.muted&&x.volume>0)?'playing':'silent';})()");
