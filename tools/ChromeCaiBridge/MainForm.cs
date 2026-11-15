@@ -92,9 +92,7 @@ public sealed class MainForm : Form {
    // Recover ONLY from a drop in c.ai's Chrome output level—not from microphone silence.
    if(keepalive.Checked&&audioSeen&&!audible&&!caiPlaying&&DateTime.UtcNow-lastChromeAudio>=TimeSpan.FromSeconds(8)&&DateTime.UtcNow-lastRecovery>=TimeSpan.FromSeconds(20)){
     lastRecovery=DateTime.UtcNow;audioSeen=false;
-    Log("c.ai Chrome audio level stayed down 8s; refreshing Voice (OFF→ON).");
-    await VoiceToggleAsync(false);await Task.Delay(350);await VoiceToggleAsync(false);
-    Log("Voice recovery pulse complete; Voice should be ON.");
+    Log("c.ai Chrome audio level dropped; recovery noted. Voice button is NEVER toggled automatically.");
    }
   }catch(Exception ex){Log("Audio recovery: "+ex.Message);}
   finally{Interlocked.Exchange(ref voiceBusy,0);}
