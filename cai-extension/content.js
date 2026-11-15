@@ -28,15 +28,26 @@
   const playingLabel=/pause|stop audio|playing/.test(label);
   return mediaOn||pressed||playingLabel;
  }
+ let wasGenerating=false, generationFinishedAt=0;
+ function generationActive(){
+  // CAI exposes a stop-generation control while the assistant is composing.
+  return [...document.querySelectorAll("button,[role=button]")].some(el=>{
+   const s=((el.getAttribute("aria-label")||"")+" "+(el.getAttribute("title")||"")+" "+(el.getAttribute("data-testid")||"")+" "+(el.textContent||"")).toLowerCase().trim();
+   return !el.disabled && /stop generating|stop response|cancel generation|interrupt response/.test(s);
+  });
+ }
  function monitorVoice(){
   if(!active)return;
-  const playing=playbackState();
+  const generating=generationActive(), playing=playbackState();
+  if(generating){wasGenerating=true;lastRecoveryClick=Date.now();return}
+  if(wasGenerating){wasGenerating=false;generationFinishedAt=Date.now();lastRecoveryClick=Date.now();log("CAI finished generating; waiting for its audio before recovery.");}
   if(playing){if(!audioWasPlaying)log("Character.AI playback detected; holding recovery clicks.");audioWasPlaying=true;return}
   if(audioWasPlaying){audioWasPlaying=false;lastRecoveryClick=Date.now();const b=voiceWaveButton();if(b){b.click();log("Final AI sentence finished; switched CAI voice-wave SVG off.")}else log("Final AI sentence finished; voice-wave SVG button not found.");return}
+  // Never tap the SVG during generation, nor in the short handoff window after it.
+  if(Date.now()-generationFinishedAt<7000)return;
   if(Date.now()-lastRecoveryClick<8000)return;
   const b=voiceWaveButton();
-  if(b){b.click();lastRecoveryClick=Date.now();log("Tapped CAI voice-wave control; recovery cooldown started.")}
-  else log("CAI voice-wave control not found; checking again in 1 second.");
+  if(b){b.click();lastRecoveryClick=Date.now();log("Idle recovery tapped CAI voice-wave control.");}
  }
  function startAudioMonitor(){
   clearInterval(monitorTimer);monitorTimer=setInterval(monitorVoice,1000);
@@ -62,7 +73,7 @@
    log("Sent: "+text);busy=false;submitLock=false;startRecognition();
   },250);
  }
- function start(){if(!SR){log("SpeechRecognition unavailable. Use Chrome.");return}active=true;busy=false;submitLock=false;lastRecoveryClick=Date.now();startRecognition();startAudioMonitor();log("Continuous mic + 1-second audio checks; 8-second recovery clicks enabled.")}
+ function start(){if(!SR){log("SpeechRecognition unavailable. Use Chrome.");return}active=true;busy=false;submitLock=false;lastRecoveryClick=Date.now();startRecognition();startAudioMonitor();log("Continuous mic + generation-aware audio monitor; SVG clicks paused while CAI generates.")}
  function stop(){active=false;busy=false;submitLock=false;clearTimeout(restartTimer);clearInterval(monitorTimer);audioMonitorObserver?.disconnect();audioMonitorObserver=null;try{recognition?.stop()}catch{}recognition=null;audioWasPlaying=false;log("Stopped listening.")}
  chrome.runtime.onMessage.addListener(m=>{if(m.action==="START")start();if(m.action==="STOP")stop()});
 })();
