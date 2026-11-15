@@ -1,4 +1,6 @@
 using System;
+using System.Diagnostics;
+using System.IO;
 using System.Net.Http;
 using System.Net.WebSockets;
 using System.Text;
@@ -12,19 +14,24 @@ namespace CaiReplyAudioClicker
     {
         static readonly HttpClient Http = new HttpClient();
         static int commandId = 0;
+        const string DebugAddress = "http://127.0.0.1:9222";
+        const string CaiUrl = "https://character.ai/";
 
         static async Task Main()
         {
-            Console.Title = "CAI Reply Audio Clicker (Chrome Debug)";
-            Console.WriteLine("CDP mode: launch Chrome with --remote-debugging-port=9222, open Character.AI.");
-            Console.WriteLine("Watching for completed replies and clicking the blue Read Aloud triangle. Ctrl+C exits.");
+            Console.Title = "CAI Reply Audio Clicker";
+            Console.WriteLine("Starting Chrome in remote-debug mode...");
+            await EnsureDebugChrome();
+            Console.WriteLine("Connected. Sign in to Character.AI in this Chrome profile if needed.");
+            Console.WriteLine("Waiting for a reply to finish; then clicking its Read Aloud triangle. Ctrl+C exits.");
+
             bool generating = false;
             while (true)
             {
                 try
                 {
                     var target = await GetCaiTarget();
-                    if (target == null) { Thread.Sleep(1500); continue; }
+                    if (target == null) { await Task.Delay(1200); continue; }
                     using var ws = new ClientWebSocket();
                     await ws.ConnectAsync(new Uri(target), CancellationToken.None);
                     string state = await Evaluate(ws, @"(() => {
@@ -48,7 +55,6 @@ namespace CaiReplyAudioClicker
                           let target=named[named.length-1];
                           if(!target) {
                             const candidates=btns.filter(b=>isTriangle(b) && b.querySelector('svg'));
-                            // Reply action toolbars are near message content; prefer the last visible triangle button.
                             target=candidates[candidates.length-1];
                           }
                           if(!target) return 'not-found';
@@ -60,14 +66,56 @@ namespace CaiReplyAudioClicker
                     await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "poll", CancellationToken.None);
                 }
                 catch (Exception ex) { Console.WriteLine("CDP: " + ex.Message); }
-                Thread.Sleep(700);
+                await Task.Delay(700);
             }
+        }
+
+        static async Task EnsureDebugChrome()
+        {
+            // Reuse an already-running debug browser if one exists.
+            if (await DebugEndpointReady()) return;
+            string chrome = FindChrome();
+            if (chrome == null) throw new FileNotFoundException("Chrome.exe not found. Install Google Chrome first.");
+
+            string profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CAI-AudioClicker-Chrome");
+            Directory.CreateDirectory(profile);
+            var psi = new ProcessStartInfo(chrome)
+            {
+                UseShellExecute = false,
+                Arguments = "--remote-debugging-port=9222 --remote-allow-origins=* --user-data-dir=" + Quote(profile) + " --no-first-run --no-default-browser-check " + Quote(CaiUrl)
+            };
+            Process.Start(psi);
+
+            for (int i=0; i<40; i++) {
+                if (await DebugEndpointReady()) return;
+                await Task.Delay(500);
+            }
+            throw new TimeoutException("Chrome launched, but its debugging endpoint did not start on port 9222.");
+        }
+
+        static string FindChrome()
+        {
+            string[] paths = {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Google", "Chrome", "Application", "chrome.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Google", "Chrome", "Application", "chrome.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Google", "Chrome", "Application", "chrome.exe")
+            };
+            foreach (string p in paths) if (File.Exists(p)) return p;
+            return null;
+        }
+
+        static string Quote(string value) => "\"" + value.Replace("\"", "\\\"") + "\"";
+
+        static async Task<bool> DebugEndpointReady()
+        {
+            try { using var response = await Http.GetAsync(DebugAddress + "/json/version"); return response.IsSuccessStatusCode; }
+            catch { return false; }
         }
 
         static async Task<string> GetCaiTarget()
         {
             try {
-                using var doc = JsonDocument.Parse(await Http.GetStringAsync("http://127.0.0.1:9222/json"));
+                using var doc = JsonDocument.Parse(await Http.GetStringAsync(DebugAddress + "/json"));
                 foreach (var item in doc.RootElement.EnumerateArray()) {
                     string url = item.TryGetProperty("url", out var u) ? u.GetString() ?? "" : "";
                     string ws = item.TryGetProperty("webSocketDebuggerUrl", out var w) ? w.GetString() ?? "" : "";
@@ -84,7 +132,7 @@ namespace CaiReplyAudioClicker
             await ws.SendAsync(Encoding.UTF8.GetBytes(payload), WebSocketMessageType.Text, true, CancellationToken.None);
             var buffer = new byte[8192];
             while (true) {
-                using var ms = new System.IO.MemoryStream();
+                using var ms = new MemoryStream();
                 WebSocketReceiveResult result;
                 do {
                     result = await ws.ReceiveAsync(buffer, CancellationToken.None);
