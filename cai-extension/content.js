@@ -32,7 +32,7 @@
   if(!active)return;
   const playing=playbackState();
   if(playing){if(!audioWasPlaying)log("Character.AI playback detected; holding recovery clicks.");audioWasPlaying=true;return}
-  if(audioWasPlaying){audioWasPlaying=false;lastRecoveryClick=Date.now();log("Character.AI playback ended; waiting 8 seconds before recovery.");return}
+  if(audioWasPlaying){audioWasPlaying=false;lastRecoveryClick=Date.now();const b=voiceWaveButton();if(b){b.click();log("Final AI sentence finished; switched CAI voice-wave SVG off.")}else log("Final AI sentence finished; voice-wave SVG button not found.");return}
   if(Date.now()-lastRecoveryClick<8000)return;
   const b=voiceWaveButton();
   if(b){b.click();lastRecoveryClick=Date.now();log("Tapped CAI voice-wave control; recovery cooldown started.")}
@@ -41,7 +41,7 @@
  function startAudioMonitor(){
   clearInterval(monitorTimer);monitorTimer=setInterval(monitorVoice,1000);
   if(audioMonitorObserver)audioMonitorObserver.disconnect();
-  audioMonitorObserver=new MutationObserver(()=>{if(!active)return;const state=playbackState();const sig=state?"playing":"idle";if(sig!==audioStateSignature){audioStateSignature=sig;if(state){audioWasPlaying=true;log("CAI audio state changed to playing.")}else if(audioWasPlaying){audioWasPlaying=false;log("CAI audio state changed to finished.")}}});
+  audioMonitorObserver=new MutationObserver(()=>{if(!active)return;const state=playbackState();const sig=state?"playing":"idle";if(sig!==audioStateSignature){audioStateSignature=sig;if(state){audioWasPlaying=true;log("CAI audio state changed to playing.")}else if(audioWasPlaying){audioWasPlaying=false;lastRecoveryClick=Date.now();const b=voiceWaveButton();if(b){b.click();log("Final AI sentence finished; switched CAI voice-wave SVG off.")}else log("CAI audio finished; voice-wave SVG button not found.")}}});
   audioMonitorObserver.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["aria-label","aria-pressed","title","data-testid"]});
  }
  function startRecognition(){
