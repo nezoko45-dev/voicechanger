@@ -8,4 +8,5 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>disable</Nullable>
   </PropertyGroup>
+  <ItemGroup><None Include="speech.html" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 </Project>
