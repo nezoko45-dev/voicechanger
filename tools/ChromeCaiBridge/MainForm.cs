@@ -23,10 +23,10 @@ public sealed class MainForm : Form {
  readonly HttpListener listener=new();
  readonly TextBox output=new(){Multiline=true,ScrollBars=ScrollBars.Vertical,Dock=DockStyle.Fill};
  readonly CheckBox send=new(){Text="Send recognized final phrases to c.ai",Checked=true,AutoSize=true};
- readonly CheckBox keepalive=new(){Text="Toggle Voice every 5 seconds while IDLE",Checked=true,AutoSize=true};
+ readonly CheckBox keepalive=new(){Text="Auto-recover c.ai audio",Checked=true,AutoSize=true};
  readonly Label status=new(){AutoSize=true,Text="Starting…"};
  readonly string profile=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"ChromeCaiBridge","DebugProfile");
- DateTime lastSpeech=DateTime.UtcNow; bool disposed,waitingReply,sawGenerating,isIdle=true; int generationPolls; int monitorBusy,voiceBusy;
+ DateTime lastSpeech=DateTime.UtcNow; bool disposed,waitingReply,sawGenerating,isIdle=true; int generationPolls; int monitorBusy,voiceBusy; DateTime lastChromeAudio=DateTime.UtcNow; bool audioSeen;
  const string SvgPathPrefix="M8 3a1 1 0 0 1 1 1v7.105l2-1.473";
  public MainForm(){
   Text="Chrome c.ai Voice Bridge (Debug Chrome)";Width=820;Height=540;
@@ -35,7 +35,7 @@ public sealed class MainForm : Form {
   var open=new Button{Text="Open Chrome recognition",AutoSize=true};open.Click+=(s,e)=>Process.Start(new ProcessStartInfo("http://127.0.0.1:8765/"){UseShellExecute=true});
   bar.Controls.Add(launch);bar.Controls.Add(open);bar.Controls.Add(send);bar.Controls.Add(keepalive);bar.Controls.Add(status);Controls.Add(output);Controls.Add(bar);
   Shown+=(s,e)=>{try{listener.Prefixes.Add("http://127.0.0.1:8765/");listener.Start();status.Text="Speech bridge ready";_=Serve();}catch(Exception ex){Log("Listener failed: "+ex.Message);} LaunchDebugChrome();};
-  var timer=new System.Windows.Forms.Timer{Interval=5000};timer.Tick+=(s,e)=>{if(keepalive.Checked&&isIdle&&Interlocked.Exchange(ref voiceBusy,1)==0)_=VoiceToggleGuardedAsync();};timer.Start();
+  var timer=new System.Windows.Forms.Timer{Interval=5000};timer.Tick+=(s,e)=>{if(keepalive.Checked&&Interlocked.Exchange(ref voiceBusy,1)==0)_=AudioRecoveryTickAsync();};timer.Start();
   var composerWatch=new System.Windows.Forms.Timer{Interval=700};composerWatch.Tick+=(s,e)=>{if(!minimizedAfterComposerClick&&debugChrome!=null&&Interlocked.Exchange(ref composerWatchBusy,1)==0)_=WatchComposerFocusAsync();};composerWatch.Start();
   var monitor=new System.Windows.Forms.Timer{Interval=1500};monitor.Tick+=(s,e)=>{if(waitingReply&&Interlocked.Exchange(ref monitorBusy,1)==0)_=CheckGenerationGuardedAsync();};monitor.Start();
   FormClosing+=(s,e)=>{disposed=true;try{listener.Stop();}catch{}};
@@ -68,13 +68,14 @@ public sealed class MainForm : Form {
  void SendToCai(string phrase){
   // Avoid a full desktop UI Automation tree scan on every transcript; it is
   // expensive and delays sending. CDP handles composer lookup/injection itself.
-  _pendingPhrase=phrase;
-  Log("Sending transcript immediately through Chrome CDP (no UIA scan).");
-  _=SendEnterAsync();
+  Log("Turning c.ai Voice on before sending transcript.");
+  _=EnsureVoiceAndSendAsync(phrase);
  }
  bool HasButton(string name){try{return AutomationElement.RootElement.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.NameProperty,name))!=null;}catch{return false;}}
  async Task CheckGenerationGuardedAsync(){try{await Task.Run(()=>{if(!waitingReply)return;generationPolls++;bool generating=HasButton("Stop generating")||HasButton("Stop response")||HasButton("Stop");if(generating){sawGenerating=true;return;}if((sawGenerating&&generationPolls>=2)||generationPolls>=120){waitingReply=false;isIdle=true;try{BeginInvoke(new Action(()=>status.Text="IDLE — reply complete"));}catch{}Log("c.ai reply finished; bridge returned to IDLE.");}});}finally{Interlocked.Exchange(ref monitorBusy,0);}}
- async Task VoiceToggleGuardedAsync(){try{await VoiceToggleAsync();}finally{Interlocked.Exchange(ref voiceBusy,0);}}
+ async Task EnsureVoiceAndSendAsync(string phrase){try{await VoiceToggleAsync();_pendingPhrase=phrase;await SendEnterAsync();}catch(Exception ex){Log("Voice pre-send error: "+ex.Message);}}
+ async Task AudioRecoveryTickAsync(){try{if(!isIdle||waitingReply)return;float peak=ChromeAudioPeak();if(peak>0.002f){lastChromeAudio=DateTime.UtcNow;audioSeen=true;return;}if(audioSeen&&(DateTime.UtcNow-lastChromeAudio).TotalSeconds>12){Log("Chrome silent 12s; toggling Voice to recover.");await VoiceToggleAsync();await Task.Delay(700);await VoiceToggleAsync();lastChromeAudio=DateTime.UtcNow;}}catch(Exception ex){Log("Audio recovery: "+ex.Message);}finally{Interlocked.Exchange(ref voiceBusy,0);}}
+ float ChromeAudioPeak(){try{using var en=new NAudio.CoreAudioApi.MMDeviceEnumerator();using var dev=en.GetDefaultAudioEndpoint(NAudio.CoreAudioApi.DataFlow.Render,NAudio.CoreAudioApi.Role.Multimedia);float peak=0;var sessions=dev.AudioSessionManager.Sessions;for(int i=0;i<sessions.Count;i++){var a=sessions[i];if(Process.GetProcessesByName("chrome").Any(p=>p.Id==a.GetProcessID))peak=Math.Max(peak,a.AudioMeterInformation.MasterPeakValue);}return peak;}catch{return 0;}}
  async Task SendEnterAsync(){
   try{
    await cdpSendLock.WaitAsync();
