@@ -11,5 +11,6 @@
 </PropertyGroup>
 <ItemGroup>
   <Content Include="www\index.html"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
+<PackageReference Include="NAudio" Version="2.2.1" />
 </ItemGroup>
 </Project>
