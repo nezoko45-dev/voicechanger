@@ -16,7 +16,8 @@ namespace CaiReplyAudioClicker
         static int commandId;
         const string DebugAddress = "http://127.0.0.1:9222";
         const string CaiUrl = "https://character.ai/";
-        static bool voiceEnabled;\n        static string lastBridgeStatus = "";
+        static bool voiceEnabled;
+        static string lastBridgeStatus = "";
 
         static async Task Main()
         {
