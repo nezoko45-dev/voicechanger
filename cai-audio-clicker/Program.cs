@@ -1,90 +1,102 @@
 using System;
-using System.Linq;
+using System.Net.Http;
+using System.Net.WebSockets;
+using System.Text;
+using System.Text.Json;
 using System.Threading;
-using System.Windows.Automation;
+using System.Threading.Tasks;
 
 namespace CaiReplyAudioClicker
 {
     internal static class Program
     {
-        static void Main()
+        static readonly HttpClient Http = new HttpClient();
+        static int commandId = 0;
+
+        static async Task Main()
         {
-            Console.Title = "CAI Reply Audio Clicker";
-            Console.WriteLine("Watching Chrome / Character.AI. Keep CAI open; Ctrl+C to exit.");
-            bool generatingSeen = false;
+            Console.Title = "CAI Reply Audio Clicker (Chrome Debug)";
+            Console.WriteLine("CDP mode: launch Chrome with --remote-debugging-port=9222, open Character.AI.");
+            Console.WriteLine("Watching for completed replies and clicking the blue Read Aloud triangle. Ctrl+C exits.");
+            bool generating = false;
             while (true)
             {
                 try
                 {
-                    var chrome = AutomationElement.RootElement.FindAll(
-                        TreeScope.Children,
-                        new PropertyCondition(AutomationElement.ClassNameProperty, "Chrome_WidgetWin_1"));
-                    foreach (AutomationElement window in chrome)
+                    var target = await GetCaiTarget();
+                    if (target == null) { Thread.Sleep(1500); continue; }
+                    using var ws = new ClientWebSocket();
+                    await ws.ConnectAsync(new Uri(target), CancellationToken.None);
+                    string state = await Evaluate(ws, @"(() => {
+                      const t = document.body.innerText.toLowerCase();
+                      return (t.includes('stop generating') || t.includes('stop response')) ? 'generating' : 'idle';
+                    })()");
+                    if (state == "generating") generating = true;
+                    else if (generating)
                     {
-                        var stop = FindGenerationStop(window);
-                        if (stop != null) { generatingSeen = true; continue; }
-                        if (!generatingSeen) continue;
-                        Thread.Sleep(1200); // let final response controls render
-                        var play = FindReadAloud(window);
-                        if (play != null && TryInvoke(play))
-                        {
-                            Console.WriteLine(DateTime.Now.ToString("HH:mm:ss") + " Clicked reply Read Aloud.");
-                            generatingSeen = false;
-                            Thread.Sleep(1500);
-                        }
+                        await Task.Delay(1300);
+                        string clicked = await Evaluate(ws, @"(() => {
+                          const visible = e => !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
+                          const btns = [...document.querySelectorAll('button')].filter(visible);
+                          const isTriangle = b => [...b.querySelectorAll('svg path,svg polygon')].some(p => {
+                            const d=(p.getAttribute('d')||'').trim();
+                            const points=(p.getAttribute('points')||'').trim();
+                            return (d.length>0 && /[Mm].*[Ll].*[Zz]/.test(d) && d.length<100) ||
+                                   (points.split(/[ ,]+/).filter(Boolean).length===6);
+                          });
+                          const named=btns.filter(b => /read aloud|play audio|listen/i.test((b.getAttribute('aria-label')||'')+' '+(b.getAttribute('title')||'')+' '+b.innerText));
+                          let target=named[named.length-1];
+                          if(!target) {
+                            const candidates=btns.filter(b=>isTriangle(b) && b.querySelector('svg'));
+                            // Reply action toolbars are near message content; prefer the last visible triangle button.
+                            target=candidates[candidates.length-1];
+                          }
+                          if(!target) return 'not-found';
+                          target.click(); return 'clicked:'+((target.getAttribute('aria-label')||target.title||'triangle').slice(0,60));
+                        })()");
+                        Console.WriteLine(DateTime.Now.ToString("HH:mm:ss") + " " + clicked);
+                        if (clicked.StartsWith("clicked")) generating = false;
                     }
+                    await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "poll", CancellationToken.None);
                 }
-                catch (ElementNotAvailableException) { }
-                catch (Exception ex) { Console.WriteLine("UIA: " + ex.Message); }
-                Thread.Sleep(500);
+                catch (Exception ex) { Console.WriteLine("CDP: " + ex.Message); }
+                Thread.Sleep(700);
             }
         }
 
-        static AutomationElement FindGenerationStop(AutomationElement root)
+        static async Task<string> GetCaiTarget()
         {
-            var buttons = root.FindAll(TreeScope.Descendants,
-                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button));
-            foreach (AutomationElement b in buttons)
-            {
-                string n = SafeName(b).ToLowerInvariant();
-                if (n.Contains("stop generating") || n.Contains("stop response") ||
-                    n.Contains("stop generation") || n.Contains("cancel generation"))
-                    return b;
-            }
+            try {
+                using var doc = JsonDocument.Parse(await Http.GetStringAsync("http://127.0.0.1:9222/json"));
+                foreach (var item in doc.RootElement.EnumerateArray()) {
+                    string url = item.TryGetProperty("url", out var u) ? u.GetString() ?? "" : "";
+                    string ws = item.TryGetProperty("webSocketDebuggerUrl", out var w) ? w.GetString() ?? "" : "";
+                    if (url.Contains("character.ai", StringComparison.OrdinalIgnoreCase) && ws.Length > 0) return ws;
+                }
+            } catch { }
             return null;
         }
 
-        static AutomationElement FindReadAloud(AutomationElement root)
+        static async Task<string> Evaluate(ClientWebSocket ws, string expression)
         {
-            var buttons = root.FindAll(TreeScope.Descendants,
-                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button));
-            AutomationElement fallback = null;
-            foreach (AutomationElement b in buttons)
-            {
-                string n = SafeName(b).ToLowerInvariant();
-                if (n.Contains("read aloud") || n.Contains("play audio") ||
-                    n.Contains("listen to response") || n.Contains("listen"))
-                    fallback = b;
+            int id = Interlocked.Increment(ref commandId);
+            string payload = JsonSerializer.Serialize(new { id, method="Runtime.evaluate", @params=new { expression, returnByValue=true } });
+            await ws.SendAsync(Encoding.UTF8.GetBytes(payload), WebSocketMessageType.Text, true, CancellationToken.None);
+            var buffer = new byte[8192];
+            while (true) {
+                using var ms = new System.IO.MemoryStream();
+                WebSocketReceiveResult result;
+                do {
+                    result = await ws.ReceiveAsync(buffer, CancellationToken.None);
+                    ms.Write(buffer, 0, result.Count);
+                } while (!result.EndOfMessage);
+                using var json = JsonDocument.Parse(ms.ToArray());
+                var root = json.RootElement;
+                if (!root.TryGetProperty("id", out var rid) || rid.GetInt32()!=id) continue;
+                if (root.TryGetProperty("result", out var res) && res.TryGetProperty("result", out var val) && val.TryGetProperty("value", out var value))
+                    return value.GetString() ?? "";
+                return "no-value";
             }
-            return fallback;
-        }
-
-        static string SafeName(AutomationElement e)
-        {
-            try { return e.Current.Name ?? ""; } catch { return ""; }
-        }
-
-        static bool TryInvoke(AutomationElement e)
-        {
-            try
-            {
-                if (e.TryGetCurrentPattern(InvokePattern.Pattern, out object p))
-                { ((InvokePattern)p).Invoke(); return true; }
-                if (e.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object s))
-                { ((SelectionItemPattern)s).Select(); return true; }
-            }
-            catch { }
-            return false;
         }
     }
 }
