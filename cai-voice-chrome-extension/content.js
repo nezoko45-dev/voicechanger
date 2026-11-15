@@ -43,7 +43,7 @@
     setTimeout(() => {
       const send = [...document.querySelectorAll('button')].find(b => b.getClientRects().length && !b.disabled &&
         /send/i.test((b.getAttribute('aria-label')||'')+' '+(b.title||'')));
-      if (send) send.click();
+      if (send && (composer.value || composer.textContent || '').trim()) send.click();
     }, 250);
     return true;
   }
@@ -93,7 +93,7 @@
     recognition.lang = 'en-US'; recognition.continuous = true; recognition.interimResults = false;
     recognition.onstart = () => { listening = true; startBtn.disabled = true; stopBtn.disabled = false; say('Listening… speak a message'); };
     recognition.onerror = e => say('Mic/STT: ' + e.error);
-    recognition.onend = () => { if (listening && !busy) { try { recognition.start(); } catch {} } };
+    recognition.onend = () => { if (listening) { try { recognition.start(); } catch {} } };
     recognition.onresult = e => {
       const result = e.results[e.results.length - 1];
       if (!result.isFinal) return;
