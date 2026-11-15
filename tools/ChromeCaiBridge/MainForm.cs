@@ -68,16 +68,17 @@ public sealed class MainForm : Form {
   if((sawGenerating&&generationPolls>=2)||finishedSignal||generationPolls>=90){
    waitingReply=false;isIdle=true;status.Text="IDLE — reply complete";Log("c.ai finished generating; bridge is IDLE.");}
  }
- // Specifically target the Character.AI toolbar's Voice button (icon + "Voice" label),
- // not an arbitrary element elsewhere with the same accessible name.
+ // Find the toolbar control by its accessible name; Chrome may expose it as Custom/Pane, not Button.
  void VoiceToggle(){try{
   var root=AutomationElement.RootElement;
-  var condition=new AndCondition(
-   new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Button),
-   new PropertyCondition(AutomationElement.NameProperty,voiceName.Text.Trim()));
-  var button=root.FindFirst(TreeScope.Descendants,condition);
-  if(button==null){Log("c.ai Voice BUTTON not found (accessible name: "+voiceName.Text+").");return;}
-  if(button.TryGetCurrentPattern(InvokePattern.Pattern,out var p)){((InvokePattern)p).Invoke();Log("Character.AI Voice button toggled.");}
-  else {Log("Character.AI Voice button found, but UI Automation cannot invoke it.");}
- }catch(Exception ex){Log("Voice button toggle error: "+ex.Message);}}
+  var name=voiceName.Text.Trim();
+  var button=root.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.NameProperty,name));
+  if(button==null){Log("Voice control not exposed in Windows UIA tree (name: "+name+").");return;}
+  if(button.TryGetCurrentPattern(InvokePattern.Pattern,out var p)){((InvokePattern)p).Invoke();Log("Character.AI Voice control invoked.");return;}
+  if(button.TryGetCurrentPattern(LegacyIAccessiblePattern.Pattern,out var legacy)){
+   ((LegacyIAccessiblePattern)legacy).DoDefaultAction();Log("Character.AI Voice default action invoked.");return;
+  }
+  Log("Found Voice control (type "+button.Current.ControlType.ProgrammaticName+") but no invoke/default-action pattern. Chrome may not expose it as an actionable UIA control.");
+ }catch(Exception ex){Log("Voice toggle error: "+ex.Message);}}
+
 }
