@@ -13,138 +13,154 @@ namespace CaiReplyAudioClicker
     internal static class Program
     {
         static readonly HttpClient Http = new HttpClient();
-        static int commandId = 0;
+        static int commandId;
         const string DebugAddress = "http://127.0.0.1:9222";
         const string CaiUrl = "https://character.ai/";
+        static bool voiceEnabled;
 
         static async Task Main()
         {
-            Console.Title = "CAI Reply Audio Clicker";
-            Console.WriteLine("Starting Chrome in remote-debug mode...");
+            Console.Title = "CAI Voice Toggle - Mic Monitor";
+            Console.WriteLine("Launching Chrome debug + Character.AI...");
             await EnsureDebugChrome();
-            Console.WriteLine("Connected. Sign in to Character.AI in this Chrome profile if needed.");
-            Console.WriteLine("Waiting for a reply to finish; then clicking its Read Aloud triangle. Ctrl+C exits.");
+            Console.WriteLine("Mic monitor ready. Speak to turn CAI voice ON; when CAI audio ends it turns OFF.");
+            Console.WriteLine("Ctrl+C exits.");
+            using var mic = new MicrophoneMonitor();
+            mic.SpeechStarted += async () => { if (!voiceEnabled) await SetVoiceToggle(true); };
+            mic.SpeechEnded += () => Console.WriteLine("Speech ended; waiting for CAI audio to finish...");
+            mic.Start();
 
-            bool generating = false;
+            bool wasPlaying = false;
+            int quietAudioTicks = 0;
             while (true)
             {
                 try
                 {
                     var target = await GetCaiTarget();
-                    if (target == null) { await Task.Delay(1200); continue; }
-                    using var ws = new ClientWebSocket();
-                    await ws.ConnectAsync(new Uri(target), CancellationToken.None);
-                    string state = await Evaluate(ws, @"(() => {
-                      const t = document.body.innerText.toLowerCase();
-                      return (t.includes('stop generating') || t.includes('stop response')) ? 'generating' : 'idle';
-                    })()");
-                    if (state == "generating") generating = true;
-                    else if (generating)
+                    if (target != null)
                     {
-                        await Task.Delay(1300);
-                        string clicked = await Evaluate(ws, @"(() => {
-                          const visible = e => !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
-                          const btns = [...document.querySelectorAll('button')].filter(visible);
-                          const isTriangle = b => [...b.querySelectorAll('svg path,svg polygon')].some(p => {
-                            const d=(p.getAttribute('d')||'').trim();
-                            const points=(p.getAttribute('points')||'').trim();
-                            return (d.length>0 && /[Mm].*[Ll].*[Zz]/.test(d) && d.length<100) ||
-                                   (points.split(/[ ,]+/).filter(Boolean).length===6);
-                          });
-                          const named=btns.filter(b => /read aloud|play audio|listen/i.test((b.getAttribute('aria-label')||'')+' '+(b.getAttribute('title')||'')+' '+b.innerText));
-                          let target=named[named.length-1];
-                          if(!target) {
-                            const candidates=btns.filter(b=>isTriangle(b) && b.querySelector('svg'));
-                            target=candidates[candidates.length-1];
-                          }
-                          if(!target) return 'not-found';
-                          target.click(); return 'clicked:'+((target.getAttribute('aria-label')||target.title||'triangle').slice(0,60));
+                        using var ws = new ClientWebSocket();
+                        await ws.ConnectAsync(new Uri(target), CancellationToken.None);
+                        string audio = await Evaluate(ws, @"(() => {
+                          const a=[...document.querySelectorAll('audio,video')];
+                          return a.some(x=>!x.paused && !x.ended && x.currentTime>0 && !x.muted && x.volume>0) ? 'playing':'silent';
                         })()");
-                        Console.WriteLine(DateTime.Now.ToString("HH:mm:ss") + " " + clicked);
-                        if (clicked.StartsWith("clicked")) generating = false;
+                        if (audio=="playing") { wasPlaying=true; quietAudioTicks=0; }
+                        else if (wasPlaying) {
+                            quietAudioTicks++;
+                            if (quietAudioTicks>=3) { await SetVoiceToggle(false, ws); wasPlaying=false; quietAudioTicks=0; }
+                        }
+                        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure,"poll",CancellationToken.None);
                     }
-                    await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "poll", CancellationToken.None);
                 }
-                catch (Exception ex) { Console.WriteLine("CDP: " + ex.Message); }
-                await Task.Delay(700);
+                catch(Exception ex) { Console.WriteLine("Monitor: "+ex.Message); }
+                await Task.Delay(500);
             }
+        }
+
+        static async Task SetVoiceToggle(bool on, ClientWebSocket existing=null)
+        {
+            var target=await GetCaiTarget();
+            if(target==null) { Console.WriteLine("CAI tab not found yet."); return; }
+            ClientWebSocket ws=existing;
+            bool owned=false;
+            if(ws==null) { ws=new ClientWebSocket(); await ws.ConnectAsync(new Uri(target),CancellationToken.None); owned=true; }
+            string result=await Evaluate(ws, @"(() => {
+              const visible=e=>!!(e.offsetWidth||e.offsetHeight||e.getClientRects().length);
+              const btns=[...document.querySelectorAll('button,[role=button]')].filter(visible);
+              const matches=b=>{
+                const s=b.querySelector('svg');
+                if(!s)return false;
+                const html=s.outerHTML.toLowerCase();
+                const label=((b.getAttribute('aria-label')||'')+' '+(b.getAttribute('title')||'')+' '+(b.innerText||'')).toLowerCase();
+                return /wave|voice|audio|sound/.test(label) || /wave|audio|voice/.test(html) || (s.querySelectorAll('path').length>=2 && s.querySelectorAll('path').length<=8);
+              };
+              const candidates=btns.filter(matches);
+              const b=candidates.find(x=>/voice|audio|wave/i.test((x.getAttribute('aria-label')||'')+' '+(x.title||'')))||candidates[candidates.length-1];
+              if(!b)return 'toggle-not-found';
+              const label=((b.getAttribute('aria-label')||'')+' '+(b.title||'')).toLowerCase();
+              const active=b.getAttribute('aria-pressed')==='true'||b.dataset.state==='on'||/turn voice off|disable voice|voice on/i.test(label);
+              const desired=__DESIRED__;
+              if(active===desired)return 'already-'+(desired?'on':'off');
+              b.click(); return 'toggled-'+(desired?'on':'off')+':'+label.slice(0,50);
+            })()".Replace("__DESIRED__",on?"true":"false"));
+            Console.WriteLine(DateTime.Now.ToString("HH:mm:ss")+" "+result);
+            if(result.StartsWith("toggled")||result.StartsWith("already")) voiceEnabled=on;
+            if(owned) await ws.CloseAsync(WebSocketCloseStatus.NormalClosure,"done",CancellationToken.None);
         }
 
         static async Task EnsureDebugChrome()
         {
-            // Reuse an already-running debug browser if one exists.
-            if (await DebugEndpointReady()) return;
-            string chrome = FindChrome();
-            if (chrome == null) throw new FileNotFoundException("Chrome.exe not found. Install Google Chrome first.");
-
-            string profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CAI-AudioClicker-Chrome");
+            if(await DebugEndpointReady()) { await NavigateCai(); return; }
+            string chrome=FindChrome();
+            if(chrome==null) throw new FileNotFoundException("Chrome.exe not found.");
+            string profile=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"CAI-AudioClicker-Chrome");
             Directory.CreateDirectory(profile);
-            var psi = new ProcessStartInfo(chrome)
-            {
-                UseShellExecute = false,
-                Arguments = "--remote-debugging-port=9222 --remote-allow-origins=* --user-data-dir=" + Quote(profile) + " --no-first-run --no-default-browser-check " + Quote(CaiUrl)
+            Process.Start(new ProcessStartInfo(chrome){UseShellExecute=false,Arguments="--remote-debugging-port=9222 --remote-allow-origins=* --user-data-dir="+Quote(profile)+" --no-first-run --no-default-browser-check "+Quote(CaiUrl)});
+            for(int i=0;i<40;i++){if(await DebugEndpointReady()){await NavigateCai();return;}await Task.Delay(500);}
+            throw new TimeoutException("Chrome debug port 9222 failed to start.");
+        }
+        static async Task NavigateCai()
+        {
+            try { using var d=JsonDocument.Parse(await Http.GetStringAsync(DebugAddress+"/json")); foreach(var x in d.RootElement.EnumerateArray()){var u=x.GetProperty("url").GetString()??"";if(u.Contains("character.ai",StringComparison.OrdinalIgnoreCase))return;} }
+            catch{}
+            try { await Http.GetStringAsync(DebugAddress+"/json/new?"+Uri.EscapeDataString(CaiUrl)); } catch{}
+        }
+        static string FindChrome(){string[] ps={Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"Google","Chrome","Application","chrome.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),"Google","Chrome","Application","chrome.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Google","Chrome","Application","chrome.exe")};foreach(var p in ps)if(File.Exists(p))return p;return null;}
+        static string Quote(string s)=>"\""+s.Replace("\"","\\\"")+"\"";
+        static async Task<bool> DebugEndpointReady(){try{using var r=await Http.GetAsync(DebugAddress+"/json/version");return r.IsSuccessStatusCode;}catch{return false;}}
+        static async Task<string> GetCaiTarget(){try{using var d=JsonDocument.Parse(await Http.GetStringAsync(DebugAddress+"/json"));foreach(var x in d.RootElement.EnumerateArray()){string u=x.TryGetProperty("url",out var a)?a.GetString()??"":"";string w=x.TryGetProperty("webSocketDebuggerUrl",out var b)?b.GetString()??"":"";if(u.Contains("character.ai",StringComparison.OrdinalIgnoreCase)&&w.Length>0)return w;}}catch{}return null;}
+        static async Task<string> Evaluate(ClientWebSocket ws,string expression){int id=Interlocked.Increment(ref commandId);string p=JsonSerializer.Serialize(new{id,method="Runtime.evaluate",@params=new{expression,returnByValue=true}});await ws.SendAsync(Encoding.UTF8.GetBytes(p),WebSocketMessageType.Text,true,CancellationToken.None);var buf=new byte[8192];while(true){using var ms=new MemoryStream();WebSocketReceiveResult r;do{r=await ws.ReceiveAsync(buf,CancellationToken.None);ms.Write(buf,0,r.Count);}while(!r.EndOfMessage);using var j=JsonDocument.Parse(ms.ToArray());var root=j.RootElement;if(!root.TryGetProperty("id",out var rid)||rid.GetInt32()!=id)continue;if(root.TryGetProperty("result",out var res)&&res.TryGetProperty("result",out var val)&&val.TryGetProperty("value",out var v))return v.GetString()??"";return "no-value";}}
+    }
+
+    // Windows microphone RMS + speech/silence hysteresis. No Python or external model.
+    internal sealed class MicrophoneMonitor : IDisposable
+    {
+        public event Func<Task> SpeechStarted;
+        public event Action SpeechEnded;
+        readonly object gate=new object();
+        System.Threading.Tasks.Task loop;
+        volatile bool running;
+        public void Start(){running=true;loop=System.Threading.Tasks.Task.Run(CaptureLoop);}
+        async Task CaptureLoop(){
+            // WASAPI loopback is not used: capture the default microphone through winmm waveIn.
+            var cap=new WaveInCapture();
+            cap.Data+=bytes=>{
+                double sum=0;for(int i=0;i+1<bytes.Length;i+=2){short v=BitConverter.ToInt16(bytes,i);sum+=(double)v*v;}
+                double rms=Math.Sqrt(sum/Math.Max(1,bytes.Length/2))/32768.0;
+                if(rms>0.018){quiet=0;if(!speaking){speaking=true;var h=SpeechStarted;if(h!=null)_=h();}}
+                else if(speaking){quiet++;if(quiet>=18){speaking=false;quiet=0;SpeechEnded?.Invoke();}}
             };
-            Process.Start(psi);
-
-            for (int i=0; i<40; i++) {
-                if (await DebugEndpointReady()) return;
-                await Task.Delay(500);
-            }
-            throw new TimeoutException("Chrome launched, but its debugging endpoint did not start on port 9222.");
+            cap.Start();
+            while(running)await Task.Delay(100);
+            cap.Dispose();
         }
+        int quiet;bool speaking;
+        public void Dispose(){running=false;}
+    }
 
-        static string FindChrome()
-        {
-            string[] paths = {
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Google", "Chrome", "Application", "chrome.exe"),
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Google", "Chrome", "Application", "chrome.exe"),
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Google", "Chrome", "Application", "chrome.exe")
-            };
-            foreach (string p in paths) if (File.Exists(p)) return p;
-            return null;
-        }
-
-        static string Quote(string value) => "\"" + value.Replace("\"", "\\\"") + "\"";
-
-        static async Task<bool> DebugEndpointReady()
-        {
-            try { using var response = await Http.GetAsync(DebugAddress + "/json/version"); return response.IsSuccessStatusCode; }
-            catch { return false; }
-        }
-
-        static async Task<string> GetCaiTarget()
-        {
-            try {
-                using var doc = JsonDocument.Parse(await Http.GetStringAsync(DebugAddress + "/json"));
-                foreach (var item in doc.RootElement.EnumerateArray()) {
-                    string url = item.TryGetProperty("url", out var u) ? u.GetString() ?? "" : "";
-                    string ws = item.TryGetProperty("webSocketDebuggerUrl", out var w) ? w.GetString() ?? "" : "";
-                    if (url.Contains("character.ai", StringComparison.OrdinalIgnoreCase) && ws.Length > 0) return ws;
-                }
-            } catch { }
-            return null;
-        }
-
-        static async Task<string> Evaluate(ClientWebSocket ws, string expression)
-        {
-            int id = Interlocked.Increment(ref commandId);
-            string payload = JsonSerializer.Serialize(new { id, method="Runtime.evaluate", @params=new { expression, returnByValue=true } });
-            await ws.SendAsync(Encoding.UTF8.GetBytes(payload), WebSocketMessageType.Text, true, CancellationToken.None);
-            var buffer = new byte[8192];
-            while (true) {
-                using var ms = new MemoryStream();
-                WebSocketReceiveResult result;
-                do {
-                    result = await ws.ReceiveAsync(buffer, CancellationToken.None);
-                    ms.Write(buffer, 0, result.Count);
-                } while (!result.EndOfMessage);
-                using var json = JsonDocument.Parse(ms.ToArray());
-                var root = json.RootElement;
-                if (!root.TryGetProperty("id", out var rid) || rid.GetInt32()!=id) continue;
-                if (root.TryGetProperty("result", out var res) && res.TryGetProperty("result", out var val) && val.TryGetProperty("value", out var value))
-                    return value.GetString() ?? "";
-                return "no-value";
-            }
-        }
+    // Minimal WinMM waveIn PCM16 microphone capture.
+    internal sealed class WaveInCapture : IDisposable
+    {
+        public event Action<byte[]> Data;
+        IntPtr handle;bool active;readonly IntPtr[] headers=new IntPtr[4];readonly IntPtr[] buffers=new IntPtr[4];
+        const int CALLBACK_FUNCTION=0x30000,WIM_DATA=0x3C0;
+        delegate void WaveCallback(IntPtr h,uint msg,IntPtr instance,IntPtr param1,IntPtr param2);
+        WaveCallback callback;
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        struct WAVEFORMATEX{public ushort tag,channels;public uint samples,avg;public ushort align,bits,extra;}
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        struct WAVEHDR{public IntPtr data;public uint length,recorded;public IntPtr user;public uint flags,loops;public IntPtr next;public IntPtr reserved;}
+        [System.Runtime.InteropServices.DllImport("winmm.dll")]static extern int waveInOpen(out IntPtr h,uint dev,ref WAVEFORMATEX fmt,WaveCallback cb,IntPtr inst,uint flags);
+        [System.Runtime.InteropServices.DllImport("winmm.dll")]static extern int waveInPrepareHeader(IntPtr h,IntPtr hdr,uint size);
+        [System.Runtime.InteropServices.DllImport("winmm.dll")]static extern int waveInAddBuffer(IntPtr h,IntPtr hdr,uint size);
+        [System.Runtime.InteropServices.DllImport("winmm.dll")]static extern int waveInStart(IntPtr h);
+        [System.Runtime.InteropServices.DllImport("winmm.dll")]static extern int waveInStop(IntPtr h);
+        [System.Runtime.InteropServices.DllImport("winmm.dll")]static extern int waveInReset(IntPtr h);
+        [System.Runtime.InteropServices.DllImport("winmm.dll")]static extern int waveInUnprepareHeader(IntPtr h,IntPtr hdr,uint size);
+        [System.Runtime.InteropServices.DllImport("winmm.dll")]static extern int waveInClose(IntPtr h);
+        public void Start(){callback=OnWave;var f=new WAVEFORMATEX{tag=1,channels=1,samples=16000,bits=16,align=2,avg=32000};if(waveInOpen(out handle,0xffffffff,ref f,callback,IntPtr.Zero,CALLBACK_FUNCTION)!=0)throw new Exception("Could not open default microphone. Check Windows microphone permissions.");for(int i=0;i<4;i++){buffers[i]=System.Runtime.InteropServices.Marshal.AllocHGlobal(4096);headers[i]=System.Runtime.InteropServices.Marshal.AllocHGlobal(System.Runtime.InteropServices.Marshal.SizeOf<WAVEHDR>());var h=new WAVEHDR{data=buffers[i],length=4096};System.Runtime.InteropServices.Marshal.StructureToPtr(h,headers[i],false);waveInPrepareHeader(handle,headers[i],(uint)System.Runtime.InteropServices.Marshal.SizeOf<WAVEHDR>());waveInAddBuffer(handle,headers[i],(uint)System.Runtime.InteropServices.Marshal.SizeOf<WAVEHDR>());}active=true;waveInStart(handle);}
+        void OnWave(IntPtr h,uint msg,IntPtr inst,IntPtr p1,IntPtr p2){if(msg!=WIM_DATA||!active)return;var hdr=System.Runtime.InteropServices.Marshal.PtrToStructure<WAVEHDR>(p1);if(hdr.recorded>0){var b=new byte[hdr.recorded];System.Runtime.InteropServices.Marshal.Copy(hdr.data,b,0,b.Length);Data?.Invoke(b);}hdr.recorded=0;hdr.flags=0;System.Runtime.InteropServices.Marshal.StructureToPtr(hdr,p1,false);waveInAddBuffer(handle,p1,(uint)System.Runtime.InteropServices.Marshal.SizeOf<WAVEHDR>());}
+        public void Dispose(){active=false;if(handle!=IntPtr.Zero){waveInStop(handle);waveInReset(handle);for(int i=0;i<4;i++){if(headers[i]!=IntPtr.Zero)waveInUnprepareHeader(handle,headers[i],(uint)System.Runtime.InteropServices.Marshal.SizeOf<WAVEHDR>());if(buffers[i]!=IntPtr.Zero)System.Runtime.InteropServices.Marshal.FreeHGlobal(buffers[i]);if(headers[i]!=IntPtr.Zero)System.Runtime.InteropServices.Marshal.FreeHGlobal(headers[i]);}waveInClose(handle);}}
     }
 }
