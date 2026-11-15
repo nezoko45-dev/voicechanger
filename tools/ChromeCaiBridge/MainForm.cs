@@ -175,21 +175,20 @@ public sealed class MainForm : Form {
  async Task VoiceToggleAsync(bool ensureOn=false){
   try{
    using var targets=JsonDocument.Parse(await cdpHttp.GetStringAsync("http://127.0.0.1:9222/json/list"));
-   string ws=null;
-   foreach(var t in targets.RootElement.EnumerateArray()){if(t.TryGetProperty("type",out var typ)&&typ.GetString()=="page"&&t.TryGetProperty("url",out var u)&&u.GetString()?.Contains("character.ai",StringComparison.OrdinalIgnoreCase)==true&&t.TryGetProperty("webSocketDebuggerUrl",out var w)){ws=w.GetString();break;}}
+   string ws=null;foreach(var t in targets.RootElement.EnumerateArray())if(t.TryGetProperty("type",out var typ)&&typ.GetString()=="page"&&t.TryGetProperty("url",out var u)&&u.GetString()?.Contains("character.ai",StringComparison.OrdinalIgnoreCase)==true&&t.TryGetProperty("webSocketDebuggerUrl",out var w)){ws=w.GetString();break;}
    if(ws==null){Log("CDP: no Character.AI tab found in debug Chrome.");return;}
    using var socket=new ClientWebSocket();socket.Options.SetRequestHeader("Origin","http://localhost");await socket.ConnectAsync(new Uri(ws),CancellationToken.None);
-   string js=ensureOn?"(()=>{const svg=[...document.querySelectorAll('svg')].find(x=>[...x.querySelectorAll('path')].some(p=>(p.getAttribute('d')||'').startsWith('M8 3a1 1 0 0 1 1 1v7.105l2-1.473'))||[...document.querySelectorAll('svg path')].find(p=>(p.getAttribute('d')||'').startsWith('M8 3a1 1 0 0 1 1 1v7.105l2-1.473'))?.closest('svg');if(!svg)return 'VOICE_SVG_NOT_FOUND';const hit=svg.closest('button,[role=button]')||svg;const a=((hit.getAttribute('aria-label')||'')+' '+(hit.getAttribute('title')||'')).toLowerCase(),st=(hit.getAttribute('data-state')||'').toLowerCase(),p=hit.getAttribute('aria-pressed');const on=p==='true'||st==='on'||st==='active'||/disable|turn off|stop voice/.test(a);if(on)return 'VOICE_ALREADY_ON';hit.click();return 'VOICE_ENABLED';})()":"(()=>{const p=[...document.querySelectorAll('svg path')].find(x=>(x.getAttribute('d')||'').startsWith('M8 3a1 1 0 0 1 1 1v7.105l2-1.473'));if(!p)return 'VOICE_SVG_NOT_FOUND';const svg=p.closest('svg'),hit=svg?.closest('button,[role=button]')||svg||p;hit.click();return 'VOICE_CLICKED_SVG';})()";
-   var payload=JsonSerializer.Serialize(new{id=1,method="Runtime.evaluate",params_=new{expression=js,returnByValue=true}});
-   payload=payload.Replace("params_", "params");
-   await socket.SendAsync(Encoding.UTF8.GetBytes(payload),WebSocketMessageType.Text,true,CancellationToken.None);
-   var buffer=new byte[8192];var response=new StringBuilder();WebSocketReceiveResult result;
-   do{result=await socket.ReceiveAsync(buffer,CancellationToken.None);response.Append(Encoding.UTF8.GetString(buffer,0,result.Count));}while(!result.EndOfMessage);
-   using var doc=JsonDocument.Parse(response.ToString());
-   string value=doc.RootElement.GetProperty("result").GetProperty("result").TryGetProperty("value",out var v)?v.GetString()??"":"";
-   Log(value=="VOICE_CLICKED_SVG"?"Character.AI Voice SVG control clicked via CDP.":value=="VOICE_CLICKED"?"Character.AI Voice SVG button clicked via CDP.":value=="VOICE_ENABLED"?"Character.AI Voice enabled (state-aware).":value=="VOICE_ALREADY_ON"?"Character.AI Voice already enabled; left ON.":value=="VOICE_SVG_NOT_FOUND"?"Voice SVG signature not found on current c.ai page.":"CDP response: "+value);
-   if(value=="VOICE_CLICKED_SVG"||value=="VOICE_CLICKED"||value=="VOICE_ENABLED"||value=="VOICE_ALREADY_ON")try{BeginInvoke(new Action(()=>status.Text=ensureOn?"Voice ON — sending transcript":"Voice toggled (CDP)"));}catch{}
+   string find="(()=>{const p=[...document.querySelectorAll('svg path')].find(x=>(x.getAttribute('d')||'').startsWith('"+SvgPathPrefix+"'));if(!p)return null;const h=p.closest('svg')?.closest('button,[role=button]')||p.closest('svg')||p;const r=h.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,w:r.width,h:r.height,aria:h.getAttribute('aria-label'),pressed:h.getAttribute('aria-pressed'),state:h.getAttribute('data-state')}})()";
+   async Task<JsonDocument> Eval(string expression,int id){var p=JsonSerializer.Serialize(new{id,method="Runtime.evaluate",@params=new{expression,returnByValue=true}});await socket.SendAsync(Encoding.UTF8.GetBytes(p),WebSocketMessageType.Text,true,CancellationToken.None);var b=new byte[8192];var z=new StringBuilder();WebSocketReceiveResult r;do{r=await socket.ReceiveAsync(b,CancellationToken.None);z.Append(Encoding.UTF8.GetString(b,0,r.Count));}while(!r.EndOfMessage);return JsonDocument.Parse(z.ToString());}
+   using var info=await Eval(find,801);var val=info.RootElement.GetProperty("result").GetProperty("result");if(!val.TryGetProperty("value",out var rect)||rect.ValueKind!=JsonValueKind.Object){Log("CDP: Voice SVG button not found.");return;}
+   var aria=rect.TryGetProperty("aria",out var av)?av.GetString():"";var pressed=rect.TryGetProperty("pressed",out var pv)?pv.GetString():null;var state=rect.TryGetProperty("state",out var sv)?sv.GetString():null;
+   bool on=pressed=="true"||state=="on"||state=="active"||(aria??"").ToLowerInvariant().Contains("disable");if(ensureOn&&on){Log("Character.AI Voice already ON (CDP state); no click.");return;}
+   double x=rect.GetProperty("x").GetDouble(),y=rect.GetProperty("y").GetDouble();
+   string mouse=JsonSerializer.Serialize(new{id=802,method="Input.dispatchMouseEvent",@params=new{type="mouseMoved",x,y}});await socket.SendAsync(Encoding.UTF8.GetBytes(mouse),WebSocketMessageType.Text,true,CancellationToken.None);
+   mouse=JsonSerializer.Serialize(new{id=803,method="Input.dispatchMouseEvent",@params=new{type="mousePressed",x,y,button="left",clickCount=1}});await socket.SendAsync(Encoding.UTF8.GetBytes(mouse),WebSocketMessageType.Text,true,CancellationToken.None);
+   mouse=JsonSerializer.Serialize(new{id=804,method="Input.dispatchMouseEvent",@params=new{type="mouseReleased",x,y,button="left",clickCount=1}});await socket.SendAsync(Encoding.UTF8.GetBytes(mouse),WebSocketMessageType.Text,true,CancellationToken.None);
+   Log("Chrome DevTools dispatched actual mouse click to Voice SVG at ("+x.ToString("F0")+","+y.ToString("F0")+").");try{BeginInvoke(new Action(()=>status.Text="Voice control clicked through Chrome Debug"));}catch{}
    await socket.CloseAsync(WebSocketCloseStatus.NormalClosure,"done",CancellationToken.None);
-  }catch(Exception ex){Log("CDP Voice toggle error: "+ex.Message+" (debug Chrome must be running)");}
+  }catch(Exception ex){Log("CDP Voice click error: "+ex.Message);}
  }
 }
