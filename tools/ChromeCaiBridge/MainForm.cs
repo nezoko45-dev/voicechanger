@@ -72,6 +72,7 @@ public sealed class MainForm : Form {
   if(composer==null&&edits.Count>0)composer=edits[edits.Count-1];
   if(composer==null){Log("Background c.ai composer not exposed by UI Automation.");waitingReply=false;isIdle=true;return;}
   if(!composer.TryGetCurrentPattern(ValuePattern.Pattern,out var vp)){Log("c.ai composer lacks background ValuePattern.");waitingReply=false;isIdle=true;return;}
+  _pendingPhrase=phrase;
   ((ValuePattern)vp).SetValue(phrase);
   Log("Transcript pasted into c.ai composer; sending Enter via Chrome CDP.");
   _=SendEnterAsync();
