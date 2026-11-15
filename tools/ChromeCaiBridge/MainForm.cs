@@ -17,7 +17,8 @@ public sealed class MainForm : Form {
  [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hWnd,int nCmdShow);
  [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hWnd);
  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
- const int SW_SHOWNOACTIVATE=4;
+ const int SW_SHOWNOACTIVATE=4, SW_MINIMIZE=6;
+ Process debugChrome; bool minimizedAfterComposerClick; int composerWatchBusy;
  readonly HttpListener listener=new();
  readonly TextBox output=new(){Multiline=true,ScrollBars=ScrollBars.Vertical,Dock=DockStyle.Fill};
  readonly CheckBox send=new(){Text="Send recognized final phrases to c.ai",Checked=true,AutoSize=true};
@@ -34,6 +35,7 @@ public sealed class MainForm : Form {
   bar.Controls.Add(launch);bar.Controls.Add(open);bar.Controls.Add(send);bar.Controls.Add(keepalive);bar.Controls.Add(status);Controls.Add(output);Controls.Add(bar);
   Shown+=(s,e)=>{try{listener.Prefixes.Add("http://127.0.0.1:8765/");listener.Start();status.Text="Speech bridge ready";_=Serve();}catch(Exception ex){Log("Listener failed: "+ex.Message);} LaunchDebugChrome();};
   var timer=new System.Windows.Forms.Timer{Interval=5000};timer.Tick+=(s,e)=>{if(keepalive.Checked&&isIdle&&Interlocked.Exchange(ref voiceBusy,1)==0)_=VoiceToggleGuardedAsync();};timer.Start();
+  var composerWatch=new System.Windows.Forms.Timer{Interval=700};composerWatch.Tick+=(s,e)=>{if(!minimizedAfterComposerClick&&debugChrome!=null&&Interlocked.Exchange(ref composerWatchBusy,1)==0)_=WatchComposerFocusAsync();};composerWatch.Start();
   var monitor=new System.Windows.Forms.Timer{Interval=1500};monitor.Tick+=(s,e)=>{if(waitingReply&&Interlocked.Exchange(ref monitorBusy,1)==0)_=CheckGenerationGuardedAsync();};monitor.Start();
   FormClosing+=(s,e)=>{disposed=true;try{listener.Stop();}catch{}};
  }
@@ -44,12 +46,12 @@ public sealed class MainForm : Form {
    string chrome=Array.Find(paths,File.Exists);
    if(chrome==null){Log("Chrome executable not found. Install Google Chrome.");return;}
    var psi=new ProcessStartInfo(chrome,"--remote-debugging-port=9222 --remote-allow-origins=* --window-position=-32000,-32000 --window-size=900,700 --user-data-dir=\""+profile+"\" https://character.ai/"){UseShellExecute=true,WindowStyle=ProcessWindowStyle.Normal};
-   var proc=Process.Start(psi);
+   var proc=Process.Start(psi);debugChrome=proc;minimizedAfterComposerClick=false;
    // Keep Chrome un-minimized but parked off-screen. SW_SHOWNOACTIVATE avoids taking focus,
    // while an un-minimized browser window allows Character.AI audio to keep playing.
    Task.Run(async()=>{await Task.Delay(1200);try{if(proc!=null&&!proc.HasExited&&proc.MainWindowHandle!=IntPtr.Zero)ShowWindow(proc.MainWindowHandle,SW_SHOWNOACTIVATE);}catch{}});
    status.Text="Debug Chrome running off-screen (audio enabled; CDP :9222)";
-   Log("Chrome window parked off-screen (not minimized) without activation; VRChat focus preserved.");
+   Log("Chrome window parked off-screen; it will minimize automatically after you click the c.ai chat field.");
   }catch(Exception ex){Log("Debug Chrome launch failed: "+ex.Message);}
  }
  void Log(string m){if(disposed)return;try{BeginInvoke(new Action(()=>output.AppendText(DateTime.Now.ToString("HH:mm:ss")+" "+m+Environment.NewLine)));}catch{}}
@@ -102,6 +104,24 @@ public sealed class MainForm : Form {
   }catch(Exception ex){Log("CDP send error: "+ex.Message);}
  }
  string _pendingPhrase="";
+ async Task WatchComposerFocusAsync(){
+  try{
+   using var http=new HttpClient{Timeout=TimeSpan.FromSeconds(2)};
+   using var targets=JsonDocument.Parse(await http.GetStringAsync("http://127.0.0.1:9222/json/list"));
+   string ws=null;
+   foreach(var t in targets.RootElement.EnumerateArray())if(t.TryGetProperty("type",out var typ)&&typ.GetString()=="page"&&t.TryGetProperty("url",out var u)&&u.GetString()?.Contains("character.ai",StringComparison.OrdinalIgnoreCase)==true&&t.TryGetProperty("webSocketDebuggerUrl",out var w)){ws=w.GetString();break;}
+   if(ws==null)return;
+   using var socket=new ClientWebSocket();socket.Options.SetRequestHeader("Origin","http://localhost");await socket.ConnectAsync(new Uri(ws),CancellationToken.None);
+   string js="(()=>{const e=document.activeElement;if(!e)return false;return e.matches('textarea,[contenteditable=true],[role=textbox]')})()";
+   var payload=JsonSerializer.Serialize(new{id=77,method="Runtime.evaluate",@params=new{expression=js,returnByValue=true}});
+   await socket.SendAsync(Encoding.UTF8.GetBytes(payload),WebSocketMessageType.Text,true,CancellationToken.None);
+   var buf=new byte[4096];var sb=new StringBuilder();WebSocketReceiveResult rr;do{rr=await socket.ReceiveAsync(buf,CancellationToken.None);sb.Append(Encoding.UTF8.GetString(buf,0,rr.Count));}while(!rr.EndOfMessage);
+   using var doc=JsonDocument.Parse(sb.ToString());
+   bool focused=doc.RootElement.GetProperty("result").GetProperty("result").TryGetProperty("value",out var val)&&val.ValueKind==JsonValueKind.True;
+   await socket.CloseAsync(WebSocketCloseStatus.NormalClosure,"done",CancellationToken.None);
+   if(focused&&debugChrome!=null&&!debugChrome.HasExited&&debugChrome.MainWindowHandle!=IntPtr.Zero){minimizedAfterComposerClick=true;ShowWindow(debugChrome.MainWindowHandle,SW_MINIMIZE);Log("Chat field focused — Chrome minimized automatically.");}
+  }catch{}finally{Interlocked.Exchange(ref composerWatchBusy,0);}
+ }
  async Task VoiceToggleAsync(){
   try{
    using var http=new HttpClient{Timeout=TimeSpan.FromSeconds(3)};
