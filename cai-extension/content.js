@@ -6,23 +6,42 @@
  const input=()=>document.querySelector('textarea[placeholder],textarea')||document.querySelector('[contenteditable="true"][role="textbox"]')||document.querySelector('[contenteditable="true"]');
  function setText(el,text){el.focus();if(el instanceof HTMLTextAreaElement)Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value").set.call(el,text);else el.textContent=text;el.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:text}))}
  function sendMessage(){const el=input();if(!el)return false;const b=[...document.querySelectorAll("button")].find(x=>/send/i.test((x.getAttribute("aria-label")||"")+" "+(x.title||""))&&!x.disabled);if(b){b.click();return true}el.focus();el.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",code:"Enter",bubbles:true}));el.dispatchEvent(new KeyboardEvent("keyup",{key:"Enter",code:"Enter",bubbles:true}));return true}
- // Find the actual voice-wave SVG button, excluding send and ordinary controls.
+ // Locate the voice playback control robustly (CAI's SVG often has no useful aria label).
  function voiceWaveButton(){
   return [...document.querySelectorAll("button")].find(b=>{
    if(b.disabled||/send|submit/i.test((b.getAttribute("aria-label")||"")+" "+(b.title||"")))return false;
-   const label=((b.getAttribute("aria-label")||"")+" "+(b.title||"")+" "+(b.getAttribute("data-testid")||"")).toLowerCase();
-   return !!b.querySelector("svg")&&/voice|audio|wave|speak|sound|listen|call/.test(label);
+   const label=((b.getAttribute("aria-label")||"")+" "+(b.title||"")+" "+(b.getAttribute("data-testid")||"")+" "+(b.textContent||"")).toLowerCase();
+   const svg=b.querySelector("svg");
+   return !!svg && (/voice|audio|wave|speak|sound|listen|call|play|pause/.test(label) ||
+     /wave|audio|voice|sound|play|pause/i.test(svg.getAttribute("data-testid")||"") ||
+     b.hasAttribute("aria-pressed"));
   });
  }
- function audioPlaying(){return [...document.querySelectorAll("audio,video")].some(a=>!a.paused&&!a.ended&&a.currentTime>0)}
+ // Track both media elements and CAI's playback button state/DOM changes.
+ let audioMonitorObserver=null, audioStateSignature="";
+ function playbackState(){
+  const media=[...document.querySelectorAll("audio,video")];
+  const mediaOn=media.some(a=>!a.paused&&!a.ended&&a.currentTime>0);
+  const b=voiceWaveButton();
+  const label=((b?.getAttribute("aria-label")||"")+" "+(b?.title||"")+" "+(b?.getAttribute("data-testid")||"")).toLowerCase();
+  const pressed=b?.getAttribute("aria-pressed")==="true";
+  const playingLabel=/pause|stop audio|playing/.test(label);
+  return mediaOn||pressed||playingLabel;
+ }
  function monitorVoice(){
   if(!active)return;
-  const playing=audioPlaying();
-  if(playing){if(!audioWasPlaying)log("Character.AI audio started; pausing voice-wave toggles.");audioWasPlaying=true;return}
-  if(audioWasPlaying){audioWasPlaying=false;log("Character.AI audio finished; restarting 8-second voice-wave recovery.");return}
+  const playing=playbackState();
+  if(playing){if(!audioWasPlaying)log("Character.AI playback detected; holding recovery clicks.");audioWasPlaying=true;return}
+  if(audioWasPlaying){audioWasPlaying=false;log("Character.AI playback ended; recovery timer resumed.");return}
   const b=voiceWaveButton();
-  if(b){b.click();log("Clicked voice-wave SVG button (8-second audio recovery).")}
-  else log("Voice-wave SVG button not found; will retry in 5 seconds.");
+  if(b){b.click();log("Tapped CAI voice-wave control; next check in 8 seconds.")}
+  else log("CAI voice-wave control not found; scanning again shortly.");
+ }
+ function startAudioMonitor(){
+  clearInterval(monitorTimer);monitorTimer=setInterval(monitorVoice,1000);
+  if(audioMonitorObserver)audioMonitorObserver.disconnect();
+  audioMonitorObserver=new MutationObserver(()=>{if(!active)return;const state=playbackState();const sig=state?"playing":"idle";if(sig!==audioStateSignature){audioStateSignature=sig;if(state){audioWasPlaying=true;log("CAI audio state changed to playing.")}else if(audioWasPlaying){audioWasPlaying=false;log("CAI audio state changed to finished.")}}});
+  audioMonitorObserver.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["aria-label","aria-pressed","title","data-testid"]});
  }
  function startRecognition(){
   if(!active||recognition||!SR)return;clearTimeout(restartTimer);
@@ -43,6 +62,6 @@
   },250);
  }
  function start(){if(!SR){log("SpeechRecognition unavailable. Use Chrome.");return}active=true;busy=false;submitLock=false;startRecognition();clearInterval(monitorTimer);monitorTimer=setInterval(monitorVoice,8000);log("Continuous mic + 8-second voice-wave audio recovery enabled.")}
- function stop(){active=false;busy=false;submitLock=false;clearTimeout(restartTimer);clearInterval(monitorTimer);try{recognition?.stop()}catch{}recognition=null;audioWasPlaying=false;log("Stopped listening.")}
+ function stop(){active=false;busy=false;submitLock=false;clearTimeout(restartTimer);clearInterval(monitorTimer);audioMonitorObserver?.disconnect();audioMonitorObserver=null;try{recognition?.stop()}catch{}recognition=null;audioWasPlaying=false;log("Stopped listening.")}
  chrome.runtime.onMessage.addListener(m=>{if(m.action==="START")start();if(m.action==="STOP")stop()});
 })();
