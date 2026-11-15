@@ -29,7 +29,7 @@ public sealed class MainForm : Form {
  readonly CheckBox keepalive=new(){Text="Auto-recover c.ai audio",Checked=true,AutoSize=true};
  readonly Label status=new(){AutoSize=true,Text="Starting…"};
  readonly string profile=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"ChromeCaiBridge","DebugProfile");
- DateTime lastSpeech=DateTime.UtcNow; bool disposed,waitingReply,sawGenerating,isIdle=true,replyGenerationFinished,replyAudioStarted; int generationPolls; int monitorBusy,voiceBusy; DateTime lastChromeAudio=DateTime.UtcNow; bool audioSeen;
+ DateTime lastSpeech=DateTime.UtcNow, generationFinishedAt=DateTime.MinValue; bool disposed,waitingReply,sawGenerating,isIdle=true,replyGenerationFinished,replyAudioStarted,recoveryAttempted; int generationPolls; int monitorBusy,voiceBusy; DateTime lastChromeAudio=DateTime.UtcNow; bool audioSeen;
  const string SvgPathPrefix="M8 3a1 1 0 0 1 1 1v7.105l2-1.473";
  public MainForm(){
   Text="Chrome c.ai Voice Bridge (Debug Chrome)";Width=820;Height=540;
@@ -64,7 +64,7 @@ public sealed class MainForm : Form {
  async Task Serve(){while(!disposed){HttpListenerContext c;try{c=await listener.GetContextAsync();}catch{return;} _=Task.Run(async()=>{
   try{c.Response.Headers["Access-Control-Allow-Origin"]="*";c.Response.Headers["Access-Control-Allow-Methods"]="POST,GET,OPTIONS";c.Response.Headers["Access-Control-Allow-Headers"]="Content-Type";
    if(c.Request.HttpMethod=="OPTIONS"){c.Response.StatusCode=204;c.Response.Close();return;}
-   if(c.Request.Url?.AbsolutePath=="/transcript"&&c.Request.HttpMethod=="POST"){using var sr=new StreamReader(c.Request.InputStream);var j=JsonDocument.Parse(await sr.ReadToEndAsync());var phrase=j.RootElement.GetProperty("text").GetString()??"";if(!string.IsNullOrWhiteSpace(phrase)){lastSpeech=DateTime.UtcNow;isIdle=false;waitingReply=true;sawGenerating=false;replyGenerationFinished=false;replyAudioStarted=false;generationPolls=0;lastChromeAudio=DateTime.UtcNow;audioSeen=false;Log("Transcript: "+phrase);if(send.Checked)SendToCai(phrase);}Reply(c,"{\"ok\":true}","application/json");return;}
+   if(c.Request.Url?.AbsolutePath=="/transcript"&&c.Request.HttpMethod=="POST"){using var sr=new StreamReader(c.Request.InputStream);var j=JsonDocument.Parse(await sr.ReadToEndAsync());var phrase=j.RootElement.GetProperty("text").GetString()??"";if(!string.IsNullOrWhiteSpace(phrase)){lastSpeech=DateTime.UtcNow;isIdle=false;waitingReply=true;sawGenerating=false;replyGenerationFinished=false;replyAudioStarted=false;recoveryAttempted=false;generationFinishedAt=DateTime.MinValue;generationPolls=0;lastChromeAudio=DateTime.UtcNow;audioSeen=false;Log("Transcript: "+phrase);if(send.Checked)SendToCai(phrase);}Reply(c,"{\"ok\":true}","application/json");return;}
    if(c.Request.Url?.AbsolutePath=="/"){var path=Path.Combine(AppContext.BaseDirectory,"www","index.html");if(!File.Exists(path))path=Path.Combine(AppContext.BaseDirectory,"index.html");Reply(c,File.ReadAllText(path),"text/html; charset=utf-8");return;}
    c.Response.StatusCode=404;c.Response.Close();
   }catch(Exception ex){Log("HTTP error: "+ex.Message);try{c.Response.Close();}catch{}}
@@ -76,7 +76,7 @@ public sealed class MainForm : Form {
   _=EnsureVoiceAndSendAsync(phrase);
  }
  bool HasButton(string name){try{return AutomationElement.RootElement.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.NameProperty,name))!=null;}catch{return false;}}
- async Task CheckGenerationGuardedAsync(){try{await Task.Run(()=>{if(!waitingReply||replyGenerationFinished)return;generationPolls++;bool generating=HasButton("Stop generating")||HasButton("Stop response")||HasButton("Stop");if(generating){sawGenerating=true;replyGenerationFinished=false;return;}if(sawGenerating&&generationPolls>=2){replyGenerationFinished=true;Log("c.ai generation finished; Voice remains ON through reply playback.");}});}finally{Interlocked.Exchange(ref monitorBusy,0);}}
+ async Task CheckGenerationGuardedAsync(){try{await Task.Run(()=>{if(!waitingReply||replyGenerationFinished)return;generationPolls++;bool generating=HasButton("Stop generating")||HasButton("Stop response")||HasButton("Stop");if(generating){sawGenerating=true;replyGenerationFinished=false;return;}if(sawGenerating&&generationPolls>=2){replyGenerationFinished=true;generationFinishedAt=DateTime.UtcNow;Log("c.ai generation finished; monitoring for voice playback.");}});}finally{Interlocked.Exchange(ref monitorBusy,0);}}
  async Task EnsureVoiceAndSendAsync(string phrase){bool locked=false;for(int i=0;i<120;i++){if(Interlocked.CompareExchange(ref voiceBusy,1,0)==0){locked=true;break;}await Task.Delay(100);}if(!locked){Log("Voice recovery stayed busy for 12s; transcript send timed out.");return;}try{Log("Ensuring c.ai Voice is ON (state-aware; no blind double-toggle).");await VoiceToggleAsync(true);_pendingPhrase=phrase;await SendEnterAsync();Log("Transcript submitted once; waiting for c.ai spoken reply.");}catch(Exception ex){Log("Voice pre-send error: "+ex.Message);}finally{Interlocked.Exchange(ref voiceBusy,0);}}
  async Task AudioRecoveryTickAsync(){
   try{
@@ -89,8 +89,19 @@ public sealed class MainForm : Form {
     try{BeginInvoke(new Action(()=>status.Text=audible?"IDLE — c.ai audio playing; Voice stays ON":"IDLE — generation finished; Voice stays ON"));}catch{}
     Log("Generation finished; Voice remains ON.");
    }
-   // Avoid OFF/ON pulses during idle: they can tear down the active c.ai voice session.
-   if(audioSeen&&!audible&&!caiPlaying&&waitingReply)Log("c.ai audio went silent while awaiting reply; leaving Voice ON (no disruptive toggle).");
+   // Smart recovery: only after generation is complete and playback has been silent for 10 seconds.
+   // Make one OFF -> ON attempt per reply; never touch Voice while c.ai is generating or audio is active.
+   bool stalledAfterGeneration=waitingReply&&replyGenerationFinished&&!audible&&generationFinishedAt!=DateTime.MinValue&&DateTime.UtcNow-generationFinishedAt>=TimeSpan.FromSeconds(10);
+   if(stalledAfterGeneration&&!recoveryAttempted){
+    recoveryAttempted=true;
+    Log("SMART RECOVERY: generation ended but no voice audio after 10s; one Voice restart attempt.");
+    await VoiceToggleAsync(false);
+    await Task.Delay(700);
+    await VoiceToggleAsync(true);
+    lastChromeAudio=DateTime.UtcNow;
+    try{BeginInvoke(new Action(()=>status.Text="Smart recovery attempted once — waiting for c.ai audio"));}catch{}
+   }
+   if(audioSeen&&!audible&&!caiPlaying&&waitingReply&&!replyGenerationFinished)Log("c.ai audio quiet during generation; leaving Voice untouched.");
   }catch(Exception ex){Log("Audio recovery: "+ex.Message);}
   finally{Interlocked.Exchange(ref voiceBusy,0);}
  }
