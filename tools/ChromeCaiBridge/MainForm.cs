@@ -74,7 +74,31 @@ public sealed class MainForm : Form {
  bool HasButton(string name){try{return AutomationElement.RootElement.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.NameProperty,name))!=null;}catch{return false;}}
  async Task CheckGenerationGuardedAsync(){try{await Task.Run(()=>{if(!waitingReply||replyGenerationFinished)return;generationPolls++;bool generating=HasButton("Stop generating")||HasButton("Stop response")||HasButton("Stop");if(generating){sawGenerating=true;return;}if((sawGenerating&&generationPolls>=2)||generationPolls>=120){replyGenerationFinished=true;Log("c.ai generation finished; waiting specifically for Character.AI reply audio to end.");}});}finally{Interlocked.Exchange(ref monitorBusy,0);}}
  async Task EnsureVoiceAndSendAsync(string phrase){bool locked=false;for(int i=0;i<20;i++){if(Interlocked.CompareExchange(ref voiceBusy,1,0)==0){locked=true;break;}await Task.Delay(100);}if(!locked){Log("Voice recovery is busy; transcript send canceled to prevent extra Voice clicks.");return;}try{Log("Exactly two c.ai Voice clicks (OFF → ON); audio recovery paused during sequence.");await VoiceToggleAsync(false);await Task.Delay(800);await VoiceToggleAsync(false);await Task.Delay(1200);_pendingPhrase=phrase;await SendEnterAsync();Log("Transcript sent after exactly two Voice clicks; waiting for c.ai audio.");}catch(Exception ex){Log("Voice pre-send error: "+ex.Message);}finally{Interlocked.Exchange(ref voiceBusy,0);}}
- async Task AudioRecoveryTickAsync(){try{float peak=ChromeAudioPeak();if(waitingReply){if(peak>0.002f){replyAudioStarted=true;lastChromeAudio=DateTime.UtcNow;return;}if(replyGenerationFinished&&replyAudioStarted&&(DateTime.UtcNow-lastChromeAudio).TotalSeconds>=2.5){Log("Character.AI reply audio finished (Chrome output silent 2.5s); turning Voice OFF now.");await VoiceToggleAsync();waitingReply=false;isIdle=true;replyAudioStarted=false;try{BeginInvoke(new Action(()=>status.Text="IDLE — c.ai audio finished; Voice OFF"));}catch{}Log("Voice turned OFF after c.ai playback; bridge returned to IDLE.");return;}if(replyGenerationFinished&&!replyAudioStarted&&(DateTime.UtcNow-lastSpeech).TotalSeconds>12){waitingReply=false;isIdle=true;try{BeginInvoke(new Action(()=>status.Text="IDLE — no c.ai audio detected"));}catch{}Log("No Character.AI output audio detected; returned to IDLE without toggling Voice.");}return;}if(peak>0.002f){lastChromeAudio=DateTime.UtcNow;audioSeen=true;return;} // Never toggle Voice based on idle silence or microphone pauses.}catch(Exception ex){Log("Audio recovery: "+ex.Message);}finally{Interlocked.Exchange(ref voiceBusy,0);}}
+ async Task AudioRecoveryTickAsync(){
+  try{
+   float peak=ChromeAudioPeak();
+   if(waitingReply){
+    if(peak>0.002f){replyAudioStarted=true;lastChromeAudio=DateTime.UtcNow;return;}
+    if(replyGenerationFinished&&replyAudioStarted&&(DateTime.UtcNow-lastChromeAudio).TotalSeconds>=2.5){
+     Log("Character.AI reply audio finished (Chrome output silent 2.5s); turning Voice OFF now.");
+     await VoiceToggleAsync();
+     waitingReply=false;isIdle=true;replyAudioStarted=false;
+     try{BeginInvoke(new Action(()=>status.Text="IDLE — c.ai audio finished; Voice OFF"));}catch{}
+     Log("Voice turned OFF after c.ai playback; bridge returned to IDLE.");
+     return;
+    }
+    if(replyGenerationFinished&&!replyAudioStarted&&(DateTime.UtcNow-lastSpeech).TotalSeconds>12){
+     waitingReply=false;isIdle=true;
+     try{BeginInvoke(new Action(()=>status.Text="IDLE — no c.ai audio detected"));}catch{}
+     Log("No Character.AI output audio detected; returned to IDLE without toggling Voice.");
+    }
+    return;
+   }
+   if(peak>0.002f){lastChromeAudio=DateTime.UtcNow;audioSeen=true;return;}
+   // Never toggle Voice based on idle silence or microphone pauses.
+  }catch(Exception ex){Log("Audio recovery: "+ex.Message);}
+  finally{Interlocked.Exchange(ref voiceBusy,0);}
+ }
  float ChromeAudioPeak(){try{using var en=new NAudio.CoreAudioApi.MMDeviceEnumerator();using var dev=en.GetDefaultAudioEndpoint(NAudio.CoreAudioApi.DataFlow.Render,NAudio.CoreAudioApi.Role.Multimedia);float peak=0;var sessions=dev.AudioSessionManager.Sessions;for(int i=0;i<sessions.Count;i++){var a=sessions[i];if(Process.GetProcessesByName("chrome").Any(p=>p.Id==a.GetProcessID))peak=Math.Max(peak,a.AudioMeterInformation.MasterPeakValue);}return peak;}catch{return 0;}}
  async Task SendEnterAsync(){
   try{
