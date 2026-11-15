@@ -45,13 +45,13 @@ public sealed class MainForm : Form {
    string[] paths={Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"Google","Chrome","Application","chrome.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),"Google","Chrome","Application","chrome.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Google","Chrome","Application","chrome.exe")};
    string chrome=Array.Find(paths,File.Exists);
    if(chrome==null){Log("Chrome executable not found. Install Google Chrome.");return;}
-   var psi=new ProcessStartInfo(chrome,"--remote-debugging-port=9222 --remote-allow-origins=* --window-position=-32000,-32000 --window-size=900,700 --user-data-dir=\""+profile+"\" https://character.ai/"){UseShellExecute=true,WindowStyle=ProcessWindowStyle.Normal};
+   var psi=new ProcessStartInfo(chrome,"--remote-debugging-port=9222 --remote-allow-origins=* --window-size=900,700 --user-data-dir=\""+profile+"\" https://character.ai/"){UseShellExecute=true,WindowStyle=ProcessWindowStyle.Normal};
    var proc=Process.Start(psi);debugChrome=proc;minimizedAfterComposerClick=false;
    // Keep Chrome un-minimized but parked off-screen. SW_SHOWNOACTIVATE avoids taking focus,
    // while an un-minimized browser window allows Character.AI audio to keep playing.
    // Do not call SW_SHOWNOACTIVATE at launch; wait until the chat composer is clicked.
    status.Text="Debug Chrome running off-screen (audio enabled; CDP :9222)";
-   Log("Chrome window parked off-screen; it will minimize automatically after you click the c.ai chat field.");
+   Log("Chrome stays visible; it will minimize only after you click the c.ai chat field.");
   }catch(Exception ex){Log("Debug Chrome launch failed: "+ex.Message);}
  }
  void Log(string m){if(disposed)return;try{BeginInvoke(new Action(()=>output.AppendText(DateTime.Now.ToString("HH:mm:ss")+" "+m+Environment.NewLine)));}catch{}}
