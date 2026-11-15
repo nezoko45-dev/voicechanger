@@ -46,13 +46,13 @@ public sealed class MainForm : Form {
    string[] paths={Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"Google","Chrome","Application","chrome.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),"Google","Chrome","Application","chrome.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Google","Chrome","Application","chrome.exe")};
    string chrome=Array.Find(paths,File.Exists);
    if(chrome==null){Log("Chrome executable not found. Install Google Chrome.");return;}
-   var psi=new ProcessStartInfo(chrome,"--remote-debugging-port=9222 --remote-allow-origins=* --window-size=900,700 --user-data-dir=\""+profile+"\" https://character.ai/"){UseShellExecute=true,WindowStyle=ProcessWindowStyle.Normal};
+   var psi=new ProcessStartInfo(chrome,"--remote-debugging-port=9222 --remote-allow-origins=* --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling --disable-features=CalculateNativeWinOcclusion --window-size=900,700 --user-data-dir=\""+profile+"\" https://character.ai/"){UseShellExecute=true,WindowStyle=ProcessWindowStyle.Normal};
    var proc=Process.Start(psi);debugChrome=proc;minimizedAfterComposerClick=false;
    // Keep Chrome un-minimized but parked off-screen. SW_SHOWNOACTIVATE avoids taking focus,
    // while an un-minimized browser window allows Character.AI audio to keep playing.
    // Do not call SW_SHOWNOACTIVATE at launch; wait until the chat composer is clicked.
    status.Text="Debug Chrome running off-screen (audio enabled; CDP :9222)";
-   Log("Chrome stays visible; it will minimize only after you click the c.ai chat field.");
+   Log("Chrome background execution enabled; it will not steal focus or minimize after composer click (VRChat-safe).");
   }catch(Exception ex){Log("Debug Chrome launch failed: "+ex.Message);}
  }
  void Log(string m){if(disposed)return;try{BeginInvoke(new Action(()=>output.AppendText(DateTime.Now.ToString("HH:mm:ss")+" "+m+Environment.NewLine)));}catch{}}
@@ -158,7 +158,7 @@ public sealed class MainForm : Form {
    using var doc=JsonDocument.Parse(sb.ToString());
    bool focused=doc.RootElement.GetProperty("result").GetProperty("result").TryGetProperty("value",out var val)&&val.ValueKind==JsonValueKind.True;
    await socket.CloseAsync(WebSocketCloseStatus.NormalClosure,"done",CancellationToken.None);
-   if(focused&&debugChrome!=null&&!debugChrome.HasExited&&debugChrome.MainWindowHandle!=IntPtr.Zero){minimizedAfterComposerClick=true;ShowWindow(debugChrome.MainWindowHandle,SW_SHOWNOACTIVATE);ShowWindow(debugChrome.MainWindowHandle,SW_MINIMIZE);Log("Chat field focused — SW_SHOWNOACTIVATE applied, then Chrome minimized.");}
+   if(focused&&debugChrome!=null&&!debugChrome.HasExited&&debugChrome.MainWindowHandle!=IntPtr.Zero){minimizedAfterComposerClick=true;ShowWindow(debugChrome.MainWindowHandle,SW_SHOWNOACTIVATE);Log("Chat field focused — Chrome kept running in background without activating or minimizing (VRChat-safe).");}
   }catch{}finally{Interlocked.Exchange(ref composerWatchBusy,0);}
  }
  async Task VoiceToggleAsync(bool ensureOn=false){
