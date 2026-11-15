@@ -56,7 +56,7 @@ namespace CaiReplyAudioClicker
                         })()");
                         if(bridge!=lastBridgeStatus){Console.WriteLine("Speech bridge: "+bridge);lastBridgeStatus=bridge;}
                         string words=await Evaluate(ws,"(()=>{const b=window.__caiSpeechBridge;if(!b)return '';const t=b.latest||'';b.latest='';return t;})()");
-                        if(!string.IsNullOrWhiteSpace(words)){Console.WriteLine("Recognized: "+words);await SetVoiceToggle(true,ws);}
+                        if(!string.IsNullOrWhiteSpace(words)){Console.WriteLine("Recognized: "+words);string sent=await SendChatMessage(ws,words);Console.WriteLine("Chat send: "+sent);await SetVoiceToggle(true,ws);}
                         string audio=await Evaluate(ws,@"(()=>{const a=[...document.querySelectorAll('audio,video')];return a.some(x=>!x.paused&&!x.ended&&x.currentTime>0&&!x.muted&&x.volume>0)?'playing':'silent';})()");
                         if(audio=="playing"){wasPlaying=true;quietAudioTicks=0;}
                         else if(wasPlaying){quietAudioTicks++;if(quietAudioTicks>=3){await SetVoiceToggle(false,ws);wasPlaying=false;quietAudioTicks=0;}}
@@ -65,6 +65,31 @@ namespace CaiReplyAudioClicker
                 }catch(Exception ex){Console.WriteLine("Monitor/bridge: "+ex.Message);}
                 await Task.Delay(700);
             }
+        }
+
+        static async Task<string> SendChatMessage(ClientWebSocket ws,string text)
+        {
+            string encoded=JsonSerializer.Serialize(text);
+            return await Evaluate(ws, @"(() => {
+              const msg="+encoded+@";
+              const els=[...document.querySelectorAll('textarea,input,[contenteditable=true],[role=textbox]')].filter(e=>e.offsetWidth||e.offsetHeight||e.getClientRects().length);
+              const box=els.find(e=>/message|chat|reply|type/i.test((e.getAttribute('placeholder')||'')+' '+(e.getAttribute('aria-label')||'')))||els[els.length-1];
+              if(!box)return 'chat-input-not-found';
+              box.focus();
+              if(box.tagName==='TEXTAREA'||box.tagName==='INPUT'){
+                const setter=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(box),'value')?.set;
+                if(setter)setter.call(box,msg);else box.value=msg;
+                box.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:msg}));
+              }else{
+                box.textContent=msg;
+                box.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:msg}));
+              }
+              const form=box.closest('form');
+              if(form){const submit=form.querySelector('button[type=submit]');if(submit&&!submit.disabled){submit.click();return 'sent-by-button';}}
+              box.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',which:13,keyCode:13,bubbles:true}));
+              box.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',code:'Enter',which:13,keyCode:13,bubbles:true}));
+              return 'sent-by-enter';
+            })()");
         }
 
         static async Task SetVoiceToggle(bool on, ClientWebSocket existing=null)
