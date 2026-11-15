@@ -62,17 +62,34 @@ public sealed class MainForm : Form {
   if(composer==null){Log("Background c.ai composer not exposed by UI Automation.");waitingReply=false;isIdle=true;return;}
   if(!composer.TryGetCurrentPattern(ValuePattern.Pattern,out var vp)){Log("c.ai composer lacks background ValuePattern.");waitingReply=false;isIdle=true;return;}
   ((ValuePattern)vp).SetValue(phrase);
-  var sendButton=root.FindFirst(TreeScope.Descendants,new AndCondition(new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Button),new PropertyCondition(AutomationElement.NameProperty,"Send")));
-  if(sendButton!=null&&sendButton.TryGetCurrentPattern(InvokePattern.Pattern,out var sp))((InvokePattern)sp).Invoke();else Log("Text inserted, but Send UIA button was not found.");
-  Log("Background c.ai message submitted; waiting for generation…");
+  Log("Transcript pasted into c.ai composer; sending Enter via Chrome CDP.");
+  _=SendEnterAsync();
+  Log("Enter dispatched; waiting for Character.AI reply…");
  }catch(Exception ex){Log("Background UIA send error: "+ex.Message);waitingReply=false;isIdle=true;}}
  bool HasButton(string name){try{return AutomationElement.RootElement.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.NameProperty,name))!=null;}catch{return false;}}
  void CheckGeneration(){
   if(!waitingReply)return;generationPolls++;
   bool generating=HasButton("Stop generating")||HasButton("Stop response")||HasButton("Stop");
-  bool finishedSignal=HasButton("Regenerate")||HasButton("Try again");
   if(generating){sawGenerating=true;return;}
-  if((sawGenerating&&generationPolls>=2)||finishedSignal||generationPolls>=90){waitingReply=false;isIdle=true;status.Text="IDLE — reply complete";Log("c.ai finished generating; bridge is IDLE.");}
+  // Only return to idle after this message's generation was observed and its stop control vanished.
+  if((sawGenerating&&generationPolls>=2)||generationPolls>=120){waitingReply=false;isIdle=true;status.Text="IDLE — reply complete";Log("c.ai reply finished; bridge returned to IDLE.");}
+ }
+ async Task SendEnterAsync(){
+  try{
+   using var http=new HttpClient{Timeout=TimeSpan.FromSeconds(3)};
+   using var targets=JsonDocument.Parse(await http.GetStringAsync("http://127.0.0.1:9222/json/list"));
+   string ws=null;
+   foreach(var t in targets.RootElement.EnumerateArray()){if(t.TryGetProperty("type",out var typ)&&typ.GetString()=="page"&&t.TryGetProperty("url",out var u)&&u.GetString()?.Contains("character.ai",StringComparison.OrdinalIgnoreCase)==true&&t.TryGetProperty("webSocketDebuggerUrl",out var w)){ws=w.GetString();break;}}
+   if(ws==null){Log("CDP Enter: no Character.AI tab found.");return;}
+   using var socket=new ClientWebSocket();socket.Options.SetRequestHeader("Origin","http://localhost");await socket.ConnectAsync(new Uri(ws),CancellationToken.None);
+   // Enter keyDown + keyUp in the c.ai page (no focus stealing).
+   foreach(var type in new[]{"keyDown","keyUp"}){
+    var msg=JsonSerializer.Serialize(new{id=type=="keyDown"?11:12,method="Input.dispatchKeyEvent",@params=new{type,key="Enter",code="Enter",windowsVirtualKeyCode=13,nativeVirtualKeyCode=13}});
+    await socket.SendAsync(Encoding.UTF8.GetBytes(msg),WebSocketMessageType.Text,true,CancellationToken.None);
+   }
+   Log("Enter sent to Character.AI via CDP.");
+   await socket.CloseAsync(WebSocketCloseStatus.NormalClosure,"done",CancellationToken.None);
+  }catch(Exception ex){Log("CDP Enter error: "+ex.Message);}
  }
  async Task VoiceToggleAsync(){
   try{
