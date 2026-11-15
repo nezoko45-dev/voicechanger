@@ -1,5 +1,5 @@
 name: Build CAI Voice Automation EXE
-# Build EXE + PDB + Character.AI HTML folder packaged into ZIP.
+# One ZIP containing EXE, PDB, and CharacterAI Website HTML folder.
 on:
   workflow_dispatch:
   push:
@@ -16,7 +16,7 @@ jobs:
           dotnet-version: '8.0.x'
       - name: Publish self-contained EXE and PDB
         run: dotnet publish cai-voice-automation/CaiVoiceAutomation.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=portable -p:DebugSymbols=true
-      - name: Assemble three deliverables
+      - name: Assemble and ZIP all deliverables
         shell: pwsh
         run: |
           $pub = "cai-voice-automation/bin/Release/net8.0-windows/win-x64/publish"
@@ -26,18 +26,8 @@ jobs:
           Copy-Item "$pub/CaiVoiceAutomation.pdb" "$dist/CaiVoiceAutomation.pdb"
           Copy-Item "cai-voice-automation/CharacterAI-Website/index.html" "$dist/CharacterAI Website/index.html"
           Compress-Archive -Path "$dist/*" -DestinationPath "dist/CaiVoiceAutomation-Complete.zip" -Force
-      - name: Upload EXE
+      - name: Upload ONE ZIP with everything
         uses: actions/upload-artifact@v4
         with:
-          name: CaiVoiceAutomation-EXE
-          path: dist/CaiVoiceAutomation/CaiVoiceAutomation.exe
-      - name: Upload PDB
-        uses: actions/upload-artifact@v4
-        with:
-          name: CaiVoiceAutomation-PDB
-          path: dist/CaiVoiceAutomation/CaiVoiceAutomation.pdb
-      - name: Upload ZIP (HTML folder + EXE + PDB)
-        uses: actions/upload-artifact@v4
-        with:
-          name: CaiVoiceAutomation-Complete-ZIP
+          name: CaiVoiceAutomation-Complete
           path: dist/CaiVoiceAutomation-Complete.zip
