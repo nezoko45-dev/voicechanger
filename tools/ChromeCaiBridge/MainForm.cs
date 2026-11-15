@@ -76,28 +76,47 @@ public sealed class MainForm : Form {
  async Task EnsureVoiceAndSendAsync(string phrase){bool locked=false;for(int i=0;i<20;i++){if(Interlocked.CompareExchange(ref voiceBusy,1,0)==0){locked=true;break;}await Task.Delay(100);}if(!locked){Log("Voice recovery is busy; transcript send canceled to prevent extra Voice clicks.");return;}try{Log("Exactly two c.ai Voice clicks (OFF → ON); audio recovery paused during sequence.");await VoiceToggleAsync(false);await Task.Delay(800);await VoiceToggleAsync(false);await Task.Delay(1200);_pendingPhrase=phrase;await SendEnterAsync();Log("Transcript sent after exactly two Voice clicks; waiting for c.ai audio.");}catch(Exception ex){Log("Voice pre-send error: "+ex.Message);}finally{Interlocked.Exchange(ref voiceBusy,0);}}
  async Task AudioRecoveryTickAsync(){
   try{
-   float peak=ChromeAudioPeak();
+   // Only watch media elements in the Character.AI tab. Chrome's global audio
+   // meter includes unrelated tabs and must never be used to decide Voice OFF.
+   bool caiPlaying=await CaiMediaIsPlayingAsync();
    if(waitingReply){
-    if(peak>0.002f){replyAudioStarted=true;lastChromeAudio=DateTime.UtcNow;return;}
+    if(caiPlaying){replyAudioStarted=true;lastChromeAudio=DateTime.UtcNow;return;}
     if(replyGenerationFinished&&replyAudioStarted&&(DateTime.UtcNow-lastChromeAudio).TotalSeconds>=2.5){
-     Log("Character.AI reply audio finished (Chrome output silent 2.5s); turning Voice OFF now.");
+     Log("Character.AI tab media ended/paused for 2.5s; turning Voice OFF now.");
      await VoiceToggleAsync();
      waitingReply=false;isIdle=true;replyAudioStarted=false;
-     try{BeginInvoke(new Action(()=>status.Text="IDLE — c.ai audio finished; Voice OFF"));}catch{}
-     Log("Voice turned OFF after c.ai playback; bridge returned to IDLE.");
+     try{BeginInvoke(new Action(()=>status.Text="IDLE — c.ai playback finished; Voice OFF"));}catch{}
+     Log("Voice turned OFF after Character.AI media playback; bridge returned to IDLE.");
      return;
     }
     if(replyGenerationFinished&&!replyAudioStarted&&(DateTime.UtcNow-lastSpeech).TotalSeconds>12){
      waitingReply=false;isIdle=true;
-     try{BeginInvoke(new Action(()=>status.Text="IDLE — no c.ai audio detected"));}catch{}
-     Log("No Character.AI output audio detected; returned to IDLE without toggling Voice.");
+     try{BeginInvoke(new Action(()=>status.Text="IDLE — no c.ai media detected"));}catch{}
+     Log("No Character.AI media element playback detected; returned to IDLE without toggling Voice.");
     }
-    return;
    }
-   if(peak>0.002f){lastChromeAudio=DateTime.UtcNow;audioSeen=true;return;}
-   // Never toggle Voice based on idle silence or microphone pauses.
   }catch(Exception ex){Log("Audio recovery: "+ex.Message);}
   finally{Interlocked.Exchange(ref voiceBusy,0);}
+ }
+ async Task<bool> CaiMediaIsPlayingAsync(){
+  try{
+   using var http=new HttpClient{Timeout=TimeSpan.FromSeconds(2)};
+   using var targets=JsonDocument.Parse(await http.GetStringAsync("http://127.0.0.1:9222/json/list"));
+   string ws=null;
+   foreach(var t in targets.RootElement.EnumerateArray())
+    if(t.TryGetProperty("type",out var typ)&&typ.GetString()=="page"&&t.TryGetProperty("url",out var u)&&u.GetString()?.Contains("character.ai",StringComparison.OrdinalIgnoreCase)==true&&t.TryGetProperty("webSocketDebuggerUrl",out var w)){ws=w.GetString();break;}
+   if(ws==null)return false;
+   using var socket=new ClientWebSocket();socket.Options.SetRequestHeader("Origin","http://localhost");await socket.ConnectAsync(new Uri(ws),CancellationToken.None);
+   string js="(()=>{const a=[...document.querySelectorAll('audio,video')];return a.some(x=>!x.paused&&!x.ended&&x.currentTime>0)})()";
+   var payload=JsonSerializer.Serialize(new{id=321,method="Runtime.evaluate",@params=new{expression=js,returnByValue=true}});
+   await socket.SendAsync(Encoding.UTF8.GetBytes(payload),WebSocketMessageType.Text,true,CancellationToken.None);
+   var buf=new byte[4096];var sb=new StringBuilder();WebSocketReceiveResult rr;
+   do{rr=await socket.ReceiveAsync(buf,CancellationToken.None);sb.Append(Encoding.UTF8.GetString(buf,0,rr.Count));}while(!rr.EndOfMessage);
+   using var doc=JsonDocument.Parse(sb.ToString());
+   bool playing=doc.RootElement.GetProperty("result").GetProperty("result").TryGetProperty("value",out var val)&&val.ValueKind==JsonValueKind.True;
+   await socket.CloseAsync(WebSocketCloseStatus.NormalClosure,"done",CancellationToken.None);
+   return playing;
+  }catch{return false;}
  }
  float ChromeAudioPeak(){try{using var en=new NAudio.CoreAudioApi.MMDeviceEnumerator();using var dev=en.GetDefaultAudioEndpoint(NAudio.CoreAudioApi.DataFlow.Render,NAudio.CoreAudioApi.Role.Multimedia);float peak=0;var sessions=dev.AudioSessionManager.Sessions;for(int i=0;i<sessions.Count;i++){var a=sessions[i];if(Process.GetProcessesByName("chrome").Any(p=>p.Id==a.GetProcessID))peak=Math.Max(peak,a.AudioMeterInformation.MasterPeakValue);}return peak;}catch{return 0;}}
  async Task SendEnterAsync(){
