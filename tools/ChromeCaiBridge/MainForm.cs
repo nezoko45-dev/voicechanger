@@ -37,14 +37,27 @@ public sealed class MainForm : Form {
  });}}
  static void Reply(HttpListenerContext c,string text,string type){var b=Encoding.UTF8.GetBytes(text);c.Response.ContentType=type;c.Response.OutputStream.Write(b);c.Response.Close();}
  void SendToCai(string phrase){try{
-  var el=AutomationElement.FocusedElement;if(el==null){Log("Click c.ai's message field first; transcript not sent.");waitingReply=false;isIdle=true;return;}
-  while(el!=null&&el.Current.ControlType!=ControlType.Edit)el=TreeWalker.ControlViewWalker.GetParent(el);
-  if(el==null){Log("Focused element isn't an editable c.ai input. Click its textbox.");waitingReply=false;isIdle=true;return;}
-  el.SetFocus();
-  if(el.TryGetCurrentPattern(ValuePattern.Pattern,out var vp))((ValuePattern)vp).SetValue(phrase);
-  else {Clipboard.SetText(phrase);SendKeys.SendWait("^v");}
-  SendKeys.SendWait("{ENTER}");Log("Sent. Waiting for c.ai to finish generating…");
- }catch(Exception ex){Log("UIA send error: "+ex.Message);waitingReply=false;isIdle=true;}}
+  // Background UIA: find c.ai's editable composer without requiring it to be focused.
+  var root=AutomationElement.RootElement;
+  var edits=root.FindAll(TreeScope.Descendants,new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Edit));
+  AutomationElement composer=null;
+  for(int i=0;i<edits.Count;i++){
+   var candidate=edits[i];
+   string name="";try{name=candidate.Current.Name??"";}catch{}
+   if(name.Contains("message",StringComparison.OrdinalIgnoreCase)||name.Contains("chat",StringComparison.OrdinalIgnoreCase)||name.Contains("reply",StringComparison.OrdinalIgnoreCase)){composer=candidate;break;}
+  }
+  if(composer==null&&edits.Count>0)composer=edits[edits.Count-1];
+  if(composer==null){Log("Background c.ai composer not exposed by UI Automation; keep c.ai open in Chrome.");waitingReply=false;isIdle=true;return;}
+  if(!composer.TryGetCurrentPattern(ValuePattern.Pattern,out var vp)){Log("c.ai composer lacks background ValuePattern; cannot type without focus.");waitingReply=false;isIdle=true;return;}
+  ((ValuePattern)vp).SetValue(phrase);
+  // Invoke Send button in the same Chrome accessibility tree; no foreground focus change.
+  var sendButton=root.FindFirst(TreeScope.Descendants,new AndCondition(
+   new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Button),
+   new PropertyCondition(AutomationElement.NameProperty,"Send")));
+  if(sendButton!=null&&sendButton.TryGetCurrentPattern(InvokePattern.Pattern,out var sp))((InvokePattern)sp).Invoke();
+  else {Log("Text inserted in background composer, but Send button UIA wasn't found.");}
+  Log("Background c.ai message submitted; waiting for generation…");
+ }catch(Exception ex){Log("Background UIA send error: "+ex.Message);waitingReply=false;isIdle=true;}}
  bool HasButton(string name){try{return AutomationElement.RootElement.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.NameProperty,name))!=null;}catch{return false;}}
  void CheckGeneration(){
   if(!waitingReply)return;
