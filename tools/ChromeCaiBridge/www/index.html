@@ -1,7 +1,21 @@
 <!doctype html><meta charset="utf-8"><title>Chrome Speech Bridge</title><style>body{font:16px system-ui;max-width:720px;margin:30px auto}button{padding:10px}#txt{white-space:pre-wrap;border:1px solid #aaa;padding:12px;min-height:70px}</style><h2>Chrome Speech → Character.AI</h2><p id="s">Initializing…</p><button id="start">Start listening</button> <button id="stop">Stop</button><div id="txt"></div><script>
-const s=document.querySelector('#s'),txt=document.querySelector('#txt');let enabled=true,r=null,delay=700;
+const s=document.querySelector('#s'),txt=document.querySelector('#txt');let enabled=true,r=null,delay=800,restartTimer=0,watchdog=0,starting=false,active=false;
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-function start(){if(!enabled||r||!SR)return;r=new SR();r.continuous=true;r.interimResults=true;r.lang='en-US';r.onstart=()=>{s.textContent='Listening';delay=700};r.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript.trim();if(e.results[i].isFinal&&t){txt.textContent=t;fetch('/transcript',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t})}).catch(()=>s.textContent='Local bridge connection failed');}else interim+=t;}if(interim)s.textContent='Hearing: '+interim;};r.onerror=e=>s.textContent='Recognition error: '+e.error+' (retrying)';r.onend=()=>{r=null;if(enabled){s.textContent='Recognizer ended; restarting…';setTimeout(start,delay);delay=Math.min(delay*1.5,5000)}};try{r.start()}catch{r=null;setTimeout(start,delay)}}
+function scheduleRestart(reason){if(!enabled||restartTimer)return;s.textContent=reason+' — reconnecting in '+Math.ceil(delay/1000)+'s';restartTimer=setTimeout(()=>{restartTimer=0;start()},delay);delay=Math.min(Math.round(delay*1.6),8000)}
+function start(){
+ if(!enabled||r||starting||!SR)return;
+ starting=true;let rec;
+ try{rec=new SR();}catch(e){starting=false;scheduleRestart('Recognizer creation failed');return}
+ r=rec;rec.continuous=true;rec.interimResults=true;rec.lang='en-US';
+ rec.onstart=()=>{starting=false;active=true;delay=800;s.textContent='Listening (auto-recovery enabled)';clearTimeout(watchdog);watchdog=setTimeout(()=>{if(enabled&&r===rec&&!active){try{rec.abort()}catch{};r=null;scheduleRestart('Recognition startup stalled')}},15000)};
+ rec.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript.trim();if(e.results[i].isFinal&&t){txt.textContent=t;fetch('/transcript',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t})}).catch(()=>s.textContent='Transcript bridge offline; recognition will continue');}else interim+=t;}if(interim)s.textContent='Hearing: '+interim;};
+ rec.onerror=e=>{active=false;s.textContent='Recognition '+e.error+' — recovering…';if(e.error==='not-allowed'||e.error==='service-not-allowed'){enabled=false;s.textContent='Microphone permission denied. Click Start listening after granting permission.'}};
+ rec.onend=()=>{clearTimeout(watchdog);active=false;if(r===rec)r=null;starting=false;if(enabled)scheduleRestart('Recognizer ended');};
+ try{rec.start();watchdog=setTimeout(()=>{if(enabled&&r===rec&&!active){try{rec.abort()}catch{};if(r===rec)r=null;starting=false;scheduleRestart('No recognition start event')}},15000)}
+ catch{if(r===rec)r=null;starting=false;scheduleRestart('Recognizer start failed')}
+}
 if(!SR)s.textContent='Chrome SpeechRecognition unavailable. Open this page in desktop Chrome.';
-document.querySelector('#start').onclick=()=>{enabled=true;start()};document.querySelector('#stop').onclick=()=>{enabled=false;if(r){r.onend=null;r.stop();r=null}s.textContent='Stopped'};start();
+document.querySelector('#start').onclick=()=>{enabled=true;delay=800;start()};document.querySelector('#stop').onclick=()=>{enabled=false;clearTimeout(restartTimer);clearTimeout(watchdog);restartTimer=watchdog=0;if(r){const old=r;r=null;old.onend=null;try{old.abort()}catch{try{old.stop()}catch{}}}starting=active=false;s.textContent='Stopped'};
+window.addEventListener('pageshow',()=>{if(enabled&&!r)start()});document.addEventListener('visibilitychange',()=>{if(!document.hidden&&enabled&&!r)start()});
+start();
 </script>
