@@ -50,7 +50,9 @@ public sealed class MainForm : Form {
    string chrome=Array.Find(paths,File.Exists);
    if(chrome==null){Log("Chrome executable not found. Install Google Chrome.");return;}
    var psi=new ProcessStartInfo(chrome,"--remote-debugging-port=9222 --remote-allow-origins=* --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling --disable-features=CalculateNativeWinOcclusion --window-size=900,700 --user-data-dir=\""+profile+"\" https://character.ai/"){UseShellExecute=true,WindowStyle=ProcessWindowStyle.Normal};
-   var proc=Process.Start(psi);debugChrome=proc;minimizedAfterComposerClick=false;\n   try{SetPriorityClass(proc.Handle,ABOVE_NORMAL_PRIORITY_CLASS);SetProcessPriorityBoost(proc.Handle,true);Log("Chrome process priority set to ABOVE NORMAL (VRChat remains foreground).");}catch(Exception px){Log("Chrome priority adjustment: "+px.Message);}\n   _=Task.Run(async()=>{for(int n=0;n<20&&!proc.HasExited;n++){try{foreach(var child in Process.GetProcessesByName("chrome")){try{SetPriorityClass(child.Handle,ABOVE_NORMAL_PRIORITY_CLASS);SetProcessPriorityBoost(child.Handle,true);}catch{}}}catch{}await Task.Delay(1500);}});
+   var proc=Process.Start(psi);debugChrome=proc;minimizedAfterComposerClick=false;
+   try{SetPriorityClass(proc.Handle,ABOVE_NORMAL_PRIORITY_CLASS);SetProcessPriorityBoost(proc.Handle,true);Log("Chrome process priority set to ABOVE NORMAL (VRChat remains foreground).");}catch(Exception px){Log("Chrome priority adjustment: "+px.Message);}
+   _=Task.Run(async()=>{for(int n=0;n<20&&!proc.HasExited;n++){try{foreach(var child in Process.GetProcessesByName("chrome")){try{SetPriorityClass(child.Handle,ABOVE_NORMAL_PRIORITY_CLASS);SetProcessPriorityBoost(child.Handle,true);}catch{}}}catch{}await Task.Delay(1500);}});
    // Keep Chrome un-minimized but parked off-screen. SW_SHOWNOACTIVATE avoids taking focus,
    // while an un-minimized browser window allows Character.AI audio to keep playing.
    // Do not call SW_SHOWNOACTIVATE at launch; wait until the chat composer is clicked.
