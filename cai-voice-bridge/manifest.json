@@ -5,7 +5,7 @@
   "description": "Targets Character.AI's actual Voice toolbar SVG, rather than its unreliable accessible name.",
   "permissions": ["activeTab"],
   "host_permissions": ["https://character.ai/*", "https://*.character.ai/*"],
-  "action": {"default_title": "c.ai Voice SVG Toggle"},
+  "action": {"default_popup": "popup.html", "default_title": "c.ai Voice SVG Toggle"},
   "content_scripts": [{
     "matches": ["https://character.ai/*", "https://*.character.ai/*"],
     "js": ["voice-button-content.js"],
