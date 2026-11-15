@@ -1,4 +1,3 @@
-using System.Net;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -14,28 +13,19 @@ public class MainForm:Form {
  TextBox log=new(){Multiline=true,ScrollBars=ScrollBars.Vertical,Dock=DockStyle.Fill};
  Button start=new(){Text="Start",Dock=DockStyle.Top,Height=42};
  Label status=new(){Text="STOPPED",Dock=DockStyle.Top,Height=30};
- CancellationTokenSource? cts; HttpListener? listener; bool voiceOn=false,aiPlaying=false;
+ CancellationTokenSource? cts; bool voiceOn=false,aiPlaying=false;
  DateTime lastSpeech=DateTime.MinValue,lastAudio=DateTime.MinValue; string? ws; ClientWebSocket? cdp; int cdpId=0;
  readonly SemaphoreSlim cdpLock=new(1,1);
  WhisperFactory? whisperFactory; WhisperProcessor? whisperProcessor; WaveInEvent? mic;
  readonly object audioLock=new(); List<float> utterance=new(); bool speechSeen=false; int quietSamples=0;
  const int SampleRate=16000; const int SilenceSamples=12000; // 750ms
- const string Html=@"
-<!doctype html><html><head><meta charset=utf-8><title>CAI Whisper Bridge</title><style>
-body{font:16px Segoe UI;background:#111827;color:#eee;padding:25px;max-width:760px;margin:auto}button{padding:12px;border:0;border-radius:8px;background:#6366f1;color:white}#s{padding:12px;background:#1f2937;margin:14px 0}input{padding:9px;width:65%}</style></head><body>
-<h2>🎙 Offline Whisper → Character.AI</h2><p>Speech is recognized locally by the EXE (Whisper small.en). No Chrome speech service or mic permission needed in this tab.</p>
-<div id=s>Whisper mic is controlled by the EXE Start button.</div><button id=test>Test Chrome Debug connection</button>
-<p><input id=manual placeholder='Type a test message'><button id=send>Send to CAI</button></p>
-<script>const S=document.querySelector('#s');async function post(t){let r=await fetch('/speech',{method:'POST',headers:{'Content-Type':'text/plain'},body:t});S.textContent=await r.text()}
-document.querySelector('#test').onclick=()=>post('__bridge_test__');document.querySelector('#send').onclick=()=>post(document.querySelector('#manual').value);</script></body></html>";
- public MainForm(){Text="CAI Voice Automation • Offline Whisper";Width=700;Height=480;Controls.Add(log);Controls.Add(status);Controls.Add(start);start.Click+=async(_,__)=>{if(cts!=null){cts.Cancel();return;}cts=new();start.Text="Stop";await Run(cts.Token);};FormClosing+=(_,__)=>cts?.Cancel();}
+  public MainForm(){Text="CAI Voice Automation • Offline Whisper";Width=700;Height=480;Controls.Add(log);Controls.Add(status);Controls.Add(start);start.Click+=async(_,__)=>{if(cts!=null){cts.Cancel();return;}cts=new();start.Text="Stop";await Run(cts.Token);};FormClosing+=(_,__)=>cts?.Cancel();}
  void L(string s){if(IsDisposed)return;BeginInvoke(()=>log.AppendText($"[{DateTime.Now:HH:mm:ss}] {s}\r\n"));}
  async Task Run(CancellationToken ct){
  try{
   string model=Path.Combine(AppContext.BaseDirectory,"model","ggml-small.en.bin");
   if(!File.Exists(model))throw new Exception("Whisper model missing: "+model+" (extract the complete ZIP, including model folder).");
   L("Loading Whisper small.en locally…");whisperFactory=WhisperFactory.FromPath(model);whisperProcessor=whisperFactory.CreateBuilder().WithLanguage("en").Build();L("Whisper model loaded (offline).");
-  listener=new HttpListener();listener.Prefixes.Add("http://127.0.0.1:8765/");listener.Start();_=Serve(ct);
   StartMic();_=Task.Run(()=>TranscriptionLoop(ct),ct);
   using var http=new HttpClient();bool debugReady=false;try{using var probe=await http.GetAsync("http://127.0.0.1:9222/json/version",ct);debugReady=probe.IsSuccessStatusCode;}catch{}
   if(!debugReady){string chrome=FindChrome();if(chrome==null)throw new Exception("Chrome executable not found.");
@@ -49,9 +39,6 @@ document.querySelector('#test').onclick=()=>post('__bridge_test__');document.que
   async Task OpenDebugTab(string url){using var resp=await http.PutAsync("http://127.0.0.1:9222/json/new?"+Uri.EscapeDataString(url),new StringContent(""),ct);if(!resp.IsSuccessStatusCode)L("Chrome tab create returned "+(int)resp.StatusCode);}
   if(!await HasTab("character.ai"))await OpenDebugTab("https://character.ai/");
   for(int k=0;k<12&&!await HasTab("character.ai");k++)await Task.Delay(500,ct);
-  if(!await HasTab("127.0.0.1:8765"))await OpenDebugTab("http://127.0.0.1:8765/");
-  bool bridge=false;for(int k=0;k<20&&!bridge;k++){bridge=await HasTab("127.0.0.1:8765");if(!bridge)await Task.Delay(300,ct);}
-  if(!bridge)throw new Exception("Could not open localhost bridge tab.");
   status.Text="RUNNING • WHISPER OFFLINE • Chrome DEBUG :9222";L("Mic capture active; Whisper recognizes locally; CDP sends into CAI.");
 
   async Task<bool> Connect(){try{using var tabs=JsonDocument.Parse(await http.GetStringAsync("http://127.0.0.1:9222/json"));JsonElement tab=default;
@@ -65,7 +52,7 @@ document.querySelector('#test').onclick=()=>post('__bridge_test__');document.que
     if(playing){aiPlaying=true;lastAudio=DateTime.Now;}else if(aiPlaying&&DateTime.Now-lastAudio>TimeSpan.FromSeconds(2)){aiPlaying=false;L("CAI audio ended.");if(voiceOn){await ToggleVoice();voiceOn=false;}}
     if(DateTime.Now-lastSpeech<TimeSpan.FromSeconds(2)&&!voiceOn){await ToggleVoice();voiceOn=true;}
    }catch(Exception ex){L("CDP issue: "+ex.Message);try{cdp.Abort();cdp.Dispose();}catch{}cdp=null;}await Task.Delay(300,ct);}
- }catch(OperationCanceledException){}catch(Exception ex){L("ERROR: "+ex.Message);}finally{StopMic();listener?.Stop();listener=null;try{cdp?.Abort();cdp?.Dispose();}catch{}cdp=null;whisperProcessor?.Dispose();whisperProcessor=null;whisperFactory?.Dispose();whisperFactory=null;cts=null;start.Text="Start";status.Text="STOPPED";L("Stopped.");}}
+ }catch(OperationCanceledException){}catch(Exception ex){L("ERROR: "+ex.Message);}finally{StopMic();try{cdp?.Abort();cdp?.Dispose();}catch{}cdp=null;whisperProcessor?.Dispose();whisperProcessor=null;whisperFactory?.Dispose();whisperFactory=null;cts=null;start.Text="Start";status.Text="STOPPED";L("Stopped.");}}
  void StartMic(){mic=new WaveInEvent{WaveFormat=new WaveFormat(SampleRate,16,1),BufferMilliseconds=50};mic.DataAvailable+=MicData;mic.StartRecording();L("Default Windows microphone started (16kHz mono).");}
  void StopMic(){try{if(mic!=null){mic.StopRecording();mic.Dispose();mic=null;}}catch{}}
  void MicData(object? sender,WaveInEventArgs e){lock(audioLock){for(int i=0;i+1<e.BytesRecorded;i+=2){short s=BitConverter.ToInt16(e.Buffer,i);float v=s/32768f;utterance.Add(v);if(Math.Abs(v)>0.012f){speechSeen=true;quietSamples=0;}else quietSamples++;
@@ -88,5 +75,4 @@ document.querySelector('#test').onclick=()=>post('__bridge_test__');document.que
  async Task<string> CdpEval(string js){await cdpLock.WaitAsync();try{if(cdp==null||cdp.State!=WebSocketState.Open)return "";int id=Interlocked.Increment(ref cdpId);var msg=JsonSerializer.Serialize(new{id,method="Runtime.evaluate",@params=new{expression=js,returnByValue=true,awaitPromise=true}});await cdp.SendAsync(Encoding.UTF8.GetBytes(msg),WebSocketMessageType.Text,true,CancellationToken.None);var buf=new byte[65536];while(true){var r=await cdp.ReceiveAsync(buf,CancellationToken.None);using var d=JsonDocument.Parse(Encoding.UTF8.GetString(buf,0,r.Count));if(d.RootElement.TryGetProperty("id",out var got)&&got.GetInt32()==id){var rr=d.RootElement.GetProperty("result");if(rr.TryGetProperty("result",out var val)&&val.TryGetProperty("value",out var v))return v.ToString()??"";if(rr.TryGetProperty("exceptionDetails",out var er))return "JS_ERROR "+er;return "";}}}finally{cdpLock.Release();}}
  async Task CdpKey(string key){await cdpLock.WaitAsync();try{if(cdp==null||cdp.State!=WebSocketState.Open)return;async Task Send(string type){int id=Interlocked.Increment(ref cdpId);var msg=JsonSerializer.Serialize(new{id,method="Input.dispatchKeyEvent",@params=new{type,key,code=key,windowsVirtualKeyCode=key=="Enter"?13:0,nativeVirtualKeyCode=key=="Enter"?13:0}});await cdp.SendAsync(Encoding.UTF8.GetBytes(msg),WebSocketMessageType.Text,true,CancellationToken.None);var buf=new byte[65536];while(true){var rr=await cdp.ReceiveAsync(buf,CancellationToken.None);using var d=JsonDocument.Parse(Encoding.UTF8.GetString(buf,0,rr.Count));if(d.RootElement.TryGetProperty("id",out var got)&&got.GetInt32()==id)break;}}await Send("keyDown");await Send("keyUp");}finally{cdpLock.Release();}}
  async Task ToggleVoice(){var x=await CdpEval("(()=>{let b=[...document.querySelectorAll('button,[role=button]')].find(x=>/voice|microphone|start voice|stop voice/i.test((x.getAttribute('aria-label')||'')+' '+(x.getAttribute('title')||'')+' '+(x.innerText||'')));if(!b)b=[...document.querySelectorAll('button,[role=button]')].find(x=>x.querySelector('svg')&&/voice|mic|audio/i.test(x.outerHTML));if(b){b.click();return 'CLICKED '+(b.getAttribute('aria-label')||b.title||b.innerText)}return 'VOICE BUTTON NOT FOUND'})()");L("Voice toggle: "+x);}
- async Task Serve(CancellationToken ct){while(!ct.IsCancellationRequested&&listener?.IsListening==true){try{var c=await listener.GetContextAsync();if(c.Request.Url?.AbsolutePath=="/speech"){using var sr=new StreamReader(c.Request.InputStream,c.Request.ContentEncoding);var t=await sr.ReadToEndAsync();if(t=="__bridge_test__"){var ack=await CdpEval("location.href");var b=Encoding.UTF8.GetBytes("CDP target: "+ack);c.Response.StatusCode=200;c.Response.ContentType="text/plain";await c.Response.OutputStream.WriteAsync(b);c.Response.Close();continue;}if(!string.IsNullOrWhiteSpace(t))await Deliver(t,ct);c.Response.StatusCode=200;c.Response.ContentType="text/plain";await c.Response.OutputStream.WriteAsync(Encoding.UTF8.GetBytes("Delivered to CAI tab"));c.Response.Close();continue;}var bytes=Encoding.UTF8.GetBytes(Html);c.Response.ContentType="text/html; charset=utf-8";c.Response.ContentLength64=bytes.Length;await c.Response.OutputStream.WriteAsync(bytes);c.Response.Close();}catch(Exception e){L("Bridge server: "+e.Message);break;}}}
 }
