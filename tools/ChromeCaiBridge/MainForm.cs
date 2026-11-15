@@ -92,7 +92,7 @@ public sealed class MainForm : Form {
    }
    // While audio is idle, pulse Voice OFF then ON every 5 seconds.
    // CDP operates on the background tab; it never focuses Chrome or steals VRChat.
-   if(!audible&&!caiPlaying){
+   if(audioSeen&&!audible&&!caiPlaying){
     Log("c.ai audio idle: refreshing Voice state (OFF → ON).");
     await VoiceToggleAsync(false);
     await Task.Delay(450);
