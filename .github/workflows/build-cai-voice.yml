@@ -1,5 +1,5 @@
 name: Build CAI Voice Automation EXE
-# Builds the dual-tab Character.AI + Speech Bridge Chrome Debug automation.
+# Build and upload the CAI + bridge dual-tab EXE.
 on:
   workflow_dispatch:
   push:
