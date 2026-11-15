@@ -95,6 +95,11 @@ rec.onend=()=>{if(active)setTimeout(()=>{try{rec.start()}catch{}},400)};try{rec.
   int id=Interlocked.Increment(ref cdpId);var msg=JsonSerializer.Serialize(new{ id,method="Runtime.evaluate",@params=new{expression=js,returnByValue=true,awaitPromise=true}});await cdp.SendAsync(Encoding.UTF8.GetBytes(msg),WebSocketMessageType.Text,true,CancellationToken.None);var buf=new byte[65536];
   while(true){var r=await cdp.ReceiveAsync(buf,CancellationToken.None);using var d=JsonDocument.Parse(Encoding.UTF8.GetString(buf,0,r.Count));if(d.RootElement.TryGetProperty("id",out var got)&&got.GetInt32()==id){var rr=d.RootElement.GetProperty("result");if(rr.TryGetProperty("result",out var val)&&val.TryGetProperty("value",out var v))return v.ToString()??"";if(rr.TryGetProperty("exceptionDetails",out var er))return "JS_ERROR "+er.ToString();return "";}}
  }
+ async Task CdpKey(string key){
+  if(cdp==null||cdp.State!=WebSocketState.Open)return;
+  async Task Send(string type){int id=Interlocked.Increment(ref cdpId);var msg=JsonSerializer.Serialize(new{id,method="Input.dispatchKeyEvent",@params=new{type,key,code=key,windowsVirtualKeyCode=key=="Enter"?13:0,nativeVirtualKeyCode=key=="Enter"?13:0}});await cdp.SendAsync(Encoding.UTF8.GetBytes(msg),WebSocketMessageType.Text,true,CancellationToken.None);var buf=new byte[65536];while(true){var rr=await cdp.ReceiveAsync(buf,CancellationToken.None);using var d=JsonDocument.Parse(Encoding.UTF8.GetString(buf,0,rr.Count));if(d.RootElement.TryGetProperty("id",out var got)&&got.GetInt32()==id)break;}}
+  await Send("keyDown");await Send("keyUp");
+ }
  async Task ToggleVoice(){var x=await CdpEval("(()=>{let b=[...document.querySelectorAll('button,[role=button]')].find(x=>/voice|microphone|start voice|stop voice/i.test((x.getAttribute('aria-label')||'')+' '+(x.getAttribute('title')||'')+' '+(x.innerText||'')));if(!b)b=[...document.querySelectorAll('button,[role=button]')].find(x=>x.querySelector('svg')&&/voice|mic|audio/i.test(x.outerHTML));if(b){b.click();return 'CLICKED '+(b.getAttribute('aria-label')||b.title||b.innerText)}return 'VOICE BUTTON NOT FOUND'})()");L("Voice toggle: "+x);}
  async Task Serve(CancellationToken ct){
   while(!ct.IsCancellationRequested&&listener?.IsListening==true){try{var c=await listener.GetContextAsync();
