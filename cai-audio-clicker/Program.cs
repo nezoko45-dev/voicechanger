@@ -23,12 +23,9 @@ namespace CaiReplyAudioClicker
             Console.Title = "CAI Voice Toggle - Mic Monitor";
             Console.WriteLine("Launching Chrome debug + Character.AI...");
             await EnsureDebugChrome();
-            Console.WriteLine("Mic monitor ready. Speak to turn CAI voice ON; when CAI audio ends it turns OFF.");
+            await OpenSpeechTab();
+            Console.WriteLine("Chrome SpeechRecognition is running in a separate tab. Speak to turn CAI voice ON; CAI audio ending turns it OFF.");
             Console.WriteLine("Ctrl+C exits.");
-            using var mic = new MicrophoneMonitor();
-            mic.SpeechStarted += async () => { if (!voiceEnabled) await SetVoiceToggle(true); };
-            mic.SpeechEnded += () => Console.WriteLine("Speech ended; waiting for CAI audio to finish...");
-            mic.Start();
 
             bool wasPlaying = false;
             int quietAudioTicks = 0;
@@ -36,6 +33,13 @@ namespace CaiReplyAudioClicker
             {
                 try
                 {
+                    var speechTarget=await GetSpeechTarget();
+                    if(speechTarget!=null){
+                        using var sws=new ClientWebSocket(); await sws.ConnectAsync(new Uri(speechTarget),CancellationToken.None);
+                        string words=await Evaluate(sws,"window.getLatestSpeech ? window.getLatestSpeech() : ''");
+                        if(!string.IsNullOrWhiteSpace(words)){Console.WriteLine("Recognized: "+words);if(!voiceEnabled)await SetVoiceToggle(true);}
+                        await sws.CloseAsync(WebSocketCloseStatus.NormalClosure,"speech poll",CancellationToken.None);
+                    }
                     var target = await GetCaiTarget();
                     if (target != null)
                     {
@@ -99,6 +103,17 @@ namespace CaiReplyAudioClicker
             Process.Start(new ProcessStartInfo(chrome){UseShellExecute=false,Arguments="--remote-debugging-port=9222 --remote-allow-origins=* --user-data-dir="+Quote(profile)+" --no-first-run --no-default-browser-check "+Quote(CaiUrl)});
             for(int i=0;i<40;i++){if(await DebugEndpointReady()){await NavigateCai();return;}await Task.Delay(500);}
             throw new TimeoutException("Chrome debug port 9222 failed to start.");
+        }
+        static async Task OpenSpeechTab(){
+            string url=new Uri(Path.Combine(AppContext.BaseDirectory,"speech.html")).AbsoluteUri;
+            try{using var req=new HttpRequestMessage(HttpMethod.Put,DebugAddress+"/json/new?"+Uri.EscapeDataString(url));using var res=await Http.SendAsync(req);res.EnsureSuccessStatusCode();}
+            catch(Exception ex){Console.WriteLine("Speech tab open: "+ex.Message);}
+        }
+        static async Task<string> GetSpeechTarget(){
+            try{using var d=JsonDocument.Parse(await Http.GetStringAsync(DebugAddress+"/json"));foreach(var x in d.RootElement.EnumerateArray()){
+                string u=x.TryGetProperty("url",out var a)?a.GetString()??"":"";string w=x.TryGetProperty("webSocketDebuggerUrl",out var b)?b.GetString()??"":"";
+                if(u.StartsWith("file:",StringComparison.OrdinalIgnoreCase)&&u.Contains("speech.html",StringComparison.OrdinalIgnoreCase)&&w.Length>0)return w;
+            }}catch{}return null;
         }
         static async Task NavigateCai()
         {
