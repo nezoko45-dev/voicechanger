@@ -38,8 +38,8 @@ public sealed class MainForm : Form {
    string[] paths={Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"Google","Chrome","Application","chrome.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),"Google","Chrome","Application","chrome.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Google","Chrome","Application","chrome.exe")};
    string chrome=Array.Find(paths,File.Exists);
    if(chrome==null){Log("Chrome executable not found. Install Google Chrome.");return;}
-   Process.Start(new ProcessStartInfo(chrome,"--remote-debugging-port=9222 --remote-allow-origins=* --user-data-dir=\""+profile+"\" https://character.ai/"){UseShellExecute=false});
-   status.Text="Debug Chrome launched (CDP :9222)";
+   Process.Start(new ProcessStartInfo(chrome,"--remote-debugging-port=9222 --remote-allow-origins=* --user-data-dir=\""+profile+"\" https://character.ai/"){UseShellExecute=false,WindowStyle=ProcessWindowStyle.Minimized});
+   status.Text="Debug Chrome launched (CDP :9222)";\n  // Keep the bridge as the foreground app only at initial launch; Chrome starts minimized.
    Log("Launched debug Chrome profile. Sign into Character.AI in that window once.");
   }catch(Exception ex){Log("Debug Chrome launch failed: "+ex.Message);}
  }
@@ -103,7 +103,7 @@ public sealed class MainForm : Form {
    using var doc=JsonDocument.Parse(response.ToString());
    string value=doc.RootElement.GetProperty("result").GetProperty("result").TryGetProperty("value",out var v)?v.GetString()??"":"";
    Log(value=="VOICE_CLICKED"?"Character.AI Voice SVG button clicked via CDP.":value=="VOICE_SVG_NOT_FOUND"?"Voice SVG signature not found on current c.ai page.":"CDP response: "+value);
-   if(value=="VOICE_CLICKED")status.Text="Voice toggled (CDP)";
+   if(value=="VOICE_CLICKED")try{BeginInvoke(new Action(()=>status.Text="Voice toggled (CDP)"));}catch{}
    await socket.CloseAsync(WebSocketCloseStatus.NormalClosure,"done",CancellationToken.None);
   }catch(Exception ex){Log("CDP Voice toggle error: "+ex.Message+" (debug Chrome must be running)");}
  }
