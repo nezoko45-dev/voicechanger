@@ -9,10 +9,15 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Runtime.InteropServices;
 using System.Windows.Automation;
 
 namespace ChromeCaiBridge;
 public sealed class MainForm : Form {
+ [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hWnd,int nCmdShow);
+ [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hWnd);
+ [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+ const int SW_SHOWMINNOACTIVE=7;
  readonly HttpListener listener=new();
  readonly TextBox output=new(){Multiline=true,ScrollBars=ScrollBars.Vertical,Dock=DockStyle.Fill};
  readonly CheckBox send=new(){Text="Send recognized final phrases to c.ai",Checked=true,AutoSize=true};
@@ -38,10 +43,13 @@ public sealed class MainForm : Form {
    string[] paths={Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"Google","Chrome","Application","chrome.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),"Google","Chrome","Application","chrome.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Google","Chrome","Application","chrome.exe")};
    string chrome=Array.Find(paths,File.Exists);
    if(chrome==null){Log("Chrome executable not found. Install Google Chrome.");return;}
-   Process.Start(new ProcessStartInfo(chrome,"--remote-debugging-port=9222 --remote-allow-origins=* --user-data-dir=\""+profile+"\" https://character.ai/"){UseShellExecute=false,WindowStyle=ProcessWindowStyle.Minimized});
-   status.Text="Debug Chrome launched (CDP :9222)";
-   // Chrome starts minimized so VRChat retains foreground focus.
-   Log("Launched debug Chrome profile. Sign into Character.AI in that window once.");
+   var foreground=GetForegroundWindow();
+   var psi=new ProcessStartInfo(chrome,"--remote-debugging-port=9222 --remote-allow-origins=* --start-minimized --window-position=-32000,-32000 --user-data-dir=\""+profile+"\" https://character.ai/"){UseShellExecute=true,WindowStyle=ProcessWindowStyle.Minimized};
+   var proc=Process.Start(psi);
+   // SW_SHOWMINNOACTIVE minimizes without activating Chrome; restore the app that was foreground before launch.
+   Task.Run(async()=>{await Task.Delay(1200);try{if(proc!=null&&!proc.HasExited&&proc.MainWindowHandle!=IntPtr.Zero)ShowWindow(proc.MainWindowHandle,SW_SHOWMINNOACTIVE);if(foreground!=IntPtr.Zero)SetForegroundWindow(foreground);}catch{}});
+   status.Text="Debug Chrome launched minimized (CDP :9222)";
+   Log("Chrome started minimized without activation; VRChat focus preserved.");
   }catch(Exception ex){Log("Debug Chrome launch failed: "+ex.Message);}
  }
  void Log(string m){if(disposed)return;try{BeginInvoke(new Action(()=>output.AppendText(DateTime.Now.ToString("HH:mm:ss")+" "+m+Environment.NewLine)));}catch{}}
