@@ -11,7 +11,7 @@ public class MainForm:Form {
  TextBox log=new(){Multiline=true,ScrollBars=ScrollBars.Vertical,Dock=DockStyle.Fill};
  Button start=new(){Text="Start",Dock=DockStyle.Top,Height=42};
  Label status=new(){Text="STOPPED",Dock=DockStyle.Top,Height=30};
- CancellationTokenSource? cts; bool voiceOn=false,aiPlaying=false; DateTime lastSpeech=DateTime.MinValue,lastAudio=DateTime.MinValue;
+ CancellationTokenSource? cts; string _speechStatus=""; bool voiceOn=false,aiPlaying=false; DateTime lastSpeech=DateTime.MinValue,lastAudio=DateTime.MinValue;
  ClientWebSocket? cdp; int cdpId=0; readonly SemaphoreSlim cdpLock=new(1,1);
  public MainForm(){Text="CAI Voice Automation • Chrome Speech";Width=700;Height=480;Controls.Add(log);Controls.Add(status);Controls.Add(start);start.Click+=async(_,__)=>{if(cts!=null){cts.Cancel();return;}cts=new();start.Text="Stop";await Run(cts.Token);};FormClosing+=(_,__)=>cts?.Cancel();}
  void L(string s){if(IsDisposed)return;BeginInvoke(()=>log.AppendText($"[{DateTime.Now:HH:mm:ss}] {s}\r\n"));}
@@ -33,9 +33,14 @@ public class MainForm:Form {
 (()=>{if(window.__caiSpeechAutomation?.running)return 'already running';
  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return 'SpeechRecognition unavailable in this Chrome page';
  const s=new SR();s.lang='en-US';s.continuous=true;s.interimResults=false;s.maxAlternatives=1;
- const q=window.__caiSpeechAutomation={running:true,queue:[],error:'',recognition:s};
+ const q=window.__caiSpeechAutomation={running:true,queue:[],errors:[],error:'',status:'STARTING',recognition:s};
+  s.onstart=()=>{q.status='LISTENING';q.errors.push('Recognition started—mic is live')};
+ s.onaudiostart=()=>{q.status='MIC ACTIVE'};
+ s.onspeechstart=()=>{q.status='HEARING SPEECH'};
  s.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal){let t=e.results[i][0].transcript.trim();if(t)q.queue.push(t)}}};
- s.onerror=e=>{q.error=e.error||'unknown';};s.onend=()=>{if(q.running)setTimeout(()=>{try{s.start()}catch{}},700)};
+ s.onerror=e=>{q.error=e.error||'unknown';q.errors.push('SpeechRecognition error: '+q.error)};
+ s.onnomatch=()=>q.errors.push('Chrome heard audio but could not recognize words');
+ s.onend=()=>{q.status='RESTARTING';if(q.running)setTimeout(()=>{try{s.start()}catch(e){q.errors.push('Restart failed: '+e.message)}},900)};
  try{s.start();return 'Chrome SpeechRecognition started in CAI tab'}catch(e){q.running=false;return 'Speech start failed: '+e.message}
 })()";
   string init=await CdpEval(inject);L(init);
@@ -44,8 +49,8 @@ public class MainForm:Form {
   L("Speak normally. Chrome transcribes inside the CAI tab; EXE inserts transcript and presses Enter.");
   while(!ct.IsCancellationRequested){
    try{
-    string transcript=await CdpEval("(()=>{let q=window.__caiSpeechAutomation;if(!q)return '';return q.queue.shift()||''})()");
-    if(!string.IsNullOrWhiteSpace(transcript)){L("Heard: "+transcript);await Deliver(transcript);lastSpeech=DateTime.Now;}
+    string diagnostics=await CdpEval("(()=>{let q=window.__caiSpeechAutomation;if(!q)return 'Speech object missing';let e=q.errors.shift();return JSON.stringify({status:q.status,error:e,transcript:q.queue.shift()||''})})()");
+    using(var diag=JsonDocument.Parse(diagnostics)){var root=diag.RootElement;string st=root.GetProperty("status").GetString()??"";if(st!=_speechStatus){_speechStatus=st;L("Mic state: "+st);}if(root.GetProperty("error").ValueKind==JsonValueKind.String)L(root.GetProperty("error").GetString()??"Speech error");string transcript=root.GetProperty("transcript").GetString()??"";if(!string.IsNullOrWhiteSpace(transcript)){L("TRANSCRIBED: "+transcript);await Deliver(transcript);lastSpeech=DateTime.Now;}}
     string state=await CdpEval("JSON.stringify([...document.querySelectorAll('audio,video')].map(a=>({p:a.paused,e:a.ended,r:a.readyState})))");
     bool playing=false;try{foreach(var a in JsonDocument.Parse(state).RootElement.EnumerateArray())if(!a.GetProperty("p").GetBoolean()&&!a.GetProperty("e").GetBoolean()&&a.GetProperty("r").GetInt32()>=2)playing=true;}catch{}
     if(playing){aiPlaying=true;lastAudio=DateTime.Now;}else if(aiPlaying&&DateTime.Now-lastAudio>TimeSpan.FromSeconds(2)){aiPlaying=false;L("CAI audio finished.");if(voiceOn){await ToggleVoice();voiceOn=false;}}
