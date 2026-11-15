@@ -26,10 +26,9 @@ jobs:
         run: |
           $pub = "cai-voice-automation/bin/Release/net8.0-windows/win-x64/publish"
           $dist = "dist/CaiVoiceAutomation"
-          New-Item -ItemType Directory -Force -Path "$dist/CharacterAI Website","$dist/model" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$dist/model" | Out-Null
           Copy-Item "$pub/CaiVoiceAutomation.exe" "$dist/CaiVoiceAutomation.exe"
           Copy-Item "$pub/CaiVoiceAutomation.pdb" "$dist/CaiVoiceAutomation.pdb"
-          Copy-Item "cai-voice-automation/CharacterAI-Website/index.html" "$dist/CharacterAI Website/index.html"
           Copy-Item "cai-voice-automation/model/ggml-small.en.bin" "$dist/model/ggml-small.en.bin"
           Compress-Archive -Path "$dist/*" -DestinationPath "dist/CaiVoiceAutomation-Complete.zip" -Force
       - name: Upload ONE ZIP with everything
