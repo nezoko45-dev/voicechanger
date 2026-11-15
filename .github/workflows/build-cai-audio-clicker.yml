@@ -1,0 +1,23 @@
+name: Build CAI UI Automation Clicker
+on:
+  push:
+    branches: [feature/cai-voice-audio-monitor]
+    paths:
+      - 'cai-audio-clicker/**'
+      - '.github/workflows/build-cai-audio-clicker.yml'
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Publish single-file EXE
+        run: dotnet publish cai-audio-clicker/CaiAudioClicker.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CAI-UIAutomation-Clicker
+          path: publish/CaiAudioClicker.exe
+          if-no-files-found: error
