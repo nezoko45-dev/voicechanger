@@ -17,7 +17,7 @@ public sealed class MainForm : Form {
  [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hWnd,int nCmdShow);
  [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hWnd);
  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
- const int SW_SHOWMINNOACTIVE=7;
+ const int SW_SHOWNOACTIVATE=4;
  readonly HttpListener listener=new();
  readonly TextBox output=new(){Multiline=true,ScrollBars=ScrollBars.Vertical,Dock=DockStyle.Fill};
  readonly CheckBox send=new(){Text="Send recognized final phrases to c.ai",Checked=true,AutoSize=true};
@@ -43,13 +43,13 @@ public sealed class MainForm : Form {
    string[] paths={Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"Google","Chrome","Application","chrome.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),"Google","Chrome","Application","chrome.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Google","Chrome","Application","chrome.exe")};
    string chrome=Array.Find(paths,File.Exists);
    if(chrome==null){Log("Chrome executable not found. Install Google Chrome.");return;}
-   var foreground=GetForegroundWindow();
-   var psi=new ProcessStartInfo(chrome,"--remote-debugging-port=9222 --remote-allow-origins=* --start-minimized --window-position=-32000,-32000 --user-data-dir=\""+profile+"\" https://character.ai/"){UseShellExecute=true,WindowStyle=ProcessWindowStyle.Minimized};
+   var psi=new ProcessStartInfo(chrome,"--remote-debugging-port=9222 --remote-allow-origins=* --window-position=-32000,-32000 --window-size=900,700 --user-data-dir=\""+profile+"\" https://character.ai/"){UseShellExecute=true,WindowStyle=ProcessWindowStyle.Normal};
    var proc=Process.Start(psi);
-   // SW_SHOWMINNOACTIVE minimizes without activating Chrome; restore the app that was foreground before launch.
-   Task.Run(async()=>{await Task.Delay(1200);try{if(proc!=null&&!proc.HasExited&&proc.MainWindowHandle!=IntPtr.Zero)ShowWindow(proc.MainWindowHandle,SW_SHOWMINNOACTIVE);if(foreground!=IntPtr.Zero)SetForegroundWindow(foreground);}catch{}});
-   status.Text="Debug Chrome launched minimized (CDP :9222)";
-   Log("Chrome started minimized without activation; VRChat focus preserved.");
+   // Keep Chrome un-minimized but parked off-screen. SW_SHOWNOACTIVATE avoids taking focus,
+   // while an un-minimized browser window allows Character.AI audio to keep playing.
+   Task.Run(async()=>{await Task.Delay(1200);try{if(proc!=null&&!proc.HasExited&&proc.MainWindowHandle!=IntPtr.Zero)ShowWindow(proc.MainWindowHandle,SW_SHOWNOACTIVATE);}catch{}});
+   status.Text="Debug Chrome running off-screen (audio enabled; CDP :9222)";
+   Log("Chrome window parked off-screen (not minimized) without activation; VRChat focus preserved.");
   }catch(Exception ex){Log("Debug Chrome launch failed: "+ex.Message);}
  }
  void Log(string m){if(disposed)return;try{BeginInvoke(new Action(()=>output.AppendText(DateTime.Now.ToString("HH:mm:ss")+" "+m+Environment.NewLine)));}catch{}}
