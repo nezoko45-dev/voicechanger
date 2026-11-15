@@ -48,14 +48,13 @@
   if(!active)return;
   const generating=generationActive(), playing=playbackState();
   if(generating){wasGenerating=true;lastRecoveryClick=Date.now();return}
-  if(wasGenerating){wasGenerating=false;generationFinishedAt=Date.now();lastRecoveryClick=Date.now();log("CAI finished generating; waiting for its audio before recovery.");}
-  if(playing){if(!audioWasPlaying)log("Character.AI playback detected; holding recovery clicks.");audioWasPlaying=true;return}
-  if(audioWasPlaying){audioWasPlaying=false;lastRecoveryClick=Date.now();const b=replyReadAloudButton();if(b){b.click();log("Final AI sentence finished; switched CAI Read Aloud triangle clicked.")}else log("Final AI sentence finished; Read Aloud triangle not found.");return}
-  // Never tap the SVG during generation, nor in the short handoff window after it.
-  if(Date.now()-generationFinishedAt<7000)return;
-  if(Date.now()-lastRecoveryClick<8000)return;
-  const b=replyReadAloudButton();
-  if(b){b.click();lastRecoveryClick=Date.now();log("Idle recovery tapped CAI Read Aloud triangle.");}
+  if(wasGenerating){
+   wasGenerating=false;generationFinishedAt=Date.now();lastRecoveryClick=Date.now();
+   const b=replyReadAloudButton();if(b){b.click();log("Generation finished; clicked the reply's blue Read Aloud triangle.")}else log("Generation finished; Read Aloud triangle not found.");
+  }
+  if(playing){if(!audioWasPlaying)log("Reply Read Aloud playback detected.");audioWasPlaying=true;return}
+  if(audioWasPlaying){audioWasPlaying=false;lastRecoveryClick=Date.now();log("Reply audio finished; leaving Read Aloud button alone.");return}
+  // The triangle starts playback; never click it repeatedly as an idle toggle.
  }
  function startAudioMonitor(){
   clearInterval(monitorTimer);monitorTimer=setInterval(monitorVoice,1000);
@@ -81,7 +80,7 @@
    log("Sent: "+text);busy=false;submitLock=false;startRecognition();
   },250);
  }
- function start(){if(!SR){log("SpeechRecognition unavailable. Use Chrome.");return}active=true;busy=false;submitLock=false;lastRecoveryClick=Date.now();startRecognition();startAudioMonitor();log("Continuous mic + generation-aware audio monitor; SVG clicks paused while CAI generates.")}
+ function start(){if(!SR){log("SpeechRecognition unavailable. Use Chrome.");return}active=true;busy=false;submitLock=false;lastRecoveryClick=Date.now();startRecognition();startAudioMonitor();log("Continuous mic + auto Read Aloud on completed replies.")}
  function stop(){active=false;busy=false;submitLock=false;clearTimeout(restartTimer);clearInterval(monitorTimer);audioMonitorObserver?.disconnect();audioMonitorObserver=null;try{recognition?.stop()}catch{}recognition=null;audioWasPlaying=false;log("Stopped listening.")}
  chrome.runtime.onMessage.addListener(m=>{if(m.action==="START")start();if(m.action==="STOP")stop()});
 })();
