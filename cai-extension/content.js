@@ -1,7 +1,7 @@
 (()=>{
  if(window.__caiAutomationLoaded)return;window.__caiAutomationLoaded=true;
  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
- let active=false,recognition=null,busy=false,restartTimer=null,monitorTimer=null,submitLock=false,audioWasPlaying=false;
+ let active=false,recognition=null,busy=false,restartTimer=null,monitorTimer=null,submitLock=false,audioWasPlaying=false,lastRecoveryClick=0;
  const log=s=>{console.log("[CAI Voice Automation]",s);try{chrome.runtime.sendMessage({type:"STATUS",text:s}).catch(()=>{})}catch{}};
  const input=()=>document.querySelector('textarea[placeholder],textarea')||document.querySelector('[contenteditable="true"][role="textbox"]')||document.querySelector('[contenteditable="true"]');
  function setText(el,text){el.focus();if(el instanceof HTMLTextAreaElement)Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value").set.call(el,text);else el.textContent=text;el.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:text}))}
@@ -32,10 +32,11 @@
   if(!active)return;
   const playing=playbackState();
   if(playing){if(!audioWasPlaying)log("Character.AI playback detected; holding recovery clicks.");audioWasPlaying=true;return}
-  if(audioWasPlaying){audioWasPlaying=false;log("Character.AI playback ended; recovery timer resumed.");return}
+  if(audioWasPlaying){audioWasPlaying=false;lastRecoveryClick=Date.now();log("Character.AI playback ended; waiting 8 seconds before recovery.");return}
+  if(Date.now()-lastRecoveryClick<8000)return;
   const b=voiceWaveButton();
-  if(b){b.click();log("Tapped CAI voice-wave control; next check in 8 seconds.")}
-  else log("CAI voice-wave control not found; scanning again shortly.");
+  if(b){b.click();lastRecoveryClick=Date.now();log("Tapped CAI voice-wave control; recovery cooldown started.")}
+  else log("CAI voice-wave control not found; checking again in 1 second.");
  }
  function startAudioMonitor(){
   clearInterval(monitorTimer);monitorTimer=setInterval(monitorVoice,1000);
@@ -61,7 +62,7 @@
    log("Sent: "+text);busy=false;submitLock=false;startRecognition();
   },250);
  }
- function start(){if(!SR){log("SpeechRecognition unavailable. Use Chrome.");return}active=true;busy=false;submitLock=false;startRecognition();clearInterval(monitorTimer);monitorTimer=setInterval(monitorVoice,8000);log("Continuous mic + 8-second voice-wave audio recovery enabled.")}
+ function start(){if(!SR){log("SpeechRecognition unavailable. Use Chrome.");return}active=true;busy=false;submitLock=false;lastRecoveryClick=Date.now();startRecognition();startAudioMonitor();log("Continuous mic + 1-second audio checks; 8-second recovery clicks enabled.")}
  function stop(){active=false;busy=false;submitLock=false;clearTimeout(restartTimer);clearInterval(monitorTimer);audioMonitorObserver?.disconnect();audioMonitorObserver=null;try{recognition?.stop()}catch{}recognition=null;audioWasPlaying=false;log("Stopped listening.")}
  chrome.runtime.onMessage.addListener(m=>{if(m.action==="START")start();if(m.action==="STOP")stop()});
 })();
