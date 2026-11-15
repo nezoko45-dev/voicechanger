@@ -81,24 +81,14 @@ public sealed class MainForm : Form {
  async Task EnsureVoiceAndSendAsync(string phrase){bool locked=false;for(int i=0;i<120;i++){if(Interlocked.CompareExchange(ref voiceBusy,1,0)==0){locked=true;break;}await Task.Delay(100);}if(!locked){Log("Voice recovery stayed busy for 12s; transcript queued attempt timed out.");return;}try{Log("Ensuring c.ai Voice is ON (state-aware; no blind double-toggle).");await VoiceToggleAsync(true);_pendingPhrase=phrase;await SendEnterAsync();Log("Transcript sent with c.ai Voice enabled; waiting for spoken reply.");}catch(Exception ex){Log("Voice pre-send error: "+ex.Message);}finally{Interlocked.Exchange(ref voiceBusy,0);}}
  async Task AudioRecoveryTickAsync(){
   try{
-   // Only watch media elements in the Character.AI tab. Chrome's global audio
-   // meter includes unrelated tabs and must never be used to decide Voice OFF.
+   // Never toggle Voice OFF automatically: Character.AI can suspend audio when
+   // its tab loses focus even though its Voice icon remains ON. Keep Voice ON.
    bool caiPlaying=await CaiMediaIsPlayingAsync();
-   if(waitingReply){
-    if(caiPlaying){replyAudioStarted=true;lastChromeAudio=DateTime.UtcNow;return;}
-    if(replyGenerationFinished&&replyAudioStarted&&(DateTime.UtcNow-lastChromeAudio).TotalSeconds>=2.5){
-     Log("Character.AI tab media ended/paused for 2.5s; turning Voice OFF now.");
-     await VoiceToggleAsync();
-     waitingReply=false;isIdle=true;replyAudioStarted=false;
-     try{BeginInvoke(new Action(()=>status.Text="IDLE — c.ai playback finished; Voice OFF"));}catch{}
-     Log("Voice turned OFF after Character.AI media playback; bridge returned to IDLE.");
-     return;
-    }
-    if(replyGenerationFinished&&!replyAudioStarted&&(DateTime.UtcNow-lastSpeech).TotalSeconds>12){
-     waitingReply=false;isIdle=true;
-     try{BeginInvoke(new Action(()=>status.Text="IDLE — no c.ai media detected"));}catch{}
-     Log("No Character.AI media element playback detected; returned to IDLE without toggling Voice.");
-    }
+   if(caiPlaying){replyAudioStarted=true;lastChromeAudio=DateTime.UtcNow;}
+   if(waitingReply&&replyGenerationFinished){
+    waitingReply=false;isIdle=true;replyAudioStarted=false;
+    try{BeginInvoke(new Action(()=>status.Text=caiPlaying?"IDLE — c.ai audio playing; Voice stays ON":"IDLE — generation finished; Voice stays ON"));}catch{}
+    Log("Generation finished; Voice remains ON (no automatic OFF toggle).");
    }
   }catch(Exception ex){Log("Audio recovery: "+ex.Message);}
   finally{Interlocked.Exchange(ref voiceBusy,0);}
