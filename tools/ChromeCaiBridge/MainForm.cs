@@ -71,14 +71,13 @@ public sealed class MainForm : Form {
  });}}
  static void Reply(HttpListenerContext c,string text,string type){var b=Encoding.UTF8.GetBytes(text);c.Response.ContentType=type;c.Response.OutputStream.Write(b);c.Response.Close();}
  void SendToCai(string phrase){
-  // Avoid a full desktop UI Automation tree scan on every transcript; it is
-  // expensive and delays sending. CDP handles composer lookup/injection itself.
-  Log("Turning c.ai Voice on before sending transcript.");
+  // Avoid a full desktop UI Automation tree scan on every transcript; CDP handles the composer.
+  Log("Sending recognized phrase twice as two separate Character.AI messages.");
   _=EnsureVoiceAndSendAsync(phrase);
  }
  bool HasButton(string name){try{return AutomationElement.RootElement.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.NameProperty,name))!=null;}catch{return false;}}
  async Task CheckGenerationGuardedAsync(){try{await Task.Run(()=>{if(!waitingReply||replyGenerationFinished)return;generationPolls++;bool generating=HasButton("Stop generating")||HasButton("Stop response")||HasButton("Stop");if(generating){sawGenerating=true;replyGenerationFinished=false;return;}if(sawGenerating&&generationPolls>=2){replyGenerationFinished=true;Log("c.ai generation finished; Voice remains ON through reply playback.");}});}finally{Interlocked.Exchange(ref monitorBusy,0);}}
- async Task EnsureVoiceAndSendAsync(string phrase){bool locked=false;for(int i=0;i<120;i++){if(Interlocked.CompareExchange(ref voiceBusy,1,0)==0){locked=true;break;}await Task.Delay(100);}if(!locked){Log("Voice recovery stayed busy for 12s; transcript queued attempt timed out.");return;}try{Log("Ensuring c.ai Voice is ON (state-aware; no blind double-toggle).");await VoiceToggleAsync(true);_pendingPhrase=phrase;await SendEnterAsync();Log("Transcript sent with c.ai Voice enabled; waiting for spoken reply.");}catch(Exception ex){Log("Voice pre-send error: "+ex.Message);}finally{Interlocked.Exchange(ref voiceBusy,0);}}
+ async Task EnsureVoiceAndSendAsync(string phrase){bool locked=false;for(int i=0;i<120;i++){if(Interlocked.CompareExchange(ref voiceBusy,1,0)==0){locked=true;break;}await Task.Delay(100);}if(!locked){Log("Voice recovery stayed busy for 12s; transcript send timed out.");return;}try{Log("Ensuring c.ai Voice is ON (state-aware; no blind double-toggle).");await VoiceToggleAsync(true);_pendingPhrase=phrase;await SendEnterAsync();Log("First message sent; sending the same phrase again separately.");await Task.Delay(350);_pendingPhrase=phrase;await SendEnterAsync();Log("Second message sent; waiting for c.ai spoken reply.");}catch(Exception ex){Log("Voice pre-send error: "+ex.Message);}finally{Interlocked.Exchange(ref voiceBusy,0);}}
  async Task AudioRecoveryTickAsync(){
   try{
    bool caiPlaying=await CaiMediaIsPlayingAsync();
