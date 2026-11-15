@@ -25,13 +25,16 @@ const S=document.querySelector('#s');let rec,active=false;
 async function post(t){let r=await fetch('/speech',{method:'POST',headers:{'Content-Type':'text/plain'},body:t});S.textContent=await r.text()}
 document.querySelector('#test').onclick=()=>post('__bridge_test__');
 document.querySelector('#send').onclick=()=>post(document.querySelector('#manual').value);
-document.querySelector('#start').onclick=()=>{if(active){active=false;try{rec.stop()}catch{};return}
-let SR=SpeechRecognition||webkitSpeechRecognition;if(!SR){S.textContent='SpeechRecognition unavailable. Open this in Chrome.';return}
-active=true;rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=false;
-rec.onstart=()=>S.textContent='🟢 Listening';rec.onresult=e=>{let t=e.results[e.results.length-1][0].transcript.trim();S.textContent='Recognized: '+t;post(t)};
-rec.onerror=e=>S.textContent='Mic error: '+e.error+' (will recover)';
-rec.onend=()=>{if(active)setTimeout(()=>{try{rec.start()}catch{}},400)};try{rec.start()}catch{}};
-</script></body></html>";
+document.querySelector('#start').onclick=()=>{if(active){active=false;try{rec.stop()}catch{};S.textContent='Mic stopped';return}
+let SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){S.textContent='SpeechRecognition unavailable: use Google Chrome.';return}
+active=true;let retry=800;
+function listen(){if(!active)return;try{rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=false;rec.maxAlternatives=1;
+rec.onstart=()=>{retry=800;S.textContent='🟢 Listening'};
+rec.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal){let t=e.results[i][0].transcript.trim();if(t){S.textContent='Recognized: '+t;post(t)}}}};
+rec.onerror=e=>{let msg='Speech error: '+e.error;if(e.error==='not-allowed'||e.error==='service-not-allowed'){active=false;msg+=' — grant Microphone permission to localhost:8765 in Chrome site settings.'}else if(e.error==='network'){msg+=' — Chrome speech service/network failed; retrying.';retry=Math.min(retry*2,8000)}else if(e.error==='no-speech'){msg+=' — listening again';retry=800}else{msg+=' — restarting';retry=Math.min(retry*2,5000)}S.textContent=msg};
+rec.onend=()=>{if(active)setTimeout(listen,retry)};
+rec.start()}catch(err){S.textContent='Speech start failed: '+err.message;if(active)setTimeout(listen,retry)}}
+listen();}</script></body></html>";
  public MainForm(){Text="CAI Voice Automation";Width=680;Height=460;Controls.Add(log);Controls.Add(status);Controls.Add(start);start.Click+=async(_,__)=>{if(cts!=null){cts.Cancel();return;}cts=new();start.Text="Stop";await Run(cts.Token);};FormClosing+=(_,__)=>cts?.Cancel();}
  void L(string s){if(IsDisposed)return;BeginInvoke(()=>log.AppendText($"[{DateTime.Now:HH:mm:ss}] {s}\r\n"));}
  async Task Run(CancellationToken ct){
