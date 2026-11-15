@@ -79,6 +79,7 @@ public sealed class MainForm : Form {
  async Task CheckGenerationGuardedAsync(){try{await Task.Run(()=>{if(!waitingReply||replyGenerationFinished)return;generationPolls++;bool generating=HasButton("Stop generating")||HasButton("Stop response")||HasButton("Stop");if(generating){sawGenerating=true;replyGenerationFinished=false;return;}if(sawGenerating&&generationPolls>=2){replyGenerationFinished=true;generationFinishedAt=DateTime.UtcNow;Log("c.ai generation finished; monitoring for voice playback.");}});}finally{Interlocked.Exchange(ref monitorBusy,0);}}
  async Task EnsureVoiceAndSendAsync(string phrase){bool locked=false;for(int i=0;i<120;i++){if(Interlocked.CompareExchange(ref voiceBusy,1,0)==0){locked=true;break;}await Task.Delay(100);}if(!locked){Log("Voice recovery stayed busy for 12s; transcript send timed out.");return;}try{Log("Voice button untouched while sending (prevents accidental OFF toggle).");_pendingPhrase=phrase;await SendEnterAsync();Log("Transcript submitted once; waiting for c.ai spoken reply.");}catch(Exception ex){Log("Voice pre-send error: "+ex.Message);}finally{Interlocked.Exchange(ref voiceBusy,0);}}
  async Task AudioRecoveryTickAsync(){
+  bool recover=false;
   try{
    bool caiPlaying=await CaiMediaIsPlayingAsync();
    float peak=ChromeAudioPeak();
@@ -89,27 +90,28 @@ public sealed class MainForm : Form {
     try{BeginInvoke(new Action(()=>status.Text=audible?"IDLE — c.ai audio playing; Voice stays ON":"IDLE — generation finished; Voice stays ON"));}catch{}
     Log("Generation finished; Voice remains ON.");
    }
-   // Recover ONLY from a drop in c.ai's Chrome output level—not from microphone silence.
-   if(keepalive.Checked&&audioSeen&&!audible&&!caiPlaying&&DateTime.UtcNow-lastChromeAudio>=TimeSpan.FromSeconds(8)&&DateTime.UtcNow-lastRecovery>=TimeSpan.FromSeconds(20)){
-    lastRecovery=DateTime.UtcNow;audioSeen=false;
-    Log("Confirmed c.ai Chrome audio dropout (8s). Starting audio-only Voice recovery; speech/send cannot trigger this.");
-    _=RecoverVoiceAudioAsync();
+   // Start recovery only after we've observed c.ai Chrome output and it is now silent.
+   // The actual recovery runs after this monitor releases its lock.
+   if(keepalive.Checked&&audioSeen&&!audible&&!caiPlaying&&DateTime.UtcNow-lastChromeAudio>=TimeSpan.FromSeconds(6)&&DateTime.UtcNow-lastRecovery>=TimeSpan.FromSeconds(6)){
+    lastRecovery=DateTime.UtcNow;
+    recover=true;
+    Log("c.ai Chrome audio is still OFF (6s). Scheduling Voice OFF→ON recovery pulse.");
    }
-  }catch(Exception ex){Log("Audio recovery: "+ex.Message);}
+  }catch(Exception ex){Log("Audio recovery monitor: "+ex.Message);}
   finally{Interlocked.Exchange(ref voiceBusy,0);}
+  if(recover)await RecoverVoiceAudioAsync();
  }
  async Task RecoverVoiceAudioAsync(){
-  // This is called exclusively by the confirmed Chrome-output-drop detector.
-  // A two-click pulse resets c.ai audio; never run from transcript or microphone events.
   bool locked=false;
   for(int i=0;i<100;i++){if(Interlocked.CompareExchange(ref voiceBusy,1,0)==0){locked=true;break;}await Task.Delay(100);}
   if(!locked){Log("Audio recovery skipped: bridge busy.");return;}
   try{
+   // Pulse only after the c.ai output-drop detector fires; never from speech or transcript code.
    await VoiceToggleAsync(false); // OFF
-   await Task.Delay(900);
+   await Task.Delay(700);
    await VoiceToggleAsync(false); // ON
-   Log("Audio-only recovery pulse completed; Voice returned ON.");
-  }catch(Exception ex){Log("Audio-only recovery failed: "+ex.Message);}
+   Log("Chrome-audio-drop recovery pulse completed (Voice ON).");
+  }catch(Exception ex){Log("Audio recovery pulse failed: "+ex.Message);}
   finally{Interlocked.Exchange(ref voiceBusy,0);}
  }
  async Task<bool> CaiMediaIsPlayingAsync(){
