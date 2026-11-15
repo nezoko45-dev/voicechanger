@@ -20,13 +20,13 @@ public sealed class MainForm : Form {
   Text="Chrome c.ai Voice Bridge";Width=760;Height=520;
   var bar=new FlowLayoutPanel{Dock=DockStyle.Top,Height=100};
   var open=new Button{Text="Open Chrome recognition",AutoSize=true};open.Click+=(s,e)=>Process.Start(new ProcessStartInfo("http://127.0.0.1:8765/"){UseShellExecute=true});
-  bar.Controls.Add(open);bar.Controls.Add(send);bar.Controls.Add(keepalive);bar.Controls.Add(new Label{Text="Voice name",AutoSize=true});bar.Controls.Add(voiceName);bar.Controls.Add(status);Controls.Add(output);Controls.Add(bar);
+  bar.Controls.Add(open);bar.Controls.Add(send);bar.Controls.Add(keepalive);bar.Controls.Add(new Label{Text="Voice button label",AutoSize=true});bar.Controls.Add(voiceName);bar.Controls.Add(status);Controls.Add(output);Controls.Add(bar);
   Shown+=(s,e)=>{try{listener.Prefixes.Add("http://127.0.0.1:8765/");listener.Start();status.Text="localhost:8765 ready";_=Serve();}catch(Exception ex){Log("Listener failed: "+ex.Message);}};
   var timer=new System.Windows.Forms.Timer{Interval=5000};timer.Tick+=(s,e)=>{if(keepalive.Checked&&isIdle)VoiceToggle();};timer.Start();
   var monitor=new System.Windows.Forms.Timer{Interval=1000};monitor.Tick+=(s,e)=>CheckGeneration();monitor.Start();
   FormClosing+=(s,e)=>{disposed=true;try{listener.Stop();}catch{}};
  }
- void Log(string m){if(disposed)return;BeginInvoke(()=>output.AppendText(DateTime.Now.ToString("HH:mm:ss")+" "+m+Environment.NewLine));}
+ void Log(string m){if(disposed)return;BeginInvoke(new Action(()=>output.AppendText(DateTime.Now.ToString("HH:mm:ss")+" "+m+Environment.NewLine)));}
  async Task Serve(){while(!disposed){HttpListenerContext c;try{c=await listener.GetContextAsync();}catch{return;} _=Task.Run(async()=>{
   try{c.Response.Headers["Access-Control-Allow-Origin"]="*";c.Response.Headers["Access-Control-Allow-Methods"]="POST,GET,OPTIONS";c.Response.Headers["Access-Control-Allow-Headers"]="Content-Type";
    if(c.Request.HttpMethod=="OPTIONS"){c.Response.StatusCode=204;c.Response.Close();return;}
@@ -55,5 +55,16 @@ public sealed class MainForm : Form {
   if((sawGenerating&&generationPolls>=2)||finishedSignal||generationPolls>=90){
    waitingReply=false;isIdle=true;status.Text="IDLE — reply complete";Log("c.ai finished generating; bridge is IDLE.");}
  }
- void VoiceToggle(){try{var root=AutomationElement.RootElement;var e=root.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.NameProperty,voiceName.Text));if(e==null){Log("Voice UIA name not found: "+voiceName.Text);return;}if(e.TryGetCurrentPattern(InvokePattern.Pattern,out var p)){((InvokePattern)p).Invoke();Log("Idle Voice toggle invoked.");}else Log("Voice control has no InvokePattern.");}catch(Exception ex){Log("Voice toggle error: "+ex.Message);}}
+ // Specifically target the Character.AI toolbar's Voice button (icon + "Voice" label),
+ // not an arbitrary element elsewhere with the same accessible name.
+ void VoiceToggle(){try{
+  var root=AutomationElement.RootElement;
+  var condition=new AndCondition(
+   new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Button),
+   new PropertyCondition(AutomationElement.NameProperty,voiceName.Text.Trim()));
+  var button=root.FindFirst(TreeScope.Descendants,condition);
+  if(button==null){Log("c.ai Voice BUTTON not found (accessible name: "+voiceName.Text+").");return;}
+  if(button.TryGetCurrentPattern(InvokePattern.Pattern,out var p)){((InvokePattern)p).Invoke();Log("Character.AI Voice button toggled.");}
+  else {Log("Character.AI Voice button found, but UI Automation cannot invoke it.");}
+ }catch(Exception ex){Log("Voice button toggle error: "+ex.Message);}}
 }
