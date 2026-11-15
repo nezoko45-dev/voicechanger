@@ -7,14 +7,22 @@
  function setText(el,text){el.focus();if(el instanceof HTMLTextAreaElement)Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value").set.call(el,text);else el.textContent=text;el.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:text}))}
  function sendMessage(){const el=input();if(!el)return false;const b=[...document.querySelectorAll("button")].find(x=>/send/i.test((x.getAttribute("aria-label")||"")+" "+(x.title||""))&&!x.disabled);if(b){b.click();return true}el.focus();el.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",code:"Enter",bubbles:true}));el.dispatchEvent(new KeyboardEvent("keyup",{key:"Enter",code:"Enter",bubbles:true}));return true}
  // Locate the voice playback control robustly (CAI's SVG often has no useful aria label).
- function voiceWaveButton(){
-  return [...document.querySelectorAll("button")].find(b=>{
-   if(b.disabled||/send|submit/i.test((b.getAttribute("aria-label")||"")+" "+(b.title||"")))return false;
-   const label=((b.getAttribute("aria-label")||"")+" "+(b.title||"")+" "+(b.getAttribute("data-testid")||"")+" "+(b.textContent||"")).toLowerCase();
-   const svg=b.querySelector("svg");
-   return !!svg && (/voice|audio|wave|speak|sound|listen|call|play|pause/.test(label) ||
-     /wave|audio|voice|sound|play|pause/i.test(svg.getAttribute("data-testid")||"") ||
-     b.hasAttribute("aria-pressed"));
+ // Find the blue Read Aloud play triangle attached to the newest assistant reply.
+ function replyReadAloudButton(){
+  const replyNodes=[...document.querySelectorAll('[data-message-author-role="assistant"],[data-testid*="message"],.message')];
+  const reply=replyNodes.filter(n=>n.querySelector("button svg")).at(-1);
+  const scope=reply||document;
+  const buttons=[...scope.querySelectorAll("button")];
+  return buttons.find(b=>{
+   if(b.disabled)return false;
+   const svg=b.querySelector("svg");if(!svg)return false;
+   const label=((b.getAttribute("aria-label")||"")+" "+(b.title||"")+" "+(b.getAttribute("data-testid")||"")).toLowerCase();
+   if(/read aloud|listen|play audio|play response/.test(label))return true;
+   if(/pause|stop|wave|voice|send/.test(label))return false;
+   return [...svg.querySelectorAll("path,polygon")].some(p=>{
+    const d=(p.getAttribute("d")||"").trim();
+    return /z$/i.test(d)&&((d.match(/[ML]/gi)||[]).length<=5);
+   });
   });
  }
  // Track both media elements and CAI's playback button state/DOM changes.
@@ -22,7 +30,7 @@
  function playbackState(){
   const media=[...document.querySelectorAll("audio,video")];
   const mediaOn=media.some(a=>!a.paused&&!a.ended&&a.currentTime>0);
-  const b=voiceWaveButton();
+  const b=replyReadAloudButton();
   const label=((b?.getAttribute("aria-label")||"")+" "+(b?.title||"")+" "+(b?.getAttribute("data-testid")||"")).toLowerCase();
   const pressed=b?.getAttribute("aria-pressed")==="true";
   const playingLabel=/pause|stop audio|playing/.test(label);
@@ -42,17 +50,17 @@
   if(generating){wasGenerating=true;lastRecoveryClick=Date.now();return}
   if(wasGenerating){wasGenerating=false;generationFinishedAt=Date.now();lastRecoveryClick=Date.now();log("CAI finished generating; waiting for its audio before recovery.");}
   if(playing){if(!audioWasPlaying)log("Character.AI playback detected; holding recovery clicks.");audioWasPlaying=true;return}
-  if(audioWasPlaying){audioWasPlaying=false;lastRecoveryClick=Date.now();const b=voiceWaveButton();if(b){b.click();log("Final AI sentence finished; switched CAI voice-wave SVG off.")}else log("Final AI sentence finished; voice-wave SVG button not found.");return}
+  if(audioWasPlaying){audioWasPlaying=false;lastRecoveryClick=Date.now();const b=replyReadAloudButton();if(b){b.click();log("Final AI sentence finished; switched CAI Read Aloud triangle clicked.")}else log("Final AI sentence finished; Read Aloud triangle not found.");return}
   // Never tap the SVG during generation, nor in the short handoff window after it.
   if(Date.now()-generationFinishedAt<7000)return;
   if(Date.now()-lastRecoveryClick<8000)return;
-  const b=voiceWaveButton();
-  if(b){b.click();lastRecoveryClick=Date.now();log("Idle recovery tapped CAI voice-wave control.");}
+  const b=replyReadAloudButton();
+  if(b){b.click();lastRecoveryClick=Date.now();log("Idle recovery tapped CAI Read Aloud triangle.");}
  }
  function startAudioMonitor(){
   clearInterval(monitorTimer);monitorTimer=setInterval(monitorVoice,1000);
   if(audioMonitorObserver)audioMonitorObserver.disconnect();
-  audioMonitorObserver=new MutationObserver(()=>{if(!active)return;const state=playbackState(), generating=generationActive();const sig=generating?"generating":state?"playing":"idle";if(sig!==audioStateSignature){audioStateSignature=sig;if(generating){wasGenerating=true;lastRecoveryClick=Date.now();}else if(state){audioWasPlaying=true;log("CAI audio state changed to playing.")}else if(audioWasPlaying&&!generating){audioWasPlaying=false;lastRecoveryClick=Date.now();const b=voiceWaveButton();if(b){b.click();log("Final AI sentence finished; switched CAI voice-wave SVG off.")}else log("CAI audio finished; voice-wave SVG button not found.")}}});
+  audioMonitorObserver=new MutationObserver(()=>{if(!active)return;const state=playbackState(), generating=generationActive();const sig=generating?"generating":state?"playing":"idle";if(sig!==audioStateSignature){audioStateSignature=sig;if(generating){wasGenerating=true;lastRecoveryClick=Date.now();}else if(state){audioWasPlaying=true;log("CAI audio state changed to playing.")}else if(audioWasPlaying&&!generating){audioWasPlaying=false;lastRecoveryClick=Date.now();const b=replyReadAloudButton();if(b){b.click();log("Final AI sentence finished; switched CAI Read Aloud triangle clicked.")}else log("CAI audio finished; Read Aloud triangle not found.")}}});
   audioMonitorObserver.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["aria-label","aria-pressed","title","data-testid"]});
  }
  function startRecognition(){
