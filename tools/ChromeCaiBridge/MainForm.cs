@@ -135,7 +135,7 @@ public sealed class MainForm : Form {
    return playing;
   }catch{return false;}
  }
- float ChromeAudioPeak(){try{using var en=new NAudio.CoreAudioApi.MMDeviceEnumerator();float peak=0;var chromeIds=new HashSet<int>(Process.GetProcessesByName("chrome").Select(p=>p.Id));foreach(var dev in en.EnumerateAudioEndPoints(NAudio.CoreAudioApi.DataFlow.Render,NAudio.CoreAudioApi.DeviceState.Active)){try{using(dev){var sessions=dev.AudioSessionManager.Sessions;for(int i=0;i<sessions.Count;i++){try{var a=sessions[i];if(chromeIds.Contains(a.GetProcessID))peak=Math.Max(peak,a.AudioMeterInformation.MasterPeakValue);}catch{}}}}catch{}}return peak;}catch{return 0;}}
+ float ChromeAudioPeak(){try{using var en=new NAudio.CoreAudioApi.MMDeviceEnumerator();float peak=0;var chromeIds=new HashSet<int>(Process.GetProcessesByName("chrome").Select(p=>p.Id));foreach(var dev in en.EnumerateAudioEndPoints(NAudio.CoreAudioApi.DataFlow.Render,NAudio.CoreAudioApi.DeviceState.Active)){try{using(dev){var sessions=dev.AudioSessionManager.Sessions;for(int i=0;i<sessions.Count;i++){try{var a=sessions[i];if(chromeIds.Contains(unchecked((int)a.GetProcessID)))peak=Math.Max(peak,a.AudioMeterInformation.MasterPeakValue);}catch{}}}}catch{}}return peak;}catch{return 0;}}
  async Task SendEnterAsync(){
   try{
    await cdpSendLock.WaitAsync();
