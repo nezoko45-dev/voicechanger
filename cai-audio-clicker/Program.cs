@@ -20,45 +20,43 @@ namespace CaiReplyAudioClicker
 
         static async Task Main()
         {
-            Console.Title = "CAI Voice Toggle - Mic Monitor";
+            Console.Title = "CAI Voice Toggle - In-Tab Speech Bridge";
             Console.WriteLine("Launching Chrome debug + Character.AI...");
             await EnsureDebugChrome();
-            await OpenSpeechTab();
-            Console.WriteLine("Chrome SpeechRecognition is running in a separate tab. Speak to turn CAI voice ON; CAI audio ending turns it OFF.");
-            Console.WriteLine("Ctrl+C exits.");
-
-            bool wasPlaying = false;
-            int quietAudioTicks = 0;
-            while (true)
+            Console.WriteLine("Speech recognition is injected INSIDE the Character.AI tab. No separate speech tab.");
+            Console.WriteLine("Allow microphone permission if Chrome asks. Ctrl+C exits.");
+            bool wasPlaying=false; int quietAudioTicks=0;
+            while(true)
             {
                 try
                 {
-                    var speechTarget=await GetSpeechTarget();
-                    if(speechTarget!=null){
-                        using var sws=new ClientWebSocket(); await sws.ConnectAsync(new Uri(speechTarget),CancellationToken.None);
-                        string words=await Evaluate(sws,"window.getLatestSpeech ? window.getLatestSpeech() : ''");
-                        if(!string.IsNullOrWhiteSpace(words)){Console.WriteLine("Recognized: "+words);if(!voiceEnabled)await SetVoiceToggle(true);}
-                        await sws.CloseAsync(WebSocketCloseStatus.NormalClosure,"speech poll",CancellationToken.None);
-                    }
-                    var target = await GetCaiTarget();
-                    if (target != null)
+                    var target=await GetCaiTarget();
+                    if(target!=null)
                     {
-                        using var ws = new ClientWebSocket();
-                        await ws.ConnectAsync(new Uri(target), CancellationToken.None);
-                        string audio = await Evaluate(ws, @"(() => {
-                          const a=[...document.querySelectorAll('audio,video')];
-                          return a.some(x=>!x.paused && !x.ended && x.currentTime>0 && !x.muted && x.volume>0) ? 'playing':'silent';
+                        using var ws=new ClientWebSocket();
+                        await ws.ConnectAsync(new Uri(target),CancellationToken.None);
+                        string bridge=await Evaluate(ws, @"(() => {
+                          if(window.__caiSpeechBridge) return window.__caiSpeechBridge.status||'bridge-present';
+                          const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+                          if(!SR) return 'SpeechRecognition-unavailable';
+                          const r=new SR();r.continuous=true;r.interimResults=false;r.lang='en-US';
+                          window.__caiSpeechBridge={recognition:r,latest:'',status:'starting'};
+                          r.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)window.__caiSpeechBridge.latest=e.results[i][0].transcript.trim();};
+                          r.onerror=e=>window.__caiSpeechBridge.status='error:'+e.error;
+                          r.onstart=()=>window.__caiSpeechBridge.status='listening';
+                          r.onend=()=>{window.__caiSpeechBridge.status='ended';setTimeout(()=>{try{r.start();}catch(e){}},800);};
+                          try{r.start();return 'bridge-started';}catch(e){window.__caiSpeechBridge.status='start-error:'+e.message;return window.__caiSpeechBridge.status;}
                         })()");
-                        if (audio=="playing") { wasPlaying=true; quietAudioTicks=0; }
-                        else if (wasPlaying) {
-                            quietAudioTicks++;
-                            if (quietAudioTicks>=3) { await SetVoiceToggle(false, ws); wasPlaying=false; quietAudioTicks=0; }
-                        }
+                        if(bridge!="listening"&&bridge!="bridge-present")Console.WriteLine("Speech bridge: "+bridge);
+                        string words=await Evaluate(ws,"(()=>{const b=window.__caiSpeechBridge;if(!b)return '';const t=b.latest||'';b.latest='';return t;})()");
+                        if(!string.IsNullOrWhiteSpace(words)){Console.WriteLine("Recognized: "+words);await SetVoiceToggle(true,ws);}
+                        string audio=await Evaluate(ws,@"(()=>{const a=[...document.querySelectorAll('audio,video')];return a.some(x=>!x.paused&&!x.ended&&x.currentTime>0&&!x.muted&&x.volume>0)?'playing':'silent';})()");
+                        if(audio=="playing"){wasPlaying=true;quietAudioTicks=0;}
+                        else if(wasPlaying){quietAudioTicks++;if(quietAudioTicks>=3){await SetVoiceToggle(false,ws);wasPlaying=false;quietAudioTicks=0;}}
                         await ws.CloseAsync(WebSocketCloseStatus.NormalClosure,"poll",CancellationToken.None);
-                    }
-                }
-                catch(Exception ex) { Console.WriteLine("Monitor: "+ex.Message); }
-                await Task.Delay(500);
+                    }else Console.WriteLine("Waiting for Character.AI tab...");
+                }catch(Exception ex){Console.WriteLine("Monitor/bridge: "+ex.Message);}
+                await Task.Delay(700);
             }
         }
 
@@ -103,17 +101,6 @@ namespace CaiReplyAudioClicker
             Process.Start(new ProcessStartInfo(chrome){UseShellExecute=false,Arguments="--remote-debugging-port=9222 --remote-allow-origins=* --user-data-dir="+Quote(profile)+" --no-first-run --no-default-browser-check "+Quote(CaiUrl)});
             for(int i=0;i<40;i++){if(await DebugEndpointReady()){await NavigateCai();return;}await Task.Delay(500);}
             throw new TimeoutException("Chrome debug port 9222 failed to start.");
-        }
-        static async Task OpenSpeechTab(){
-            string url=new Uri(Path.Combine(AppContext.BaseDirectory,"speech.html")).AbsoluteUri;
-            try{using var req=new HttpRequestMessage(HttpMethod.Put,DebugAddress+"/json/new?"+Uri.EscapeDataString(url));using var res=await Http.SendAsync(req);res.EnsureSuccessStatusCode();}
-            catch(Exception ex){Console.WriteLine("Speech tab open: "+ex.Message);}
-        }
-        static async Task<string> GetSpeechTarget(){
-            try{using var d=JsonDocument.Parse(await Http.GetStringAsync(DebugAddress+"/json"));foreach(var x in d.RootElement.EnumerateArray()){
-                string u=x.TryGetProperty("url",out var a)?a.GetString()??"":"";string w=x.TryGetProperty("webSocketDebuggerUrl",out var b)?b.GetString()??"":"";
-                if(u.StartsWith("file:",StringComparison.OrdinalIgnoreCase)&&u.Contains("speech.html",StringComparison.OrdinalIgnoreCase)&&w.Length>0)return w;
-            }}catch{}return null;
         }
         static async Task NavigateCai()
         {
