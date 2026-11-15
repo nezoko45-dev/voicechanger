@@ -86,6 +86,8 @@ public sealed class MainForm : Form {
    bool audible=caiPlaying||peak>0.012f;
    if(audible){audioSeen=true;lastChromeAudio=DateTime.UtcNow;replyAudioStarted=true;}
    if(waitingReply&&replyGenerationFinished){
+    // If Chrome output meters missed playback, begin a silence fallback from generation completion.
+    if(!audioSeen){audioSeen=true;lastChromeAudio=generationFinishedAt==DateTime.MinValue?DateTime.UtcNow:generationFinishedAt;Log("No Chrome audio meter event detected; starting post-generation silence fallback.");}
     waitingReply=false;isIdle=true;
     try{BeginInvoke(new Action(()=>status.Text=audible?"IDLE — c.ai audio playing; Voice stays ON":"IDLE — generation finished; Voice stays ON"));}catch{}
     Log("Generation finished; Voice remains ON.");
@@ -133,7 +135,7 @@ public sealed class MainForm : Form {
    return playing;
   }catch{return false;}
  }
- float ChromeAudioPeak(){try{using var en=new NAudio.CoreAudioApi.MMDeviceEnumerator();using var dev=en.GetDefaultAudioEndpoint(NAudio.CoreAudioApi.DataFlow.Render,NAudio.CoreAudioApi.Role.Multimedia);float peak=0;var sessions=dev.AudioSessionManager.Sessions;for(int i=0;i<sessions.Count;i++){var a=sessions[i];if(Process.GetProcessesByName("chrome").Any(p=>p.Id==a.GetProcessID))peak=Math.Max(peak,a.AudioMeterInformation.MasterPeakValue);}return peak;}catch{return 0;}}
+ float ChromeAudioPeak(){try{using var en=new NAudio.CoreAudioApi.MMDeviceEnumerator();float peak=0;var chromeIds=new HashSet<int>(Process.GetProcessesByName("chrome").Select(p=>p.Id));foreach(var dev in en.EnumerateAudioEndPoints(NAudio.CoreAudioApi.DataFlow.Render,NAudio.CoreAudioApi.DeviceState.Active)){try{using(dev){var sessions=dev.AudioSessionManager.Sessions;for(int i=0;i<sessions.Count;i++){try{var a=sessions[i];if(chromeIds.Contains(a.GetProcessID))peak=Math.Max(peak,a.AudioMeterInformation.MasterPeakValue);}catch{}}}}catch{}}return peak;}catch{return 0;}}
  async Task SendEnterAsync(){
   try{
    await cdpSendLock.WaitAsync();
