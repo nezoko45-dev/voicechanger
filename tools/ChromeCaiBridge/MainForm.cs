@@ -102,19 +102,13 @@ public sealed class MainForm : Form {
    }
   }catch(Exception ex){Log("Audio recovery monitor: "+ex.Message);}
   finally{Interlocked.Exchange(ref voiceBusy,0);}
-  if(recover)await RecoverVoiceAudioAsync();
+  if(recover)await TurnVoiceOffAfterReplyAsync();
  }
- async Task RecoverVoiceAudioAsync(){
+ async Task TurnVoiceOffAfterReplyAsync(){
   bool locked=false;
   for(int i=0;i<100;i++){if(Interlocked.CompareExchange(ref voiceBusy,1,0)==0){locked=true;break;}await Task.Delay(100);}
-  if(!locked){Log("Audio recovery skipped: bridge busy.");return;}
-  try{
-   // Pulse only after the c.ai output-drop detector fires; never from speech or transcript code.
-   await VoiceToggleAsync(false); // OFF
-   await Task.Delay(700);
-   await VoiceToggleAsync(false); // ON
-   Log("Chrome-audio-drop recovery pulse completed (Voice ON).");
-  }catch(Exception ex){Log("Audio recovery pulse failed: "+ex.Message);}
+  if(!locked){Log("Reply-end Voice OFF skipped: bridge busy.");return;}
+  try{await VoiceToggleAsync(false);Log("Character.AI Voice turned OFF after reply.");}
   finally{Interlocked.Exchange(ref voiceBusy,0);}
  }
  async Task<bool> CaiMediaIsPlayingAsync(){
