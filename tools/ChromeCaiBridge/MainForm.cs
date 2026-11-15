@@ -38,7 +38,7 @@ public sealed class MainForm : Form {
   var open=new Button{Text="Open Chrome recognition",AutoSize=true};open.Click+=(s,e)=>Process.Start(new ProcessStartInfo("http://127.0.0.1:8765/"){UseShellExecute=true});
   bar.Controls.Add(launch);bar.Controls.Add(open);bar.Controls.Add(send);bar.Controls.Add(keepalive);bar.Controls.Add(status);Controls.Add(output);Controls.Add(bar);
   Shown+=(s,e)=>{try{listener.Prefixes.Add("http://127.0.0.1:8765/");listener.Start();status.Text="Speech bridge ready";_=Serve();}catch(Exception ex){Log("Listener failed: "+ex.Message);} LaunchDebugChrome();};
-  var timer=new System.Windows.Forms.Timer{Interval=12000};timer.Tick+=(s,e)=>{if(keepalive.Checked&&Interlocked.Exchange(ref voiceBusy,1)==0)_=AudioRecoveryTickAsync();};timer.Start();
+  var timer=new System.Windows.Forms.Timer{Interval=5000};timer.Tick+=(s,e)=>{if(keepalive.Checked&&Interlocked.Exchange(ref voiceBusy,1)==0)_=AudioRecoveryTickAsync();};timer.Start();
   var composerWatch=new System.Windows.Forms.Timer{Interval=2500};composerWatch.Tick+=(s,e)=>{if(!minimizedAfterComposerClick&&debugChrome!=null&&Interlocked.Exchange(ref composerWatchBusy,1)==0)_=WatchComposerFocusAsync();};composerWatch.Start();
   var monitor=new System.Windows.Forms.Timer{Interval=4000};monitor.Tick+=(s,e)=>{if(waitingReply&&Interlocked.Exchange(ref monitorBusy,1)==0)_=CheckGenerationGuardedAsync();};monitor.Start();
   FormClosing+=(s,e)=>{disposed=true;try{listener.Stop();}catch{}};
@@ -81,14 +81,23 @@ public sealed class MainForm : Form {
  async Task EnsureVoiceAndSendAsync(string phrase){bool locked=false;for(int i=0;i<120;i++){if(Interlocked.CompareExchange(ref voiceBusy,1,0)==0){locked=true;break;}await Task.Delay(100);}if(!locked){Log("Voice recovery stayed busy for 12s; transcript queued attempt timed out.");return;}try{Log("Ensuring c.ai Voice is ON (state-aware; no blind double-toggle).");await VoiceToggleAsync(true);_pendingPhrase=phrase;await SendEnterAsync();Log("Transcript sent with c.ai Voice enabled; waiting for spoken reply.");}catch(Exception ex){Log("Voice pre-send error: "+ex.Message);}finally{Interlocked.Exchange(ref voiceBusy,0);}}
  async Task AudioRecoveryTickAsync(){
   try{
-   // Never toggle Voice OFF automatically: Character.AI can suspend audio when
-   // its tab loses focus even though its Voice icon remains ON. Keep Voice ON.
    bool caiPlaying=await CaiMediaIsPlayingAsync();
-   if(caiPlaying){replyAudioStarted=true;lastChromeAudio=DateTime.UtcNow;}
+   float peak=ChromeAudioPeak();
+   bool audible=caiPlaying||peak>0.012f;
+   if(audible){audioSeen=true;lastChromeAudio=DateTime.UtcNow;replyAudioStarted=true;}
    if(waitingReply&&replyGenerationFinished){
-    waitingReply=false;isIdle=true;replyAudioStarted=false;
-    try{BeginInvoke(new Action(()=>status.Text=caiPlaying?"IDLE — c.ai audio playing; Voice stays ON":"IDLE — generation finished; Voice stays ON"));}catch{}
-    Log("Generation finished; Voice remains ON (no automatic OFF toggle).");
+    waitingReply=false;isIdle=true;
+    try{BeginInvoke(new Action(()=>status.Text=audible?"IDLE — c.ai audio playing; Voice stays ON":"IDLE — generation finished; Voice stays ON"));}catch{}
+    Log("Generation finished; Voice remains ON.");
+   }
+   // While audio is idle, pulse Voice OFF then ON every 5 seconds.
+   // CDP operates on the background tab; it never focuses Chrome or steals VRChat.
+   if(!audible&&!caiPlaying){
+    Log("c.ai audio idle: refreshing Voice state (OFF → ON).");
+    await VoiceToggleAsync(false);
+    await Task.Delay(450);
+    await VoiceToggleAsync(true);
+    try{BeginInvoke(new Action(()=>status.Text="Voice refreshed — Chrome background / VRChat foreground"));}catch{}
    }
   }catch(Exception ex){Log("Audio recovery: "+ex.Message);}
   finally{Interlocked.Exchange(ref voiceBusy,0);}
