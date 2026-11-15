@@ -21,6 +21,7 @@ public sealed class MainForm : Form {
  Process debugChrome; bool minimizedAfterComposerClick; int composerWatchBusy;
  ClientWebSocket sendSocket; readonly SemaphoreSlim cdpSendLock=new(1,1); int cdpCommandId=100;
  readonly HttpListener listener=new();
+ readonly HttpClient cdpHttp=new(){Timeout=TimeSpan.FromSeconds(2)};
  readonly TextBox output=new(){Multiline=true,ScrollBars=ScrollBars.Vertical,Dock=DockStyle.Fill};
  readonly CheckBox send=new(){Text="Send recognized final phrases to c.ai",Checked=true,AutoSize=true};
  readonly CheckBox keepalive=new(){Text="Auto-recover c.ai audio",Checked=true,AutoSize=true};
@@ -35,9 +36,9 @@ public sealed class MainForm : Form {
   var open=new Button{Text="Open Chrome recognition",AutoSize=true};open.Click+=(s,e)=>Process.Start(new ProcessStartInfo("http://127.0.0.1:8765/"){UseShellExecute=true});
   bar.Controls.Add(launch);bar.Controls.Add(open);bar.Controls.Add(send);bar.Controls.Add(keepalive);bar.Controls.Add(status);Controls.Add(output);Controls.Add(bar);
   Shown+=(s,e)=>{try{listener.Prefixes.Add("http://127.0.0.1:8765/");listener.Start();status.Text="Speech bridge ready";_=Serve();}catch(Exception ex){Log("Listener failed: "+ex.Message);} LaunchDebugChrome();};
-  var timer=new System.Windows.Forms.Timer{Interval=5000};timer.Tick+=(s,e)=>{if(keepalive.Checked&&Interlocked.Exchange(ref voiceBusy,1)==0)_=AudioRecoveryTickAsync();};timer.Start();
-  var composerWatch=new System.Windows.Forms.Timer{Interval=700};composerWatch.Tick+=(s,e)=>{if(!minimizedAfterComposerClick&&debugChrome!=null&&Interlocked.Exchange(ref composerWatchBusy,1)==0)_=WatchComposerFocusAsync();};composerWatch.Start();
-  var monitor=new System.Windows.Forms.Timer{Interval=1500};monitor.Tick+=(s,e)=>{if(waitingReply&&Interlocked.Exchange(ref monitorBusy,1)==0)_=CheckGenerationGuardedAsync();};monitor.Start();
+  var timer=new System.Windows.Forms.Timer{Interval=12000};timer.Tick+=(s,e)=>{if(keepalive.Checked&&Interlocked.Exchange(ref voiceBusy,1)==0)_=AudioRecoveryTickAsync();};timer.Start();
+  var composerWatch=new System.Windows.Forms.Timer{Interval=2500};composerWatch.Tick+=(s,e)=>{if(!minimizedAfterComposerClick&&debugChrome!=null&&Interlocked.Exchange(ref composerWatchBusy,1)==0)_=WatchComposerFocusAsync();};composerWatch.Start();
+  var monitor=new System.Windows.Forms.Timer{Interval=4000};monitor.Tick+=(s,e)=>{if(waitingReply&&Interlocked.Exchange(ref monitorBusy,1)==0)_=CheckGenerationGuardedAsync();};monitor.Start();
   FormClosing+=(s,e)=>{disposed=true;try{listener.Stop();}catch{}};
  }
  void LaunchDebugChrome(){
@@ -73,7 +74,7 @@ public sealed class MainForm : Form {
  }
  bool HasButton(string name){try{return AutomationElement.RootElement.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.NameProperty,name))!=null;}catch{return false;}}
  async Task CheckGenerationGuardedAsync(){try{await Task.Run(()=>{if(!waitingReply||replyGenerationFinished)return;generationPolls++;bool generating=HasButton("Stop generating")||HasButton("Stop response")||HasButton("Stop");if(generating){sawGenerating=true;replyGenerationFinished=false;return;}if(sawGenerating&&generationPolls>=2){replyGenerationFinished=true;Log("c.ai generation finished; Voice remains ON through reply playback.");}});}finally{Interlocked.Exchange(ref monitorBusy,0);}}
- async Task EnsureVoiceAndSendAsync(string phrase){bool locked=false;for(int i=0;i<20;i++){if(Interlocked.CompareExchange(ref voiceBusy,1,0)==0){locked=true;break;}await Task.Delay(100);}if(!locked){Log("Voice recovery is busy; transcript send canceled to prevent extra Voice clicks.");return;}try{Log("Ensuring c.ai Voice is ON (state-aware; no blind double-toggle).");await VoiceToggleAsync(true);await Task.Delay(500);_pendingPhrase=phrase;await SendEnterAsync();Log("Transcript sent with c.ai Voice enabled; waiting for spoken reply.");}catch(Exception ex){Log("Voice pre-send error: "+ex.Message);}finally{Interlocked.Exchange(ref voiceBusy,0);}}
+ async Task EnsureVoiceAndSendAsync(string phrase){bool locked=false;for(int i=0;i<20;i++){if(Interlocked.CompareExchange(ref voiceBusy,1,0)==0){locked=true;break;}await Task.Delay(100);}if(!locked){Log("Voice recovery is busy; transcript send canceled to prevent extra Voice clicks.");return;}try{Log("Ensuring c.ai Voice is ON (state-aware; no blind double-toggle).");await VoiceToggleAsync(true);_pendingPhrase=phrase;await SendEnterAsync();Log("Transcript sent with c.ai Voice enabled; waiting for spoken reply.");}catch(Exception ex){Log("Voice pre-send error: "+ex.Message);}finally{Interlocked.Exchange(ref voiceBusy,0);}}
  async Task AudioRecoveryTickAsync(){
   try{
    // Only watch media elements in the Character.AI tab. Chrome's global audio
@@ -100,8 +101,7 @@ public sealed class MainForm : Form {
  }
  async Task<bool> CaiMediaIsPlayingAsync(){
   try{
-   using var http=new HttpClient{Timeout=TimeSpan.FromSeconds(2)};
-   using var targets=JsonDocument.Parse(await http.GetStringAsync("http://127.0.0.1:9222/json/list"));
+   using var targets=JsonDocument.Parse(await cdpHttp.GetStringAsync("http://127.0.0.1:9222/json/list"));
    string ws=null;
    foreach(var t in targets.RootElement.EnumerateArray())
     if(t.TryGetProperty("type",out var typ)&&typ.GetString()=="page"&&t.TryGetProperty("url",out var u)&&u.GetString()?.Contains("character.ai",StringComparison.OrdinalIgnoreCase)==true&&t.TryGetProperty("webSocketDebuggerUrl",out var w)){ws=w.GetString();break;}
@@ -124,8 +124,7 @@ public sealed class MainForm : Form {
    await cdpSendLock.WaitAsync();
    try{
     if(sendSocket==null||sendSocket.State!=WebSocketState.Open){
-     using var http=new HttpClient{Timeout=TimeSpan.FromSeconds(3)};
-     using var targets=JsonDocument.Parse(await http.GetStringAsync("http://127.0.0.1:9222/json/list"));
+     using var targets=JsonDocument.Parse(await cdpHttp.GetStringAsync("http://127.0.0.1:9222/json/list"));
      string ws=null;
      foreach(var t in targets.RootElement.EnumerateArray())if(t.TryGetProperty("type",out var typ)&&typ.GetString()=="page"&&t.TryGetProperty("url",out var u)&&u.GetString()?.Contains("character.ai",StringComparison.OrdinalIgnoreCase)==true&&t.TryGetProperty("webSocketDebuggerUrl",out var w)){ws=w.GetString();break;}
      if(ws==null){Log("CDP send: no Character.AI tab found.");return;}
@@ -163,8 +162,7 @@ public sealed class MainForm : Form {
  }
  async Task VoiceToggleAsync(bool ensureOn=false){
   try{
-   using var http=new HttpClient{Timeout=TimeSpan.FromSeconds(3)};
-   var targets=JsonDocument.Parse(await http.GetStringAsync("http://127.0.0.1:9222/json/list"));
+   using var targets=JsonDocument.Parse(await cdpHttp.GetStringAsync("http://127.0.0.1:9222/json/list"));
    string ws=null;
    foreach(var t in targets.RootElement.EnumerateArray()){if(t.TryGetProperty("type",out var typ)&&typ.GetString()=="page"&&t.TryGetProperty("url",out var u)&&u.GetString()?.Contains("character.ai",StringComparison.OrdinalIgnoreCase)==true&&t.TryGetProperty("webSocketDebuggerUrl",out var w)){ws=w.GetString();break;}}
    if(ws==null){Log("CDP: no Character.AI tab found in debug Chrome.");return;}
