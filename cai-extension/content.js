@@ -52,7 +52,7 @@
  function startAudioMonitor(){
   clearInterval(monitorTimer);monitorTimer=setInterval(monitorVoice,1000);
   if(audioMonitorObserver)audioMonitorObserver.disconnect();
-  audioMonitorObserver=new MutationObserver(()=>{if(!active)return;const state=playbackState();const sig=state?"playing":"idle";if(sig!==audioStateSignature){audioStateSignature=sig;if(state){audioWasPlaying=true;log("CAI audio state changed to playing.")}else if(audioWasPlaying){audioWasPlaying=false;lastRecoveryClick=Date.now();const b=voiceWaveButton();if(b){b.click();log("Final AI sentence finished; switched CAI voice-wave SVG off.")}else log("CAI audio finished; voice-wave SVG button not found.")}}});
+  audioMonitorObserver=new MutationObserver(()=>{if(!active)return;const state=playbackState(), generating=generationActive();const sig=generating?"generating":state?"playing":"idle";if(sig!==audioStateSignature){audioStateSignature=sig;if(generating){wasGenerating=true;lastRecoveryClick=Date.now();}else if(state){audioWasPlaying=true;log("CAI audio state changed to playing.")}else if(audioWasPlaying&&!generating){audioWasPlaying=false;lastRecoveryClick=Date.now();const b=voiceWaveButton();if(b){b.click();log("Final AI sentence finished; switched CAI voice-wave SVG off.")}else log("CAI audio finished; voice-wave SVG button not found.")}}});
   audioMonitorObserver.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["aria-label","aria-pressed","title","data-testid"]});
  }
  function startRecognition(){
