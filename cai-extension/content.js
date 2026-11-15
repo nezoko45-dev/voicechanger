@@ -19,7 +19,7 @@
    const paths=[...svg.querySelectorAll("path,polygon")];
    return paths.some(p=>{
     const d=(p.getAttribute("d")||"").trim(),fill=(p.getAttribute("fill")||getComputedStyle(p).fill||"").toLowerCase(),style=(p.getAttribute("style")||"").toLowerCase();
-    const isBlue=/(#4f|#5[0-9a-f]|#5865f2|rgb\\(\s*(7[0-9]|8[0-9]|9[0-9]|[12][0-9]{2})\s*,\s*(7[0-9]|8[0-9]|9[0-9]|[12][0-9]{2})\s*,\s*(1[0-9]{2}|2[0-5][0-9])\s*\))/i.test(fill+" "+style)||fill.includes("blue");
+    const isBlue=fill.includes("#")||fill.includes("rgb(")||fill.includes("blue")||style.includes("#")||style.includes("rgb(";
     const triangle= p.tagName.toLowerCase()==="polygon" || (/z$/i.test(d)&&((d.match(/[ML]/gi)||[]).length<=4));
     return isBlue&&triangle;
    });
