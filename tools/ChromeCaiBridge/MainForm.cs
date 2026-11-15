@@ -71,10 +71,11 @@ public sealed class MainForm : Form {
   for(int i=0;i<edits.Count;i++){var candidate=edits[i];string name="";try{name=candidate.Current.Name??"";}catch{}if(name.Contains("message",StringComparison.OrdinalIgnoreCase)||name.Contains("chat",StringComparison.OrdinalIgnoreCase)||name.Contains("reply",StringComparison.OrdinalIgnoreCase)){composer=candidate;break;}}
   if(composer==null&&edits.Count>0)composer=edits[edits.Count-1];
   if(composer==null){Log("Background c.ai composer not exposed by UI Automation.");waitingReply=false;isIdle=true;return;}
-  if(!composer.TryGetCurrentPattern(ValuePattern.Pattern,out var vp)){Log("c.ai composer lacks background ValuePattern.");waitingReply=false;isIdle=true;return;}
+  // Do NOT use UIA ValuePattern.SetValue here: it can focus the composer and
+  // reposition the user's caret. CDP injects the transcript and submits it
+  // directly in the page without changing Windows foreground focus/cursor.
   _pendingPhrase=phrase;
-  ((ValuePattern)vp).SetValue(phrase);
-  Log("Transcript pasted into c.ai composer; sending Enter via Chrome CDP.");
+  Log("Transcript queued for background CDP injection (no UIA focus/caret changes).");
   _=SendEnterAsync();
   Log("Enter dispatched; waiting for Character.AI reply…");
  }catch(Exception ex){Log("Background UIA send error: "+ex.Message);waitingReply=false;isIdle=true;}}
