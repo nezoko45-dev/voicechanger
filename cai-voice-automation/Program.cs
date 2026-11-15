@@ -37,9 +37,21 @@ rec.onend=()=>{if(active)setTimeout(()=>{try{rec.start()}catch{}},400)};try{rec.
  async Task Run(CancellationToken ct){
  try{
   listener=new HttpListener();listener.Prefixes.Add("http://127.0.0.1:8765/");listener.Start();_=Serve(ct);
-  Process.Start(new ProcessStartInfo("http://127.0.0.1:8765/"){UseShellExecute=true});
-  status.Text="RUNNING • speech page :8765 • CDP :9222";L("Browser bridge open.");
   using var http=new HttpClient();
+  // Ensure Chrome is actually running with its DevTools endpoint enabled.
+  bool debugReady=false;try{using var probe=await http.GetAsync("http://127.0.0.1:9222/json/version",ct);debugReady=probe.IsSuccessStatusCode;}catch{}
+  if(!debugReady){
+   string chrome=FindChrome();
+   if(chrome==null)throw new Exception("Chrome executable not found. Install Google Chrome.");
+   string profile=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"CAIVoiceAutomation","ChromeDebugProfile");Directory.CreateDirectory(profile);
+   Process.Start(new ProcessStartInfo(chrome){UseShellExecute=false,Arguments="--remote-debugging-port=9222 --remote-allow-origins=* --user-data-dir="+Quote(profile)+" --no-first-run --new-window https://character.ai"});
+   L("Launched dedicated Chrome DEBUG instance on port 9222 (profile: "+profile+").");
+   for(int i=0;i<30&&!ct.IsCancellationRequested;i++){try{using var p=await http.GetAsync("http://127.0.0.1:9222/json/version",ct);if(p.IsSuccessStatusCode){debugReady=true;break;}}catch{}await Task.Delay(500,ct);}
+  }else L("Found existing Chrome DevTools endpoint :9222.");
+  if(!debugReady)throw new Exception("Chrome Debug did not start on port 9222.");
+  Process.Start(new ProcessStartInfo("http://127.0.0.1:8765/"){UseShellExecute=true});
+  status.Text="RUNNING • Chrome DEBUG :9222 • speech page :8765";L("Speech bridge page opened.");
+
   async Task<bool> Connect(){
    try{var tabs=JsonDocument.Parse(await http.GetStringAsync("http://127.0.0.1:9222/json"));JsonElement tab=default;
     foreach(var x in tabs.RootElement.EnumerateArray()){var u=x.TryGetProperty("url",out var uv)?uv.GetString():"";if(u!=null&&(u.Contains("character.ai",StringComparison.OrdinalIgnoreCase)||u.Contains("c.ai",StringComparison.OrdinalIgnoreCase))){tab=x;break;}}
@@ -62,6 +74,8 @@ rec.onend=()=>{if(active)setTimeout(()=>{try{rec.start()}catch{}},400)};try{rec.
   }
  }catch(OperationCanceledException){}catch(Exception ex){L("ERROR: "+ex.Message);}finally{listener?.Stop();listener=null;try{cdp?.Abort();cdp?.Dispose();}catch{}cdp=null;cts=null;start.Text="Start";status.Text="STOPPED";L("Stopped.");}
  }
+ string? FindChrome(){string[] paths={Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"Google","Chrome","Application","chrome.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),"Google","Chrome","Application","chrome.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Google","Chrome","Application","chrome.exe")};return paths.FirstOrDefault(File.Exists);}
+ string Quote(string s)=>"\""+s.Replace("\"","\\\"")+"\"";
  async Task<string> CdpEval(string js){
   if(cdp==null||cdp.State!=WebSocketState.Open)return "";
   int id=Interlocked.Increment(ref cdpId);var msg=JsonSerializer.Serialize(new{ id,method="Runtime.evaluate",@params=new{expression=js,returnByValue=true,awaitPromise=true}});await cdp.SendAsync(Encoding.UTF8.GetBytes(msg),WebSocketMessageType.Text,true,CancellationToken.None);var buf=new byte[65536];
