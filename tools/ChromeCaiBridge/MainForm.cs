@@ -29,7 +29,7 @@ public sealed class MainForm : Form {
  readonly CheckBox keepalive=new(){Text="Auto-recover c.ai audio",Checked=true,AutoSize=true};
  readonly Label status=new(){AutoSize=true,Text="Starting…"};
  readonly string profile=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"ChromeCaiBridge","DebugProfile");
- DateTime lastSpeech=DateTime.UtcNow, generationFinishedAt=DateTime.MinValue; bool disposed,waitingReply,sawGenerating,isIdle=true,replyGenerationFinished,replyAudioStarted,recoveryAttempted; int generationPolls; int monitorBusy,voiceBusy; DateTime lastChromeAudio=DateTime.UtcNow; bool audioSeen;
+ DateTime lastSpeech=DateTime.UtcNow, generationFinishedAt=DateTime.MinValue; bool disposed,waitingReply,sawGenerating,isIdle=true,replyGenerationFinished,replyAudioStarted,recoveryAttempted; int generationPolls; int monitorBusy,voiceBusy; DateTime lastChromeAudio=DateTime.UtcNow,lastRecovery=DateTime.MinValue; bool audioSeen;
  const string SvgPathPrefix="M8 3a1 1 0 0 1 1 1v7.105l2-1.473";
  public MainForm(){
   Text="Chrome c.ai Voice Bridge (Debug Chrome)";Width=820;Height=540;
@@ -89,8 +89,13 @@ public sealed class MainForm : Form {
     try{BeginInvoke(new Action(()=>status.Text=audible?"IDLE — c.ai audio playing; Voice stays ON":"IDLE — generation finished; Voice stays ON"));}catch{}
     Log("Generation finished; Voice remains ON.");
    }
-   // Voice toggles ONLY on transcript send (ensure-on); mic silence and audio silence never toggle it.
-   if(audioSeen&&!audible&&!caiPlaying&&waitingReply&&!replyGenerationFinished)Log("c.ai audio quiet during generation; Voice remains ON.");
+   // Recover ONLY from a drop in c.ai's Chrome output level—not from microphone silence.
+   if(keepalive.Checked&&audioSeen&&!audible&&!caiPlaying&&DateTime.UtcNow-lastChromeAudio>=TimeSpan.FromSeconds(8)&&DateTime.UtcNow-lastRecovery>=TimeSpan.FromSeconds(20)){
+    lastRecovery=DateTime.UtcNow;audioSeen=false;
+    Log("c.ai Chrome audio level stayed down 8s; refreshing Voice (OFF→ON).");
+    await VoiceToggleAsync(false);await Task.Delay(350);await VoiceToggleAsync(false);
+    Log("Voice recovery pulse complete; Voice should be ON.");
+   }
   }catch(Exception ex){Log("Audio recovery: "+ex.Message);}
   finally{Interlocked.Exchange(ref voiceBusy,0);}
  }
