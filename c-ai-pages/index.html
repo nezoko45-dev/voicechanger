@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CAI Voice Loop</title><style>
+*{box-sizing:border-box}body{font:16px system-ui;background:#101522;color:#f4f6ff;max-width:760px;margin:28px auto;padding:18px}
+h1{margin-bottom:4px}p,small{color:#aab4cc}button{font:inherit;padding:12px 16px;border:0;border-radius:10px;margin:5px;cursor:pointer;background:#303b55;color:white}button.primary{background:#2563eb}button.stop{background:#b4233a}button:disabled{opacity:.5;cursor:default}.panel{background:#192236;border:1px solid #2d3a55;border-radius:14px;padding:16px;margin:14px 0}textarea,pre{width:100%;background:#111827;color:#f9fafb;border:1px solid #35415b;border-radius:10px;padding:12px;font:inherit}textarea{min-height:85px}pre{white-space:pre-wrap;overflow-wrap:anywhere;min-height:42px}#state{font-weight:600}
+</style></head><body>
+<h1>🎙 CAI Voice Loop</h1><p>Use this page in the same Chrome window launched by CAI-Bridge.exe.</p>
+<section class="panel"><h2>Connection</h2><button id="check">Check EXE</button><pre id="state">Checking local bridge…</pre></section>
+<section class="panel"><h2>Talk</h2><button class="primary" id="start">🎙 Start hands-free dictation</button><button class="stop" id="stop" disabled>Stop</button><p><small>Each finalized phrase is sent to Character.AI automatically. Chrome microphone permission is required.</small></p><pre id="mic">Microphone idle</pre><pre id="last">Latest phrase: —</pre></section>
+<section class="panel"><h2>Manual controls</h2><textarea id="text" placeholder="Type a message, or use dictation above…"></textarea><button class="primary" id="send">Send to CAI (Enter)</button><button id="voice">Play / toggle CAI voice</button><pre id="log">Ready.</pre></section>
+<script>
+const $=s=>document.querySelector(s),state=$('#state'),mic=$('#mic'),last=$('#last'),box=$('#text'),log=$('#log');
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,active=false,busy=false;
+async function api(path,body){const r=await fetch('http://127.0.0.1:8788'+path,{method:body===undefined?'GET':'POST',headers:body===undefined?{}:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});let j;try{j=await r.json()}catch{throw Error('Bridge HTTP '+r.status)}if(!r.ok||j.ok===false)throw Error(j.error||j.result||'Bridge error');return j}
+async function check(){try{const j=await api('/status');state.textContent='✅ '+j.message+'\nBridge connected on localhost:8788';state.style.color='#8be9a5'}catch(e){state.textContent='❌ '+e.message+'\nRun CAI-Bridge.exe first.';state.style.color='#ff8d9d'}}
+async function sendText(t){if(!t.trim())return;busy=true;try{await api('/transcript',{text:t.trim()});log.textContent='Sent to Character.AI: '+t.trim();box.value=''}catch(e){log.textContent='Send failed: '+e.message}finally{busy=false}}
+$('#check').onclick=check;check();
+$('#send').onclick=()=>sendText(box.value);box.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendText(box.value)}});
+$('#voice').onclick=async()=>{try{const j=await api('/voice/toggle',{});log.textContent='CAI voice: '+j.result}catch(e){log.textContent='Voice failed: '+e.message}};
+function setup(){if(!SR){mic.textContent='SpeechRecognition unavailable. Please use desktop Chrome.';return false}rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=false;rec.onstart=()=>mic.textContent='Listening continuously…';rec.onerror=e=>{mic.textContent='Speech error: '+e.error;if(e.error==='not-allowed'||e.error==='service-not-allowed'){active=false;$('#start').disabled=false;$('#stop').disabled=true}};rec.onend=()=>{if(active){setTimeout(()=>{if(active)try{rec.start()}catch{}},500)}else mic.textContent='Stopped'};rec.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++){if(!e.results[i].isFinal)continue;const phrase=e.results[i][0].transcript.trim();if(!phrase)continue;last.textContent='Latest phrase: '+phrase;sendText(phrase)}};return true}
+$('#start').onclick=()=>{if(!rec&&!setup())return;active=true;$('#start').disabled=true;$('#stop').disabled=false;mic.textContent='Requesting microphone…';try{rec.start()}catch(e){mic.textContent='Could not start: '+e.message}};
+$('#stop').onclick=()=>{active=false;$('#start').disabled=false;$('#stop').disabled=true;rec?.stop()};
+</script></body></html>

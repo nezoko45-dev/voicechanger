@@ -1,0 +1,4 @@
+#cai-voice-loop-panel{position:fixed;z-index:2147483647;right:14px;bottom:14px;background:#171923;color:#fff;border:1px solid #555;border-radius:12px;padding:10px;display:flex;gap:8px;align-items:center;font:13px system-ui;box-shadow:0 4px 20px #0008}
+#cai-voice-loop-panel button{border:0;border-radius:7px;padding:7px 10px;background:#4d65d9;color:white;cursor:pointer}
+#cai-voice-loop-panel button:disabled{opacity:.45;cursor:default}
+#cai-voice-loop-panel #cvl-status{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#d7d9e5}

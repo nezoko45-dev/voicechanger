@@ -1,0 +1,31 @@
+name: Deploy CAI Speech Controls Pages
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/cai-voice-audio-monitor
+    paths:
+      - "cai-speech-bridge/**"
+      - "c-ai-pages/**"
+      - ".github/workflows/deploy-cai-pages.yml"
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: cai-pages
+  cancel-in-progress: true
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: c-ai-pages
+      - id: deployment
+        uses: actions/deploy-pages@v4

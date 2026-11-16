@@ -1,0 +1,30 @@
+name: Build CAI Voice Automation EXE
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'cai-voice-automation/**'
+      - '.github/workflows/build-cai-voice.yml'
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publish self-contained EXE and PDB
+        run: dotnet publish cai-voice-automation/CaiVoiceAutomation.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=portable -p:DebugSymbols=true
+      - name: Assemble ZIP
+        shell: pwsh
+        run: |
+          $pub = "cai-voice-automation/bin/Release/net8.0-windows/win-x64/publish"
+          New-Item -ItemType Directory -Force -Path "dist/CaiVoiceAutomation" | Out-Null
+          Copy-Item "$pub/CaiVoiceAutomation.exe" "dist/CaiVoiceAutomation/CaiVoiceAutomation.exe"
+          Copy-Item "$pub/CaiVoiceAutomation.pdb" "dist/CaiVoiceAutomation/CaiVoiceAutomation.pdb"
+          Compress-Archive -Path "dist/CaiVoiceAutomation/*" -DestinationPath "dist/CaiVoiceAutomation-Complete.zip" -Force
+      - name: Upload ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: CaiVoiceAutomation-Complete
+          path: dist/CaiVoiceAutomation-Complete.zip

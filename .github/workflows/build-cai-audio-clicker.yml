@@ -1,0 +1,32 @@
+name: Build CAI UI Automation Clicker and Voice Transmitter
+on:
+  push:
+    branches: [feature/cai-voice-audio-monitor]
+    paths:
+      - 'cai-audio-clicker/**'
+      - 'cai-voice-transmitter/**'
+      - '.github/workflows/build-cai-audio-clicker.yml'
+      - '.github/workflows/build-cai-voice-transmitter.yml'
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Publish clicker
+        run: dotnet publish cai-audio-clicker/CaiAudioClicker.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish-clicker
+      - name: Publish transmitter
+        run: dotnet publish cai-voice-transmitter/CaiVoiceTransmitter.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish-transmitter
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CAI-Voice-Transmitter
+          path: publish-transmitter/CaiVoiceTransmitter.exe
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CAI-UIAutomation-Clicker
+          path: publish-clicker/CaiAudioClicker.exe
+          if-no-files-found: error
