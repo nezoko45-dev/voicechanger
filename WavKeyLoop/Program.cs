@@ -25,7 +25,8 @@ internal sealed class SpeedLoopingSampleProvider : ISampleProvider
 {
  private readonly float[] samples; private readonly int channels,totalFrames; private double position; private float playbackRate=1f;
  public SpeedLoopingSampleProvider(float[] samples,WaveFormat format){if(samples.Length==0||samples.Length%format.Channels!=0)throw new ArgumentException("No playable audio samples.");this.samples=samples;WaveFormat=format;channels=format.Channels;totalFrames=samples.Length/channels;}
- public WaveFormat WaveFormat{get;} public float PlaybackRate{get=>Volatile.Read(ref playbackRate);set=>Volatile.Write(ref playbackRate,Math.Clamp(value,.25f,4f));}
+ public void Reset() => position = 0;
+    public WaveFormat WaveFormat{get;} public float PlaybackRate{get=>Volatile.Read(ref playbackRate);set=>Volatile.Write(ref playbackRate,Math.Clamp(value,.25f,4f));}
  public int Read(float[] buffer,int offset,int count){int frames=count/channels;float rate=PlaybackRate;for(int frame=0;frame<frames;frame++){int af=(int)position,bf=(af+1)%totalFrames;float blend=(float)(position-af);int a=af*channels,b=bf*channels,o=offset+frame*channels;for(int ch=0;ch<channels;ch++)buffer[o+ch]=samples[a+ch]+(samples[b+ch]-samples[a+ch])*blend;position+=rate;if(position>=totalFrames)position%=totalFrames;}return frames*channels;}
 }
 
@@ -287,7 +288,7 @@ internal sealed class MainForm : Form
             try
             {
                 output?.Stop();
-            // Keep the current loop position when playback stops.
+            speedProvider?.Reset();
             }
             catch (Exception ex)
             {
@@ -305,7 +306,7 @@ internal sealed class MainForm : Form
         {
             try { output?.Stop(); } catch { }
             output?.Dispose();
-
+            speedProvider = null;
             output = null;
 
         }
