@@ -7,7 +7,6 @@ on:
       - feature/cai-voice-audio-monitor
     paths:
       - "index.html"
-      - "cai-speech-bridge/**"
       - "c-ai-pages/**"
       - ".github/workflows/deploy-cai-pages.yml"
 permissions:
@@ -26,8 +25,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - name: Prepare public site (exclude legacy EXE speech bridge)
+        run: |
+          mkdir -p public
+          cp index.html public/index.html
+          if [ -d c-ai-pages ]; then
+            cp -R c-ai-pages public/c-ai-pages
+          fi
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: public
       - id: deployment
         uses: actions/deploy-pages@v4
