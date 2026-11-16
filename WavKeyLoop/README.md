@@ -1,27 +1,18 @@
 # AudioKeyLoop
 
-A small Windows desktop utility that loops a selected audio file while any of the global W, A, S, or D keys are held.
+A Windows desktop utility that loops a selected audio file while any of the global W, A, S, or D keys are held.
 
-## Behavior
-- Select an audio file from the supported-format picker (or choose **All files**).
-- Select a Windows WaveOut audio output device, including virtual devices exposed by Windows.
-- Hold W, A, S, or D to loop the selected audio.
-- Release all four keys to stop playback.
-- The global keyboard hook works while another application has focus.
-- Use **Test audio (2 sec)** to check the selected output device.
+## Controls
+- Select an audio file and an audio output device.
+- Hold W, A, S, or D to loop the audio; release all four keys to stop.
+- Hold either Shift key while playing to temporarily double the selected playback speed.
+- Use the Playback speed slider to set the normal speed from 0.50x to 2.00x. Shift doubles that setting (up to 4.00x).
+- Use Test audio (2 sec) to verify the selected output.
 
 ## Audio formats
-The player uses NAudio's Windows audio readers and Windows Media Foundation for formats beyond basic WAV/MP3. Common formats include:
-- WAV, MP3, AIFF/AIF
-- FLAC (where the Windows FLAC decoder is available)
-- WMA, AAC, M4A/MP4
-- OGG/Opus and other formats supported by the installed Windows Media Foundation codecs
+The player uses NAudio's Windows audio readers and Windows Media Foundation for formats beyond basic WAV/MP3. Common formats include WAV, MP3, AIFF/AIF, FLAC (where the Windows decoder is available), WMA, AAC, M4A/MP4, OGG/Opus and other formats supported by installed Windows codecs. Actual support depends on the codecs available on the Windows installation. The All files option lets you try other extensions.
 
-Actual support depends on the codecs available in your Windows installation. If a file cannot be decoded, the app displays the decoder error. The **All files** option lets you try other file extensions.
+## Download
+Open the repository's Actions tab, select **Build WavKeyLoop EXE**, open the latest successful run, and download **WavKeyLoop-win-x64**. It is a self-contained Windows x64 executable; no .NET installation is required.
 
-## Download the EXE
-Open the repository's **Actions** tab, select **Build WavKeyLoop EXE**, open the latest successful run, and download the **WavKeyLoop-win-x64** artifact. It is a self-contained Windows x64 executable; no .NET installation is required.
-
-The build runs automatically when files under this folder change on main, or can be started manually with **Run workflow**.
-
-Playback uses a continuous stream loop until all W/A/S/D keys are released.
+The workflow builds automatically when files under this folder change on main, or can be started manually with Run workflow.
