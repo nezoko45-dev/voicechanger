@@ -36,24 +36,22 @@
     return true;
   }
 
-  // CAI buttons expose stable accessible labels: Play voice / Stop voice.
-  function findVoiceButton() {
-    return [...document.querySelectorAll('button[aria-label="Play voice"],button[aria-label="Stop voice"]')]
-      .find(b => b.getClientRects().length && !b.disabled) || null;
+  // Target Character.AI Voice mode (wave-bars SVG), NOT the reply's Play voice triangle.
+  const VOICE_MODE_PATH = 'M8 4v16M4 10v4m8-6v8m4-10v12m4-8v4';
+  function findVoiceModeButton() {
+    return [...document.querySelectorAll('button')].find(button =>
+      button.getClientRects().length && !button.disabled &&
+      [...button.querySelectorAll('svg path')].some(path =>
+        normalizeSvgPath(path.getAttribute('d')) === VOICE_MODE_PATH
+      )
+    ) || null;
   }
-  function voiceIsOn() {
-    return !!document.querySelector('button[aria-label="Stop voice"]');
-  }
-  function setVoice(on) {
-    const currentlyOn = voiceIsOn();
-    if (currentlyOn === on) return true;
-    const button = findVoiceButton();
-    if (!button) { say('CAI Play/Stop voice HTML button not found'); return false; }
+  function toggleVoiceMode() {
+    const button = findVoiceModeButton();
+    if (!button) { say('CAI Voice mode wave button not found'); return false; }
     button.click();
     return true;
   }
-  function ensureVoiceOn() { return setVoice(true); }
-  function ensureVoiceOff() { return setVoice(false); }
 
   function findStopGeneratingButton() {
     return [...document.querySelectorAll('button')].find(btn => {
@@ -83,7 +81,7 @@
         say('CAI is speaking… Voice stays ON');
       } else if (sawAudio && (!audio || audio.paused || audio.ended)) {
         clearInterval(generationTimer); generationTimer = null;
-        ensureVoiceOff();
+        toggleVoiceMode();
         say('CAI audio finished • Voice OFF');
         busy = false; processSpeechQueue();
       } else if (stop) {
@@ -113,7 +111,7 @@
     return true;
   }
   function beginVoiceForReply() {
-    if (ensureVoiceOn()) {
+    if (toggleVoiceMode()) {
       say('Voice enabled • waiting for CAI reply audio');
       waitForReplyAudioToFinish();
     }
