@@ -55,12 +55,11 @@
       .filter(el => el.getClientRects().length && !el.closest('#cai-voice-loop-panel') && el.innerText?.trim());
   }
   function newestPlayButton() {
-    const paths = [...document.querySelectorAll('svg path')].filter(isCaiPlayTriangle);
-    for (const p of paths.reverse()) {
-      const btn = p.closest('button,[role="button"]');
-      if (btn && btn.getClientRects().length && !btn.disabled) return btn;
-    }
-    return null;
+    // Match the full Character.AI Play voice button structure + exact triangle path.
+    const candidates = [...document.querySelectorAll('button[aria-label="Play voice"]')]
+      .filter(btn => btn.getClientRects().length && !btn.disabled)
+      .filter(btn => btn.querySelector('svg path') && [...btn.querySelectorAll('svg path')].some(isCaiPlayTriangle));
+    return candidates.at(-1) || null;
   }
   function waitForReplyAndPlay() {
     generationStarted = true;
