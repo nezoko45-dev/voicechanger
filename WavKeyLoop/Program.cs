@@ -13,6 +13,47 @@ internal static class Program
     }
 }
 
+internal sealed class AudioDevice
+{
+    public int DeviceNumber { get; }
+    public string Name { get; }
+    public AudioDevice(int deviceNumber, string name) { DeviceNumber = deviceNumber; Name = name; }
+    public override string ToString() => Name;
+}
+
+internal sealed class LoopingStream : WaveStream
+{
+    private readonly WaveStream source;
+    public LoopingStream(WaveStream source) => this.source = source;
+    public override WaveFormat WaveFormat => source.WaveFormat;
+    public override long Length => long.MaxValue;
+    public override long Position
+    {
+        get => source.Position;
+        set => source.Position = value;
+    }
+
+    public override int Read(byte[] buffer, int offset, int count)
+    {
+        if (source.Length == 0) return 0;
+        int total = 0;
+        while (count > 0)
+        {
+            int read = source.Read(buffer, offset, count);
+            if (read == 0)
+            {
+                source.Position = 0;
+                read = source.Read(buffer, offset, count);
+                if (read == 0) break;
+            }
+            total += read;
+            offset += read;
+            count -= read;
+        }
+        return total;
+    }
+}
+
 internal sealed class MainForm : Form
 {
     private const int WH_KEYBOARD_LL = 13;
@@ -41,20 +82,23 @@ internal sealed class MainForm : Form
     private readonly Label status = new() { AutoSize = true, Text = "Choose a WAV file, then hold W, A, S, or D." };
     private readonly HashSet<int> held = new();
     private readonly object audioLock = new();
+    private readonly System.Windows.Forms.Timer testTimer = new() { Interval = 2000 };
 
     private string? wavPath;
     private AudioFileReader? reader;
+    private LoopingStream? loopStream;
     private WaveOutEvent? output;
     private IntPtr hook;
     private HookProc? hookProc;
     private bool closing;
+    private bool testActive;
 
     public MainForm()
     {
         Text = "WAV Key Loop";
-        Width = 590;
-        Height = 255;
-        MinimumSize = new Size(590, 255);
+        Width = 640;
+        Height = 285;
+        MinimumSize = new Size(640, 285);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
@@ -62,9 +106,9 @@ internal sealed class MainForm : Form
         var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill, Padding = new Padding(14),
-            ColumnCount = 2, RowCount = 5
+            ColumnCount = 2, RowCount = 6
         };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 115));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
         layout.Controls.Add(new Label { Text = "WAV file:", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
@@ -84,15 +128,27 @@ internal sealed class MainForm : Form
         layout.Controls.Add(status, 0, 3);
         layout.SetColumnSpan(status, 2);
 
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
+        var test = new Button { Text = "Test audio (2 sec)", AutoSize = true };
+        test.Click += (_, _) => TestAudio();
         var refresh = new Button { Text = "Refresh audio devices", AutoSize = true };
         refresh.Click += (_, _) => LoadDevices();
-        layout.Controls.Add(refresh, 1, 4);
+        buttons.Controls.Add(test);
+        buttons.Controls.Add(refresh);
+        layout.Controls.Add(buttons, 1, 4);
         Controls.Add(layout);
 
         LoadDevices();
         outputBox.SelectedIndexChanged += (_, _) =>
         {
-            if (held.Count == 0) ResetAudioEngine();
+            if (held.Count == 0 && !testActive) ResetAudioEngine();
+        };
+
+        testTimer.Tick += (_, _) =>
+        {
+            testTimer.Stop();
+            testActive = false;
+            if (held.Count == 0) StopAudio();
         };
 
         hookProc = HookCallback;
@@ -112,28 +168,49 @@ internal sealed class MainForm : Form
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
+        testTimer.Stop();
+        testActive = false;
         StopAudio();
         ResetAudioEngine();
         wavPath = dialog.FileName;
         wavBox.Text = Path.GetFileName(wavPath);
-        status.Text = "Ready — hold W, A, S, or D to play.";
+
+        try
+        {
+            using var check = new AudioFileReader(wavPath);
+            status.Text = $"Loaded: {check.WaveFormat.SampleRate} Hz, {check.WaveFormat.Channels} channel(s), {check.TotalTime.TotalSeconds:F1}s";
+        }
+        catch (Exception ex)
+        {
+            wavPath = null;
+            wavBox.Text = "";
+            status.Text = "Could not open WAV: " + ex.Message;
+        }
     }
 
     private void LoadDevices()
     {
-        int previous = outputBox.SelectedIndex;
+        int previous = outputBox.SelectedItem is AudioDevice selected ? selected.DeviceNumber : -1;
         outputBox.Items.Clear();
+        outputBox.Items.Add(new AudioDevice(-1, "Windows default output"));
 
-        for (int i = 0; i < WaveOut.DeviceCount; i++)
+        try
         {
-            var caps = WaveOut.GetCapabilities(i);
-            outputBox.Items.Add($"{caps.ProductName} (device {i})");
+            for (int i = 0; i < WaveOut.DeviceCount; i++)
+            {
+                var caps = WaveOut.GetCapabilities(i);
+                outputBox.Items.Add(new AudioDevice(i, caps.ProductName));
+            }
+        }
+        catch (Exception ex)
+        {
+            UpdateStatus("Could not enumerate audio devices: " + ex.Message);
         }
 
-        if (outputBox.Items.Count > 0)
-            outputBox.SelectedIndex = Math.Clamp(previous, 0, outputBox.Items.Count - 1);
-        else
-            status.Text = "No WaveOut output devices found.";
+        int found = -1;
+        for (int i = 0; i < outputBox.Items.Count; i++)
+            if (outputBox.Items[i] is AudioDevice d && d.DeviceNumber == previous) found = i;
+        outputBox.SelectedIndex = found >= 0 ? found : 0;
     }
 
     private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
@@ -167,12 +244,25 @@ internal sealed class MainForm : Form
         else held.Remove(key);
 
         if (held.Count > 0) StartAudio();
-        else StopAudio();
+        else if (!testActive) StopAudio();
+    }
+
+    private void TestAudio()
+    {
+        if (wavPath == null)
+        {
+            status.Text = "Choose a WAV file first.";
+            return;
+        }
+        testTimer.Stop();
+        testActive = true;
+        StartAudio();
+        if (output?.PlaybackState == PlaybackState.Playing) testTimer.Start();
     }
 
     private void StartAudio()
     {
-        if (string.IsNullOrWhiteSpace(wavPath) || outputBox.SelectedIndex < 0) return;
+        if (string.IsNullOrWhiteSpace(wavPath) || outputBox.SelectedItem is not AudioDevice device) return;
 
         lock (audioLock)
         {
@@ -180,42 +270,25 @@ internal sealed class MainForm : Form
 
             try
             {
-                reader ??= new AudioFileReader(wavPath);
+                if (reader == null)
+                {
+                    reader = new AudioFileReader(wavPath);
+                    loopStream = new LoopingStream(reader);
+                }
+
                 if (output == null)
                 {
                     output = new WaveOutEvent
                     {
-                        DeviceNumber = outputBox.SelectedIndex,
-                        DesiredLatency = 100
+                        DeviceNumber = device.DeviceNumber,
+                        DesiredLatency = 150
                     };
-                    output.PlaybackStopped += (_, e) =>
-                    {
-                        lock (audioLock)
-                        {
-                            if (closing || held.Count == 0 || reader == null || output == null) return;
-                            if (e.Exception != null)
-                            {
-                                UpdateStatus("Playback stopped: " + e.Exception.Message);
-                                return;
-                            }
-
-                            try
-                            {
-                                reader.Position = 0;
-                                output.Play();
-                            }
-                            catch (Exception ex)
-                            {
-                                UpdateStatus("Playback error: " + ex.Message);
-                            }
-                        }
-                    };
-                    output.Init(reader);
+                    output.Init(loopStream);
                 }
 
                 reader.Position = 0;
                 output.Play();
-                UpdateStatus("PLAYING — release all WASD keys to stop.");
+                UpdateStatus($"PLAYING through {device.Name} — release all WASD keys to stop.");
             }
             catch (Exception ex)
             {
@@ -233,12 +306,14 @@ internal sealed class MainForm : Form
                 output?.Stop();
                 if (reader != null) reader.Position = 0;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                UpdateStatus("Stop error: " + ex.Message);
+            }
         }
 
-        UpdateStatus(wavPath == null
-            ? "Choose a WAV file first."
-            : "Ready — hold W, A, S, or D to play.");
+        if (!closing)
+            UpdateStatus(wavPath == null ? "Choose a WAV file first." : "Ready — hold W, A, S, or D to play.");
     }
 
     private void ResetAudioEngine()
@@ -247,8 +322,10 @@ internal sealed class MainForm : Form
         {
             try { output?.Stop(); } catch { }
             output?.Dispose();
+            loopStream?.Dispose();
             reader?.Dispose();
             output = null;
+            loopStream = null;
             reader = null;
         }
     }
@@ -267,14 +344,18 @@ internal sealed class MainForm : Form
     private void Cleanup()
     {
         closing = true;
+        testTimer.Stop();
         if (hook != IntPtr.Zero) UnhookWindowsHookEx(hook);
         lock (audioLock)
         {
             try { output?.Stop(); } catch { }
             output?.Dispose();
+            loopStream?.Dispose();
             reader?.Dispose();
             output = null;
+            loopStream = null;
             reader = null;
         }
+        testTimer.Dispose();
     }
 }
