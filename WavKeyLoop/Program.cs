@@ -79,12 +79,12 @@ internal sealed class MainForm : Form
 
     private readonly ComboBox outputBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
     private readonly TextBox wavBox = new() { ReadOnly = true, Dock = DockStyle.Fill };
-    private readonly Label status = new() { AutoSize = true, Text = "Choose a WAV file, then hold W, A, S, or D." };
+    private readonly Label status = new() { AutoSize = true, Text = "Choose an audio file, then hold W, A, S, or D." };
     private readonly HashSet<int> held = new();
     private readonly object audioLock = new();
     private readonly System.Windows.Forms.Timer testTimer = new() { Interval = 2000 };
 
-    private string? wavPath;
+    private string? audioPath;
     private AudioFileReader? reader;
     private LoopingStream? loopStream;
     private WaveOutEvent? output;
@@ -95,7 +95,7 @@ internal sealed class MainForm : Form
 
     public MainForm()
     {
-        Text = "WAV Key Loop";
+        Text = "Audio Key Loop";
         Width = 640;
         Height = 285;
         MinimumSize = new Size(640, 285);
@@ -111,13 +111,13 @@ internal sealed class MainForm : Form
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 115));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        layout.Controls.Add(new Label { Text = "WAV file:", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
+        layout.Controls.Add(new Label { Text = "Audio file:", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
         var filePanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2 };
         filePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         filePanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         filePanel.Controls.Add(wavBox, 0, 0);
         var browse = new Button { Text = "Browse...", AutoSize = true };
-        browse.Click += (_, _) => PickWav();
+        browse.Click += (_, _) => PickAudio();
         filePanel.Controls.Add(browse, 1, 0);
         layout.Controls.Add(filePanel, 1, 0);
 
@@ -159,12 +159,12 @@ internal sealed class MainForm : Form
         FormClosing += (_, _) => Cleanup();
     }
 
-    private void PickWav()
+    private void PickAudio()
     {
         using var dialog = new OpenFileDialog
         {
-            Filter = "WAV audio (*.wav)|*.wav",
-            Title = "Select WAV file"
+            Filter = "Supported audio files|*.wav;*.mp3;*.flac;*.wma;*.aac;*.m4a;*.mp4;*.aif;*.aiff;*.ogg;*.opus;*.webm;*.mka|All files (*.*)|*.*",
+            Title = "Select audio file"
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
@@ -172,19 +172,19 @@ internal sealed class MainForm : Form
         testActive = false;
         StopAudio();
         ResetAudioEngine();
-        wavPath = dialog.FileName;
-        wavBox.Text = Path.GetFileName(wavPath);
+        audioPath = dialog.FileName;
+        wavBox.Text = Path.GetFileName(audioPath);
 
         try
         {
-            using var check = new AudioFileReader(wavPath);
+            using var check = new AudioFileReader(audioPath);
             status.Text = $"Loaded: {check.WaveFormat.SampleRate} Hz, {check.WaveFormat.Channels} channel(s), {check.TotalTime.TotalSeconds:F1}s";
         }
         catch (Exception ex)
         {
-            wavPath = null;
+            audioPath = null;
             wavBox.Text = "";
-            status.Text = "Could not open WAV: " + ex.Message;
+            status.Text = "Could not open audio file (format/codec may be unavailable): " + ex.Message;
         }
     }
 
@@ -249,9 +249,9 @@ internal sealed class MainForm : Form
 
     private void TestAudio()
     {
-        if (wavPath == null)
+        if (audioPath == null)
         {
-            status.Text = "Choose a WAV file first.";
+            status.Text = "Choose an audio file first.";
             return;
         }
         testTimer.Stop();
@@ -262,7 +262,7 @@ internal sealed class MainForm : Form
 
     private void StartAudio()
     {
-        if (string.IsNullOrWhiteSpace(wavPath) || outputBox.SelectedItem is not AudioDevice device) return;
+        if (string.IsNullOrWhiteSpace(audioPath) || outputBox.SelectedItem is not AudioDevice device) return;
 
         lock (audioLock)
         {
@@ -272,7 +272,7 @@ internal sealed class MainForm : Form
             {
                 if (reader == null)
                 {
-                    reader = new AudioFileReader(wavPath);
+                    reader = new AudioFileReader(audioPath);
                     loopStream = new LoopingStream(reader);
                 }
 
@@ -313,7 +313,7 @@ internal sealed class MainForm : Form
         }
 
         if (!closing)
-            UpdateStatus(wavPath == null ? "Choose a WAV file first." : "Ready — hold W, A, S, or D to play.");
+            UpdateStatus(audioPath == null ? "Choose an audio file first." : "Ready — hold W, A, S, or D to play.");
     }
 
     private void ResetAudioEngine()
