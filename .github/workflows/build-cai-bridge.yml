@@ -1,0 +1,21 @@
+name: Build CAI Bridge EXE
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "cai-speech-bridge/**"
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Publish self-contained EXE
+        run: dotnet publish cai-speech-bridge/Bridge.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CAI-Bridge-Windows
+          path: publish/CAI-Bridge.exe
+          if-no-files-found: error
