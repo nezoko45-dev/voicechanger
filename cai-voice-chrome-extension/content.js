@@ -50,63 +50,63 @@
     }
     return true;
   }
-  function getReplyBlocks() {
-    // Character.AI message turns commonly expose message/assistant containers; exclude our overlay.
-    return [...document.querySelectorAll('[data-message-author-role="assistant"], [class*="message" i], [class*="Message"]')]
-      .filter(el => el.getClientRects().length && !el.closest('#cai-voice-loop-panel') && el.innerText?.trim());
+  function findVoiceButton() {
+    return [...document.querySelectorAll('button')].find(btn => {
+      if (!btn.getClientRects().length || btn.disabled) return false;
+      const label = ((btn.getAttribute('aria-label') || '') + ' ' + (btn.title || '') + ' ' + (btn.innerText || '')).trim();
+      return /\\bvoice\\b/i.test(label) && !/play voice|stop voice|voice settings/i.test(label);
+    }) || null;
   }
-  function newestPlayButton() {
-    // Anchor on the exact CAI play-triangle SVG supplied by the user; don't rely on guessed labels/classes.
-    const candidates = [...document.querySelectorAll('button')].filter(btn =>
-      btn.getClientRects().length && !btn.disabled &&
-      [...btn.querySelectorAll('svg path')].some(isCaiPlayTriangle));
-    return candidates.at(-1) || null;
+  function findStopGeneratingButton() {
+    return [...document.querySelectorAll('button')].find(btn => {
+      if (!btn.getClientRects().length) return false;
+      const label = ((btn.getAttribute('aria-label') || '') + ' ' + (btn.title || '') + ' ' + (btn.innerText || '')).trim();
+      return /stop generating|stop generation|interrupt generation/i.test(label);
+    }) || null;
   }
-  function activatePlayButton(btn) {
-    if (!btn) return false;
-    btn.scrollIntoView({block:'center', inline:'nearest'});
-    btn.focus({preventScroll:true});
-    const opts = {bubbles:true, cancelable:true, view:window, button:0};
-    btn.dispatchEvent(new PointerEvent('pointerdown', {...opts, pointerId:1, pointerType:'mouse', isPrimary:true}));
-    btn.dispatchEvent(new MouseEvent('mousedown', opts));
-    btn.dispatchEvent(new PointerEvent('pointerup', {...opts, pointerId:1, pointerType:'mouse', isPrimary:true}));
-    btn.dispatchEvent(new MouseEvent('mouseup', opts));
+  function clickVoiceToggle() {
+    const btn = findVoiceButton();
+    if (!btn) { say('Voice SVG button not found'); return false; }
     btn.click();
     return true;
   }
-  function waitForReplyAndPlay() {
+  function waitForGenerationToFinish() {
     busy = true;
-    generationStarted = true;
-    say('Waiting for CAI reply…');
-    let previous = '', stable = 0, elapsed = 0;
+    say('Waiting for Stop generating…');
+    let sawStop = false, elapsed = 0;
     clearInterval(generationTimer);
     generationTimer = setInterval(() => {
-      elapsed += 500;
-      const blocks = getReplyBlocks();
-      const text = blocks.at(-1)?.innerText?.trim() || '';
-      const stopPresent = [...document.querySelectorAll('button')].some(b => /stop|interrupt/i.test((b.getAttribute('aria-label')||'')+' '+b.title));
-      if (text && text === previous && !stopPresent) stable += 1; else stable = 0;
-      previous = text;
-      if (stable >= 3 && text && text !== lastReplyText) {
+      elapsed += 250;
+      const stop = findStopGeneratingButton();
+      if (stop) {
+        sawStop = true;
+        say('CAI generating… Voice enabled');
+      } else if (sawStop) {
         clearInterval(generationTimer); generationTimer = null;
-        lastReplyText = text;
-        setTimeout(() => {
-          const play = newestPlayButton();
-          if (play && activatePlayButton(play)) { say('Clicked Play voice • waiting for audio'); setTimeout(() => { if (play.getAttribute('aria-label') === 'Play voice') say('Click sent; CAI did not switch button state'); }, 1200); }
-          else say('Reply ready (play button not found)');
-          busy = false; generationStarted = false; processSpeechQueue();
-        }, 350);
-      } else if (elapsed > 90000) {
-        clearInterval(generationTimer); generationTimer = null; busy = false; generationStarted = false; say('Reply timeout'); processSpeechQueue();
+        // Generation ended: toggle Voice back off.
+        if (clickVoiceToggle()) say('Generation finished • Voice toggled OFF');
+        busy = false;
+        processSpeechQueue();
+      } else if (elapsed > 30000) {
+        clearInterval(generationTimer); generationTimer = null;
+        say('Did not detect Stop generating; leaving Voice unchanged');
+        busy = false;
+        processSpeechQueue();
       }
-    }, 500);
+    }, 250);
+  }
+  function beginVoiceForReply() {
+    if (clickVoiceToggle()) {
+      say('Voice enabled • waiting for generation');
+      waitForGenerationToFinish();
+    }
   }
   function processSpeechQueue() {
     if (busy || !speechQueue.length || !listening) return;
     const text = speechQueue.shift();
     busy = true;
     say('Sending: ' + text + (speechQueue.length ? ' • queued ' + speechQueue.length : ''));
-    if (sendText(text)) waitForReplyAndPlay(); else { busy = false; processSpeechQueue(); }
+    if (sendText(text)) beginVoiceForReply(); else { busy = false; processSpeechQueue(); }
   }
   function start() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -127,7 +127,7 @@
       lastSentText = text; lastSentAt = now;
       if (sendText(text)) {
         say('Sent: ' + text + ' • still listening');
-        if (!busy) waitForReplyAndPlay();
+        if (!busy) beginVoiceForReply();
       }
     };
     try { recognition.start(); } catch (e) { say('Could not start microphone: ' + e.message); }
