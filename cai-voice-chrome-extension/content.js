@@ -111,16 +111,16 @@
       }
     }, 250);
   }
+  function clickVoiceToggle() {
+    const button = findVoiceButton();
+    if (!button) { say('CAI Voice button not found'); return false; }
+    button.click();
+    return true;
+  }
   function beginVoiceForReply() {
     if (clickVoiceToggle()) {
       say('Voice enabled • waiting for CAI reply audio');
       waitForReplyAudioToFinish();
-    }
-  }
-  function beginVoiceForReply() {
-    if (clickVoiceToggle()) {
-      say('Voice enabled • waiting for generation');
-      waitForGenerationToFinish();
     }
   }
   function processSpeechQueue() {
@@ -147,10 +147,9 @@
       const now = Date.now();
       if (text === lastSentText && now - lastSentAt < 1800) return; // guard duplicate final event
       lastSentText = text; lastSentAt = now;
-      if (sendText(text)) {
-        say('Sent: ' + text + ' • still listening');
-        if (!busy) beginVoiceForReply();
-      }
+      // Queue speech while CAI is talking; don't toggle Voice off mid-reply.
+      speechQueue.push(text);
+      processSpeechQueue();
     };
     try { recognition.start(); } catch (e) { say('Could not start microphone: ' + e.message); }
   }
