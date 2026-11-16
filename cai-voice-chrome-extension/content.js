@@ -5,7 +5,7 @@
   const PLAY_PATH = 'M9.576 2.534C7.578 1.299 5 2.737 5 5.086v13.828c0 2.35 2.578 3.787 4.576 2.552l11.194-6.914c1.899-1.172 1.899-3.932 0-5.104z';
   const normalizeSvgPath = d => (d || '').trim().replace(/\s+/g, ' ');
   const isCaiPlayTriangle = path => normalizeSvgPath(path.getAttribute('d')) === normalizeSvgPath(PLAY_PATH);
-  let recognition = null, listening = false, busy = false, lastReplyText = '', speechQueue = [];
+  let recognition = null, listening = false, busy = false, lastReplyText = '', speechQueue = [], lastSentAt = 0, lastSentText = '';
   let generationTimer = null, generationStarted = false;
   const panel = document.createElement('div');
   panel.id = 'cai-voice-loop-panel';
@@ -75,6 +75,7 @@
     return true;
   }
   function waitForReplyAndPlay() {
+    busy = true;
     generationStarted = true;
     say('Waiting for CAI reply…');
     let previous = '', stable = 0, elapsed = 0;
@@ -120,9 +121,14 @@
       if (!result.isFinal) return;
       const text = result[0].transcript.trim();
       if (!text) return;
-      // Queue speech instead of silently discarding it while CAI is generating.
-      speechQueue.push(text);
-      processSpeechQueue();
+      // Always submit each finalized recognition result; never block mic input on reply detection.
+      const now = Date.now();
+      if (text === lastSentText && now - lastSentAt < 1800) return; // guard duplicate final event
+      lastSentText = text; lastSentAt = now;
+      if (sendText(text)) {
+        say('Sent: ' + text + ' • still listening');
+        if (!busy) waitForReplyAndPlay();
+      }
     };
     try { recognition.start(); } catch (e) { say('Could not start microphone: ' + e.message); }
   }
