@@ -31,7 +31,8 @@ sealed class BridgeForm : Form {
  void Write(string s){if(IsDisposed)return;BeginInvoke(()=>log.AppendText(DateTime.Now.ToString("HH:mm:ss ")+s+Environment.NewLine));}
  async Task Handle(HttpListenerContext c){var r=c.Response;r.Headers["Access-Control-Allow-Origin"]="http://127.0.0.1:8788";r.Headers["Vary"]="Origin";r.Headers["Access-Control-Allow-Methods"]="GET, POST, OPTIONS";r.Headers["Access-Control-Allow-Headers"]="Content-Type";r.Headers["Access-Control-Allow-Private-Network"]="true";
  try{if(c.Request.HttpMethod=="OPTIONS"){r.StatusCode=204;return;}object data;string path=c.Request.Url?.AbsolutePath??"/";
- if(path=="/"||path=="/index.html"){r.ContentType="text/html; charset=utf-8";byte[] page=Encoding.UTF8.GetBytes(LocalPage);r.ContentLength64=page.Length;await r.OutputStream.WriteAsync(page);return;}\n if(path=="/status")data=new{ok=true,message="CAI-Bridge ready"};
+ if(path=="/"||path=="/index.html"){r.ContentType="text/html; charset=utf-8";byte[] page=Encoding.UTF8.GetBytes(LocalPage);r.ContentLength64=page.Length;await r.OutputStream.WriteAsync(page);return;}
+ if(path=="/status")data=new{ok=true,message="CAI-Bridge ready"};
  else if(path=="/voice/on"||path=="/voice/toggle"){string result=await ToggleVoiceCDP();bool ok=result.StartsWith("CLICKED");data=new{ok,error=ok?null:result,result};Write("Voice: "+result);}
  else if(path=="/transcript"){using var sr=new StreamReader(c.Request.InputStream);var j=JsonDocument.Parse(await sr.ReadToEndAsync());string text=j.RootElement.GetProperty("text").GetString()??"";PasteAndEnter(text);Write("Transcript sent: "+text);data=new{ok=true,result="ENTER_SENT"};}
  else{r.StatusCode=404;data=new{ok=false,error="Not found"};}
