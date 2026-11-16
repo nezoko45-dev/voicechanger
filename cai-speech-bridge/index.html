@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CAI Speech Bridge</title><style>
+body{font:16px system-ui;background:#111827;color:#f3f4f6;max-width:680px;margin:40px auto;padding:20px}button{font-size:17px;padding:13px 18px;border:0;border-radius:10px;margin:5px;cursor:pointer}#start{background:#2563eb;color:white}#stop{background:#374151;color:white}pre{background:#1f2937;padding:14px;border-radius:10px;white-space:pre-wrap;overflow-wrap:anywhere}small{color:#9ca3af}
+</style><h1>Character.AI Speech Bridge</h1>
+<p>Start the Windows helper first, open Character.AI in Chrome, then press Start and speak.</p>
+<button id="start">🎙 Start listening</button><button id="stop">Stop</button>
+<h3>Status</h3><pre id="status">Checking local helper…</pre><h3>Last transcription</h3><pre id="last">—</pre>
+<small>Speech recognition runs in Chrome. Transcripts go to your local Windows helper at 127.0.0.1:8788.</small>
+<script>
+const status=document.querySelector('#status'),last=document.querySelector('#last');
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec,active=false;
+async function api(path,body){let r=await fetch('http://127.0.0.1:8788'+path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});let j=await r.json();if(!r.ok||j.ok===false)throw Error(j.error||r.status);return j}
+async function check(){try{let j=await api('/status');status.textContent='Helper connected: '+j.message}catch(e){status.textContent='Helper not running. Launch CAI-Bridge.exe first. '+e.message}}
+if(!SR)status.textContent='Chrome SpeechRecognition is unavailable.';
+else{rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=false;rec.onstart=()=>status.textContent='Listening 🎙';rec.onerror=e=>status.textContent='Speech error: '+e.error;rec.onend=()=>{if(active)setTimeout(()=>{try{rec.start()}catch{}},300);else status.textContent='Stopped'};rec.onresult=async e=>{let phrase=e.results[e.results.length-1][0].transcript.trim();if(!phrase)return;last.textContent=phrase;try{let x=await api('/transcript',{text:phrase});status.textContent='Sent to CAI helper: '+x.result}catch(err){status.textContent='Send failed: '+err.message}}}
+document.querySelector('#start').onclick=async()=>{active=true;try{await api('/voice/on',{});status.textContent='Voice toggle requested; listening…'}catch(e){status.textContent='Helper error: '+e.message}try{rec.start()}catch{}};
+document.querySelector('#stop').onclick=()=>{active=false;rec?.stop()};check();
+</script></html>
