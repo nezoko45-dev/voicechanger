@@ -50,12 +50,15 @@
     }
     return true;
   }
+  const VOICE_WAVE_PATH = 'M8 4v16M4 10v4m8-6v8m4-10v12m4-8v4';
   function findVoiceButton() {
-    return [...document.querySelectorAll('button')].find(btn => {
-      if (!btn.getClientRects().length || btn.disabled) return false;
-      const label = ((btn.getAttribute('aria-label') || '') + ' ' + (btn.title || '') + ' ' + (btn.innerText || '')).trim();
-      return /\\bvoice\\b/i.test(label) && !/play voice|stop voice|voice settings/i.test(label);
-    }) || null;
+    // Match the exact voice-wave SVG path supplied by the user.
+    return [...document.querySelectorAll('button')].find(btn =>
+      btn.getClientRects().length && !btn.disabled &&
+      [...btn.querySelectorAll('svg path')].some(path =>
+        normalizeSvgPath(path.getAttribute('d')) === VOICE_WAVE_PATH
+      )
+    ) || null;
   }
   function findStopGeneratingButton() {
     return [...document.querySelectorAll('button')].find(btn => {
