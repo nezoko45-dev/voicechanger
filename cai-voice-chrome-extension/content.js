@@ -5,7 +5,7 @@
   const PLAY_PATH = 'M9.576 2.534C7.578 1.299 5 2.737 5 5.086v13.828c0 2.35 2.578 3.787 4.576 2.552l11.194-6.914c1.899-1.172 1.899-3.932 0-5.104z';
   const normalizeSvgPath = d => (d || '').trim().replace(/\s+/g, ' ');
   const isCaiPlayTriangle = path => normalizeSvgPath(path.getAttribute('d')) === normalizeSvgPath(PLAY_PATH);
-  let recognition = null, listening = false, busy = false, lastReplyText = '';
+  let recognition = null, listening = false, busy = false, lastReplyText = '', speechQueue = [];
   let generationTimer = null, generationStarted = false;
   const panel = document.createElement('div');
   panel.id = 'cai-voice-loop-panel';
@@ -55,11 +55,11 @@
       .filter(el => el.getClientRects().length && !el.closest('#cai-voice-loop-panel') && el.innerText?.trim());
   }
   function newestPlayButton() {
-    // Match CAI's accessible Play voice button and its exact triangle path.
-    const candidates = [...document.querySelectorAll('button[aria-label="Play voice"]')]
-      .filter(btn => btn.getClientRects().length && !btn.disabled &&
-        [...btn.querySelectorAll('svg path')].some(isCaiPlayTriangle));
-    return candidates[candidates.length - 1] || null;
+    // Anchor on the exact CAI play-triangle SVG supplied by the user; don't rely on guessed labels/classes.
+    const candidates = [...document.querySelectorAll('button')].filter(btn =>
+      btn.getClientRects().length && !btn.disabled &&
+      [...btn.querySelectorAll('svg path')].some(isCaiPlayTriangle));
+    return candidates.at(-1) || null;
   }
   function activatePlayButton(btn) {
     if (!btn) return false;
@@ -92,12 +92,19 @@
           const play = newestPlayButton();
           if (play && activatePlayButton(play)) { say('Clicked Play voice • waiting for audio'); setTimeout(() => { if (play.getAttribute('aria-label') === 'Play voice') say('Click sent; CAI did not switch button state'); }, 1200); }
           else say('Reply ready (play button not found)');
-          busy = false; generationStarted = false;
+          busy = false; generationStarted = false; processSpeechQueue();
         }, 350);
       } else if (elapsed > 90000) {
-        clearInterval(generationTimer); generationTimer = null; busy = false; generationStarted = false; say('Reply timeout');
+        clearInterval(generationTimer); generationTimer = null; busy = false; generationStarted = false; say('Reply timeout'); processSpeechQueue();
       }
     }, 500);
+  }
+  function processSpeechQueue() {
+    if (busy || !speechQueue.length || !listening) return;
+    const text = speechQueue.shift();
+    busy = true;
+    say('Sending: ' + text + (speechQueue.length ? ' • queued ' + speechQueue.length : ''));
+    if (sendText(text)) waitForReplyAndPlay(); else { busy = false; processSpeechQueue(); }
   }
   function start() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -111,15 +118,15 @@
       const result = e.results[e.results.length - 1];
       if (!result.isFinal) return;
       const text = result[0].transcript.trim();
-      if (!text || busy) return;
-      busy = true;
-      say('Sending: ' + text);
-      if (sendText(text)) waitForReplyAndPlay(); else busy = false;
+      if (!text) return;
+      // Queue speech instead of silently discarding it while CAI is generating.
+      speechQueue.push(text);
+      processSpeechQueue();
     };
     try { recognition.start(); } catch (e) { say('Could not start microphone: ' + e.message); }
   }
   function stop() {
-    listening = false; busy = false; clearInterval(generationTimer); generationTimer = null;
+    listening = false; busy = false; speechQueue = []; clearInterval(generationTimer); generationTimer = null;
     try { recognition?.stop(); } catch {}
     startBtn.disabled = false; stopBtn.disabled = true; say('Stopped');
   }
