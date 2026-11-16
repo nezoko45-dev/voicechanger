@@ -1,19 +1,26 @@
 <!doctype html>
-<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CAI Speech Bridge</title><style>
-body{font:16px system-ui;background:#111827;color:#f3f4f6;max-width:680px;margin:40px auto;padding:20px}button{font-size:17px;padding:13px 18px;border:0;border-radius:10px;margin:5px;cursor:pointer}#start{background:#2563eb;color:white}#stop{background:#374151;color:white}pre{background:#1f2937;padding:14px;border-radius:10px;white-space:pre-wrap;overflow-wrap:anywhere}small{color:#9ca3af}
-</style><h1>Character.AI Speech Bridge</h1>
-<p>Start the Windows helper first, open Character.AI in Chrome, then press Start and speak.</p>
-<button id="start">🎙 Start listening</button><button id="stop">Stop</button>
-<h3>Status</h3><pre id="status">Checking local helper…</pre><h3>Last transcription</h3><pre id="last">—</pre>
-<small>Speech recognition runs in Chrome. Transcripts go to your local Windows helper at 127.0.0.1:8788.</small>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CAI Speech + Controls</title><style>
+:root{color-scheme:dark}body{font:16px system-ui;background:#111827;color:#f3f4f6;max-width:760px;margin:32px auto;padding:20px}
+button{font-size:16px;padding:12px 16px;border:0;border-radius:10px;margin:5px;cursor:pointer;background:#374151;color:white}
+button.primary{background:#2563eb}button.voice{background:#7c3aed}textarea,pre{box-sizing:border-box;width:100%;background:#1f2937;color:#f9fafb;border:1px solid #374151;border-radius:10px;padding:14px;font:inherit}
+textarea{min-height:90px}pre{white-space:pre-wrap;overflow-wrap:anywhere;min-height:42px}small{color:#9ca3af}.panel{background:#182233;border:1px solid #293548;border-radius:14px;padding:16px;margin:14px 0}
+</style></head><body>
+<h1>🎙 CAI Speech + Controls</h1><p>One GitHub Pages panel for dictation and Character.AI controls. Start CAI-Bridge.exe locally first.</p>
+<section class="panel"><h2>Connection</h2><button id="check">Check helper</button><pre id="status">Connecting…</pre></section>
+<section class="panel"><h2>Microphone</h2><button class="primary" id="start">🎙 Start listening</button><button id="stop">Stop listening</button><pre id="mic">Idle</pre></section>
+<section class="panel"><h2>Character.AI controls</h2><button class="voice" id="voice">Toggle CAI voice</button><button class="primary" id="send">Send text + Enter</button><textarea id="text" placeholder="Speak to dictate here, or type a message…"></textarea><small>Voice button uses Chrome remote debugging. Send text pastes into the active Character.AI chat and presses Enter.</small></section>
+<section class="panel"><h2>Last recognized phrase</h2><pre id="last">—</pre></section>
 <script>
-const status=document.querySelector('#status'),last=document.querySelector('#last');
+const $=s=>document.querySelector(s),status=$('#status'),mic=$('#mic'),last=$('#last'),box=$('#text');
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec,active=false;
-async function api(path,body){let r=await fetch('http://127.0.0.1:8788'+path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});let j=await r.json();if(!r.ok||j.ok===false)throw Error(j.error||r.status);return j}
-async function check(){try{let j=await api('/status');status.textContent='Helper connected: '+j.message}catch(e){status.textContent='Helper not running. Launch CAI-Bridge.exe first. '+e.message}}
-if(!SR)status.textContent='Chrome SpeechRecognition is unavailable.';
-else{rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=false;rec.onstart=()=>status.textContent='Listening 🎙';rec.onerror=e=>status.textContent='Speech error: '+e.error;rec.onend=()=>{if(active)setTimeout(()=>{try{rec.start()}catch{}},300);else status.textContent='Stopped'};rec.onresult=async e=>{let phrase=e.results[e.results.length-1][0].transcript.trim();if(!phrase)return;last.textContent=phrase;try{let x=await api('/transcript',{text:phrase});status.textContent='Sent to CAI helper: '+x.result}catch(err){status.textContent='Send failed: '+err.message}}}
-document.querySelector('#start').onclick=async()=>{active=true;try{await api('/voice/on',{});status.textContent='Voice toggle requested; listening…'}catch(e){status.textContent='Helper error: '+e.message}try{rec.start()}catch{}};
-document.querySelector('#stop').onclick=()=>{active=false;rec?.stop()};check();
-</script></html>
+async function api(path,body){const r=await fetch('http://127.0.0.1:8788'+path,{method:body===undefined?'GET':'POST',headers:body===undefined?{}:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});let j;try{j=await r.json()}catch{throw Error('Helper returned HTTP '+r.status+' (not JSON)')}if(!r.ok||j.ok===false)throw Error(j.error||j.result||('HTTP '+r.status));return j}
+async function check(){try{const j=await api('/status');status.textContent='✅ '+j.message+'\n'+(j.chrome||'')}catch(e){status.textContent='❌ '+e.message+' — launch CAI-Bridge.exe'}}
+$('#check').onclick=check;check();
+$('#voice').onclick=async()=>{try{const j=await api('/voice/toggle',{});status.textContent='✅ Voice control: '+(j.result||'clicked')}catch(e){status.textContent='❌ Voice control: '+e.message}};
+$('#send').onclick=async()=>{const text=box.value.trim();if(!text)return;try{const j=await api('/transcript',{text});mic.textContent='Sent: '+j.result;box.value=''}catch(e){status.textContent='❌ Send failed: '+e.message}};
+if(!SR)mic.textContent='SpeechRecognition unavailable. Use Chrome.';
+else{rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=false;rec.onstart=()=>mic.textContent='Listening 🎙';rec.onerror=e=>mic.textContent='Speech error: '+e.error;rec.onend=()=>{if(active)setTimeout(()=>{try{rec.start()}catch{}},350);else mic.textContent='Stopped'};rec.onresult=e=>{const phrase=e.results[e.results.length-1][0].transcript.trim();if(!phrase)return;last.textContent=phrase;box.value=(box.value+' '+phrase).trim();};}
+$('#start').onclick=()=>{active=true;try{rec.start()}catch{};mic.textContent='Starting microphone…'};
+$('#stop').onclick=()=>{active=false;rec?.stop()};
+</script></body></html>
