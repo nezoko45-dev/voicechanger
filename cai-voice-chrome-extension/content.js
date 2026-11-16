@@ -2,11 +2,9 @@
   if (window.__caiVoiceLoopInstalled) return;
   window.__caiVoiceLoopInstalled = true;
 
-  const PLAY_PATH = 'M9.576 2.534C7.578 1.299 5 2.737 5 5.086v13.828c0 2.35 2.578 3.787 4.576 2.552l11.194-6.914c1.899-1.172 1.899-3.932 0-5.104z';
-  const normalizeSvgPath = d => (d || '').trim().replace(/\s+/g, ' ');
-  const isCaiPlayTriangle = path => normalizeSvgPath(path.getAttribute('d')) === normalizeSvgPath(PLAY_PATH);
-  let recognition = null, listening = false, busy = false, lastReplyText = '', speechQueue = [], lastSentAt = 0, lastSentText = '';
-  let generationTimer = null, generationStarted = false;
+  const normalizeSvgPath = d => (d || '').trim().replace(/\\s+/g, ' ');
+  let recognition = null, listening = false, busy = false, speechQueue = [], lastSentAt = 0, lastSentText = '';
+  let generationTimer = null;
   const panel = document.createElement('div');
   panel.id = 'cai-voice-loop-panel';
   panel.innerHTML = '<strong>CAI Voice Loop</strong><button id="cvl-start">🎙 Start</button><button id="cvl-stop" disabled>Stop</button><span id="cvl-status">Ready</span>';
@@ -16,7 +14,6 @@
   const stopBtn = panel.querySelector('#cvl-stop');
   const say = t => status.textContent = t;
 
-  // Verified directly from the user's CAI outerHTML.
   function latestComposer() {
     const el = document.querySelector('#chat-input-textarea');
     return el && el.getClientRects().length && !el.disabled ? el : null;
@@ -24,42 +21,40 @@
   function setComposer(el, text) {
     if (!el) return false;
     el.focus();
-    if (el.isContentEditable) {
-      el.textContent = text;
-      el.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertText', data:text}));
-    } else {
-      const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-      Object.getOwnPropertyDescriptor(proto, 'value')?.set?.call(el, text);
-      el.dispatchEvent(new Event('input', {bubbles:true}));
-      el.dispatchEvent(new Event('change', {bubbles:true}));
-    }
+    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, 'value')?.set?.call(el, text);
+    el.dispatchEvent(new Event('input', {bubbles:true}));
+    el.dispatchEvent(new Event('change', {bubbles:true}));
     return true;
   }
   function sendText(text) {
     const composer = latestComposer();
     if (!setComposer(composer, text)) { say('Chat input not found'); return false; }
-    // Submit through the textbox's actual form when available; CAI handles React state.
     const form = composer.closest('form');
-    if (form) {
-      if (typeof form.requestSubmit === 'function') form.requestSubmit();
-      else form.dispatchEvent(new Event('submit', {bubbles:true, cancelable:true}));
-    } else {
-      composer.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter',code:'Enter',bubbles:true}));
-      composer.dispatchEvent(new KeyboardEvent('keypress', {key:'Enter',code:'Enter',bubbles:true}));
-      composer.dispatchEvent(new KeyboardEvent('keyup', {key:'Enter',code:'Enter',bubbles:true}));
-    }
+    if (form?.requestSubmit) form.requestSubmit();
+    else composer.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter',code:'Enter',bubbles:true}));
     return true;
   }
-  const VOICE_WAVE_PATH = 'M8 4v16M4 10v4m8-6v8m4-10v12m4-8v4';
+
+  // CAI buttons expose stable accessible labels: Play voice / Stop voice.
   function findVoiceButton() {
-    // Match the exact voice-wave SVG path supplied by the user.
-    return [...document.querySelectorAll('button')].find(btn =>
-      btn.getClientRects().length && !btn.disabled &&
-      [...btn.querySelectorAll('svg path')].some(path =>
-        normalizeSvgPath(path.getAttribute('d')) === VOICE_WAVE_PATH
-      )
-    ) || null;
+    return [...document.querySelectorAll('button[aria-label="Play voice"],button[aria-label="Stop voice"]')]
+      .find(b => b.getClientRects().length && !b.disabled) || null;
   }
+  function voiceIsOn() {
+    return !!document.querySelector('button[aria-label="Stop voice"]');
+  }
+  function setVoice(on) {
+    const currentlyOn = voiceIsOn();
+    if (currentlyOn === on) return true;
+    const button = findVoiceButton();
+    if (!button) { say('CAI Play/Stop voice HTML button not found'); return false; }
+    button.click();
+    return true;
+  }
+  function ensureVoiceOn() { return setVoice(true); }
+  function ensureVoiceOff() { return setVoice(false); }
+
   function findStopGeneratingButton() {
     return [...document.querySelectorAll('button')].find(btn => {
       if (!btn.getClientRects().length) return false;
@@ -88,7 +83,7 @@
         say('CAI is speaking… Voice stays ON');
       } else if (sawAudio && (!audio || audio.paused || audio.ended)) {
         clearInterval(generationTimer); generationTimer = null;
-        clickVoiceToggle();
+        ensureVoiceOff();
         say('CAI audio finished • Voice OFF');
         busy = false; processSpeechQueue();
       } else if (stop) {
@@ -118,7 +113,7 @@
     return true;
   }
   function beginVoiceForReply() {
-    if (clickVoiceToggle()) {
+    if (ensureVoiceOn()) {
       say('Voice enabled • waiting for CAI reply audio');
       waitForReplyAudioToFinish();
     }
