@@ -3,6 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - main
       - feature/cai-voice-audio-monitor
     paths:
       - "cai-speech-bridge/**"
