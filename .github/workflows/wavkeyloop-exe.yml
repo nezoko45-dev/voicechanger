@@ -1,0 +1,35 @@
+name: Build WavKeyLoop EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'WavKeyLoop/**'
+      - '.github/workflows/wavkeyloop-exe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish standalone Windows executable
+        run: dotnet publish WavKeyLoop/WavKeyLoop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WavKeyLoop-win-x64
+          path: WavKeyLoop/bin/Release/net8.0-windows/win-x64/publish/WavKeyLoop.exe
+          if-no-files-found: error
+          compression-level: 9
