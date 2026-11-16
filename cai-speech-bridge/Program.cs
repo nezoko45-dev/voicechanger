@@ -6,7 +6,13 @@ using System.Runtime.InteropServices;
 using System.Diagnostics;
 using System.Windows.Forms;
 
-const string LocalPage = """
+
+
+ApplicationConfiguration.Initialize();
+Application.Run(new BridgeForm());
+
+sealed class BridgeForm : Form {
+ const string LocalPage = """
 <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>CAI Voice Loop</title><style>body{font:16px system-ui;background:#101522;color:#f5f7ff;max-width:700px;margin:30px auto;padding:18px}section{background:#192236;padding:16px;border-radius:12px;margin:12px 0}button{padding:12px;margin:5px;border:0;border-radius:8px;background:#3155a5;color:white;font:inherit;cursor:pointer}textarea,pre{width:100%;box-sizing:border-box;background:#111827;color:white;padding:12px;border-radius:8px;border:1px solid #38445c}textarea{min-height:80px}pre{white-space:pre-wrap}</style></head><body><h1>🎙 CAI Voice Loop</h1><section><b>Local EXE connection</b><pre id="status">Connected to this EXE page.</pre></section><section><h2>Dictation</h2><button id="start">🎙 Start listening</button><button id="stop">Stop</button><pre id="mic">Idle</pre><pre id="last">Last phrase: —</pre></section><section><h2>Manual</h2><textarea id="txt" placeholder="Type a message"></textarea><button id="send">Send to CAI</button><button id="voice">Play CAI voice</button><pre id="log">Ready</pre></section><script>
 const $=x=>document.querySelector(x);async function api(p,b){let r=await fetch(p,{method:b?'POST':'GET',headers:b?{'Content-Type':'application/json'}:{},body:b?JSON.stringify(b):undefined});let j=await r.json();if(!r.ok||j.ok===false)throw Error(j.error||'Bridge error');return j}
 async function send(t){if(!t.trim())return;try{await api('/transcript',{text:t});$('#txt').value='';$('#log').textContent='Sent: '+t}catch(e){$('#log').textContent=e.message}}
@@ -18,10 +24,6 @@ $('#stop').onclick=()=>{on=false;rec?.stop();$('#mic').textContent='Stopped'};
 </script></body></html>
 """;
 
-ApplicationConfiguration.Initialize();
-Application.Run(new BridgeForm());
-
-sealed class BridgeForm : Form {
  const string ControlsUrl="http://127.0.0.1:8788/";
  HttpListener listener=new(); CancellationTokenSource stop=new();
  TextBox log=new(){Multiline=true,Dock=DockStyle.Fill,ReadOnly=true,ScrollBars=ScrollBars.Vertical};
