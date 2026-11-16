@@ -1,26 +1,11 @@
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CAI Speech + Controls</title><style>
-:root{color-scheme:dark}body{font:16px system-ui;background:#111827;color:#f3f4f6;max-width:760px;margin:32px auto;padding:20px}
-button{font-size:16px;padding:12px 16px;border:0;border-radius:10px;margin:5px;cursor:pointer;background:#374151;color:white}
-button.primary{background:#2563eb}button.voice{background:#7c3aed}textarea,pre{box-sizing:border-box;width:100%;background:#1f2937;color:#f9fafb;border:1px solid #374151;border-radius:10px;padding:14px;font:inherit}
-textarea{min-height:90px}pre{white-space:pre-wrap;overflow-wrap:anywhere;min-height:42px}small{color:#9ca3af}.panel{background:#182233;border:1px solid #293548;border-radius:14px;padding:16px;margin:14px 0}
-</style></head><body>
-<h1>🎙 CAI Speech + Controls</h1><p>One GitHub Pages panel for dictation and Character.AI controls. Start CAI-Bridge.exe locally first.</p>
-<section class="panel"><h2>Connection</h2><button id="check">Check helper</button><pre id="status">Connecting…</pre></section>
-<section class="panel"><h2>Microphone</h2><button class="primary" id="start">🎙 Start listening</button><button id="stop">Stop listening</button><pre id="mic">Idle</pre></section>
-<section class="panel"><h2>Character.AI controls</h2><button class="voice" id="voice">Toggle CAI voice</button><button class="primary" id="send">Send text + Enter</button><textarea id="text" placeholder="Speak to dictate here, or type a message…"></textarea><small>Voice button uses Chrome remote debugging. Send text pastes into the active Character.AI chat and presses Enter.</small></section>
-<section class="panel"><h2>Last recognized phrase</h2><pre id="last">—</pre></section>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CAI Offline Speech Bridge</title><style>
+body{font:16px system-ui;background:#111827;color:#f3f4f6;max-width:760px;margin:30px auto;padding:20px}button{padding:12px 16px;margin:5px;border:0;border-radius:9px;background:#374151;color:white;cursor:pointer;font-size:16px}.primary{background:#2563eb}.voice{background:#7c3aed}textarea,pre{box-sizing:border-box;width:100%;padding:13px;background:#1f2937;color:white;border:1px solid #374151;border-radius:10px;font:inherit}textarea{min-height:90px}pre{white-space:pre-wrap;overflow-wrap:anywhere}.panel{background:#182233;border:1px solid #293548;border-radius:13px;padding:15px;margin:14px 0}small{color:#9ca3af}
+</style></head><body><h1>🎙 CAI Offline Speech Bridge</h1><p>Uses Vosk inside CAI-Bridge.exe. No Chrome/Google SpeechRecognition.</p>
+<section class="panel"><h2>Connection</h2><button id="check">Check EXE</button><pre id="status">Connecting…</pre></section>
+<section class="panel"><h2>Offline microphone</h2><button class="primary" id="start">🎙 Start offline listening</button><button id="stop">Stop</button><pre id="mic">Idle</pre><pre id="last">Recognized phrase appears in EXE log</pre></section>
+<section class="panel"><h2>Character.AI</h2><button class="voice" id="voice">Toggle CAI voice</button><textarea id="text" placeholder="Type a message…"></textarea><button class="primary" id="send">Send + Enter</button><small>Vosk phrases are automatically pasted and sent by the EXE.</small></section>
 <script>
-const $=s=>document.querySelector(s),status=$('#status'),mic=$('#mic'),last=$('#last'),box=$('#text');
-const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec,active=false;
-async function api(path,body){const r=await fetch('http://127.0.0.1:8788'+path,{method:body===undefined?'GET':'POST',headers:body===undefined?{}:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});let j;try{j=await r.json()}catch{throw Error('Helper returned HTTP '+r.status+' (not JSON)')}if(!r.ok||j.ok===false)throw Error(j.error||j.result||('HTTP '+r.status));return j}
-async function check(){try{const j=await api('/status');status.textContent='✅ '+j.message+'\n'+(j.chrome||'')}catch(e){status.textContent='❌ '+e.message+' — launch CAI-Bridge.exe'}}
-$('#check').onclick=check;check();
-$('#voice').onclick=async()=>{try{const j=await api('/voice/toggle',{});status.textContent='✅ Voice control: '+(j.result||'clicked')}catch(e){status.textContent='❌ Voice control: '+e.message}};
-$('#send').onclick=async()=>{const text=box.value.trim();if(!text)return;try{const j=await api('/transcript',{text});mic.textContent='Sent: '+j.result;box.value=''}catch(e){status.textContent='❌ Send failed: '+e.message}};
-if(!SR)mic.textContent='SpeechRecognition unavailable. Use Chrome.';
-else{rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=false;rec.onstart=()=>mic.textContent='Listening 🎙';rec.onerror=e=>mic.textContent='Speech error: '+e.error;rec.onend=()=>{if(active)setTimeout(()=>{try{rec.start()}catch{}},350);else mic.textContent='Stopped'};rec.onresult=e=>{const phrase=e.results[e.results.length-1][0].transcript.trim();if(!phrase)return;last.textContent=phrase;box.value=(box.value+' '+phrase).trim();};}
-$('#start').onclick=()=>{active=true;try{rec.start()}catch{};mic.textContent='Starting microphone…'};
-$('#stop').onclick=()=>{active=false;rec?.stop()};
+const $=s=>document.querySelector(s);async function api(path,body){const r=await fetch('http://127.0.0.1:8788'+path,{method:body===undefined?'GET':'POST',headers:body===undefined?{}:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});let j;try{j=await r.json()}catch{throw Error('Helper HTTP '+r.status)}if(!r.ok||j.ok===false)throw Error(j.error||j.result||('HTTP '+r.status));return j}
+async function check(){try{let j=await api('/status');$('#status').textContent='✅ '+j.message+' — EXE connected'}catch(e){$('#status').textContent='❌ '+e.message+'\nRun CAI-Bridge.exe and allow Chrome local-network access.'}}
+$('#check').onclick=check;check();$('#start').onclick=async()=>{try{let j=await api('/listen/start',{});$('#mic').textContent=j.message||'Listening offline — Vosk'}catch(e){$('#mic').textContent='ERROR: '+e.message}};$('#stop').onclick=async()=>{try{let j=await api('/listen/stop',{});$('#mic').textContent=j.message||'Stopped'}catch(e){$('#mic').textContent='ERROR: '+e.message}};$('#voice').onclick=async()=>{try{let j=await api('/voice/toggle',{});$('#status').textContent='Voice: '+j.result}catch(e){$('#status').textContent=e.message}};$('#send').onclick=async()=>{let t=$('#text').value.trim();if(!t)return;try{await api('/transcript',{text:t});$('#text').value='';$('#status').textContent='Sent to CAI'}catch(e){$('#status').textContent='Send error: '+e.message}};
 </script></body></html>
