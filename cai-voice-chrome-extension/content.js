@@ -67,36 +67,55 @@
       return /stop generating|stop generation|interrupt generation/i.test(label);
     }) || null;
   }
-  function clickVoiceToggle() {
-    const btn = findVoiceButton();
-    if (!btn) { say('Voice SVG button not found'); return false; }
-    btn.click();
-    return true;
+  function findCaiAudio() {
+    return [...document.querySelectorAll('audio')].filter(a => a.currentSrc || a.src || a.readyState > 0).at(-1) || null;
   }
-  function waitForGenerationToFinish() {
-    busy = true;
-    say('Waiting for Stop generating…');
-    let sawStop = false, elapsed = 0;
+  function waitForReplyAudioToFinish() {
+    say('Waiting for CAI reply audio to finish…');
+    let audio = null, sawAudio = false, noAudioTicks = 0, elapsed = 0;
     clearInterval(generationTimer);
     generationTimer = setInterval(() => {
       elapsed += 250;
       const stop = findStopGeneratingButton();
-      if (stop) {
-        sawStop = true;
-        say('CAI generating… Voice enabled');
-      } else if (sawStop) {
+      const candidate = findCaiAudio();
+      if (candidate && candidate !== audio) {
+        audio = candidate;
+        sawAudio = false;
+      }
+      if (audio && !audio.paused && !audio.ended) {
+        sawAudio = true;
+        noAudioTicks = 0;
+        say('CAI is speaking… Voice stays ON');
+      } else if (sawAudio && (!audio || audio.paused || audio.ended)) {
         clearInterval(generationTimer); generationTimer = null;
-        // Generation ended: toggle Voice back off.
-        if (clickVoiceToggle()) say('Generation finished • Voice toggled OFF');
-        busy = false;
-        processSpeechQueue();
-      } else if (elapsed > 30000) {
+        clickVoiceToggle();
+        say('CAI audio finished • Voice OFF');
+        busy = false; processSpeechQueue();
+      } else if (stop) {
+        // Generation is still active. Do NOT turn Voice off.
+        say('CAI generating… Voice stays ON');
+        noAudioTicks = 0;
+      } else if (!stop && !sawAudio) {
+        // Wait for generation completion and audio element/playback to appear.
+        noAudioTicks++;
+        if (noAudioTicks >= 12 && elapsed > 5000) {
+          clearInterval(generationTimer); generationTimer = null;
+          say('Reply ended without detectable audio; Voice left ON');
+          busy = false; processSpeechQueue();
+        }
+      }
+      if (elapsed > 180000) {
         clearInterval(generationTimer); generationTimer = null;
-        say('Did not detect Stop generating; leaving Voice unchanged');
-        busy = false;
-        processSpeechQueue();
+        say('Audio wait timeout; Voice left ON');
+        busy = false; processSpeechQueue();
       }
     }, 250);
+  }
+  function beginVoiceForReply() {
+    if (clickVoiceToggle()) {
+      say('Voice enabled • waiting for CAI reply audio');
+      waitForReplyAudioToFinish();
+    }
   }
   function beginVoiceForReply() {
     if (clickVoiceToggle()) {
