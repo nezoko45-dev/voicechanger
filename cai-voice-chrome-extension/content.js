@@ -16,10 +16,10 @@
   const stopBtn = panel.querySelector('#cvl-stop');
   const say = t => status.textContent = t;
 
+  // Verified directly from the user's CAI outerHTML.
   function latestComposer() {
-    return [...document.querySelectorAll('textarea, input[placeholder], [contenteditable="true"]')]
-      .filter(el => el.getClientRects().length && !el.closest('#cai-voice-loop-panel'))
-      .at(-1);
+    const el = document.querySelector('#chat-input-textarea');
+    return el && el.getClientRects().length && !el.disabled ? el : null;
   }
   function setComposer(el, text) {
     if (!el) return false;
@@ -38,15 +38,16 @@
   function sendText(text) {
     const composer = latestComposer();
     if (!setComposer(composer, text)) { say('Chat input not found'); return false; }
-    composer.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter',code:'Enter',bubbles:true}));
-    composer.dispatchEvent(new KeyboardEvent('keypress', {key:'Enter',code:'Enter',bubbles:true}));
-    composer.dispatchEvent(new KeyboardEvent('keyup', {key:'Enter',code:'Enter',bubbles:true}));
-    // fallback: click the enabled send button if Enter did not submit
-    setTimeout(() => {
-      const send = [...document.querySelectorAll('button')].find(b => b.getClientRects().length && !b.disabled &&
-        /send/i.test((b.getAttribute('aria-label')||'')+' '+(b.title||'')));
-      if (send && (composer.value || composer.textContent || '').trim()) send.click();
-    }, 250);
+    // Submit through the textbox's actual form when available; CAI handles React state.
+    const form = composer.closest('form');
+    if (form) {
+      if (typeof form.requestSubmit === 'function') form.requestSubmit();
+      else form.dispatchEvent(new Event('submit', {bubbles:true, cancelable:true}));
+    } else {
+      composer.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter',code:'Enter',bubbles:true}));
+      composer.dispatchEvent(new KeyboardEvent('keypress', {key:'Enter',code:'Enter',bubbles:true}));
+      composer.dispatchEvent(new KeyboardEvent('keyup', {key:'Enter',code:'Enter',bubbles:true}));
+    }
     return true;
   }
   function getReplyBlocks() {
