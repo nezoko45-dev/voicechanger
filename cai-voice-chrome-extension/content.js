@@ -3,7 +3,7 @@
   window.__caiVoiceLoopInstalled = true;
 
   const PLAY_PATH = 'M9.576 2.534C7.578 1.299 5 2.737 5 5.086v13.828c0 2.35 2.578 3.787 4.576 2.552l11.194-6.914c1.899-1.172 1.899-3.932 0-5.104z';
-  const normalizeSvgPath = d => (d || '').trim().replace(/\\s+/g, ' ');
+  const normalizeSvgPath = d => (d || '').trim().replace(/\s+/g, ' ');
   const isCaiPlayTriangle = path => normalizeSvgPath(path.getAttribute('d')) === normalizeSvgPath(PLAY_PATH);
   let recognition = null, listening = false, busy = false, lastReplyText = '';
   let generationTimer = null, generationStarted = false;
@@ -55,11 +55,23 @@
       .filter(el => el.getClientRects().length && !el.closest('#cai-voice-loop-panel') && el.innerText?.trim());
   }
   function newestPlayButton() {
-    // Match the full Character.AI Play voice button structure + exact triangle path.
+    // Match CAI's accessible Play voice button and its exact triangle path.
     const candidates = [...document.querySelectorAll('button[aria-label="Play voice"]')]
-      .filter(btn => btn.getClientRects().length && !btn.disabled)
-      .filter(btn => btn.querySelector('svg path') && [...btn.querySelectorAll('svg path')].some(isCaiPlayTriangle));
-    return candidates.at(-1) || null;
+      .filter(btn => btn.getClientRects().length && !btn.disabled &&
+        [...btn.querySelectorAll('svg path')].some(isCaiPlayTriangle));
+    return candidates[candidates.length - 1] || null;
+  }
+  function activatePlayButton(btn) {
+    if (!btn) return false;
+    btn.scrollIntoView({block:'center', inline:'nearest'});
+    btn.focus({preventScroll:true});
+    const opts = {bubbles:true, cancelable:true, view:window, button:0};
+    btn.dispatchEvent(new PointerEvent('pointerdown', {...opts, pointerId:1, pointerType:'mouse', isPrimary:true}));
+    btn.dispatchEvent(new MouseEvent('mousedown', opts));
+    btn.dispatchEvent(new PointerEvent('pointerup', {...opts, pointerId:1, pointerType:'mouse', isPrimary:true}));
+    btn.dispatchEvent(new MouseEvent('mouseup', opts));
+    btn.click();
+    return true;
   }
   function waitForReplyAndPlay() {
     generationStarted = true;
@@ -78,7 +90,7 @@
         lastReplyText = text;
         setTimeout(() => {
           const play = newestPlayButton();
-          if (play) { play.click(); say('Playing latest reply • listening'); }
+          if (play && activatePlayButton(play)) { say('Clicked Play voice • waiting for audio'); setTimeout(() => { if (play.getAttribute('aria-label') === 'Play voice') say('Click sent; CAI did not switch button state'); }, 1200); }
           else say('Reply ready (play button not found)');
           busy = false; generationStarted = false;
         }, 350);
