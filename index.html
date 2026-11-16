@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Microsoft Voice Dictation & Read Aloud</title>
+<style>
+:root{color-scheme:light dark;font:16px/1.5 system-ui,Segoe UI,Arial}*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:#f3f6fb;color:#172033;display:grid;place-items:center;padding:24px}
+main{width:min(760px,100%);background:white;border:1px solid #dce3ee;border-radius:18px;padding:26px;box-shadow:0 12px 35px #182b4a12}
+h1{font-size:clamp(1.5rem,4vw,2rem);margin:0 0 6px}p{color:#536178;margin:0 0 20px}
+textarea{width:100%;min-height:230px;resize:vertical;border:1px solid #cbd5e1;border-radius:12px;padding:14px;font:inherit;color:#172033;background:#fff;outline-color:#2563eb}
+.controls{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}button,select{border:1px solid #cbd5e1;border-radius:10px;padding:10px 14px;font:inherit;background:#fff;color:#172033}
+button{cursor:pointer;font-weight:600}button.primary{background:#2563eb;color:white;border-color:#2563eb}button:disabled{opacity:.5;cursor:not-allowed}
+label{display:block;font-weight:600;margin:12px 0 6px}.settings{display:grid;grid-template-columns:1fr 1fr;gap:14px}.settings select{width:100%}
+#status{font-size:.9rem;color:#536178;margin-top:12px;min-height:1.4em}.hint{font-size:.85rem;margin-top:14px;color:#64748b}
+@media(max-width:560px){.settings{grid-template-columns:1fr}main{padding:18px}}
+</style>
+</head><body><main>
+<h1>Microsoft Voice Dictation & Read Aloud</h1>
+<p>Speak to fill the text box. Completed dictated segments are automatically read aloud using a Microsoft Edge voice.</p>
+<textarea id="text" placeholder="Your dictated words will appear here..."></textarea>
+<div class="controls"><button class="primary" id="start">🎙 Start dictation</button><button id="stop" disabled>Stop</button><button class="primary" id="speak">▶ Read aloud</button><button id="autoRead" aria-pressed="true">Auto read: ON</button><button id="pause">Pause / Resume</button><button id="clear">Clear</button></div>
+<div class="settings"><div><label for="voice">Read-aloud voice</label><select id="voice"><option>Loading voices…</option></select></div><div><label for="rate">Speaking speed</label><select id="rate"><option value=".8">Slow</option><option value="1" selected>Normal</option><option value="1.15">A little faster</option><option value="1.3">Fast</option></select></div></div>
+<div id="status" role="status">Ready. Allow microphone access when asked.</div>
+<div class="hint">Use Microsoft Edge. Ava (English) and Ava Multilingual are prioritized when Edge exposes those installed voices. Dictation uses browser speech recognition.</div>
+</main>
+<script>
+const box=document.querySelector('#text'),status=document.querySelector('#status'),start=document.querySelector('#start'),stop=document.querySelector('#stop'),voiceSelect=document.querySelector('#voice');
+let voices=[],recognition=null,listening=false,autoRead=true,queue=[],reading=false;
+function loadVoices(){voices=speechSynthesis.getVoices();const old=voiceSelect.value;voiceSelect.innerHTML='';const ms=voices.filter(v=>/microsoft/i.test(v.name)),multi=ms.filter(v=>/ava/i.test(v.name)&&/multi.?lingual/i.test(v.name)),ava=ms.filter(v=>/ava/i.test(v.name)&&!/multi.?lingual/i.test(v.name)),preferred=[...multi,...ava,...ms.filter(v=>!/ava/i.test(v.name))],ordered=[...preferred,...voices.filter(v=>!preferred.includes(v))];ordered.forEach(v=>{const o=document.createElement('option');o.value=voices.indexOf(v);o.textContent=v.name+' ('+v.lang+')';voiceSelect.append(o)});if(old&&[...voiceSelect.options].some(o=>o.value===old))voiceSelect.value=old;else if(preferred.length)voiceSelect.value=String(voices.indexOf(preferred[0]));if(!voices.length){voiceSelect.innerHTML='<option value="">No speech voices exposed by this browser</option>'}}
+loadVoices();speechSynthesis.onvoiceschanged=loadVoices;
+function next(){if(reading||!queue.length)return;const u=new SpeechSynthesisUtterance(queue.shift()),v=voices[Number(voiceSelect.value)];if(v)u.voice=v;u.rate=Number(document.querySelector('#rate').value);u.lang=v?.lang||'en-US';reading=true;u.onend=u.onerror=()=>{reading=false;next()};speechSynthesis.speak(u)}
+function enqueue(s){if(s.trim()){queue.push(s.trim());next()}}
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(SR){recognition=new SR();recognition.lang='en-US';recognition.continuous=true;recognition.interimResults=true;let finalized='';recognition.onstart=()=>{listening=true;start.disabled=true;stop.disabled=false;status.textContent='Listening…'};recognition.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal){finalized+=t.trim()+' ';if(autoRead)enqueue(t)}else interim+=t}box.value=(box.dataset.prefix||'')+finalized+interim;box.scrollTop=box.scrollHeight};recognition.onerror=e=>status.textContent='Dictation error: '+e.error+'. Check microphone permission.';recognition.onend=()=>{listening=false;start.disabled=false;stop.disabled=true;box.dataset.prefix=box.value;finalized='';if(status.textContent==='Listening…')status.textContent='Dictation stopped.'};start.onclick=()=>{box.dataset.prefix=box.value?box.value.trimEnd()+' ':'';finalized='';try{recognition.start()}catch(e){status.textContent='Dictation is already starting.'}};stop.onclick=()=>{if(listening)recognition.stop()}}else{start.disabled=true;status.textContent='Speech recognition is unsupported here. Open this page in current Microsoft Edge.'}
+document.querySelector('#speak').onclick=()=>{const t=box.value.trim();if(!t)return;queue=[];speechSynthesis.cancel();reading=false;const u=new SpeechSynthesisUtterance(t),v=voices[Number(voiceSelect.value)];if(v)u.voice=v;u.rate=Number(document.querySelector('#rate').value);u.lang=v?.lang||'en-US';u.onstart=()=>status.textContent='Reading aloud…';u.onend=()=>status.textContent='Finished reading.';speechSynthesis.speak(u)};
+document.querySelector('#autoRead').onclick=()=>{autoRead=!autoRead;const b=document.querySelector('#autoRead');b.textContent='Auto read: '+(autoRead?'ON':'OFF');b.setAttribute('aria-pressed',String(autoRead));status.textContent=autoRead?'Automatic read-aloud is on.':'Automatic read-aloud is off.'};
+document.querySelector('#pause').onclick=()=>{if(speechSynthesis.speaking){if(speechSynthesis.paused){speechSynthesis.resume();status.textContent='Reading aloud…'}else{speechSynthesis.pause();status.textContent='Paused.'}}};
+document.querySelector('#clear').onclick=()=>{box.value='';box.dataset.prefix='';queue=[];speechSynthesis.cancel();reading=false;status.textContent='Cleared.'};
+</script></body></html>
