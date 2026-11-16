@@ -1,5 +1,17 @@
 using System.Net;
-using System.Net.WebSockets;
+using 
+ const string LocalPage = """
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>CAI Voice Loop</title><style>body{font:16px system-ui;background:#101522;color:#f5f7ff;max-width:700px;margin:30px auto;padding:18px}section{background:#192236;padding:16px;border-radius:12px;margin:12px 0}button{padding:12px;margin:5px;border:0;border-radius:8px;background:#3155a5;color:white;font:inherit;cursor:pointer}textarea,pre{width:100%;box-sizing:border-box;background:#111827;color:white;padding:12px;border-radius:8px;border:1px solid #38445c}textarea{min-height:80px}pre{white-space:pre-wrap}</style></head><body><h1>🎙 CAI Voice Loop</h1><section><b>Local EXE connection</b><pre id="status">Connected to this EXE page.</pre></section><section><h2>Dictation</h2><button id="start">🎙 Start listening</button><button id="stop">Stop</button><pre id="mic">Idle</pre><pre id="last">Last phrase: —</pre></section><section><h2>Manual</h2><textarea id="txt" placeholder="Type a message"></textarea><button id="send">Send to CAI</button><button id="voice">Play CAI voice</button><pre id="log">Ready</pre></section><script>
+const $=x=>document.querySelector(x);async function api(p,b){let r=await fetch(p,{method:b?'POST':'GET',headers:b?{'Content-Type':'application/json'}:{},body:b?JSON.stringify(b):undefined});let j=await r.json();if(!r.ok||j.ok===false)throw Error(j.error||'Bridge error');return j}
+async function send(t){if(!t.trim())return;try{await api('/transcript',{text:t});$('#txt').value='';$('#log').textContent='Sent: '+t}catch(e){$('#log').textContent=e.message}}
+$('#send').onclick=()=>send($('#txt').value);$('#txt').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send($('#txt').value)}};
+$('#voice').onclick=async()=>{try{$('#log').textContent=(await api('/voice/toggle',{})).result}catch(e){$('#log').textContent=e.message}};
+let R=window.SpeechRecognition||window.webkitSpeechRecognition,rec=null,on=false;
+$('#start').onclick=()=>{if(!R){$('#mic').textContent='Chrome Speech Recognition unavailable';return}if(!rec){rec=new R;rec.lang='en-US';rec.continuous=true;rec.interimResults=false;rec.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal){let t=e.results[i][0].transcript.trim();$('#last').textContent='Last phrase: '+t;send(t)}};rec.onerror=e=>$('#mic').textContent='Speech error: '+e.error;rec.onend=()=>{if(on)setTimeout(()=>{try{rec.start()}catch{}},500);else $('#mic').textContent='Stopped'}}on=true;try{rec.start();$('#mic').textContent='Listening…'}catch(e){$('#mic').textContent=e.message}};
+$('#stop').onclick=()=>{on=false;rec?.stop();$('#mic').textContent='Stopped'};
+</script></body></html>
+""";
+System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Runtime.InteropServices;
@@ -41,15 +53,5 @@ sealed class BridgeForm : Form {
  [DllImport("user32.dll")]static extern bool IsWindowVisible(IntPtr h);
  [DllImport("user32.dll",CharSet=CharSet.Unicode)]static extern int GetWindowText(IntPtr h,StringBuilder s,int n);
  [DllImport("user32.dll")]static extern bool SetForegroundWindow(IntPtr h);
-const string LocalPage = """
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>CAI Voice Loop</title><style>body{font:16px system-ui;background:#101522;color:#f5f7ff;max-width:700px;margin:30px auto;padding:18px}section{background:#192236;padding:16px;border-radius:12px;margin:12px 0}button{padding:12px;margin:5px;border:0;border-radius:8px;background:#3155a5;color:white;font:inherit;cursor:pointer}textarea,pre{width:100%;box-sizing:border-box;background:#111827;color:white;padding:12px;border-radius:8px;border:1px solid #38445c}textarea{min-height:80px}pre{white-space:pre-wrap}</style></head><body><h1>🎙 CAI Voice Loop</h1><section><b>Local EXE connection</b><pre id="status">Connected to this EXE page.</pre></section><section><h2>Dictation</h2><button id="start">🎙 Start listening</button><button id="stop">Stop</button><pre id="mic">Idle</pre><pre id="last">Last phrase: —</pre></section><section><h2>Manual</h2><textarea id="txt" placeholder="Type a message"></textarea><button id="send">Send to CAI</button><button id="voice">Play CAI voice</button><pre id="log">Ready</pre></section><script>
-const $=x=>document.querySelector(x);async function api(p,b){let r=await fetch(p,{method:b?'POST':'GET',headers:b?{'Content-Type':'application/json'}:{},body:b?JSON.stringify(b):undefined});let j=await r.json();if(!r.ok||j.ok===false)throw Error(j.error||'Bridge error');return j}
-async function send(t){if(!t.trim())return;try{await api('/transcript',{text:t});$('#txt').value='';$('#log').textContent='Sent: '+t}catch(e){$('#log').textContent=e.message}}
-$('#send').onclick=()=>send($('#txt').value);$('#txt').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send($('#txt').value)}};
-$('#voice').onclick=async()=>{try{$('#log').textContent=(await api('/voice/toggle',{})).result}catch(e){$('#log').textContent=e.message}};
-let R=window.SpeechRecognition||window.webkitSpeechRecognition,rec=null,on=false;
-$('#start').onclick=()=>{if(!R){$('#mic').textContent='Chrome Speech Recognition unavailable';return}if(!rec){rec=new R;rec.lang='en-US';rec.continuous=true;rec.interimResults=false;rec.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal){let t=e.results[i][0].transcript.trim();$('#last').textContent='Last phrase: '+t;send(t)}};rec.onerror=e=>$('#mic').textContent='Speech error: '+e.error;rec.onend=()=>{if(on)setTimeout(()=>{try{rec.start()}catch{}},500);else $('#mic').textContent='Stopped'}}on=true;try{rec.start();$('#mic').textContent='Listening…'}catch(e){$('#mic').textContent=e.message}};
-$('#stop').onclick=()=>{on=false;rec?.stop();$('#mic').textContent='Stopped'};
-</script></body></html>
-""";
+
 }
