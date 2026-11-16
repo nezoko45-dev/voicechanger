@@ -1,4 +1,4 @@
-name: Deploy CAI Speech Controls Pages
+name: Deploy Voicechanger GitHub Pages
 on:
   workflow_dispatch:
   push:
@@ -6,6 +6,7 @@ on:
       - main
       - feature/cai-voice-audio-monitor
     paths:
+      - "index.html"
       - "cai-speech-bridge/**"
       - "c-ai-pages/**"
       - ".github/workflows/deploy-cai-pages.yml"
@@ -14,7 +15,7 @@ permissions:
   pages: write
   id-token: write
 concurrency:
-  group: cai-pages
+  group: voicechanger-pages
   cancel-in-progress: true
 jobs:
   deploy:
@@ -27,6 +28,6 @@ jobs:
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: c-ai-pages
+          path: .
       - id: deployment
         uses: actions/deploy-pages@v4
