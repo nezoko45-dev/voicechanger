@@ -8,8 +8,15 @@ using System.Windows.Forms;
 
 
 
-ApplicationConfiguration.Initialize();
-Application.Run(new BridgeForm());
+internal static class Program
+{
+    [STAThread]
+    private static void Main()
+    {
+        ApplicationConfiguration.Initialize();
+        Application.Run(new BridgeForm());
+    }
+}
 
 sealed class BridgeForm : Form {
  const string LocalPage = """
