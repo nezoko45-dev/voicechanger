@@ -6,6 +6,7 @@ on:
       - feature/cai-voice-audio-monitor
     paths:
       - "cai-speech-bridge/**"
+      - "c-ai-pages/**"
       - ".github/workflows/deploy-cai-pages.yml"
 permissions:
   contents: read
@@ -25,6 +26,6 @@ jobs:
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: cai-speech-bridge
+          path: c-ai-pages
       - id: deployment
         uses: actions/deploy-pages@v4
