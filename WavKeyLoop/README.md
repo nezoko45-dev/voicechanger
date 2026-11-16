@@ -13,3 +13,5 @@ A small Windows desktop utility that plays a selected WAV file while any of the 
 Open the repository's **Actions** tab, select **Build WavKeyLoop EXE**, open the latest successful run, and download the **WavKeyLoop-win-x64** artifact. It is a self-contained Windows x64 executable; no .NET installation is required.
 
 The build runs automatically when files under this folder change on main, or can be started manually with **Run workflow**.
+
+Playback update: WAV data is streamed in a continuous loop until all W/A/S/D keys are released. Use the built-in Test audio button to verify the selected output device.
