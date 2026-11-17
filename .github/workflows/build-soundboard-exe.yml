@@ -1,0 +1,25 @@
+name: Build F1 F2 Soundboard EXE
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'Soundboard2Key/**'
+      - '.github/workflows/build-soundboard-exe.yml'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Publish standalone Windows EXE
+        run: dotnet publish Soundboard2Key/Soundboard2Key.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+      - name: Upload EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: F1-F2-Soundboard-Windows-x64
+          path: publish/Soundboard2Key.exe
+          if-no-files-found: error
