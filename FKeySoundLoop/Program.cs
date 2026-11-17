@@ -13,6 +13,14 @@ internal static class Program
     }
 }
 
+internal sealed class AudioDevice
+{
+    public int DeviceNumber { get; }
+    public string Name { get; }
+    public AudioDevice(int deviceNumber, string name) { DeviceNumber = deviceNumber; Name = name; }
+    public override string ToString() => Name;
+}
+
 internal sealed class LoopingAudioProvider : ISampleProvider, IDisposable
 {
     private readonly AudioFileReader reader;
@@ -67,9 +75,12 @@ internal sealed class MainForm : Form
     private static extern IntPtr CallNextHookEx(IntPtr hook, int nCode, IntPtr wParam, IntPtr lParam);
 
     private readonly TextBox fileBox = new() { ReadOnly = true, Dock = DockStyle.Fill };
+    private readonly ComboBox outputBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
     private readonly Label status = new() { AutoSize = true, Text = "Choose a WAV or MP3 file, then hold F to loop it." };
     private readonly Button browseButton = new() { Text = "Browse...", AutoSize = true };
-    private readonly Button testButton = new() { Text = "Test audio", AutoSize = true };
+    private readonly Button testButton = new() { Text = "Test audio (2 sec)", AutoSize = true };
+    private readonly Button refreshButton = new() { Text = "Refresh devices", AutoSize = true };
+    private readonly System.Windows.Forms.Timer testTimer = new() { Interval = 2000 };
 
     private string? audioPath;
     private LoopingAudioProvider? provider;
@@ -78,13 +89,15 @@ internal sealed class MainForm : Form
     private HookProc? hookProc;
     private bool fHeld;
     private bool closing;
+    private bool testActive;
+    private bool loadingDevices;
 
     public MainForm()
     {
         Text = "F Key Sound Loop";
-        Width = 560;
-        Height = 190;
-        MinimumSize = new Size(560, 190);
+        Width = 650;
+        Height = 245;
+        MinimumSize = new Size(650, 245);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
@@ -94,9 +107,9 @@ internal sealed class MainForm : Form
             Dock = DockStyle.Fill,
             Padding = new Padding(14),
             ColumnCount = 2,
-            RowCount = 4
+            RowCount = 6
         };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 95));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
         layout.Controls.Add(new Label { Text = "Sound file:", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
@@ -107,18 +120,37 @@ internal sealed class MainForm : Form
         filePanel.Controls.Add(browseButton, 1, 0);
         layout.Controls.Add(filePanel, 1, 0);
 
-        layout.Controls.Add(new Label { Text = "Hotkey:", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 1);
-        layout.Controls.Add(new Label { Text = "Hold F to play the sound repeatedly; release F to stop.", AutoSize = true, Anchor = AnchorStyles.Left }, 1, 1);
-        layout.Controls.Add(status, 0, 2);
+        layout.Controls.Add(new Label { Text = "Output device:", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 1);
+        var devicePanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2 };
+        devicePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        devicePanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        devicePanel.Controls.Add(outputBox, 0, 0);
+        devicePanel.Controls.Add(refreshButton, 1, 0);
+        layout.Controls.Add(devicePanel, 1, 1);
+
+        layout.Controls.Add(new Label { Text = "Hotkey:", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 2);
+        layout.Controls.Add(new Label { Text = "Hold F to loop the sound; release F to stop.", AutoSize = true, Anchor = AnchorStyles.Left }, 1, 2);
+        layout.Controls.Add(status, 0, 3);
         layout.SetColumnSpan(status, 2);
 
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
         buttons.Controls.Add(testButton);
-        layout.Controls.Add(buttons, 1, 3);
+        layout.Controls.Add(buttons, 1, 4);
         Controls.Add(layout);
 
         browseButton.Click += (_, _) => PickAudio();
         testButton.Click += (_, _) => TestAudio();
+        refreshButton.Click += (_, _) => LoadDevices();
+        outputBox.SelectedIndexChanged += (_, _) => ChangeOutputDevice();
+
+        testTimer.Tick += (_, _) =>
+        {
+            testTimer.Stop();
+            testActive = false;
+            if (!fHeld) StopPlayback();
+        };
+
+        LoadDevices();
 
         hookProc = HookCallback;
         hook = SetWindowsHookEx(WH_KEYBOARD_LL, hookProc, IntPtr.Zero, 0);
@@ -126,6 +158,41 @@ internal sealed class MainForm : Form
             status.Text = "Could not install the global F-key hook. Restart the app and try again.";
 
         FormClosing += (_, _) => Cleanup();
+    }
+
+    private void LoadDevices()
+    {
+        int previous = outputBox.SelectedItem is AudioDevice selected ? selected.DeviceNumber : -1;
+        loadingDevices = true;
+        outputBox.Items.Clear();
+        outputBox.Items.Add(new AudioDevice(-1, "Windows default output"));
+
+        try
+        {
+            for (int i = 0; i < WaveOut.DeviceCount; i++)
+            {
+                var caps = WaveOut.GetCapabilities(i);
+                outputBox.Items.Add(new AudioDevice(i, caps.ProductName));
+            }
+        }
+        catch (Exception ex)
+        {
+            status.Text = "Could not enumerate audio devices: " + ex.Message;
+        }
+
+        int selectedIndex = 0;
+        for (int i = 0; i < outputBox.Items.Count; i++)
+            if (outputBox.Items[i] is AudioDevice d && d.DeviceNumber == previous) selectedIndex = i;
+        outputBox.SelectedIndex = selectedIndex;
+        loadingDevices = false;
+    }
+
+    private void ChangeOutputDevice()
+    {
+        if (loadingDevices || closing) return;
+        DisposeAudio();
+        if (fHeld) StartPlayback();
+        else status.Text = audioPath == null ? "Choose a WAV or MP3 file, then hold F." : "Output device changed. Hold F to play.";
     }
 
     private void PickAudio()
@@ -137,6 +204,8 @@ internal sealed class MainForm : Form
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
+        testTimer.Stop();
+        testActive = false;
         StopPlayback();
         DisposeAudio();
         try
@@ -182,18 +251,23 @@ internal sealed class MainForm : Form
         if (closing || fHeld == down) return;
         fHeld = down;
         if (down) StartPlayback();
-        else StopPlayback();
+        else
+        {
+            testTimer.Stop();
+            testActive = false;
+            StopPlayback();
+        }
     }
 
     private void StartPlayback()
     {
-        if (string.IsNullOrWhiteSpace(audioPath)) return;
+        if (string.IsNullOrWhiteSpace(audioPath) || outputBox.SelectedItem is not AudioDevice device) return;
         try
         {
             if (provider == null)
             {
                 provider = new LoopingAudioProvider(audioPath);
-                output = new WaveOutEvent { DesiredLatency = 100 };
+                output = new WaveOutEvent { DeviceNumber = device.DeviceNumber, DesiredLatency = 100 };
                 output.Init(provider);
             }
             if (output?.PlaybackState != PlaybackState.Playing)
@@ -201,12 +275,12 @@ internal sealed class MainForm : Form
                 provider.Reset();
                 output?.Play();
             }
-            status.Text = "PLAYING — keep holding F. Release F to stop.";
+            status.Text = $"PLAYING through {device.Name} — keep holding F.";
         }
         catch (Exception ex)
         {
             status.Text = "Playback error: " + ex.Message;
-            StopPlayback();
+            DisposeAudio();
         }
     }
 
@@ -232,18 +306,11 @@ internal sealed class MainForm : Form
             status.Text = "Choose a WAV or MP3 file first.";
             return;
         }
+        testTimer.Stop();
+        testActive = true;
         StartPlayback();
-        if (output?.PlaybackState == PlaybackState.Playing)
-        {
-            var timer = new System.Windows.Forms.Timer { Interval = 1500 };
-            timer.Tick += (_, _) =>
-            {
-                timer.Stop();
-                timer.Dispose();
-                if (!fHeld) StopPlayback();
-            };
-            timer.Start();
-        }
+        if (output?.PlaybackState == PlaybackState.Playing) testTimer.Start();
+        else testActive = false;
     }
 
     private void DisposeAudio()
@@ -258,7 +325,9 @@ internal sealed class MainForm : Form
     private void Cleanup()
     {
         closing = true;
+        testTimer.Stop();
         if (hook != IntPtr.Zero) UnhookWindowsHookEx(hook);
         DisposeAudio();
+        testTimer.Dispose();
     }
 }
