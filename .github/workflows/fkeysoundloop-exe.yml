@@ -1,0 +1,32 @@
+name: Build FKeySoundLoop EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'FKeySoundLoop/**'
+      - '.github/workflows/fkeysoundloop-exe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Publish standalone Windows executable
+        run: dotnet publish FKeySoundLoop/FKeySoundLoop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: FKeySoundLoop-win-x64
+          path: FKeySoundLoop/bin/Release/net8.0-windows/win-x64/publish/FKeySoundLoop.exe
+          if-no-files-found: error
+          compression-level: 9
