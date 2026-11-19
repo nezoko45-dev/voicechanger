@@ -9,6 +9,7 @@ on:
       - "index.html"
       - "c-ai-pages/**"
       - "natural-girl-voice/**"
+      - "soundboard/**"
       - ".github/workflows/deploy-cai-pages.yml"
 permissions:
   contents: read
@@ -35,6 +36,9 @@ jobs:
           fi
           if [ -d natural-girl-voice ]; then
             cp -R natural-girl-voice public/natural-girl-voice
+          fi
+          if [ -d soundboard ]; then
+            cp -R soundboard public/soundboard
           fi
       - uses: actions/upload-pages-artifact@v3
         with:
