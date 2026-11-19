@@ -70,7 +70,7 @@ main{width:min(900px,100%);margin:auto}.top{display:flex;align-items:center;gap:
 const $=s=>document.querySelector(s);
 const status=$('#status');
 const slots=[...document.querySelectorAll('.slot')];
-const keyMap={};let activeBinding=null;
+const keyMap={};let activeBinding=null;const heldKeys=new Set();
 const keyNames={Space:'Space',Escape:'Esc',Enter:'Enter',ArrowUp:'↑',ArrowDown:'↓',ArrowLeft:'←',ArrowRight:'→'};
 function keyLabel(code){return keyNames[code]||code.replace(/^Key/,'').replace(/^Digit/,'').replace(/^Numpad/,'Num ')}
 function saveKeys(){try{localStorage.setItem('voicechanger-soundboard-keybinds',JSON.stringify(keyMap))}catch{}}
@@ -116,15 +116,17 @@ slots.forEach((slot,index)=>{
   try{await routeAudio(audio);setStatus('Sound '+slotNumber+' loaded: '+file.name)}
   catch(e){setStatus(e.message)}
  });
- async function playSound(fromKey=false){
-  if(!audio.src)return;
-  try{if(!fromKey)await routeAudio(audio);audio.currentTime=0;await audio.play();setStatus('Playing sound '+slotNumber+(fromKey?' from its keybind.':'.'))}
+ async function startLoop(fromKey=false){
+  if(!audio.src||!audio.paused)return;
+  try{if(!fromKey)await routeAudio(audio);audio.loop=true;audio.currentTime=0;await audio.play();setStatus('Looping sound '+slotNumber+' while held.')}
   catch(e){setStatus('Could not play sound '+slotNumber+': '+e.message)}
  }
- play.addEventListener('click',()=>playSound(false));
- stop.addEventListener('click',()=>{audio.pause();audio.currentTime=0});
+ function stopLoop(){audio.loop=false;audio.pause();audio.currentTime=0}
+ play.addEventListener('pointerdown',event=>{if(event.button!==0)return;event.preventDefault();play.setPointerCapture?.(event.pointerId);startLoop(false)});
+ ['pointerup','pointercancel','lostpointercapture','pointerleave'].forEach(type=>play.addEventListener(type,stopLoop));
+ stop.addEventListener('click',stopLoop);
  volume.addEventListener('input',()=>{audio.volume=Number(volume.value);volvalue.textContent=Math.round(Number(volume.value)*100)+'%'});
- slot.playFromKey=()=>playSound(true);
+ slot.playFromKey=()=>startLoop(true);slot.stopLoop=stopLoop;
 });
 document.addEventListener('keydown',event=>{
  if(activeBinding){
@@ -143,9 +145,17 @@ document.addEventListener('keydown',event=>{
  const entry=Object.entries(keyMap).find(([,code])=>code===event.code);
  if(!entry)return;
  event.preventDefault();
- const slot=slots[Number(entry[0])-1];if(slot)slot.playFromKey();
+ const slot=slots[Number(entry[0])-1];if(slot){heldKeys.add(event.code);slot.playFromKey();}
 });
-$('#stopAll').addEventListener('click',()=>{slots.forEach(s=>{const a=s.querySelector('audio');a.pause();a.currentTime=0});setStatus('All sounds stopped.')});
+document.addEventListener('keyup',event=>{
+ if(!heldKeys.has(event.code))return;
+ heldKeys.delete(event.code);
+ const entry=Object.entries(keyMap).find(([,code])=>code===event.code);
+ if(entry){const slot=slots[Number(entry[0])-1];if(slot)slot.stopLoop();}
+});
+function releaseAll(){heldKeys.forEach(code=>{const entry=Object.entries(keyMap).find(([,mapped])=>mapped===code);if(entry){const slot=slots[Number(entry[0])-1];if(slot)slot.stopLoop();}});heldKeys.clear();slots.forEach(slot=>{if(slot.stopLoop)slot.stopLoop()})}
+window.addEventListener('blur',releaseAll);
+$('#stopAll').addEventListener('click',()=>{releaseAll();setStatus('All sounds stopped.')});
 $('#refresh').addEventListener('click',()=>refreshOutputs().then(()=>setStatus('Audio outputs refreshed.')).catch(e=>setStatus(e.message)));
 navigator.mediaDevices?.addEventListener?.('devicechange',refreshOutputs);
 refreshOutputs().catch(e=>setStatus('Could not list audio outputs: '+e.message));
