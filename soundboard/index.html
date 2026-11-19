@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#171426">
+<title>4-Slot Soundboard · Voicechanger</title>
+<style>
+:root{color-scheme:dark;--bg:#11101b;--panel:#1b1929;--panel2:#242136;--line:#39344e;--text:#f7f3ff;--muted:#aaa3bf;--pink:#f18acb;--violet:#a995ff;--good:#8be0bd}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;padding:28px 16px;background:radial-gradient(ellipse at 50% -20%,#45305d 0,transparent 55%),var(--bg);color:var(--text);font:15px/1.5 Inter,system-ui,Segoe UI,sans-serif}
+main{width:min(900px,100%);margin:auto}.top{display:flex;align-items:center;gap:14px;margin-bottom:22px}.logo{width:48px;height:48px;border-radius:16px;background:linear-gradient(135deg,var(--pink),var(--violet));display:grid;place-items:center;font-size:24px;color:#20162c}h1{font-size:clamp(25px,5vw,34px);line-height:1.1;margin:0}.sub{color:var(--muted);margin:5px 0 0}
+.panel,.slot{background:linear-gradient(160deg,#211e31,#191725);border:1px solid var(--line);border-radius:20px;padding:20px;margin:14px 0;box-shadow:0 18px 55px #0003}.panel h2{font-size:16px;margin:0 0 12px}.device{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:11px;color:var(--text);padding:12px;font:inherit}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.slot-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.slot h2{font-size:16px;margin:0}.tag{font-size:11px;color:var(--muted);border:1px solid var(--line);padding:3px 8px;border-radius:20px}
+.file{display:block;width:100%;margin:15px 0 10px;color:var(--muted);font-size:13px}.filename{font-size:12px;color:var(--muted);overflow-wrap:anywhere;min-height:18px}
+.controls{display:flex;gap:8px;margin-top:13px}.btn{border:1px solid var(--line);border-radius:11px;padding:11px 15px;background:var(--panel2);color:var(--text);font:700 13px Inter,system-ui,sans-serif;cursor:pointer}.btn.play{background:linear-gradient(100deg,#e98bc7,#a995ff);color:#21172b;border:0;flex:1}.btn:disabled{opacity:.35;cursor:not-allowed}
+.volume{display:flex;align-items:center;gap:10px;margin-top:12px;color:var(--muted);font-size:12px}.volume input{width:100%;accent-color:var(--pink)}
+.actions{display:flex;gap:10px;flex-wrap:wrap}.note{font-size:12px;color:var(--muted);margin:12px 0 0}.status{font-size:13px;color:var(--muted);margin-top:12px}footer{text-align:center;color:#827b98;font-size:12px;padding:18px}
+@media(max-width:650px){.grid{grid-template-columns:1fr}.panel,.slot{padding:16px}}
+</style>
+</head>
+<body>
+<main>
+<header class="top"><div class="logo">♫</div><div><h1>4-Slot Soundboard</h1><p class="sub">Four independent sounds · Direct audio output routing</p></div></header>
+<section class="panel">
+<h2>Audio output</h2>
+<select id="output" class="device" aria-label="Audio output"><option value="">Default speakers</option></select>
+<p class="note">Choose your headphones, speakers, or Voicemeeter virtual input. Every sound slot will route to this output.</p>
+<div class="actions" style="margin-top:15px"><button class="btn" id="stopAll">Stop all sounds</button><button class="btn" id="refresh">Refresh devices</button></div>
+<div class="status" id="status">Choose an output, load sounds, and press Play. Sounds can overlap independently.</div>
+</section>
+<section class="grid" id="slots">
+<article class="slot" data-slot="1">
+<div class="slot-head"><h2>Sound 1</h2><span class="tag">SLOT 1</span></div>
+<input class="file" type="file" accept="audio/*,.mp3,.wav,.ogg,.oga,.opus,.m4a,.aac,.flac,.aiff,.aif,.wma" aria-label="Choose audio file for sound 1">
+<div class="filename">No sound loaded</div>
+<div class="controls"><button class="btn play" disabled>▶ Play</button><button class="btn stop" disabled>■ Stop</button></div>
+<label class="volume">Volume <input type="range" min="0" max="1" step=".01" value="1"><span class="volvalue">100%</span></label>
+<audio preload="metadata"></audio>
+</article><article class="slot" data-slot="2">
+<div class="slot-head"><h2>Sound 2</h2><span class="tag">SLOT 2</span></div>
+<input class="file" type="file" accept="audio/*,.mp3,.wav,.ogg,.oga,.opus,.m4a,.aac,.flac,.aiff,.aif,.wma" aria-label="Choose audio file for sound 2">
+<div class="filename">No sound loaded</div>
+<div class="controls"><button class="btn play" disabled>▶ Play</button><button class="btn stop" disabled>■ Stop</button></div>
+<label class="volume">Volume <input type="range" min="0" max="1" step=".01" value="1"><span class="volvalue">100%</span></label>
+<audio preload="metadata"></audio>
+</article><article class="slot" data-slot="3">
+<div class="slot-head"><h2>Sound 3</h2><span class="tag">SLOT 3</span></div>
+<input class="file" type="file" accept="audio/*,.mp3,.wav,.ogg,.oga,.opus,.m4a,.aac,.flac,.aiff,.aif,.wma" aria-label="Choose audio file for sound 3">
+<div class="filename">No sound loaded</div>
+<div class="controls"><button class="btn play" disabled>▶ Play</button><button class="btn stop" disabled>■ Stop</button></div>
+<label class="volume">Volume <input type="range" min="0" max="1" step=".01" value="1"><span class="volvalue">100%</span></label>
+<audio preload="metadata"></audio>
+</article><article class="slot" data-slot="4">
+<div class="slot-head"><h2>Sound 4</h2><span class="tag">SLOT 4</span></div>
+<input class="file" type="file" accept="audio/*,.mp3,.wav,.ogg,.oga,.opus,.m4a,.aac,.flac,.aiff,.aif,.wma" aria-label="Choose audio file for sound 4">
+<div class="filename">No sound loaded</div>
+<div class="controls"><button class="btn play" disabled>▶ Play</button><button class="btn stop" disabled>■ Stop</button></div>
+<label class="volume">Volume <input type="range" min="0" max="1" step=".01" value="1"><span class="volvalue">100%</span></label>
+<audio preload="metadata"></audio>
+</article>
+</section>
+<footer>Voicechanger · Local playback · No audio uploads</footer>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const status=$('#status');
+const slots=[...document.querySelectorAll('.slot')];
+function setStatus(message){status.textContent=message}
+async function refreshOutputs(){
+ const select=$('#output'),previous=select.value;
+ if(!navigator.mediaDevices?.enumerateDevices){setStatus('Audio device listing is not supported in this browser.');return}
+ const devices=await navigator.mediaDevices.enumerateDevices();
+ select.innerHTML='<option value="">Default speakers</option>';
+ devices.filter(d=>d.kind==='audiooutput').forEach((d,i)=>{
+  const option=document.createElement('option');option.value=d.deviceId;option.textContent=d.label||'Audio output '+(i+1);select.append(option);
+ });
+ if([...select.options].some(o=>o.value===previous))select.value=previous;
+}
+async function routeAudio(audio){
+ const id=$('#output').value;
+ if(typeof audio.setSinkId!=='function'&&id)throw new Error('Output selection is not supported by this browser. Try Chrome or Edge.');
+ if(typeof audio.setSinkId==='function')await audio.setSinkId(id||'');
+}
+$('#output').addEventListener('change',async()=>{
+ try{await Promise.all(slots.map(s=>routeAudio(s.querySelector('audio'))));setStatus('Output changed. All four sound slots are routed to the selected device.')}
+ catch(e){setStatus(e.message)}
+});
+slots.forEach((slot,index)=>{
+ const picker=slot.querySelector('.file'),audio=slot.querySelector('audio'),name=slot.querySelector('.filename');
+ const play=slot.querySelector('.play'),stop=slot.querySelector('.stop'),volume=slot.querySelector('input[type=range]'),volvalue=slot.querySelector('.volvalue');
+ let objectUrl=null;
+ picker.addEventListener('change',async()=>{
+  const file=picker.files?.[0];if(!file)return;
+  audio.pause();audio.currentTime=0;
+  if(objectUrl)URL.revokeObjectURL(objectUrl);
+  objectUrl=URL.createObjectURL(file);audio.src=objectUrl;audio.volume=Number(volume.value);
+  name.textContent=file.name;play.disabled=false;stop.disabled=false;
+  try{await routeAudio(audio);setStatus('Sound '+(index+1)+' loaded: '+file.name)}
+  catch(e){setStatus(e.message)}
+ });
+ play.addEventListener('click',async()=>{
+  if(!audio.src)return;
+  try{await routeAudio(audio);await audio.play();setStatus('Playing sound '+(index+1)+'. Other slots can play at the same time.')}
+  catch(e){setStatus('Could not play sound '+(index+1)+': '+e.message)}
+ });
+ stop.addEventListener('click',()=>{audio.pause();audio.currentTime=0});
+ volume.addEventListener('input',()=>{audio.volume=Number(volume.value);volvalue.textContent=Math.round(Number(volume.value)*100)+'%'});
+ audio.addEventListener('ended',()=>{});
+});
+$('#stopAll').addEventListener('click',()=>{slots.forEach(s=>{const a=s.querySelector('audio');a.pause();a.currentTime=0});setStatus('All sounds stopped.')});
+$('#refresh').addEventListener('click',()=>refreshOutputs().then(()=>setStatus('Audio outputs refreshed.')).catch(e=>setStatus(e.message)));
+navigator.mediaDevices?.addEventListener?.('devicechange',refreshOutputs);
+refreshOutputs().catch(e=>setStatus('Could not list audio outputs: '+e.message));
+</script>
+</body>
+</html>
