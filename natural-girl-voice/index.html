@@ -38,20 +38,20 @@ footer{text-align:center;color:#827b98;font-size:12px;padding:18px}
  <section class="panel">
   <h2>Voice style</h2>
   <div class="presets">
-   <button class="preset active" data-pitch="2.5" data-formant="1.75"><strong>Natural feminine</strong><small>Balanced, believable</small></button>
+   <button class="preset" data-pitch="2.5" data-formant="1.75"><strong>Natural feminine</strong><small>Balanced, believable</small></button>
    <button class="preset" data-pitch="2" data-formant="1.25"><strong>Soft feminine</strong><small>Gentle, warm resonance</small></button>
    <button class="preset" data-pitch="4" data-formant="3.25"><strong>Anime girl</strong><small>Bright, youthful tone</small></button>
-   <button class="preset" data-pitch="4.5" data-formant="4"><strong>Bright anime</strong><small>Extra light and cute</small></button>
+   <button class="preset active" data-pitch="8" data-formant="8"><strong>Maximum anime</strong><small>Maximum pitch and resonance</small></button>
   </div>
   <div style="margin-top:20px">
    <label for="pitch"><span>Pitch shift</span><output id="pitchValue">+3.5 semitones</output></label>
-   <input id="pitch" type="range" min="0" max="7" step=".25" value="2.5"><div class="range-meta"><span>Original</span><span>Higher</span></div>
+   <input id="pitch" type="range" min="0" max="8" step=".25" value="8"><div class="range-meta"><span>Original</span><span>Higher</span></div>
   </div>
   <div style="margin-top:17px">
    <label for="formant"><span>Formant / vocal resonance</span><output id="formantValue">+2.0 semitones</output></label>
-   <input id="formant" type="range" min="-1" max="5" step=".25" value="1.75"><div class="range-meta"><span>Deeper</span><span>Lighter / brighter</span></div>
+   <input id="formant" type="range" min="-1" max="8" step=".25" value="8"><div class="range-meta"><span>Deeper</span><span>Lighter / brighter</span></div>
   </div>
-  <p class="note">Pitch changes the note; formants change vocal-tract resonance. For a natural feminine sound, start around +2 to +2.75 formant semitones. For an anime-style sound, try +3 to +4, then lower it if consonants become thin or squeaky. Every mic and voice responds differently.</p>
+  <p class="note">Pitch changes the note; formants change vocal-tract resonance. The maximum anime preset starts at +8 pitch and +8 formant. This is an extreme setting and may sound thin, squeaky, or distorted; lower either slider if needed. Every mic and voice responds differently.</p>
  </section>
  <section class="panel">
   <h2>How to use it with VRChat</h2>
@@ -63,7 +63,7 @@ footer{text-align:center;color:#827b98;font-size:12px;padding:18px}
 <script type="module">
 const $=id=>document.getElementById(id);
 let context=null,stream=null,stretch=null,source=null,monitor=null,streamDestination=null,activePreset='natural';
-let currentPitch=2.5,currentFormant=1.75;
+let currentPitch=8,currentFormant=8;
 const status=(message,live=false)=>{$('status').textContent=message;$('dot').classList.toggle('live',live)};
 const updateValues=()=>{
  currentPitch=Number($('pitch').value);currentFormant=Number($('formant').value);
