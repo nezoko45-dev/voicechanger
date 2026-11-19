@@ -42,6 +42,7 @@ main{width:min(900px,100%);margin:auto}.top{display:flex;align-items:center;gap:
 <div class="slot-head"><h2>Sound 2</h2><span class="tag">SLOT 2</span></div>
 <input class="file" type="file" accept="audio/*,.mp3,.wav,.ogg,.oga,.opus,.m4a,.aac,.flac,.aiff,.aif,.wma" aria-label="Choose audio file for sound 2">
 <div class="filename">No sound loaded</div>
+<div class="keyrow"><button class="btn bind" type="button">Set keybind</button><button class="btn clearbind" type="button" aria-label="Clear keybind">Clear</button><span class="keylabel">Unassigned</span></div>
 <div class="controls"><button class="btn play" disabled>▶ Play</button><button class="btn stop" disabled>■ Stop</button></div>
 <label class="volume">Volume <input type="range" min="0" max="1" step=".01" value="1"><span class="volvalue">100%</span></label>
 <audio preload="metadata"></audio>
@@ -49,6 +50,7 @@ main{width:min(900px,100%);margin:auto}.top{display:flex;align-items:center;gap:
 <div class="slot-head"><h2>Sound 3</h2><span class="tag">SLOT 3</span></div>
 <input class="file" type="file" accept="audio/*,.mp3,.wav,.ogg,.oga,.opus,.m4a,.aac,.flac,.aiff,.aif,.wma" aria-label="Choose audio file for sound 3">
 <div class="filename">No sound loaded</div>
+<div class="keyrow"><button class="btn bind" type="button">Set keybind</button><button class="btn clearbind" type="button" aria-label="Clear keybind">Clear</button><span class="keylabel">Unassigned</span></div>
 <div class="controls"><button class="btn play" disabled>▶ Play</button><button class="btn stop" disabled>■ Stop</button></div>
 <label class="volume">Volume <input type="range" min="0" max="1" step=".01" value="1"><span class="volvalue">100%</span></label>
 <audio preload="metadata"></audio>
@@ -56,6 +58,7 @@ main{width:min(900px,100%);margin:auto}.top{display:flex;align-items:center;gap:
 <div class="slot-head"><h2>Sound 4</h2><span class="tag">SLOT 4</span></div>
 <input class="file" type="file" accept="audio/*,.mp3,.wav,.ogg,.oga,.opus,.m4a,.aac,.flac,.aiff,.aif,.wma" aria-label="Choose audio file for sound 4">
 <div class="filename">No sound loaded</div>
+<div class="keyrow"><button class="btn bind" type="button">Set keybind</button><button class="btn clearbind" type="button" aria-label="Clear keybind">Clear</button><span class="keylabel">Unassigned</span></div>
 <div class="controls"><button class="btn play" disabled>▶ Play</button><button class="btn stop" disabled>■ Stop</button></div>
 <label class="volume">Volume <input type="range" min="0" max="1" step=".01" value="1"><span class="volvalue">100%</span></label>
 <audio preload="metadata"></audio>
@@ -98,7 +101,8 @@ slots.forEach((slot,index)=>{
  const bind=slot.querySelector('.bind'),clearbind=slot.querySelector('.clearbind'),keylabel=slot.querySelector('.keylabel');
  const slotNumber=String(index+1);
  let objectUrl=null;
- if(keyMap[slotNumber]){keylabel.textContent=keyLabel(keyMap[slotNumber]);bind.textContent='Change key';}\n clearbind.addEventListener('click',()=>{delete keyMap[slotNumber];keylabel.textContent='Unassigned';bind.textContent='Set keybind';saveKeys();setStatus('Keybind cleared for Sound '+slotNumber+'.')});
+ if(keyMap[slotNumber]){keylabel.textContent=keyLabel(keyMap[slotNumber]);bind.textContent='Change key';}
+ clearbind.addEventListener('click',()=>{delete keyMap[slotNumber];keylabel.textContent='Unassigned';bind.textContent='Set keybind';saveKeys();setStatus('Keybind cleared for Sound '+slotNumber+'.')});
  bind.addEventListener('click',()=>{
   if(activeBinding){activeBinding.classList.remove('listening');activeBinding.textContent='Change key';}
   activeBinding=bind;bind.classList.add('listening');bind.textContent='Press a key…';keylabel.textContent='Esc to cancel';
