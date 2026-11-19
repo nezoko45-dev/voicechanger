@@ -72,7 +72,7 @@ const updateValues=()=>{
 };
 function applySettings(){
  if(!stretch||!context)return;
- stretch.schedule({output:context.currentTime+Math.max(.08,stretch.latency?.()||.08),semitones:currentPitch,formantSemitones:currentFormant,formantCompensation:true,formantBaseHz:0});
+ stretch.schedule({semitones:currentPitch,formantSemitones:currentFormant,formantCompensation:true,formantBaseHz:0});
 }
 $('pitch').addEventListener('input',()=>{updateValues();document.querySelectorAll('.preset').forEach(b=>b.classList.remove('active'))});
 $('formant').addEventListener('input',()=>{updateValues();document.querySelectorAll('.preset').forEach(b=>b.classList.remove('active'))});
@@ -114,10 +114,12 @@ $('start').addEventListener('click',async()=>{
   const compressor=context.createDynamicsCompressor();compressor.threshold.value=-18;compressor.knee.value=18;compressor.ratio.value=2.2;compressor.attack.value=.008;compressor.release.value=.16;
   streamDestination=context.createMediaStreamDestination();
   stretch.connect(compressor);compressor.connect(streamDestination);
-  monitor=document.createElement('audio');monitor.autoplay=true;monitor.srcObject=streamDestination.stream;monitor.playsInline=true;monitor.style.display='none';document.body.append(monitor);
+  monitor=document.createElement('audio');monitor.autoplay=true;monitor.srcObject=streamDestination.stream;monitor.playsInline=true;monitor.style.position='fixed';monitor.style.width='1px';monitor.style.height='1px';monitor.style.opacity='0';monitor.style.pointerEvents='none';document.body.append(monitor);
   if(outputId&&typeof monitor.setSinkId==='function')await monitor.setSinkId(outputId);
   else if(outputId)throw new Error('This browser does not support selecting an audio output device.');
-  source.connect(stretch);stretch.start();applySettings();
+  await stretch.start();
+  source.connect(stretch);
+  await stretch.schedule({semitones:currentPitch,formantSemitones:currentFormant,formantCompensation:true,formantBaseHz:0});
   await monitor.play();
   $('stop').disabled=false;status('Live voice is running. Select the virtual cable as VRChat microphone.',true);
   const analyser=context.createAnalyser();analyser.fftSize=256;source.connect(analyser);const data=new Uint8Array(analyser.frequencyBinCount);
