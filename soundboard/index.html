@@ -129,7 +129,7 @@ slots.forEach((slot,index)=>{
  function stopLoop(){audio.loop=false;audio.pause();audio.currentTime=0}
  if(Number(slotNumber)<=2){
   play.addEventListener('pointerdown',event=>{if(event.button!==0)return;event.preventDefault();play.setPointerCapture?.(event.pointerId);startLoop(false)});
-  ['pointerup','pointercancel','lostpointercapture','pointerleave'].forEach(type=>play.addEventListener(type,stopLoop));
+  ['pointerup','pointercancel','lostpointercapture'].forEach(type=>play.addEventListener(type,stopLoop));
  }else{
   play.addEventListener('click',()=>playOnce(false));
  }
@@ -162,7 +162,7 @@ document.addEventListener('keyup',event=>{
  const entry=Object.entries(keyMap).find(([,code])=>code===event.code);
  if(entry&&Number(entry[0])<=2){const slot=slots[Number(entry[0])-1];if(slot)slot.stopLoop();}
 });
-function releaseAll(){heldKeys.forEach(code=>{const entry=Object.entries(keyMap).find(([,mapped])=>mapped===code);if(entry){const slot=slots[Number(entry[0])-1];if(slot)slot.stopLoop();}});heldKeys.clear();slots.forEach(slot=>{if(Number(slot.dataset.slot)<=2&&slot.stopLoop)slot.stopLoop()})}
+function releaseAll(){heldKeys.forEach(code=>{const entry=Object.entries(keyMap).find(([,mapped])=>mapped===code);if(entry&&Number(entry[0])<=2){const slot=slots[Number(entry[0])-1];if(slot)slot.stopLoop();}});heldKeys.clear();slots.forEach(slot=>{if(Number(slot.dataset.slot)<=2&&slot.stopLoop)slot.stopLoop()})}
 window.addEventListener('blur',releaseAll);
 $('#stopAll').addEventListener('click',()=>{releaseAll();setStatus('All sounds stopped.')});
 $('#refresh').addEventListener('click',()=>refreshOutputs().then(()=>setStatus('Audio outputs refreshed.')).catch(e=>setStatus(e.message)));
