@@ -13,7 +13,8 @@ main{width:min(900px,100%);margin:auto}.top{display:flex;align-items:center;gap:
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.slot-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.slot h2{font-size:16px;margin:0}.tag{font-size:11px;color:var(--muted);border:1px solid var(--line);padding:3px 8px;border-radius:20px}
 .file{display:block;width:100%;margin:15px 0 10px;color:var(--muted);font-size:13px}.filename{font-size:12px;color:var(--muted);overflow-wrap:anywhere;min-height:18px}
 .controls{display:flex;gap:8px;margin-top:13px}.btn{border:1px solid var(--line);border-radius:11px;padding:11px 15px;background:var(--panel2);color:var(--text);font:700 13px Inter,system-ui,sans-serif;cursor:pointer}.btn.play{background:linear-gradient(100deg,#e98bc7,#a995ff);color:#21172b;border:0;flex:1}.btn:disabled{opacity:.35;cursor:not-allowed}
-.keyrow{display:flex;align-items:center;gap:9px;margin-top:14px}.keyrow .btn{min-width:112px}.keylabel{font-size:12px;color:var(--muted)}.keyrow .btn.listening{border-color:var(--pink);color:var(--pink)}\n.volume{display:flex;align-items:center;gap:10px;margin-top:12px;color:var(--muted);font-size:12px}.volume input{width:100%;accent-color:var(--pink)}
+.keyrow{display:flex;align-items:center;gap:9px;margin-top:14px}.keyrow .btn{min-width:112px}.keylabel{font-size:12px;color:var(--muted)}.keyrow .btn.listening{border-color:var(--pink);color:var(--pink)}
+.volume{display:flex;align-items:center;gap:10px;margin-top:12px;color:var(--muted);font-size:12px}.volume input{width:100%;accent-color:var(--pink)}
 .actions{display:flex;gap:10px;flex-wrap:wrap}.note{font-size:12px;color:var(--muted);margin:12px 0 0}.status{font-size:13px;color:var(--muted);margin-top:12px}footer{text-align:center;color:#827b98;font-size:12px;padding:18px}
 @media(max-width:650px){.grid{grid-template-columns:1fr}.panel,.slot{padding:16px}}
 </style>
@@ -65,7 +66,12 @@ main{width:min(900px,100%);margin:auto}.top{display:flex;align-items:center;gap:
 <script>
 const $=s=>document.querySelector(s);
 const status=$('#status');
-const slots=[...document.querySelectorAll('.slot')];\nconst keyMap={};let activeBinding=null;\nconst keyNames={Space:'Space',Escape:'Esc',Enter:'Enter',ArrowUp:'↑',ArrowDown:'↓',ArrowLeft:'←',ArrowRight:'→'};\nfunction keyLabel(code){return keyNames[code]||code.replace(/^Key/,'').replace(/^Digit/,'').replace(/^Numpad/,'Num ')}\nfunction saveKeys(){try{localStorage.setItem('voicechanger-soundboard-keybinds',JSON.stringify(keyMap))}catch{}}\ntry{Object.assign(keyMap,JSON.parse(localStorage.getItem('voicechanger-soundboard-keybinds')||'{}'))}catch{}
+const slots=[...document.querySelectorAll('.slot')];
+const keyMap={};let activeBinding=null;
+const keyNames={Space:'Space',Escape:'Esc',Enter:'Enter',ArrowUp:'↑',ArrowDown:'↓',ArrowLeft:'←',ArrowRight:'→'};
+function keyLabel(code){return keyNames[code]||code.replace(/^Key/,'').replace(/^Digit/,'').replace(/^Numpad/,'Num ')}
+function saveKeys(){try{localStorage.setItem('voicechanger-soundboard-keybinds',JSON.stringify(keyMap))}catch{}}
+try{Object.assign(keyMap,JSON.parse(localStorage.getItem('voicechanger-soundboard-keybinds')||'{}'))}catch{}
 function setStatus(message){status.textContent=message}
 async function refreshOutputs(){
  const select=$('#output'),previous=select.value;
@@ -89,26 +95,53 @@ $('#output').addEventListener('change',async()=>{
 slots.forEach((slot,index)=>{
  const picker=slot.querySelector('.file'),audio=slot.querySelector('audio'),name=slot.querySelector('.filename');
  const play=slot.querySelector('.play'),stop=slot.querySelector('.stop'),volume=slot.querySelector('input[type=range]'),volvalue=slot.querySelector('.volvalue');
- let objectUrl=null;\n const bind=slot.querySelector('.bind'),keylabel=slot.querySelector('.keylabel');\n const slotNumber=String(index+1);\n if(keyMap[slotNumber])keylabel.textContent=keyLabel(keyMap[slotNumber]);\n bind.addEventListener('click',()=>{if(activeBinding)activeBinding.classList.remove('listening');activeBinding=bind;bind.classList.add('listening');bind.textContent='Press a key…';keylabel.textContent='Esc to cancel'});
+ const bind=slot.querySelector('.bind'),keylabel=slot.querySelector('.keylabel');
+ const slotNumber=String(index+1);
+ let objectUrl=null;
+ if(keyMap[slotNumber])keylabel.textContent=keyLabel(keyMap[slotNumber]);
+ bind.addEventListener('click',()=>{
+  if(activeBinding){activeBinding.classList.remove('listening');activeBinding.textContent='Change key';}
+  activeBinding=bind;bind.classList.add('listening');bind.textContent='Press a key…';keylabel.textContent='Esc to cancel';
+ });
  picker.addEventListener('change',async()=>{
   const file=picker.files?.[0];if(!file)return;
   audio.pause();audio.currentTime=0;
   if(objectUrl)URL.revokeObjectURL(objectUrl);
   objectUrl=URL.createObjectURL(file);audio.src=objectUrl;audio.volume=Number(volume.value);
   name.textContent=file.name;play.disabled=false;stop.disabled=false;
-  try{await routeAudio(audio);setStatus('Sound '+(index+1)+' loaded: '+file.name)}
+  try{await routeAudio(audio);setStatus('Sound '+slotNumber+' loaded: '+file.name)}
   catch(e){setStatus(e.message)}
  });
  async function playSound(fromKey=false){
   if(!audio.src)return;
-  try{await routeAudio(audio);await audio.play();setStatus('Playing sound '+(index+1)+'. Other slots can play at the same time.')}
-  catch(e){setStatus('Could not play sound '+(index+1)+': '+e.message)}
- });
+  try{if(!fromKey)await routeAudio(audio);audio.currentTime=0;await audio.play();setStatus('Playing sound '+slotNumber+(fromKey?' from its keybind.':'.'))}
+  catch(e){setStatus('Could not play sound '+slotNumber+': '+e.message)}
+ }
+ play.addEventListener('click',()=>playSound(false));
  stop.addEventListener('click',()=>{audio.pause();audio.currentTime=0});
  volume.addEventListener('input',()=>{audio.volume=Number(volume.value);volvalue.textContent=Math.round(Number(volume.value)*100)+'%'});
- audio.addEventListener('ended',()=>{});
+ slot.playFromKey=()=>playSound(true);
 });
-document.addEventListener('keydown',event=>{\n if(activeBinding){event.preventDefault();if(event.code==='Escape'){activeBinding.classList.remove('listening');activeBinding.textContent='Set keybind';activeBinding=null;return;}\n const slot=activeBinding.closest('.slot'),number=slot.dataset.slot;\n const conflict=Object.entries(keyMap).find(([n,code])=>n!==number&&code===event.code);\n if(conflict){setStatus('That key is already assigned to Sound '+conflict[0]+'. Choose another key.');return;}\n keyMap[number]=event.code;slot.querySelector('.keylabel').textContent=keyLabel(event.code);activeBinding.classList.remove('listening');activeBinding.textContent='Change key';activeBinding=null;saveKeys();setStatus('Key '+keyLabel(event.code)+' assigned to Sound '+number+'.');return;\n }\n if(event.repeat||event.ctrlKey||event.altKey||event.metaKey)return;\n const target=event.target;if(target&&(/INPUT|SELECT|TEXTAREA|BUTTON/.test(target.tagName)||target.isContentEditable))return;\n const entry=Object.entries(keyMap).find(([,code])=>code===event.code);if(!entry)return;\n event.preventDefault();const slot=slots[Number(entry[0])-1];if(slot)slot.querySelector('.play').click();\n});\n$('#stopAll').addEventListener('click',()=>{slots.forEach(s=>{const a=s.querySelector('audio');a.pause();a.currentTime=0});setStatus('All sounds stopped.')});
+document.addEventListener('keydown',event=>{
+ if(activeBinding){
+  event.preventDefault();
+  if(event.code==='Escape'){activeBinding.classList.remove('listening');activeBinding.textContent='Change key';activeBinding.closest('.slot').querySelector('.keylabel').textContent='Unassigned';activeBinding=null;return;}
+  const slot=activeBinding.closest('.slot'),number=slot.dataset.slot;
+  const conflict=Object.entries(keyMap).find(([n,code])=>n!==number&&code===event.code);
+  if(conflict){setStatus('That key is already assigned to Sound '+conflict[0]+'. Choose another key.');return;}
+  keyMap[number]=event.code;slot.querySelector('.keylabel').textContent=keyLabel(event.code);
+  activeBinding.classList.remove('listening');activeBinding.textContent='Change key';activeBinding=null;saveKeys();
+  setStatus('Key '+keyLabel(event.code)+' assigned to Sound '+number+'.');return;
+ }
+ if(event.repeat||event.ctrlKey||event.altKey||event.metaKey)return;
+ const target=event.target;
+ if(target&&( /INPUT|SELECT|TEXTAREA|BUTTON/.test(target.tagName)||target.isContentEditable))return;
+ const entry=Object.entries(keyMap).find(([,code])=>code===event.code);
+ if(!entry)return;
+ event.preventDefault();
+ const slot=slots[Number(entry[0])-1];if(slot)slot.playFromKey();
+});
+$('#stopAll').addEventListener('click',()=>{slots.forEach(s=>{const a=s.querySelector('audio');a.pause();a.currentTime=0});setStatus('All sounds stopped.')});
 $('#refresh').addEventListener('click',()=>refreshOutputs().then(()=>setStatus('Audio outputs refreshed.')).catch(e=>setStatus(e.message)));
 navigator.mediaDevices?.addEventListener?.('devicechange',refreshOutputs);
 refreshOutputs().catch(e=>setStatus('Could not list audio outputs: '+e.message));
