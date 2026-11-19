@@ -163,7 +163,6 @@ document.addEventListener('keyup',event=>{
  if(entry&&Number(entry[0])<=2){const slot=slots[Number(entry[0])-1];if(slot)slot.stopLoop();}
 });
 function releaseAll(){heldKeys.forEach(code=>{const entry=Object.entries(keyMap).find(([,mapped])=>mapped===code);if(entry&&Number(entry[0])<=2){const slot=slots[Number(entry[0])-1];if(slot)slot.stopLoop();}});heldKeys.clear();slots.forEach(slot=>{if(Number(slot.dataset.slot)<=2&&slot.stopLoop)slot.stopLoop()})}
-window.addEventListener('blur',releaseAll);
 $('#stopAll').addEventListener('click',()=>{releaseAll();setStatus('All sounds stopped.')});
 $('#refresh').addEventListener('click',()=>refreshOutputs().then(()=>setStatus('Audio outputs refreshed.')).catch(e=>setStatus(e.message)));
 navigator.mediaDevices?.addEventListener?.('devicechange',refreshOutputs);
