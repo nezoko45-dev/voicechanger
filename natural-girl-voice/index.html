@@ -51,7 +51,7 @@ footer{text-align:center;color:#827b98;font-size:12px;padding:18px}
    <label for="formant"><span>Formant / vocal resonance</span><output id="formantValue">+4.5 semitones</output></label>
    <input id="formant" type="range" min="-1" max="7" step=".25" value="4.5"><div class="range-meta"><span>Deeper</span><span>Lighter / brighter</span></div>
   </div>
-  <p class="note">Formants shape vocal resonance and are especially important for feminine character. This preset applies a stronger resonance lift than pitch lift. If it sounds too bright or cartoon-like, lower formant first; if it still sounds masculine, raise formant gradually.</p>
+  <p class="note">Live pitch and formant updates are applied to the active processor. Formant shifting changes vocal resonance, but it is not a complete voice-conversion model and may not fully feminize every voice.</p>
  </section>
  <section class="panel">
   <h2>How to use it with VRChat</h2>
@@ -73,7 +73,7 @@ const updateValues=()=>{
 };
 function applySettings(){
  if(!stretch||!context)return;
- stretch.schedule({semitones:currentPitch,formantSemitones:currentFormant,formantCompensation:true,formantBaseHz:0});
+ stretch.schedule({active:true,semitones:currentPitch,formantSemitones:currentFormant,formantCompensation:true,formantBaseHz:120});
 }
 $('pitch').addEventListener('input',()=>{updateValues();document.querySelectorAll('.preset').forEach(b=>b.classList.remove('active'))});
 $('formant').addEventListener('input',()=>{updateValues();document.querySelectorAll('.preset').forEach(b=>b.classList.remove('active'))});
@@ -120,7 +120,7 @@ $('start').addEventListener('click',async()=>{
   else if(outputId)throw new Error('This browser does not support selecting an audio output device.');
   await stretch.start();
   source.connect(stretch);
-  await stretch.schedule({semitones:currentPitch,formantSemitones:currentFormant,formantCompensation:true,formantBaseHz:0});
+  await stretch.schedule({active:true,semitones:currentPitch,formantSemitones:currentFormant,formantCompensation:true,formantBaseHz:120});
   await monitor.play();
   $('stop').disabled=false;status('Live voice is running. Select the virtual cable as VRChat microphone.',true);
   const analyser=context.createAnalyser();analyser.fftSize=256;source.connect(analyser);const data=new Uint8Array(analyser.frequencyBinCount);
