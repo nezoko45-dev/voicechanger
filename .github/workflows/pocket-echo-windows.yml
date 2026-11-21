@@ -41,7 +41,8 @@ jobs:
           $exe = Get-ChildItem -Path $extract -Recurse -Filter "pocket-tts.exe" | Select-Object -First 1
           if (-not $exe) { throw "Pocket TTS archive did not contain pocket-tts.exe. Asset: $($asset.name)" }
           New-Item -ItemType Directory -Force -Path "pocket-echo/bin" | Out-Null
-          Copy-Item $exe.FullName "pocket-echo/bin/pocket-tts.exe" -Force
+          Copy-Item $exe.DirectoryName "pocket-echo/bin" -Recurse -Force
+          if (-not (Test-Path "pocket-echo/bin/pocket-tts.exe")) { Copy-Item $exe.FullName "pocket-echo/bin/pocket-tts.exe" -Force }
 
       - name: Restore and publish
         run: dotnet publish pocket-echo/PocketEcho.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o pocket-echo/publish
@@ -49,7 +50,7 @@ jobs:
       - name: Bundle Pocket TTS engine
         shell: pwsh
         run: |
-          Copy-Item "pocket-echo/bin/pocket-tts.exe" "pocket-echo/publish/pocket-tts.exe" -Force
+          Copy-Item "pocket-echo/bin/*" "pocket-echo/publish/" -Recurse -Force
           if (-not (Test-Path "pocket-echo/publish/PocketEcho.exe")) { throw "PocketEcho.exe was not produced." }
 
       - name: Package
