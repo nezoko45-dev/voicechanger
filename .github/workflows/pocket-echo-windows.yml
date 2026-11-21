@@ -41,7 +41,7 @@ jobs:
       - name: Restore and publish
         run: dotnet publish pocket-echo/PocketEcho.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o pocket-echo/publish
 
-      - name: Bundle Pocket TTS engine
+      - name: Bundle FFmpeg and 7-Zip tools
         shell: pwsh
         run: |
           Copy-Item "pocket-echo/bin/*" "pocket-echo/publish/" -Recurse -Force
