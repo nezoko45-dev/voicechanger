@@ -82,7 +82,7 @@ function recoverCurrentSpeech(reason){
   try{speechSynthesis.cancel()}catch(e){}
   reading=false;currentUtterance=null;
   setTimeout(()=>{
-    suppressSpeechEvents=false;loadVoices();
+    suppressSpeechEvents=false;recoveryBusy=false;loadVoices();
     if(retry<=2){
       status.textContent=retry===1?'Reconnecting speech playback…':'Retrying with the browser default voice…';
       startQueuedSpeech(text,retry,retry>=2);
