@@ -332,7 +332,7 @@ public sealed class MainForm : Form
         if (string.IsNullOrWhiteSpace(preparedVoice) || !File.Exists(preparedVoice)) return;
         if (pocketServer is null || pocketServer.HasExited)
         {
-            SetStatus("Pocket TTS server is not running. Prepare the cloned voice again.");
+            SetStatus("GPT-SoVITS server is not running. Prepare the cloned voice again.");
             startButton.Enabled = true;
             return;
         }
@@ -411,51 +411,6 @@ public sealed class MainForm : Form
         });
     }
 
-
-    private async Task StartPocketServerAsync(string voiceProfile)
-    {
-        try { if (pocketServer is { HasExited: false }) pocketServer.Kill(true); } catch { }
-        pocketServer?.Dispose();
-        pocketServer = null;
-        lock (serverLog) serverLog.Clear();
-
-        var psi = new ProcessStartInfo(pocketExe)
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            WorkingDirectory = AppContext.BaseDirectory
-        };
-        foreach (var arg in new[] { "serve", "--host", "127.0.0.1", "--port", "18654", "--default-voice", voiceProfile })
-            psi.ArgumentList.Add(arg);
-
-        pocketServer = new Process { StartInfo = psi, EnableRaisingEvents = true };
-        pocketServer.OutputDataReceived += (_, e) => { if (e.Data is not null) lock (serverLog) serverLog.AppendLine(e.Data); };
-        pocketServer.ErrorDataReceived += (_, e) => { if (e.Data is not null) lock (serverLog) serverLog.AppendLine(e.Data); };
-        pocketServer.Start();
-        pocketServer.BeginOutputReadLine();
-        pocketServer.BeginErrorReadLine();
-
-        SetStatus("Loading Pocket TTS model into memory… first launch may download model files.");
-        for (var i = 0; i < 300; i++)
-        {
-            if (pocketServer.HasExited)
-            {
-                string log;
-                lock (serverLog) log = serverLog.ToString();
-                throw new Exception("Pocket TTS server stopped during startup. " + log);
-            }
-            try
-            {
-                using var response = await http.GetAsync(ServerUrl + "/health");
-                if (response.IsSuccessStatusCode) return;
-            }
-            catch { }
-            await Task.Delay(1000);
-        }
-        throw new TimeoutException("Pocket TTS model did not finish loading within five minutes.");
-    }
 
     private async Task GenerateAudioAsync(string phrase, string outputPath)
     {
