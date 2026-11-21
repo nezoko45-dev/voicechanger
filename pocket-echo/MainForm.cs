@@ -182,7 +182,9 @@ public sealed class MainForm : Form
         }
         catch (Exception ex)
         {
-            SetStatus("Voice preparation failed: " + ex.Message);
+            var detail = ExplainPocketFailure(ex.ToString());
+            SetStatus("Voice preparation failed. See the details window.");
+            MessageBox.Show(this, detail, "Pocket Echo — model download", MessageBoxButtons.OK, MessageBoxIcon.Error);
             prepareButton.Enabled = true;
         }
         finally
@@ -359,6 +361,27 @@ public sealed class MainForm : Form
         _ = await stdout;
         if (process.ExitCode != 0)
             throw new Exception("Audio conversion failed. " + (string.IsNullOrWhiteSpace(error) ? "The file may be damaged or use an unsupported codec." : error.Trim()));
+    }
+
+    private static string ExplainPocketFailure(string raw)
+    {
+        var authFailure = raw.Contains("401", StringComparison.OrdinalIgnoreCase)
+            || raw.Contains("403", StringComparison.OrdinalIgnoreCase)
+            || raw.Contains("gated", StringComparison.OrdinalIgnoreCase)
+            || raw.Contains("unauthorized", StringComparison.OrdinalIgnoreCase)
+            || raw.Contains("authentication", StringComparison.OrdinalIgnoreCase)
+            || raw.Contains("access to this resource", StringComparison.OrdinalIgnoreCase);
+
+        if (!authFailure) return raw;
+
+        return "Hugging Face refused the Pocket TTS model download. The official voice-cloning weights are gated, so the model must be enabled for your Hugging Face account.\r\n\r\n"
+            + "1. Open https://huggingface.co/kyutai/pocket-tts while signed in.\r\n"
+            + "2. Accept/request access to the model if Hugging Face shows an access form.\r\n"
+            + "3. Create a Hugging Face READ access token at https://huggingface.co/settings/tokens.\r\n"
+            + "4. In Windows Command Prompt, run: setx HF_TOKEN \"hf_your_token_here\"\r\n"
+            + "5. Close and reopen Pocket Echo so it inherits the new token, then click Prepare cloned voice again.\r\n\r\n"
+            + "Keep the token private. Do not send it to anyone.\r\n\r\n"
+            + "Technical details:\r\n" + raw;
     }
 
     private async Task RunPocketAsync(params string[] args)
