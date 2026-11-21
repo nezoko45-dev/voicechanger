@@ -217,9 +217,33 @@ public sealed class MainForm : Form
 
         Directory.CreateDirectory(engineDir);
         var archive = Path.Combine(workDir, "GPT-SoVITS-v2pro-20250604.7z");
-        const string packageUrl = "https://www.modelscope.cn/models/FlowerCry/gpt-sovits-7z-pacakges/resolve/master/GPT-SoVITS-v2pro-20250604.7z";
-        SetStatus("Downloading GPT-SoVITS package from ModelScope…");
-        await DownloadPackageWithProgressAsync(packageUrl, archive);
+        var packageUrls = new[]
+        {
+            "https://modelscope.cn/models/FlowerCry/gpt-sovits-7z-pacakges/resolve/master/GPT-SoVITS-v2pro-20250604.7z",
+            "https://www.modelscope.cn/models/FlowerCry/gpt-sovits-7z-pacakges/resolve/master/GPT-SoVITS-v2pro-20250604.7z?download=true",
+            "https://huggingface.co/lj1995/GPT-SoVITS-windows-package/resolve/main/GPT-SoVITS-v2pro-20250604.7z"
+        };
+        var downloadErrors = new List<string>();
+        var downloaded = false;
+        foreach (var packageUrl in packageUrls)
+        {
+            try
+            {
+                SetStatus(packageUrl.Contains("huggingface.co", StringComparison.OrdinalIgnoreCase)
+                    ? "Trying public fallback mirror for GPT-SoVITS…"
+                    : "Downloading GPT-SoVITS package from ModelScope…");
+                await DownloadPackageWithProgressAsync(packageUrl, archive);
+                downloaded = true;
+                break;
+            }
+            catch (Exception ex)
+            {
+                downloadErrors.Add(packageUrl + " — " + ex.Message);
+                try { if (File.Exists(archive)) File.Delete(archive); } catch { }
+            }
+        }
+        if (!downloaded)
+            throw new HttpRequestException("All GPT-SoVITS download mirrors failed. Details: " + string.Join(Environment.NewLine, downloadErrors));
 
         setupProgress.Style = ProgressBarStyle.Marquee;
         SetStatus("Extracting the local voice engine (this can take several minutes)…");
@@ -251,7 +275,7 @@ public sealed class MainForm : Form
 
     private async Task DownloadPackageWithProgressAsync(string url, string destination)
     {
-        using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);\n        request.Headers.UserAgent.ParseAdd("PocketEcho/1.0");\n        request.Headers.Accept.ParseAdd("application/octet-stream");\n        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
         var total = response.Content.Headers.ContentLength;
         await using var source = await response.Content.ReadAsStreamAsync();
