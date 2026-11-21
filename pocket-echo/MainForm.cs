@@ -337,6 +337,30 @@ public sealed class MainForm : Form
         await input.CopyToAsync(output);
     }
 
+    private async Task RunFfmpegAsync(string inputPath, string outputPath)
+    {
+        var psi = new ProcessStartInfo(ffmpegExe)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            WorkingDirectory = AppContext.BaseDirectory
+        };
+        foreach (var arg in new[] { "-hide_banner", "-loglevel", "error", "-y", "-i", inputPath, "-t", "30", "-vn", "-ac", "1", "-ar", "24000", "-sample_fmt", "s16", outputPath })
+            psi.ArgumentList.Add(arg);
+
+        using var process = new Process { StartInfo = psi };
+        process.Start();
+        var stdout = process.StandardOutput.ReadToEndAsync();
+        var stderr = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        var error = await stderr;
+        _ = await stdout;
+        if (process.ExitCode != 0)
+            throw new Exception("Audio conversion failed. " + (string.IsNullOrWhiteSpace(error) ? "The file may be damaged or use an unsupported codec." : error.Trim()));
+    }
+
     private async Task RunPocketAsync(params string[] args)
     {
         var psi = new ProcessStartInfo(pocketExe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = AppContext.BaseDirectory };
@@ -347,8 +371,12 @@ public sealed class MainForm : Form
         var stderr = process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync();
         var error = await stderr;
-        _ = await stdout;
-        if (process.ExitCode != 0) throw new Exception(string.IsNullOrWhiteSpace(error) ? "Pocket TTS exited with code " + process.ExitCode : error.Trim());
+        var output = await stdout;
+        if (process.ExitCode != 0)
+        {
+            var detail = string.Join(Environment.NewLine, new[] { error.Trim(), output.Trim() }.Where(x => !string.IsNullOrWhiteSpace(x)));
+            throw new Exception(string.IsNullOrWhiteSpace(detail) ? "Pocket TTS exited with code " + process.ExitCode : detail);
+        }
     }
 
     private async Task PlayAudioAsync(string path)
