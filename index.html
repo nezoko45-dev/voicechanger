@@ -26,24 +26,107 @@ label{display:block;font-weight:600;margin:12px 0 6px}.settings{display:grid;gri
 </main>
 <script>
 const box=document.querySelector('#text'),status=document.querySelector('#status'),start=document.querySelector('#start'),stop=document.querySelector('#stop'),voiceSelect=document.querySelector('#voice');
-let voices=[],recognition=null,listening=false,keepListening=false,restartTimer=null,autoRead=true,queue=[],reading=false;
-function loadVoices(){voices=speechSynthesis.getVoices();const old=voiceSelect.value;voiceSelect.innerHTML='';const ms=voices.filter(v=>/microsoft/i.test(v.name)),multi=ms.filter(v=>/ava/i.test(v.name)&&/multi.?lingual/i.test(v.name)),ava=ms.filter(v=>/ava/i.test(v.name)&&!/multi.?lingual/i.test(v.name)),preferred=[...multi,...ava,...ms.filter(v=>!/ava/i.test(v.name))],ordered=[...preferred,...voices.filter(v=>!preferred.includes(v))];ordered.forEach(v=>{const o=document.createElement('option');o.value=voices.indexOf(v);o.textContent=v.name+' ('+v.lang+')';voiceSelect.append(o)});if(old&&[...voiceSelect.options].some(o=>o.value===old))voiceSelect.value=old;else if(preferred.length)voiceSelect.value=String(voices.indexOf(preferred[0]));if(!voices.length){voiceSelect.innerHTML='<option value="">No speech voices exposed by this browser</option>'}}
+let voices=[],recognition=null,listening=false,keepListening=false,restartTimer=null,autoRead=true;
+let queue=[],reading=false,currentText='',currentRetries=0,currentUtterance=null,paused=false;
+let suppressSpeechEvents=false,lastSpeechProgress=0,speechStartedAt=0,recoveryBusy=false;
+function loadVoices(){
+  voices=speechSynthesis.getVoices();
+  const old=voiceSelect.value;voiceSelect.innerHTML='';
+  const ms=voices.filter(v=>/microsoft/i.test(v.name));
+  const multi=ms.filter(v=>/ava/i.test(v.name)&&/multi.?lingual/i.test(v.name));
+  const ava=ms.filter(v=>/ava/i.test(v.name)&&!/multi.?lingual/i.test(v.name));
+  const preferred=[...multi,...ava,...ms.filter(v=>!/ava/i.test(v.name))];
+  const ordered=[...preferred,...voices.filter(v=>!preferred.includes(v))];
+  ordered.forEach(v=>{const o=document.createElement('option');o.value=voices.indexOf(v);o.textContent=v.name+' ('+v.lang+')';voiceSelect.append(o)});
+  if(old&&[...voiceSelect.options].some(o=>o.value===old))voiceSelect.value=old;
+  else if(preferred.length)voiceSelect.value=String(voices.indexOf(preferred[0]));
+  if(!voices.length)voiceSelect.innerHTML='<option value="">Browser default voice (will retry)</option>';
+}
 loadVoices();speechSynthesis.onvoiceschanged=loadVoices;
-function next(){if(reading||!queue.length)return;const u=new SpeechSynthesisUtterance(queue.shift()),v=voices[Number(voiceSelect.value)];if(v)u.voice=v;u.rate=Number(document.querySelector('#rate').value);u.lang=v?.lang||'en-US';reading=true;u.onend=u.onerror=()=>{reading=false;next()};speechSynthesis.speak(u)}
+
+function selectedVoice(){return voices[Number(voiceSelect.value)]||null}
+function makeUtterance(text,forceDefault){
+  const u=new SpeechSynthesisUtterance(text),v=forceDefault?null:selectedVoice();
+  if(v)u.voice=v;
+  u.rate=Number(document.querySelector('#rate').value);
+  u.lang=v?.lang||'en-US';
+  return u;
+}
+function startQueuedSpeech(text,retry=0,forceDefault=false){
+  currentText=text;currentRetries=retry;reading=true;paused=false;
+  const u=makeUtterance(text,forceDefault);currentUtterance=u;
+  speechStartedAt=Date.now();lastSpeechProgress=speechStartedAt;
+  u.onstart=()=>{if(currentUtterance!==u)return;lastSpeechProgress=Date.now();status.textContent='Reading aloud…'};
+  u.onboundary=()=>{if(currentUtterance===u)lastSpeechProgress=Date.now()};
+  u.onend=()=>{if(currentUtterance!==u)return;currentUtterance=null;reading=false;currentText='';currentRetries=0;recoveryBusy=false;next()};
+  u.onerror=e=>{
+    if(currentUtterance!==u||suppressSpeechEvents)return;
+    if(e.error==='canceled'&& !reading)return;
+    recoverCurrentSpeech('Speech output interrupted ('+(e.error||'unknown error')+').');
+  };
+  try{speechSynthesis.speak(u)}catch(e){recoverCurrentSpeech('Could not start speech output.')}
+}
+function next(){if(reading||paused||!queue.length)return;startQueuedSpeech(queue.shift())}
 function enqueue(s){if(s.trim()){queue.push(s.trim());next()}}
+function cancelSpeech(){
+  suppressSpeechEvents=true;reading=false;paused=false;currentUtterance=null;currentText='';currentRetries=0;
+  try{speechSynthesis.cancel()}catch(e){}
+  setTimeout(()=>{suppressSpeechEvents=false},250);
+}
+function recoverCurrentSpeech(reason){
+  if(recoveryBusy||!currentText||paused)return;
+  recoveryBusy=true;
+  const text=currentText,retry=currentRetries+1;
+  status.textContent='Recovering audio output… '+reason;
+  suppressSpeechEvents=true;
+  try{speechSynthesis.cancel()}catch(e){}
+  reading=false;currentUtterance=null;
+  setTimeout(()=>{
+    suppressSpeechEvents=false;loadVoices();
+    if(retry<=2){
+      status.textContent=retry===1?'Reconnecting speech playback…':'Retrying with the browser default voice…';
+      startQueuedSpeech(text,retry,retry>=2);
+    }else{
+      currentText='';recoveryBusy=false;status.textContent='Audio playback could not recover. The page is still ready; press Read aloud to retry.';
+      next();
+    }
+  },450);
+}
+function recoverAfterDeviceChange(){
+  if(reading&&!paused&&currentText)recoverCurrentSpeech('Audio device changed.');
+}
+if(navigator.mediaDevices?.addEventListener){
+  navigator.mediaDevices.addEventListener('devicechange',recoverAfterDeviceChange);
+}
+window.addEventListener('focus',()=>{if(reading&&!paused&&!speechSynthesis.speaking&&Date.now()-lastSpeechProgress>2500)recoverCurrentSpeech('Playback stopped after returning to this page.')});
+window.addEventListener('pageshow',()=>{if(reading&&!paused&&!speechSynthesis.speaking&&Date.now()-lastSpeechProgress>2500)recoverCurrentSpeech('Playback was interrupted.')});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&reading&&!paused&&!speechSynthesis.speaking&&Date.now()-lastSpeechProgress>2500)recoverCurrentSpeech('Playback was interrupted while the page was in the background.')});
+setInterval(()=>{
+  if(!reading||paused||recoveryBusy||!currentText)return;
+  const age=Date.now()-lastSpeechProgress;
+  if((!speechStartedAt||Date.now()-speechStartedAt>12000)&&!speechSynthesis.speaking&&age>5000)
+    recoverCurrentSpeech('The speech engine stopped responding.');
+},2500);
+
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 if(SR){
- recognition=new SR();recognition.lang='en-US';recognition.continuous=true;recognition.interimResults=true;let finalized='';
- function beginRecognition(){if(!keepListening||listening)return;try{recognition.start()}catch(e){if(e.name==='InvalidStateError'){clearTimeout(restartTimer);restartTimer=setTimeout(beginRecognition,400)}else{status.textContent='Could not restart dictation: '+e.message}}}
- recognition.onstart=()=>{listening=true;start.disabled=true;stop.disabled=false;status.textContent='Listening…'};
- recognition.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal){finalized+=t.trim()+' ';if(autoRead)enqueue(t)}else interim+=t}box.value=(box.dataset.prefix||'')+finalized+interim;box.scrollTop=box.scrollHeight};
- recognition.onerror=e=>{status.textContent='Dictation error: '+e.error+'. '+(e.error==='not-allowed'?'Allow microphone access to continue.':'Restarting recognition…');if(e.error==='not-allowed'||e.error==='service-not-allowed'){keepListening=false;clearTimeout(restartTimer)}};
- recognition.onend=()=>{listening=false;box.dataset.prefix=box.value;finalized='';if(keepListening){status.textContent='Recognition ended. Restarting…';clearTimeout(restartTimer);restartTimer=setTimeout(beginRecognition,350)}else{start.disabled=false;stop.disabled=true;if(status.textContent==='Listening…')status.textContent='Dictation stopped.'}};
- start.onclick=()=>{keepListening=true;clearTimeout(restartTimer);box.dataset.prefix=box.value?box.value.trimEnd()+' ':'';finalized='';beginRecognition()};
- stop.onclick=()=>{keepListening=false;clearTimeout(restartTimer);if(listening)recognition.stop();else{start.disabled=false;stop.disabled=true;status.textContent='Dictation stopped.'}};
+  recognition=new SR();recognition.lang='en-US';recognition.continuous=true;recognition.interimResults=true;let finalized='';
+  function beginRecognition(){if(!keepListening||listening)return;try{recognition.start()}catch(e){if(e.name==='InvalidStateError'){clearTimeout(restartTimer);restartTimer=setTimeout(beginRecognition,400)}else{status.textContent='Could not restart dictation: '+e.message}}}
+  recognition.onstart=()=>{listening=true;start.disabled=true;stop.disabled=false;status.textContent='Listening…'};
+  recognition.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal){finalized+=t.trim()+' ';if(autoRead)enqueue(t)}else interim+=t}box.value=(box.dataset.prefix||'')+finalized+interim;box.scrollTop=box.scrollHeight};
+  recognition.onerror=e=>{status.textContent='Dictation error: '+e.error+'. '+(e.error==='not-allowed'?'Allow microphone access to continue.':'Restarting recognition…');if(e.error==='not-allowed'||e.error==='service-not-allowed'){keepListening=false;clearTimeout(restartTimer)}};
+  recognition.onend=()=>{listening=false;box.dataset.prefix=box.value;finalized='';if(keepListening){status.textContent='Recognition ended. Restarting…';clearTimeout(restartTimer);restartTimer=setTimeout(beginRecognition,350)}else{start.disabled=false;stop.disabled=true;if(status.textContent==='Listening…')status.textContent='Dictation stopped.'}};
+  start.onclick=()=>{keepListening=true;clearTimeout(restartTimer);box.dataset.prefix=box.value?box.value.trimEnd()+' ':'';finalized='';beginRecognition()};
+  stop.onclick=()=>{keepListening=false;clearTimeout(restartTimer);if(listening)recognition.stop();else{start.disabled=false;stop.disabled=true;status.textContent='Dictation stopped.'}};
 }else{start.disabled=true;status.textContent='Speech recognition is unsupported here. Open this page in current Microsoft Edge.'}
-document.querySelector('#speak').onclick=()=>{const t=box.value.trim();if(!t)return;queue=[];speechSynthesis.cancel();reading=false;const u=new SpeechSynthesisUtterance(t),v=voices[Number(voiceSelect.value)];if(v)u.voice=v;u.rate=Number(document.querySelector('#rate').value);u.lang=v?.lang||'en-US';u.onstart=()=>status.textContent='Reading aloud…';u.onend=()=>status.textContent='Finished reading.';speechSynthesis.speak(u)};
+
+document.querySelector('#speak').onclick=()=>{
+  const t=box.value.trim();if(!t)return;
+  queue=[];cancelSpeech();setTimeout(()=>startQueuedSpeech(t),300);
+};
 document.querySelector('#autoRead').onclick=()=>{autoRead=!autoRead;const b=document.querySelector('#autoRead');b.textContent='Auto read: '+(autoRead?'ON':'OFF');b.setAttribute('aria-pressed',String(autoRead));status.textContent=autoRead?'Automatic read-aloud is on.':'Automatic read-aloud is off.'};
-document.querySelector('#pause').onclick=()=>{if(speechSynthesis.speaking){if(speechSynthesis.paused){speechSynthesis.resume();status.textContent='Reading aloud…'}else{speechSynthesis.pause();status.textContent='Paused.'}}};
-document.querySelector('#clear').onclick=()=>{box.value='';box.dataset.prefix='';queue=[];speechSynthesis.cancel();reading=false;status.textContent='Cleared.'};
+document.querySelector('#pause').onclick=()=>{
+  if(reading&&speechSynthesis.speaking){if(speechSynthesis.paused){speechSynthesis.resume();paused=false;lastSpeechProgress=Date.now();status.textContent='Reading aloud…'}else{speechSynthesis.pause();paused=true;status.textContent='Paused.'}}
+};
+document.querySelector('#clear').onclick=()=>{box.value='';box.dataset.prefix='';queue=[];cancelSpeech();status.textContent='Cleared.'};
 </script></body></html>
