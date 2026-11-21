@@ -219,7 +219,7 @@ public sealed class MainForm : Form
         {
             try
             {
-                BeginInvoke(() => AppendTranscript("You: " + phrase));
+                BeginInvoke(new Action(() => AppendTranscript("You: " + phrase)));
                 var wav = Path.Combine(workDir, "speech-" + Guid.NewGuid().ToString("N") + ".wav");
                 await RunPocketAsync("generate", "--text", phrase, "--voice", preparedVoice!, "--output-path", wav, "--quiet");
                 if (File.Exists(wav))
@@ -269,11 +269,11 @@ public sealed class MainForm : Form
     {
         using var reader = new AudioFileReader(path);
         using var player = new WaveOutEvent { DeviceNumber = outputDevice, DesiredLatency = 100 };
-        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var done = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         player.PlaybackStopped += (_, e) =>
         {
             if (e.Exception is not null) done.TrySetException(e.Exception);
-            else done.TrySetResult();
+            else done.TrySetResult(true);
         };
         player.Init(reader);
         player.Play();
@@ -301,7 +301,7 @@ public sealed class MainForm : Form
     private void SetStatus(string message)
     {
         if (IsDisposed) return;
-        if (InvokeRequired) { try { BeginInvoke(() => SetStatus(message)); } catch { } return; }
+        if (InvokeRequired) { try { BeginInvoke(new Action(() => SetStatus(message))); } catch { } return; }
         statusLabel.Text = message;
     }
 
