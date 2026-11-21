@@ -275,7 +275,10 @@ public sealed class MainForm : Form
 
     private async Task DownloadPackageWithProgressAsync(string url, string destination)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);\n        request.Headers.UserAgent.ParseAdd("PocketEcho/1.0");\n        request.Headers.Accept.ParseAdd("application/octet-stream");\n        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.UserAgent.ParseAdd("PocketEcho/1.0");
+        request.Headers.Accept.ParseAdd("application/octet-stream");
+        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
         var total = response.Content.Headers.ContentLength;
         await using var source = await response.Content.ReadAsStreamAsync();
