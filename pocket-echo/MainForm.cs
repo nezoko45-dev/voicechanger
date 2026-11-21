@@ -238,12 +238,12 @@ public sealed class MainForm : Form
                 {
                     try
                     {
-                        BeginInvoke(() =>
+                        BeginInvoke(new Action(() =>
                         {
                             if (!listening || recognizer is null) return;
                             try { recognizer.RecognizeAsync(RecognizeMode.Multiple); }
                             catch (Exception ex) { SetStatus("Couldn't resume listening: " + ex.Message); }
-                        });
+                        }));
                     }
                     catch { }
                 }
