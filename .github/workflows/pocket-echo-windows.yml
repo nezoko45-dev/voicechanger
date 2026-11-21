@@ -23,6 +23,7 @@ jobs:
       - name: Download 7-Zip standalone extractor
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force -Path "pocket-echo/bin" | Out-Null
           Invoke-WebRequest -Uri "https://www.7-zip.org/a/7zr.exe" -OutFile "pocket-echo/bin/7zr.exe"
           if ((Get-Item "pocket-echo/bin/7zr.exe").Length -lt 100000) { throw "7zr.exe download is incomplete." }
 
