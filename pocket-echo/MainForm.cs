@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Net.Http;
+using System.Text;
 using System.Speech.Recognition;
 using NAudio.Wave;
 
@@ -24,6 +26,10 @@ public sealed class MainForm : Form
     private int outputDevice;
     private readonly string pocketExe = Path.Combine(AppContext.BaseDirectory, "pocket-tts.exe");
     private readonly string workDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PocketEcho");
+    private readonly HttpClient http = new() { Timeout = TimeSpan.FromMinutes(5) };
+    private Process? pocketServer;
+    private readonly StringBuilder serverLog = new();
+    private const string ServerUrl = "http://127.0.0.1:18654";
 
     public MainForm()
     {
@@ -44,7 +50,14 @@ public sealed class MainForm : Form
         {
             if (outputDevices.SelectedItem is OutputChoice choice) outputDevice = choice.Index;
         };
-        FormClosing += (_, _) => { listening = false; try { recognizer?.Dispose(); } catch { } };
+        FormClosing += (_, _) =>
+        {
+            listening = false;
+            try { recognizer?.Dispose(); } catch { }
+            try { if (pocketServer is { HasExited: false }) pocketServer.Kill(true); } catch { }
+            pocketServer?.Dispose();
+            http.Dispose();
+        };
         Directory.CreateDirectory(workDir);
     }
 
@@ -153,8 +166,9 @@ public sealed class MainForm : Form
             await RunPocketAsync("export-voice", selectedReference!, output);
             if (!File.Exists(output)) throw new Exception("Pocket TTS did not create the voice profile.");
             preparedVoice = output;
+            await StartPocketServerAsync(output);
             startButton.Enabled = true;
-            SetStatus("Voice is ready! Start listening when you're ready.");
+            SetStatus("Voice is loaded and ready! Start listening when you're ready.");
         }
         catch (Exception ex)
         {
@@ -171,9 +185,10 @@ public sealed class MainForm : Form
     private void StartListening(object? sender, EventArgs e)
     {
         if (string.IsNullOrWhiteSpace(preparedVoice) || !File.Exists(preparedVoice)) return;
-        if (!File.Exists(pocketExe))
+        if (!File.Exists(pocketExe) || pocketServer is null || pocketServer.HasExited)
         {
-            SetStatus("Pocket TTS engine is missing from the app folder.");
+            SetStatus("Pocket TTS server is not running. Prepare the cloned voice again.");
+            startButton.Enabled = true;
             return;
         }
         try
@@ -221,7 +236,7 @@ public sealed class MainForm : Form
             {
                 BeginInvoke(new Action(() => AppendTranscript("You: " + phrase)));
                 var wav = Path.Combine(workDir, "speech-" + Guid.NewGuid().ToString("N") + ".wav");
-                await RunPocketAsync("generate", "--text", phrase, "--voice", preparedVoice!, "--output-path", wav, "--quiet");
+                await GenerateAudioAsync(phrase, wav);
                 if (File.Exists(wav))
                 {
                     await PlayAudioAsync(wav);
@@ -249,6 +264,67 @@ public sealed class MainForm : Form
                 }
             }
         });
+    }
+
+
+    private async Task StartPocketServerAsync(string voiceProfile)
+    {
+        try { if (pocketServer is { HasExited: false }) pocketServer.Kill(true); } catch { }
+        pocketServer?.Dispose();
+        pocketServer = null;
+        lock (serverLog) serverLog.Clear();
+
+        var psi = new ProcessStartInfo(pocketExe)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            WorkingDirectory = AppContext.BaseDirectory
+        };
+        foreach (var arg in new[] { "serve", "--host", "127.0.0.1", "--port", "18654", "--default-voice", voiceProfile })
+            psi.ArgumentList.Add(arg);
+
+        pocketServer = new Process { StartInfo = psi, EnableRaisingEvents = true };
+        pocketServer.OutputDataReceived += (_, e) => { if (e.Data is not null) lock (serverLog) serverLog.AppendLine(e.Data); };
+        pocketServer.ErrorDataReceived += (_, e) => { if (e.Data is not null) lock (serverLog) serverLog.AppendLine(e.Data); };
+        pocketServer.Start();
+        pocketServer.BeginOutputReadLine();
+        pocketServer.BeginErrorReadLine();
+
+        SetStatus("Loading Pocket TTS model into memory… first launch may download model files.");
+        for (var i = 0; i < 300; i++)
+        {
+            if (pocketServer.HasExited)
+            {
+                string log;
+                lock (serverLog) log = serverLog.ToString();
+                throw new Exception("Pocket TTS server stopped during startup. " + log);
+            }
+            try
+            {
+                using var response = await http.GetAsync(ServerUrl + "/health");
+                if (response.IsSuccessStatusCode) return;
+            }
+            catch { }
+            await Task.Delay(1000);
+        }
+        throw new TimeoutException("Pocket TTS model did not finish loading within five minutes.");
+    }
+
+    private async Task GenerateAudioAsync(string phrase, string outputPath)
+    {
+        using var form = new MultipartFormDataContent();
+        form.Add(new StringContent(phrase), "text");
+        using var response = await http.PostAsync(ServerUrl + "/tts", form);
+        if (!response.IsSuccessStatusCode)
+        {
+            var detail = await response.Content.ReadAsStringAsync();
+            throw new Exception("Pocket TTS server returned " + (int)response.StatusCode + ": " + detail);
+        }
+        await using var input = await response.Content.ReadAsStreamAsync();
+        await using var output = File.Create(outputPath);
+        await input.CopyToAsync(output);
     }
 
     private async Task RunPocketAsync(params string[] args)
