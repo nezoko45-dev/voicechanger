@@ -230,7 +230,7 @@ public sealed class MainForm : Form
             }
             catch (Exception ex)
             {
-                BeginInvoke(() => SetStatus("Speech generation error: " + ex.Message));
+                BeginInvoke(new Action(() => SetStatus("Speech generation error: " + ex.Message)));
             }
             finally
             {
