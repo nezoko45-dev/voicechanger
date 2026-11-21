@@ -1,0 +1,65 @@
+name: Build Pocket Echo for Windows
+
+on:
+  push:
+    paths:
+      - "pocket-echo/**"
+      - ".github/workflows/pocket-echo-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Download official Pocket TTS Windows binary
+        shell: pwsh
+        run: |
+          $release = Invoke-RestMethod -Headers @{ "User-Agent" = "PocketEcho-build" } -Uri "https://api.github.com/repos/kyutai-labs/pocket-tts/releases/latest"
+          $asset = $release.assets | Where-Object { $_.name -match "windows" -and $_.name -match "x86_64" -and $_.name -match "\.(zip|tar\.gz)$" } | Select-Object -First 1
+          if (-not $asset) {
+            $asset = $release.assets | Where-Object { $_.name -match "pc-windows" -and $_.name -match "\.(zip|tar\.gz)$" } | Select-Object -First 1
+          }
+          if (-not $asset) { throw "Could not find a Pocket TTS Windows x86_64 release archive." }
+          Invoke-WebRequest -Headers @{ "User-Agent" = "PocketEcho-build" } -Uri $asset.browser_download_url -OutFile "$env:RUNNER_TEMP/pocket-tts-archive"
+          $archive = "$env:RUNNER_TEMP/pocket-tts-archive"
+          $extract = "$env:RUNNER_TEMP/pocket-tts"
+          New-Item -ItemType Directory -Force -Path $extract | Out-Null
+          if ($asset.name.EndsWith(".zip")) {
+            Expand-Archive -Path $archive -DestinationPath $extract -Force
+          } else {
+            tar -xzf $archive -C $extract
+          }
+          $exe = Get-ChildItem -Path $extract -Recurse -Filter "pocket-tts.exe" | Select-Object -First 1
+          if (-not $exe) { throw "Pocket TTS archive did not contain pocket-tts.exe. Asset: $($asset.name)" }
+          New-Item -ItemType Directory -Force -Path "pocket-echo/bin" | Out-Null
+          Copy-Item $exe.FullName "pocket-echo/bin/pocket-tts.exe" -Force
+
+      - name: Restore and publish
+        run: dotnet publish pocket-echo/PocketEcho.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o pocket-echo/publish
+
+      - name: Bundle Pocket TTS engine
+        shell: pwsh
+        run: |
+          Copy-Item "pocket-echo/bin/pocket-tts.exe" "pocket-echo/publish/pocket-tts.exe" -Force
+          if (-not (Test-Path "pocket-echo/publish/PocketEcho.exe")) { throw "PocketEcho.exe was not produced." }
+
+      - name: Package
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "pocket-echo/publish/*" -DestinationPath "PocketEcho-windows-x64.zip" -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PocketEcho-windows-x64
+          path: PocketEcho-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 30
