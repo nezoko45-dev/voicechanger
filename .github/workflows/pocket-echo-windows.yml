@@ -20,29 +20,11 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
-      - name: Download official Pocket TTS Windows binary
+      - name: Download 7-Zip standalone extractor
         shell: pwsh
         run: |
-          $release = Invoke-RestMethod -Headers @{ "User-Agent" = "PocketEcho-build" } -Uri "https://api.github.com/repos/kyutai-labs/pocket-tts/releases/latest"
-          $asset = $release.assets | Where-Object { $_.name -match "windows" -and $_.name -match "x86_64" -and $_.name -match "\.(zip|tar\.gz)$" } | Select-Object -First 1
-          if (-not $asset) {
-            $asset = $release.assets | Where-Object { $_.name -match "pc-windows" -and $_.name -match "\.(zip|tar\.gz)$" } | Select-Object -First 1
-          }
-          if (-not $asset) { throw "Could not find a Pocket TTS Windows x86_64 release archive." }
-          Invoke-WebRequest -Headers @{ "User-Agent" = "PocketEcho-build" } -Uri $asset.browser_download_url -OutFile "$env:RUNNER_TEMP/pocket-tts-archive"
-          $archive = "$env:RUNNER_TEMP/pocket-tts-archive"
-          $extract = "$env:RUNNER_TEMP/pocket-tts"
-          New-Item -ItemType Directory -Force -Path $extract | Out-Null
-          if ($asset.name.EndsWith(".zip")) {
-            Expand-Archive -Path $archive -DestinationPath $extract -Force
-          } else {
-            tar -xzf $archive -C $extract
-          }
-          $exe = Get-ChildItem -Path $extract -Recurse -Filter "pocket-tts.exe" | Select-Object -First 1
-          if (-not $exe) { throw "Pocket TTS archive did not contain pocket-tts.exe. Asset: $($asset.name)" }
-          New-Item -ItemType Directory -Force -Path "pocket-echo/bin" | Out-Null
-          Copy-Item "$($exe.DirectoryName)/*" "pocket-echo/bin/" -Recurse -Force
-          if (-not (Test-Path "pocket-echo/bin/pocket-tts.exe")) { Copy-Item $exe.FullName "pocket-echo/bin/pocket-tts.exe" -Force }
+          Invoke-WebRequest -Uri "https://www.7-zip.org/a/7zr.exe" -OutFile "pocket-echo/bin/7zr.exe"
+          if ((Get-Item "pocket-echo/bin/7zr.exe").Length -lt 100000) { throw "7zr.exe download is incomplete." }
 
       - name: Download FFmpeg audio converter
         shell: pwsh
