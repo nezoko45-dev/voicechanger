@@ -41,7 +41,7 @@ jobs:
           $exe = Get-ChildItem -Path $extract -Recurse -Filter "pocket-tts.exe" | Select-Object -First 1
           if (-not $exe) { throw "Pocket TTS archive did not contain pocket-tts.exe. Asset: $($asset.name)" }
           New-Item -ItemType Directory -Force -Path "pocket-echo/bin" | Out-Null
-          Copy-Item $exe.DirectoryName "pocket-echo/bin" -Recurse -Force
+          Copy-Item "$($exe.DirectoryName)/*" "pocket-echo/bin/" -Recurse -Force
           if (-not (Test-Path "pocket-echo/bin/pocket-tts.exe")) { Copy-Item $exe.FullName "pocket-echo/bin/pocket-tts.exe" -Force }
 
       - name: Restore and publish
