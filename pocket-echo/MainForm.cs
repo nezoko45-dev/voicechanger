@@ -25,6 +25,7 @@ public sealed class MainForm : Form
     private bool preparing;
     private int outputDevice;
     private readonly string pocketExe = Path.Combine(AppContext.BaseDirectory, "pocket-tts.exe");
+    private readonly string ffmpegExe = Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe");
     private readonly string workDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PocketEcho");
     private readonly HttpClient http = new() { Timeout = TimeSpan.FromMinutes(5) };
     private Process? pocketServer;
@@ -135,7 +136,7 @@ public sealed class MainForm : Form
         using var dialog = new OpenFileDialog
         {
             Title = "Choose a voice reference recording",
-            Filter = "Supported audio|*.wav;*.mp3;*.flac;*.ogg;*.m4a|All files|*.*",
+            Filter = "Audio files|*.wav;*.mp3;*.flac;*.ogg;*.m4a;*.aac;*.wma;*.aiff;*.aif;*.opus;*.webm;*.mp4|All files|*.*",
             CheckFileExists = true
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
@@ -158,13 +159,22 @@ public sealed class MainForm : Form
         preparing = true;
         prepareButton.Enabled = false;
         chooseButton.Enabled = false;
-        SetStatus("Cloning voice reference… this can take a little while.");
+        SetStatus("Converting your recording and preparing the cloned voice…");
         try
         {
+            if (!File.Exists(ffmpegExe))
+                throw new FileNotFoundException("The audio converter (ffmpeg.exe) is missing from this Pocket Echo package. Download the newest Windows build.", ffmpegExe);
+
+            var normalizedAudio = Path.Combine(workDir, "voice-reference.wav");
+            if (File.Exists(normalizedAudio)) File.Delete(normalizedAudio);
+            await RunFfmpegAsync(selectedReference!, normalizedAudio);
+            if (!File.Exists(normalizedAudio) || new FileInfo(normalizedAudio).Length < 4096)
+                throw new Exception("The selected recording could not be converted to a usable WAV file. Try another recording.");
+
             var output = Path.Combine(workDir, "reference-voice.safetensors");
             if (File.Exists(output)) File.Delete(output);
-            await RunPocketAsync("export-voice", selectedReference!, output);
-            if (!File.Exists(output)) throw new Exception("Pocket TTS did not create the voice profile.");
+            await RunPocketAsync("export-voice", normalizedAudio, output, "--quiet");
+            if (!File.Exists(output) || new FileInfo(output).Length < 1024) throw new Exception("Pocket TTS did not create a valid voice profile. Check that the recording contains clear speech.");
             preparedVoice = output;
             await StartPocketServerAsync(output);
             startButton.Enabled = true;
