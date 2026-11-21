@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using System.Speech.Recognition;
 using NAudio.Wave;
 
@@ -10,6 +11,8 @@ namespace PocketEcho;
 public sealed class MainForm : Form
 {
     private readonly TextBox referencePath = new() { ReadOnly = true, Dock = DockStyle.Fill, PlaceholderText = "Choose a WAV, MP3, FLAC, OGG, or M4A voice sample…" };
+    private readonly TextBox referenceTranscript = new() { Dock = DockStyle.Fill, PlaceholderText = "Type the exact words spoken in your reference recording…" };
+    private readonly ProgressBar setupProgress = new() { Dock = DockStyle.Fill, Style = ProgressBarStyle.Continuous, Minimum = 0, Maximum = 100, Value = 0 };
     private readonly ComboBox outputDevices = new() { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
     private readonly Button chooseButton = new() { Text = "Choose voice sample…", AutoSize = true };
     private readonly Button prepareButton = new() { Text = "Prepare cloned voice", AutoSize = true, Enabled = false };
@@ -24,13 +27,14 @@ public sealed class MainForm : Form
     private bool listening;
     private bool preparing;
     private int outputDevice;
-    private readonly string pocketExe = Path.Combine(AppContext.BaseDirectory, "pocket-tts.exe");
+    private readonly string sevenZipExe = Path.Combine(AppContext.BaseDirectory, "7zr.exe");
     private readonly string ffmpegExe = Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe");
     private readonly string workDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PocketEcho");
-    private readonly HttpClient http = new() { Timeout = TimeSpan.FromMinutes(5) };
+    private readonly string engineDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PocketEcho", "GPT-SoVITS");
+    private readonly HttpClient http = new() { Timeout = Timeout.InfiniteTimeSpan };
     private Process? pocketServer;
     private readonly StringBuilder serverLog = new();
-    private const string ServerUrl = "http://127.0.0.1:18654";
+    private const string ServerUrl = "http://127.0.0.1:9880";
 
     public MainForm()
     {
@@ -64,14 +68,17 @@ public sealed class MainForm : Form
 
     private void BuildLayout()
     {
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(24), ColumnCount = 1, RowCount = 7 };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 70));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(24), ColumnCount = 1, RowCount = 10 };
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
         Controls.Add(root);
 
         var heading = new Label { Text = "♫  POCKET ECHO", Font = new Font("Segoe UI Semibold", 22F), ForeColor = Color.FromArgb(244, 151, 211), Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
@@ -84,13 +91,15 @@ public sealed class MainForm : Form
         fileRow.Controls.Add(referencePath, 0, 0);
         fileRow.Controls.Add(chooseButton, 1, 0);
         root.Controls.Add(fileRow, 0, 2);
+        root.Controls.Add(new Label { Text = "Reference transcript (required for accurate cloning)", ForeColor = Color.Gainsboro, Dock = DockStyle.Fill, TextAlign = ContentAlignment.BottomLeft }, 0, 3);
+        root.Controls.Add(referenceTranscript, 0, 4);
 
         var outputRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2 };
         outputRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 145));
         outputRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         outputRow.Controls.Add(new Label { Text = "Audio output", ForeColor = Color.Gainsboro, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
         outputRow.Controls.Add(outputDevices, 1, 0);
-        root.Controls.Add(outputRow, 0, 3);
+        root.Controls.Add(outputRow, 0, 5);
 
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight };
         StyleButton(prepareButton, Color.FromArgb(111, 83, 153));
@@ -99,14 +108,15 @@ public sealed class MainForm : Form
         buttons.Controls.Add(prepareButton);
         buttons.Controls.Add(startButton);
         buttons.Controls.Add(stopButton);
-        root.Controls.Add(buttons, 0, 4);
+        root.Controls.Add(buttons, 0, 6);
+        root.Controls.Add(setupProgress, 0, 7);
 
         var logPanel = new Panel { Dock = DockStyle.Fill };
         var logTitle = new Label { Text = "Recognized speech", ForeColor = Color.Gainsboro, Dock = DockStyle.Top, Height = 28 };
         logPanel.Controls.Add(transcript);
         logPanel.Controls.Add(logTitle);
-        root.Controls.Add(logPanel, 0, 5);
-        root.Controls.Add(statusLabel, 0, 6);
+        root.Controls.Add(logPanel, 0, 8);
+        root.Controls.Add(statusLabel, 0, 9);
     }
 
     private static void StyleButton(Button button, Color color)
@@ -151,40 +161,43 @@ public sealed class MainForm : Form
     private async Task PrepareVoiceAsync()
     {
         if (string.IsNullOrWhiteSpace(selectedReference) || preparing) return;
-        if (!File.Exists(pocketExe))
+        if (string.IsNullOrWhiteSpace(referenceTranscript.Text))
         {
-            SetStatus("Pocket TTS engine is missing. Download the Pocket Echo release package.");
+            MessageBox.Show(this, "Enter the exact words spoken in your reference recording. GPT-SoVITS uses both the audio and its transcript.", "Reference transcript required", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            referenceTranscript.Focus();
             return;
         }
+
         preparing = true;
         prepareButton.Enabled = false;
         chooseButton.Enabled = false;
-        SetStatus("Converting your recording and preparing the cloned voice…");
+        setupProgress.Style = ProgressBarStyle.Continuous;
+        setupProgress.Value = 0;
+        SetStatus("Preparing your local GPT-SoVITS voice engine…");
         try
         {
-            if (!File.Exists(ffmpegExe))
-                throw new FileNotFoundException("The audio converter (ffmpeg.exe) is missing from this Pocket Echo package. Download the newest Windows build.", ffmpegExe);
+            if (!File.Exists(ffmpegExe)) throw new FileNotFoundException("ffmpeg.exe is missing from this Pocket Echo package.", ffmpegExe);
+            if (!File.Exists(sevenZipExe)) throw new FileNotFoundException("7zr.exe is missing from this Pocket Echo package.", sevenZipExe);
 
             var normalizedAudio = Path.Combine(workDir, "voice-reference.wav");
             if (File.Exists(normalizedAudio)) File.Delete(normalizedAudio);
+            SetStatus("Converting reference audio…");
             await RunFfmpegAsync(selectedReference!, normalizedAudio);
             if (!File.Exists(normalizedAudio) || new FileInfo(normalizedAudio).Length < 4096)
-                throw new Exception("The selected recording could not be converted to a usable WAV file. Try another recording.");
+                throw new Exception("The selected recording could not be converted to a usable WAV file.");
 
-            var output = Path.Combine(workDir, "reference-voice.safetensors");
-            if (File.Exists(output)) File.Delete(output);
-            await RunPocketAsync("export-voice", normalizedAudio, output, "--quiet");
-            if (!File.Exists(output) || new FileInfo(output).Length < 1024) throw new Exception("Pocket TTS did not create a valid voice profile. Check that the recording contains clear speech.");
-            preparedVoice = output;
-            await StartPocketServerAsync(output);
+            await EnsureGptSoVitsAsync();
+            preparedVoice = normalizedAudio;
+            await StartGptServerAsync();
             startButton.Enabled = true;
-            SetStatus("Voice is loaded and ready! Start listening when you're ready.");
+            setupProgress.Value = 100;
+            SetStatus("GPT-SoVITS is loaded locally! Start listening when you're ready.");
         }
         catch (Exception ex)
         {
-            var detail = ExplainPocketFailure(ex.ToString());
-            SetStatus("Voice preparation failed. See the details window.");
-            MessageBox.Show(this, detail, "Pocket Echo — model download", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            setupProgress.Style = ProgressBarStyle.Continuous;
+            SetStatus("Voice preparation failed. See details.");
+            MessageBox.Show(this, ex.ToString(), "Pocket Echo — GPT-SoVITS setup", MessageBoxButtons.OK, MessageBoxIcon.Error);
             prepareButton.Enabled = true;
         }
         finally
@@ -194,10 +207,130 @@ public sealed class MainForm : Form
         }
     }
 
+    private async Task EnsureGptSoVitsAsync()
+    {
+        var apiFile = Directory.Exists(engineDir)
+            ? Directory.GetFiles(engineDir, "api_v2.py", SearchOption.AllDirectories).FirstOrDefault()
+            : null;
+        var pythonFile = apiFile is null ? null : Directory.GetFiles(Path.GetDirectoryName(apiFile)!, "python.exe", SearchOption.AllDirectories).FirstOrDefault();
+        if (apiFile is not null && pythonFile is not null) return;
+
+        Directory.CreateDirectory(engineDir);
+        var archive = Path.Combine(workDir, "GPT-SoVITS-v2pro-20250604.7z");
+        const string packageUrl = "https://www.modelscope.cn/models/FlowerCry/gpt-sovits-7z-pacakges/resolve/master/GPT-SoVITS-v2pro-20250604.7z";
+        SetStatus("Downloading GPT-SoVITS package from ModelScope…");
+        await DownloadPackageWithProgressAsync(packageUrl, archive);
+
+        setupProgress.Style = ProgressBarStyle.Marquee;
+        SetStatus("Extracting the local voice engine (this can take several minutes)…");
+        var extract = new ProcessStartInfo(sevenZipExe)
+        {
+            UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true,
+            RedirectStandardError = true, WorkingDirectory = engineDir
+        };
+        extract.ArgumentList.Add("x");
+        extract.ArgumentList.Add(archive);
+        extract.ArgumentList.Add("-o" + engineDir);
+        extract.ArgumentList.Add("-y");
+        using var unzip = new Process { StartInfo = extract };
+        unzip.Start();
+        var outTask = unzip.StandardOutput.ReadToEndAsync();
+        var errTask = unzip.StandardError.ReadToEndAsync();
+        await unzip.WaitForExitAsync();
+        var extractionLog = (await outTask) + Environment.NewLine + (await errTask);
+        if (unzip.ExitCode != 0) throw new Exception("GPT-SoVITS extraction failed: " + extractionLog);
+        try { File.Delete(archive); } catch { }
+
+        apiFile = Directory.GetFiles(engineDir, "api_v2.py", SearchOption.AllDirectories).FirstOrDefault();
+        if (apiFile is null) throw new FileNotFoundException("The downloaded package did not contain api_v2.py.");
+        pythonFile = Directory.GetFiles(Path.GetDirectoryName(apiFile)!, "python.exe", SearchOption.AllDirectories).FirstOrDefault();
+        if (pythonFile is null) throw new FileNotFoundException("The GPT-SoVITS package did not contain its bundled runtime/python.exe.");
+        setupProgress.Style = ProgressBarStyle.Continuous;
+        setupProgress.Value = 85;
+    }
+
+    private async Task DownloadPackageWithProgressAsync(string url, string destination)
+    {
+        using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+        response.EnsureSuccessStatusCode();
+        var total = response.Content.Headers.ContentLength;
+        await using var source = await response.Content.ReadAsStreamAsync();
+        await using var target = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 128, true);
+        var buffer = new byte[1024 * 128];
+        long received = 0;
+        int count;
+        while ((count = await source.ReadAsync(buffer)) > 0)
+        {
+            await target.WriteAsync(buffer.AsMemory(0, count));
+            received += count;
+            if (total is > 0)
+            {
+                var percent = (int)Math.Clamp(received * 100d / total.Value, 0, 100);
+                if (!IsDisposed) BeginInvoke(new Action(() =>
+                {
+                    setupProgress.Style = ProgressBarStyle.Continuous;
+                    setupProgress.Value = percent;
+                    SetStatus($"Downloading GPT-SoVITS: {received / 1048576d:0} MB / {total.Value / 1048576d:0} MB ({percent}%)");
+                }));
+            }
+            else if (!IsDisposed) BeginInvoke(new Action(() => SetStatus($"Downloading GPT-SoVITS: {received / 1048576d:0} MB")));
+        }
+    }
+
+    private async Task StartGptServerAsync()
+    {
+        try { if (pocketServer is { HasExited: false }) pocketServer.Kill(true); } catch { }
+        pocketServer?.Dispose();
+        pocketServer = null;
+        lock (serverLog) serverLog.Clear();
+
+        var apiFile = Directory.GetFiles(engineDir, "api_v2.py", SearchOption.AllDirectories).FirstOrDefault()
+            ?? throw new FileNotFoundException("GPT-SoVITS api_v2.py is missing.");
+        var root = Path.GetDirectoryName(apiFile)!;
+        var python = Directory.GetFiles(root, "python.exe", SearchOption.AllDirectories).FirstOrDefault()
+            ?? throw new FileNotFoundException("Bundled GPT-SoVITS python.exe is missing.");
+        var psi = new ProcessStartInfo(python)
+        {
+            UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true,
+            RedirectStandardError = true, WorkingDirectory = root
+        };
+        psi.Environment["PYTHONIOENCODING"] = "utf-8";
+        psi.ArgumentList.Add(apiFile);
+        psi.ArgumentList.Add("-a"); psi.ArgumentList.Add("127.0.0.1");
+        psi.ArgumentList.Add("-p"); psi.ArgumentList.Add("9880");
+
+        pocketServer = new Process { StartInfo = psi, EnableRaisingEvents = true };
+        pocketServer.OutputDataReceived += (_, e) => { if (e.Data is not null) { lock (serverLog) serverLog.AppendLine(e.Data); if (e.Data.Contains("Loading", StringComparison.OrdinalIgnoreCase)) SetStatus("Loading GPT-SoVITS model weights into GPU memory…"); } };
+        pocketServer.ErrorDataReceived += (_, e) => { if (e.Data is not null) lock (serverLog) serverLog.AppendLine(e.Data); };
+        pocketServer.Start();
+        pocketServer.BeginOutputReadLine();
+        pocketServer.BeginErrorReadLine();
+
+        setupProgress.Style = ProgressBarStyle.Marquee;
+        SetStatus("Starting GPT-SoVITS and loading model weights…");
+        for (var i = 0; i < 600; i++)
+        {
+            if (pocketServer.HasExited)
+            {
+                string log; lock (serverLog) log = serverLog.ToString();
+                throw new Exception("GPT-SoVITS stopped during startup. " + log);
+            }
+            try
+            {
+                using var response = await http.GetAsync(ServerUrl + "/docs");
+                if (response.IsSuccessStatusCode) { setupProgress.Style = ProgressBarStyle.Continuous; setupProgress.Value = 100; return; }
+            }
+            catch { }
+            await Task.Delay(1000);
+        }
+        string lastLog; lock (serverLog) lastLog = serverLog.ToString();
+        throw new TimeoutException("GPT-SoVITS did not finish loading within ten minutes. " + lastLog);
+    }
+
     private void StartListening(object? sender, EventArgs e)
     {
         if (string.IsNullOrWhiteSpace(preparedVoice) || !File.Exists(preparedVoice)) return;
-        if (!File.Exists(pocketExe) || pocketServer is null || pocketServer.HasExited)
+        if (pocketServer is null || pocketServer.HasExited)
         {
             SetStatus("Pocket TTS server is not running. Prepare the cloned voice again.");
             startButton.Enabled = true;
@@ -326,13 +459,24 @@ public sealed class MainForm : Form
 
     private async Task GenerateAudioAsync(string phrase, string outputPath)
     {
-        using var form = new MultipartFormDataContent();
-        form.Add(new StringContent(phrase), "text");
-        using var response = await http.PostAsync(ServerUrl + "/tts", form);
+        var request = new
+        {
+            text = phrase,
+            text_lang = "en",
+            ref_audio_path = preparedVoice,
+            prompt_text = referenceTranscript.Text.Trim(),
+            prompt_lang = "en",
+            text_split_method = "cut5",
+            batch_size = 1,
+            media_type = "wav",
+            streaming_mode = false
+        };
+        using var content = new StringContent(JsonSerializer.Serialize(request), Encoding.UTF8, "application/json");
+        using var response = await http.PostAsync(ServerUrl + "/tts", content);
         if (!response.IsSuccessStatusCode)
         {
             var detail = await response.Content.ReadAsStringAsync();
-            throw new Exception("Pocket TTS server returned " + (int)response.StatusCode + ": " + detail);
+            throw new Exception("GPT-SoVITS returned HTTP " + (int)response.StatusCode + ": " + detail);
         }
         await using var input = await response.Content.ReadAsStreamAsync();
         await using var output = File.Create(outputPath);
@@ -361,45 +505,6 @@ public sealed class MainForm : Form
         _ = await stdout;
         if (process.ExitCode != 0)
             throw new Exception("Audio conversion failed. " + (string.IsNullOrWhiteSpace(error) ? "The file may be damaged or use an unsupported codec." : error.Trim()));
-    }
-
-    private static string ExplainPocketFailure(string raw)
-    {
-        var authFailure = raw.Contains("401", StringComparison.OrdinalIgnoreCase)
-            || raw.Contains("403", StringComparison.OrdinalIgnoreCase)
-            || raw.Contains("gated", StringComparison.OrdinalIgnoreCase)
-            || raw.Contains("unauthorized", StringComparison.OrdinalIgnoreCase)
-            || raw.Contains("authentication", StringComparison.OrdinalIgnoreCase)
-            || raw.Contains("access to this resource", StringComparison.OrdinalIgnoreCase);
-
-        if (!authFailure) return raw;
-
-        return "Hugging Face refused the Pocket TTS model download. The official voice-cloning weights are gated, so the model must be enabled for your Hugging Face account.\r\n\r\n"
-            + "1. Open https://huggingface.co/kyutai/pocket-tts while signed in.\r\n"
-            + "2. Accept/request access to the model if Hugging Face shows an access form.\r\n"
-            + "3. Create a Hugging Face READ access token at https://huggingface.co/settings/tokens.\r\n"
-            + "4. In Windows Command Prompt, run: setx HF_TOKEN \"hf_your_token_here\"\r\n"
-            + "5. Close and reopen Pocket Echo so it inherits the new token, then click Prepare cloned voice again.\r\n\r\n"
-            + "Keep the token private. Do not send it to anyone.\r\n\r\n"
-            + "Technical details:\r\n" + raw;
-    }
-
-    private async Task RunPocketAsync(params string[] args)
-    {
-        var psi = new ProcessStartInfo(pocketExe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = AppContext.BaseDirectory };
-        foreach (var arg in args) psi.ArgumentList.Add(arg);
-        using var process = new Process { StartInfo = psi };
-        process.Start();
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
-        var error = await stderr;
-        var output = await stdout;
-        if (process.ExitCode != 0)
-        {
-            var detail = string.Join(Environment.NewLine, new[] { error.Trim(), output.Trim() }.Where(x => !string.IsNullOrWhiteSpace(x)));
-            throw new Exception(string.IsNullOrWhiteSpace(detail) ? "Pocket TTS exited with code " + process.ExitCode : detail);
-        }
     }
 
     private async Task PlayAudioAsync(string path)
