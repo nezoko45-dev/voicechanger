@@ -108,52 +108,54 @@ setInterval(()=>{
 
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 if(SR){
-  let activeRecognition=null,sessionNumber=0,finalized='',restartDelay=1000,lastRecognitionError='',restartTimer=null,errorFallbackTimer=null;
+  let activeRecognition=null,sessionNumber=0,restartDelay=350,lastRecognitionError='',restartTimer=null,errorFallbackTimer=null;
   function setDictationStatus(message){status.textContent=message}
   function scheduleRecognitionRestart(){
     if(!keepListening)return;
     clearTimeout(restartTimer);
-    const delay=Math.min(restartDelay,15000);
+    const delay=lastRecognitionError==='network'?Math.min(Math.max(restartDelay,1500),15000):Math.min(restartDelay,1200);
     setDictationStatus(lastRecognitionError==='network'
-      ?'Chrome speech service disconnected. Starting a fresh connection…'
-      :'Dictation reconnecting…');
+      ?'Chrome speech service disconnected. Reconnecting…'
+      :'Listening again…');
     restartTimer=setTimeout(startFreshRecognition,delay);
-    restartDelay=Math.min(Math.round(restartDelay*1.8),15000);
+    restartDelay=lastRecognitionError==='network'?Math.min(Math.round(Math.max(restartDelay,1500)*1.7),15000):350;
   }
   function startFreshRecognition(){
     if(!keepListening||listening)return;
-    clearTimeout(restartTimer);
-    clearTimeout(errorFallbackTimer);
+    clearTimeout(restartTimer);clearTimeout(errorFallbackTimer);
     const r=new SR(),mySession=++sessionNumber;
     activeRecognition=r;
     r.lang='en-US';
-    r.continuous=true;
+    // Chrome is more reliable with one utterance per session than an endless session.
+    r.continuous=false;
     r.interimResults=true;
     r.maxAlternatives=1;
-    let sessionFinal='';
+    let interimText='';
     const isCurrent=()=>activeRecognition===r&&sessionNumber===mySession;
     try{
       r.onstart=()=>{
         if(!isCurrent())return;
         listening=true;start.disabled=true;stop.disabled=false;
-        restartDelay=1000;lastRecognitionError='';
+        restartDelay=350;lastRecognitionError='';
         setDictationStatus('Listening…');
       };
       r.onresult=e=>{
         if(!isCurrent())return;
         let interim='';
+        let prefix=box.dataset.prefix||'';
         for(let i=e.resultIndex;i<e.results.length;i++){
           const result=e.results[i],t=result[0]?.transcript||'';
           if(result.isFinal){
             const clean=t.trim();
             if(clean){
-              sessionFinal+=clean+' ';
+              prefix+=clean+' ';
+              box.dataset.prefix=prefix;
               if(autoRead)enqueue(clean);
             }
           }else interim+=t;
         }
-        const prefix=box.dataset.prefix||'';
-        box.value=prefix+sessionFinal+interim;
+        interimText=interim;
+        box.value=(box.dataset.prefix||'')+interimText;
         box.scrollTop=box.scrollHeight;
       };
       r.onerror=e=>{
@@ -163,27 +165,23 @@ if(SR){
           keepListening=false;clearTimeout(restartTimer);clearTimeout(errorFallbackTimer);
           listening=false;activeRecognition=null;
           start.disabled=false;stop.disabled=true;
-          setDictationStatus('Microphone permission is blocked. Allow microphone access for this site in Chrome settings, then press Start dictation.');
+          setDictationStatus('Microphone permission is blocked. Click the site icon beside the address bar, allow Microphone, then press Start dictation.');
         }else if(e.error==='audio-capture'){
           keepListening=false;clearTimeout(restartTimer);clearTimeout(errorFallbackTimer);
           listening=false;activeRecognition=null;
           start.disabled=false;stop.disabled=true;
-          setDictationStatus('Chrome cannot access your microphone. Check that it is connected and selected in Windows, then press Start dictation.');
+          setDictationStatus('Chrome cannot access your microphone. Check your Windows input device and Chrome microphone permission, then press Start dictation.');
         }else{
-          setDictationStatus('Dictation connection interrupted ('+lastRecognitionError+'). Reconnecting with a fresh session…');
-          // Some Chrome builds fail to deliver onend after a network error.
+          setDictationStatus('Dictation interrupted ('+lastRecognitionError+'). Reconnecting…');
           clearTimeout(errorFallbackTimer);
           errorFallbackTimer=setTimeout(()=>{
             if(!isCurrent()||!keepListening)return;
             try{r.abort()}catch(e){}
-            retireSession(r,mySession,sessionFinal);
-          },1800);
+            retireSession(r,mySession);
+          },1500);
         }
       };
-      r.onend=()=>{
-        if(!isCurrent())return;
-        retireSession(r,mySession,sessionFinal);
-      };
+      r.onend=()=>{if(isCurrent())retireSession(r,mySession)};
       r.start();
     }catch(e){
       if(!isCurrent())return;
@@ -192,18 +190,12 @@ if(SR){
       scheduleRecognitionRestart();
     }
   }
-  function retireSession(r,mySession,sessionFinal){
+  function retireSession(r,mySession){
     if(activeRecognition!==r||sessionNumber!==mySession)return;
     clearTimeout(errorFallbackTimer);
     activeRecognition=null;listening=false;
-    // Only finalized recognition results are committed. Interim fragments are discarded.
-    if(sessionFinal){
-      const prefix=box.dataset.prefix||'';
-      box.dataset.prefix=prefix+sessionFinal;
-      box.value=box.dataset.prefix;
-    }else{
-      box.value=box.dataset.prefix||'';
-    }
+    // Final phrases were saved as soon as Chrome delivered them; discard interim-only text.
+    box.value=box.dataset.prefix||'';
     if(keepListening)scheduleRecognitionRestart();
     else{
       start.disabled=false;stop.disabled=true;
@@ -212,11 +204,10 @@ if(SR){
   }
   start.onclick=()=>{
     if(keepListening)return;
-    keepListening=true;restartDelay=1000;lastRecognitionError='';
+    keepListening=true;restartDelay=350;lastRecognitionError='';
     clearTimeout(restartTimer);clearTimeout(errorFallbackTimer);
     box.dataset.prefix=box.value?box.value.trimEnd()+' ':'';
-    listening=false;
-    start.disabled=true;stop.disabled=false;
+    listening=false;start.disabled=true;stop.disabled=false;
     startFreshRecognition();
   };
   stop.onclick=()=>{
