@@ -108,95 +108,122 @@ setInterval(()=>{
 
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 if(SR){
-  recognition=new SR();
-  recognition.lang='en-US';
-  recognition.continuous=true;
-  recognition.interimResults=true;
-  recognition.maxAlternatives=1;
-  let finalized='',restartDelay=1000,lastRecognitionError='',starting=false;
+  let activeRecognition=null,sessionNumber=0,finalized='',restartDelay=1000,lastRecognitionError='',restartTimer=null,errorFallbackTimer=null;
+  function setDictationStatus(message){status.textContent=message}
   function scheduleRecognitionRestart(){
     if(!keepListening)return;
     clearTimeout(restartTimer);
-    const delay=lastRecognitionError==='network'?Math.min(restartDelay,15000):Math.min(restartDelay,5000);
-    status.textContent=lastRecognitionError==='network'
-      ?'Chrome speech service disconnected. Reconnecting automatically…'
-      :'Dictation reconnecting…';
-    restartTimer=setTimeout(beginRecognition,delay);
+    const delay=Math.min(restartDelay,15000);
+    setDictationStatus(lastRecognitionError==='network'
+      ?'Chrome speech service disconnected. Starting a fresh connection…'
+      :'Dictation reconnecting…');
+    restartTimer=setTimeout(startFreshRecognition,delay);
     restartDelay=Math.min(Math.round(restartDelay*1.8),15000);
   }
-  function beginRecognition(){
-    if(!keepListening||listening||starting)return;
-    starting=true;
-    try{recognition.start()}
-    catch(e){
-      starting=false;
-      if(e.name==='InvalidStateError'){
-        clearTimeout(restartTimer);
-        restartTimer=setTimeout(beginRecognition,1000);
-      }else{
-        status.textContent='Could not start dictation: '+e.message+' Trying again…';
-        scheduleRecognitionRestart();
-      }
+  function startFreshRecognition(){
+    if(!keepListening||listening)return;
+    clearTimeout(restartTimer);
+    clearTimeout(errorFallbackTimer);
+    const r=new SR(),mySession=++sessionNumber;
+    activeRecognition=r;
+    r.lang='en-US';
+    r.continuous=true;
+    r.interimResults=true;
+    r.maxAlternatives=1;
+    let sessionFinal='';
+    const isCurrent=()=>activeRecognition===r&&sessionNumber===mySession;
+    try{
+      r.onstart=()=>{
+        if(!isCurrent())return;
+        listening=true;start.disabled=true;stop.disabled=false;
+        restartDelay=1000;lastRecognitionError='';
+        setDictationStatus('Listening…');
+      };
+      r.onresult=e=>{
+        if(!isCurrent())return;
+        let interim='';
+        for(let i=e.resultIndex;i<e.results.length;i++){
+          const result=e.results[i],t=result[0]?.transcript||'';
+          if(result.isFinal){
+            const clean=t.trim();
+            if(clean){
+              sessionFinal+=clean+' ';
+              if(autoRead)enqueue(clean);
+            }
+          }else interim+=t;
+        }
+        const prefix=box.dataset.prefix||'';
+        box.value=prefix+sessionFinal+interim;
+        box.scrollTop=box.scrollHeight;
+      };
+      r.onerror=e=>{
+        if(!isCurrent())return;
+        lastRecognitionError=e.error||'unknown';
+        if(e.error==='not-allowed'||e.error==='service-not-allowed'){
+          keepListening=false;clearTimeout(restartTimer);clearTimeout(errorFallbackTimer);
+          listening=false;activeRecognition=null;
+          start.disabled=false;stop.disabled=true;
+          setDictationStatus('Microphone permission is blocked. Allow microphone access for this site in Chrome settings, then press Start dictation.');
+        }else if(e.error==='audio-capture'){
+          keepListening=false;clearTimeout(restartTimer);clearTimeout(errorFallbackTimer);
+          listening=false;activeRecognition=null;
+          start.disabled=false;stop.disabled=true;
+          setDictationStatus('Chrome cannot access your microphone. Check that it is connected and selected in Windows, then press Start dictation.');
+        }else{
+          setDictationStatus('Dictation connection interrupted ('+lastRecognitionError+'). Reconnecting with a fresh session…');
+          // Some Chrome builds fail to deliver onend after a network error.
+          clearTimeout(errorFallbackTimer);
+          errorFallbackTimer=setTimeout(()=>{
+            if(!isCurrent()||!keepListening)return;
+            try{r.abort()}catch(e){}
+            retireSession(r,mySession,sessionFinal);
+          },1800);
+        }
+      };
+      r.onend=()=>{
+        if(!isCurrent())return;
+        retireSession(r,mySession,sessionFinal);
+      };
+      r.start();
+    }catch(e){
+      if(!isCurrent())return;
+      activeRecognition=null;listening=false;
+      lastRecognitionError=e.name||'start-failed';
+      scheduleRecognitionRestart();
     }
   }
-  recognition.onstart=()=>{
-    starting=false;listening=true;restartDelay=1000;lastRecognitionError='';
-    start.disabled=true;stop.disabled=false;
-    status.textContent='Listening…';
-  };
-  recognition.onresult=e=>{
-    let interim='';
-    for(let i=e.resultIndex;i<e.results.length;i++){
-      const result=e.results[i],t=result[0]?.transcript||'';
-      if(result.isFinal){
-        const clean=t.trim();
-        if(clean){
-          finalized+=clean+' ';
-          if(autoRead)enqueue(clean);
-        }
-      }else interim+=t;
-    }
-    box.value=(box.dataset.prefix||'')+finalized+interim;
-    box.scrollTop=box.scrollHeight;
-  };
-  recognition.onerror=e=>{
-    lastRecognitionError=e.error||'unknown';
-    if(e.error==='not-allowed'||e.error==='service-not-allowed'){
-      keepListening=false;clearTimeout(restartTimer);starting=false;
-      status.textContent='Microphone permission is blocked. Allow microphone access for this site in Chrome settings, then press Start dictation.';
-    }else if(e.error==='audio-capture'){
-      keepListening=false;clearTimeout(restartTimer);starting=false;
-      status.textContent='Chrome cannot access your microphone. Check that it is connected and selected in Windows, then press Start dictation.';
+  function retireSession(r,mySession,sessionFinal){
+    if(activeRecognition!==r||sessionNumber!==mySession)return;
+    clearTimeout(errorFallbackTimer);
+    activeRecognition=null;listening=false;
+    // Only finalized recognition results are committed. Interim fragments are discarded.
+    if(sessionFinal){
+      const prefix=box.dataset.prefix||'';
+      box.dataset.prefix=prefix+sessionFinal;
+      box.value=box.dataset.prefix;
     }else{
-      status.textContent='Dictation connection interrupted ('+lastRecognitionError+'). Reconnecting…';
+      box.value=box.dataset.prefix||'';
     }
-  };
-  recognition.onend=()=>{
-    listening=false;starting=false;
-    // Commit final results only. Never save interim fragments as completed words.
-    const prefix=box.dataset.prefix||'';
-    box.dataset.prefix=prefix+finalized;
-    box.value=box.dataset.prefix;
-    finalized='';
     if(keepListening)scheduleRecognitionRestart();
     else{
       start.disabled=false;stop.disabled=true;
-      if(!lastRecognitionError)status.textContent='Dictation stopped.';
+      if(!lastRecognitionError)setDictationStatus('Dictation stopped.');
     }
-  };
+  }
   start.onclick=()=>{
     if(keepListening)return;
     keepListening=true;restartDelay=1000;lastRecognitionError='';
-    clearTimeout(restartTimer);
+    clearTimeout(restartTimer);clearTimeout(errorFallbackTimer);
     box.dataset.prefix=box.value?box.value.trimEnd()+' ':'';
-    finalized='';
-    beginRecognition();
+    listening=false;
     start.disabled=true;stop.disabled=false;
+    startFreshRecognition();
   };
   stop.onclick=()=>{
-    keepListening=false;clearTimeout(restartTimer);starting=false;
-    if(listening){try{recognition.stop()}catch(e){}}
-    else{start.disabled=false;stop.disabled=true;status.textContent='Dictation stopped.'}
+    keepListening=false;clearTimeout(restartTimer);clearTimeout(errorFallbackTimer);
+    const r=activeRecognition;
+    if(r){try{r.stop()}catch(e){}}
+    else{listening=false;start.disabled=false;stop.disabled=true;setDictationStatus('Dictation stopped.')}
   };
 }else{
   start.disabled=true;
