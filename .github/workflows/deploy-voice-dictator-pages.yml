@@ -4,8 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "voice-dictator/**"
-      - ".github/workflows/deploy-voice-dictator-pages.yml"
+      - "**"
   workflow_dispatch:
 
 permissions:
@@ -31,7 +30,7 @@ jobs:
       - name: Upload Voice Dictator site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: voice-dictator
+          path: .
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
