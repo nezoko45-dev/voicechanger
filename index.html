@@ -108,16 +108,100 @@ setInterval(()=>{
 
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 if(SR){
-  recognition=new SR();recognition.lang='en-US';recognition.continuous=true;recognition.interimResults=true;recognition.maxAlternatives=1;let finalized='',restartDelay=500,lastRecognitionError='';
-  function beginRecognition(){if(!keepListening||listening)return;try{recognition.start()}catch(e){if(e.name==='InvalidStateError'){clearTimeout(restartTimer);restartTimer=setTimeout(beginRecognition,500)}else{status.textContent='Could not start dictation: '+e.message}}}
-  recognition.onstart=()=>{listening=true;restartDelay=500;lastRecognitionError='';start.disabled=true;stop.disabled=false;status.textContent='Listening…'};
-  recognition.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal){finalized+=t.trim()+' ';if(autoRead)enqueue(t)}else interim+=t}box.value=(box.dataset.prefix||'')+finalized+interim;box.scrollTop=box.scrollHeight};
-  recognition.onerror=e=>{lastRecognitionError=e.error;status.textContent='Dictation error: '+e.error+'. '+(e.error==='not-allowed'||e.error==='service-not-allowed'?'Allow microphone access for this site in Chrome site settings.':e.error==='audio-capture'?'Chrome cannot access the selected microphone. Check Windows input settings.':'Trying to reconnect…');if(e.error==='not-allowed'||e.error==='service-not-allowed'||e.error==='audio-capture'){keepListening=false;clearTimeout(restartTimer)}};
-  recognition.onend=()=>{listening=false;box.dataset.prefix=box.value;finalized='';if(keepListening){status.textContent=lastRecognitionError?'Dictation reconnecting…':'Recognition refreshed. Listening again…';clearTimeout(restartTimer);const delay=lastRecognitionError==='network'?Math.min(restartDelay,8000):restartDelay;restartTimer=setTimeout(beginRecognition,delay);restartDelay=Math.min(restartDelay*1.7,8000)}else{start.disabled=false;stop.disabled=true;if(!lastRecognitionError)status.textContent='Dictation stopped.'}};
-  start.onclick=()=>{keepListening=true;restartDelay=500;lastRecognitionError='';clearTimeout(restartTimer);box.dataset.prefix=box.value?box.value.trimEnd()+' ':'';finalized='';beginRecognition()};
-  stop.onclick=()=>{keepListening=false;clearTimeout(restartTimer);if(listening)recognition.stop();else{start.disabled=false;stop.disabled=true;status.textContent='Dictation stopped.'}};
-}else{start.disabled=true;status.textContent='Speech recognition is not available in this browser. Update Chrome or use Microsoft Edge.'}
-
+  recognition=new SR();
+  recognition.lang='en-US';
+  recognition.continuous=true;
+  recognition.interimResults=true;
+  recognition.maxAlternatives=1;
+  let finalized='',restartDelay=1000,lastRecognitionError='',starting=false;
+  function scheduleRecognitionRestart(){
+    if(!keepListening)return;
+    clearTimeout(restartTimer);
+    const delay=lastRecognitionError==='network'?Math.min(restartDelay,15000):Math.min(restartDelay,5000);
+    status.textContent=lastRecognitionError==='network'
+      ?'Chrome speech service disconnected. Reconnecting automatically…'
+      :'Dictation reconnecting…';
+    restartTimer=setTimeout(beginRecognition,delay);
+    restartDelay=Math.min(Math.round(restartDelay*1.8),15000);
+  }
+  function beginRecognition(){
+    if(!keepListening||listening||starting)return;
+    starting=true;
+    try{recognition.start()}
+    catch(e){
+      starting=false;
+      if(e.name==='InvalidStateError'){
+        clearTimeout(restartTimer);
+        restartTimer=setTimeout(beginRecognition,1000);
+      }else{
+        status.textContent='Could not start dictation: '+e.message+' Trying again…';
+        scheduleRecognitionRestart();
+      }
+    }
+  }
+  recognition.onstart=()=>{
+    starting=false;listening=true;restartDelay=1000;lastRecognitionError='';
+    start.disabled=true;stop.disabled=false;
+    status.textContent='Listening…';
+  };
+  recognition.onresult=e=>{
+    let interim='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const result=e.results[i],t=result[0]?.transcript||'';
+      if(result.isFinal){
+        const clean=t.trim();
+        if(clean){
+          finalized+=clean+' ';
+          if(autoRead)enqueue(clean);
+        }
+      }else interim+=t;
+    }
+    box.value=(box.dataset.prefix||'')+finalized+interim;
+    box.scrollTop=box.scrollHeight;
+  };
+  recognition.onerror=e=>{
+    lastRecognitionError=e.error||'unknown';
+    if(e.error==='not-allowed'||e.error==='service-not-allowed'){
+      keepListening=false;clearTimeout(restartTimer);starting=false;
+      status.textContent='Microphone permission is blocked. Allow microphone access for this site in Chrome settings, then press Start dictation.';
+    }else if(e.error==='audio-capture'){
+      keepListening=false;clearTimeout(restartTimer);starting=false;
+      status.textContent='Chrome cannot access your microphone. Check that it is connected and selected in Windows, then press Start dictation.';
+    }else{
+      status.textContent='Dictation connection interrupted ('+lastRecognitionError+'). Reconnecting…';
+    }
+  };
+  recognition.onend=()=>{
+    listening=false;starting=false;
+    // Commit final results only. Never save interim fragments as completed words.
+    const prefix=box.dataset.prefix||'';
+    box.dataset.prefix=prefix+finalized;
+    box.value=box.dataset.prefix;
+    finalized='';
+    if(keepListening)scheduleRecognitionRestart();
+    else{
+      start.disabled=false;stop.disabled=true;
+      if(!lastRecognitionError)status.textContent='Dictation stopped.';
+    }
+  };
+  start.onclick=()=>{
+    if(keepListening)return;
+    keepListening=true;restartDelay=1000;lastRecognitionError='';
+    clearTimeout(restartTimer);
+    box.dataset.prefix=box.value?box.value.trimEnd()+' ':'';
+    finalized='';
+    beginRecognition();
+    start.disabled=true;stop.disabled=false;
+  };
+  stop.onclick=()=>{
+    keepListening=false;clearTimeout(restartTimer);starting=false;
+    if(listening){try{recognition.stop()}catch(e){}}
+    else{start.disabled=false;stop.disabled=true;status.textContent='Dictation stopped.'}
+  };
+}else{
+  start.disabled=true;
+  status.textContent='Speech recognition is unavailable in this browser. Update Chrome or use Microsoft Edge.';
+}
 document.querySelector('#speak').onclick=()=>{
   const t=box.value.trim();if(!t)return;
   queue=[];cancelSpeech();setTimeout(()=>startQueuedSpeech(t),300);
