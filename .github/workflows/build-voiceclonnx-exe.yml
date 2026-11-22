@@ -1,0 +1,79 @@
+name: Build VoiceClonNX Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/voiceclonnx-webgpu-mic
+    paths:
+      - "webgpu-mic/**"
+      - ".github/workflows/build-voiceclonnx-exe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: webgpu-mic
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python for build only
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: webgpu-mic/requirements.txt
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Package one-file executable
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onefile --console `
+            --name VoiceClonNX `
+            --add-data "index.html;." `
+            --add-data "model-probe.html;." `
+            --collect-all voiceclonnx `
+            --collect-all onnxruntime `
+            --collect-all soundfile `
+            --collect-all numpy `
+            --collect-all huggingface_hub `
+            server.py
+
+      - name: Include setup instructions
+        shell: pwsh
+        run: |
+          @'
+          VoiceClonNX Windows EXE
+          =======================
+          1. Extract the ZIP.
+          2. Double-click VoiceClonNX.exe.
+          3. The app opens http://127.0.0.1:8765 in your browser.
+          4. Choose a microphone, record a short clip, choose your reference WAV, and click Convert.
+          5. Keep the EXE window open while using the app.
+
+          First conversion requires internet access to download engine model files.
+          This EXE bundles the Python runtime and app dependencies; Python does not need to be installed separately.
+          Actual conversion runs through the bundled local VoiceClonNX runtime. Browser WebGPU conversion is not implemented yet.
+          '@ | Set-Content -Encoding UTF8 README-EXE.txt
+
+      - name: Zip executable and instructions
+        shell: pwsh
+        run: Compress-Archive -Path dist/VoiceClonNX.exe,README-EXE.txt -DestinationPath VoiceClonNX-Windows.zip
+
+      - name: Upload Windows executable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceClonNX-Windows
+          path: webgpu-mic/VoiceClonNX-Windows.zip
+          if-no-files-found: error
+          retention-days: 30
