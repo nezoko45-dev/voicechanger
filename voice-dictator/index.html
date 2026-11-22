@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Voice Dictator — Live Dictation & Instant Read Aloud</title>
+<style>
+:root{font:16px/1.5 system-ui,Segoe UI,Arial;color-scheme:light dark;--bg:#0b1020;--panel:#151d31;--line:#2b3854;--muted:#a8b4ca;--accent:#7c9cff;--text:#f4f7ff}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at top,#1b2a4a,var(--bg) 60%);color:var(--text);padding:24px;display:grid;place-items:center}
+main{width:min(1000px,100%);background:color-mix(in srgb,var(--panel) 95%,transparent);border:1px solid var(--line);border-radius:22px;padding:clamp(18px,4vw,32px);box-shadow:0 22px 80px #0007}
+h1{font-size:clamp(1.8rem,4vw,2.5rem);margin:0}.sub{color:var(--muted);margin:6px 0 22px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.live{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:.9rem}.dot{width:10px;height:10px;border-radius:50%;background:#69758d}.dot.on{background:#43df9a;box-shadow:0 0 0 5px #43df9a22;animation:pulse 1.5s infinite}@keyframes pulse{50%{box-shadow:0 0 0 9px #43df9a08}}
+textarea{width:100%;min-height:220px;resize:vertical;background:#0c1426;color:var(--text);border:1px solid var(--line);border-radius:14px;padding:16px;font:1.08rem/1.6 inherit;outline-color:var(--accent)}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 20px}button,select,input{font:inherit;border-radius:10px;border:1px solid var(--line);padding:10px 13px;background:#101a2e;color:var(--text)}button{cursor:pointer;font-weight:650}button.primary{background:#5579ed;border-color:#5579ed;color:white}button:disabled{opacity:.45;cursor:not-allowed}
+.settings{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.field{min-width:0}.field label{display:block;font-weight:650;margin:0 0 6px}.field select,.field input{width:100%}.field small{display:block;color:var(--muted);margin-top:5px}.voice-row{display:grid;grid-template-columns:1fr auto;gap:8px}.range-row{display:flex;align-items:center;gap:10px}.range-row input{padding:0;flex:1}
+#status{margin-top:18px;min-height:1.5em;color:#c4d1e8}.hint{color:var(--muted);font-size:.86rem;margin-top:12px}.count{color:var(--muted);font-size:.85rem}
+@media(max-width:650px){.settings{grid-template-columns:1fr}main{padding:18px}body{padding:12px}}
+</style>
+</head>
+<body><main>
+  <div class="top"><div><h1>Voice Dictator</h1><p class="sub">Speak naturally. Your words appear live and are read aloud as you speak.</p></div><div class="live"><span class="dot" id="dot"></span><span id="liveLabel">Not listening</span></div></div>
+  <textarea id="transcript" placeholder="Your spoken words will appear here…" spellcheck="false"></textarea>
+  <div class="actions">
+    <button class="primary" id="start">🎙 Start dictating</button><button id="stop" disabled>Stop</button>
+    <button id="read">▶ Read text</button><button id="pause">Pause</button><button id="clear">Clear</button>
+    <button id="auto" class="primary" aria-pressed="true">Instant voice: ON</button>
+  </div>
+  <div class="settings">
+    <div class="field"><label for="voiceSearch">Find a voice</label><input id="voiceSearch" type="search" placeholder="Search name or language (e.g. English, Ava, Google)"><small id="voiceCount">Loading browser voices…</small></div>
+    <div class="field"><label for="voice">Voice selection</label><div class="voice-row"><select id="voice"><option value="">Browser default voice</option></select><button id="preview">Preview</button></div><small>Shows every voice currently provided by Chrome or Edge and your operating system.</small></div>
+    <div class="field"><label for="rate">Speaking speed <span id="rateValue">1.0×</span></label><div class="range-row"><input id="rate" type="range" min=".65" max="1.6" step=".05" value="1"></div></div>
+    <div class="field"><label for="pitch">Voice pitch <span id="pitchValue">1.0</span></label><div class="range-row"><input id="pitch" type="range" min=".5" max="2" step=".05" value="1"></div></div>
+    <div class="field"><label for="volume">Volume <span id="volumeValue">100%</span></label><div class="range-row"><input id="volume" type="range" min="0" max="1" step=".05" value="1"></div></div>
+    <div class="field"><label for="language">Dictation language</label><select id="language"><option value="en-US">English (US)</option><option value="en-GB">English (UK)</option><option value="en-AU">English (Australia)</option><option value="es-ES">Spanish</option><option value="fr-FR">French</option><option value="de-DE">German</option><option value="ja-JP">Japanese</option><option value="ko-KR">Korean</option><option value="zh-CN">Chinese (Mandarin)</option></select></div>
+  </div>
+  <div id="status" role="status">Ready. Choose a voice and press Start dictating.</div>
+  <p class="hint">Compatible with Google Chrome and Microsoft Edge. Instant read-aloud speaks stable words from live recognition when the browser supplies interim results; it does not wait for a whole paragraph. Voice choices depend on the voices installed or exposed by your browser. Microphone dictation requires an internet connection in the browser's built-in speech service.</p>
+  <div class="count"><a href="./index.html" style="color:#a9bdff">← Back to Voicechanger</a></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const textBox=$('transcript'),status=$('status'),dot=$('dot'),liveLabel=$('liveLabel');
+let voices=[],recognition=null,listening=false,keepListening=false,restartTimer=null,restartDelay=700,autoSpeak=true;
+let queue=[],speaking=false,paused=false,currentUtterance=null;
+function setStatus(t){status.textContent=t}
+function refreshVoices(){
+  const previous=$('voice').value;
+  voices=window.speechSynthesis? speechSynthesis.getVoices():[];
+  const q=$('voiceSearch').value.trim().toLowerCase();
+  const filtered=voices.map((v,i)=>({v,i})).filter(x=>!q||(x.v.name+' '+x.v.lang).toLowerCase().includes(q));
+  $('voice').innerHTML='';
+  const def=document.createElement('option');def.value='';def.textContent='Browser default voice';$('voice').append(def);
+  for(const x of filtered){const o=document.createElement('option');o.value=String(x.i);o.textContent=x.v.name+' — '+x.v.lang+(x.v.default?' (default)':'');$('voice').append(o)}
+  if(previous&&[...$('voice').options].some(o=>o.value===previous))$('voice').value=previous;
+  $('voiceCount').textContent=voices.length+' voice'+(voices.length===1?'':'s')+' available in this browser';
+}
+if('speechSynthesis'in window){refreshVoices();speechSynthesis.onvoiceschanged=refreshVoices;setTimeout(refreshVoices,800)}
+$('voiceSearch').addEventListener('input',refreshVoices);
+function speakNow(phrase){
+  const clean=phrase.trim();if(!clean||!autoSpeak)return;
+  queue.push(clean);runQueue();
+}
+function runQueue(){
+  if(speaking||paused||!queue.length||!('speechSynthesis'in window))return;
+  const phrase=queue.shift(),u=new SpeechSynthesisUtterance(phrase),idx=$('voice').value;
+  if(idx!==''&&voices[Number(idx)])u.voice=voices[Number(idx)];
+  u.rate=Number($('rate').value);u.pitch=Number($('pitch').value);u.volume=Number($('volume').value);
+  u.lang=u.voice?.lang||$('language').value;
+  currentUtterance=u;speaking=true;
+  u.onend=()=>{if(currentUtterance!==u)return;currentUtterance=null;speaking=false;runQueue()};
+  u.onerror=()=>{if(currentUtterance!==u)return;currentUtterance=null;speaking=false;setStatus('Voice playback error. Try another voice.');runQueue()};
+  try{speechSynthesis.speak(u)}catch(e){currentUtterance=null;speaking=false;setStatus('Could not start voice playback: '+e.message);runQueue()}
+}
+function stopSpeech(){queue=[];speaking=false;currentUtterance=null;try{speechSynthesis.cancel()}catch(e){}}
+$('rate').oninput=()=>{$('rateValue').textContent=Number($('rate').value).toFixed(2)+'×'};
+$('pitch').oninput=()=>{$('pitchValue').textContent=Number($('pitch').value).toFixed(2)};
+$('volume').oninput=()=>{$('volumeValue').textContent=Math.round(Number($('volume').value)*100)+'%'};
+$('preview').onclick=()=>{stopSpeech();autoSpeak=true;speakNow('Hello! This is a preview of the selected voice.')};
+$('auto').onclick=()=>{autoSpeak=!autoSpeak;$('auto').textContent='Instant voice: '+(autoSpeak?'ON':'OFF');$('auto').setAttribute('aria-pressed',String(autoSpeak));setStatus(autoSpeak?'Instant read-aloud enabled.':'Instant read-aloud disabled.')};
+$('read').onclick=()=>{stopSpeech();paused=false;speakNow(textBox.value)};
+$('pause').onclick=()=>{if(!('speechSynthesis'in window))return;if(speechSynthesis.speaking&&!paused){speechSynthesis.pause();paused=true;$('pause').textContent='Resume'}else if(paused){speechSynthesis.resume();paused=false;$('pause').textContent='Pause';runQueue()}};
+$('clear').onclick=()=>{textBox.value='';stopSpeech();setStatus('Text cleared.')};
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+function setListeningUI(on){dot.classList.toggle('on',on);liveLabel.textContent=on?'Microphone active':(keepListening?'Reconnecting…':'Not listening');$('start').disabled=keepListening;$('stop').disabled=!keepListening}
+function restartRecognition(){if(!keepListening)return;clearTimeout(restartTimer);restartTimer=setTimeout(beginRecognition,restartDelay);restartDelay=Math.min(restartDelay*1.6,8000)}
+function beginRecognition(){
+  if(!keepListening||listening)return;
+  if(!SR){setStatus('Speech recognition is not supported here. Update Chrome or Edge.');keepListening=false;setListeningUI(false);return}
+  const r=new SR();recognition=r;r.lang=$('language').value;r.continuous=true;r.interimResults=true;r.maxAlternatives=1;
+  const spokenByResult={};
+  r.onstart=()=>{if(recognition!==r)return;listening=true;restartDelay=700;setListeningUI(true);setStatus('Listening. Speak naturally — recognized words will appear here.')};
+  r.onresult=e=>{
+    if(recognition!==r)return;
+    let display=textBox.dataset.final||'';
+    for(let i=0;i<e.results.length;i++){
+      const result=e.results[i],phrase=(result[0]?.transcript||'').trim();
+      if(!phrase)continue;
+      const words=phrase.split(/\s+/);
+      const already=spokenByResult[i]||0;
+      if(autoSpeak){
+        // Speak newly stabilized words from interim recognition, without replaying earlier words.
+        const ready=result.isFinal?words.length:Math.max(0,words.length-1);
+        if(ready>already){speakNow(words.slice(already,ready).join(' '));spokenByResult[i]=ready}
+      }
+      if(result.isFinal){
+        display+=phrase+' ';
+        textBox.dataset.final=display;
+        delete spokenByResult[i];
+      }else{
+        display+=phrase+' ';
+      }
+    }
+    textBox.value=display;textBox.scrollTop=textBox.scrollHeight;
+  };
+  r.onerror=e=>{
+    if(recognition!==r)return;
+    setStatus('Speech recognition: '+e.error+'. '+(e.error==='not-allowed'?'Allow microphone access for this site.':'Trying to reconnect…'));
+    if(e.error==='not-allowed'||e.error==='service-not-allowed'||e.error==='audio-capture'){keepListening=false;listening=false;recognition=null;setListeningUI(false)}
+  };
+  r.onend=()=>{if(recognition!==r)return;recognition=null;listening=false;setListeningUI(false);if(keepListening){setStatus('Reconnecting microphone recognition…');restartRecognition()}else setStatus('Dictation stopped.')};
+  try{r.start()}catch(e){recognition=null;listening=false;setListeningUI(false);setStatus('Could not start microphone: '+e.message);restartRecognition()}
+}
+$('start').onclick=()=>{
+  if(keepListening)return;
+  if(!SR){setStatus('Speech recognition is unavailable. Use the latest Chrome or Edge.');return}
+  keepListening=true;restartDelay=700;textBox.dataset.final=textBox.value?textBox.value.trimEnd()+' ':'';
+  clearTimeout(restartTimer);beginRecognition();
+};
+$('stop').onclick=()=>{keepListening=false;clearTimeout(restartTimer);if(recognition){const r=recognition;recognition=null;try{r.stop()}catch(e){}}listening=false;setListeningUI(false);setStatus('Dictation stopped.')};
+$('language').onchange=()=>{if(keepListening){keepListening=false;clearTimeout(restartTimer);if(recognition){const r=recognition;recognition=null;try{r.stop()}catch(e){}}listening=false;keepListening=true;restartDelay=700;restartRecognition()}};
+setListeningUI(false);
+</script></body></html>
