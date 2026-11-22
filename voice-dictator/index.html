@@ -48,13 +48,13 @@ textarea{width:100%;min-height:340px;resize:vertical;border:1px solid #eee5f0;bo
 </main>
 <script>
 const $=id=>document.getElementById(id),box=$('transcript');
-let voices=[],recognition=null,keep=false,listening=false,restartTimer=null,delay=650,auto=true,queue=[],speaking=false,paused=false,current=null;
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let voices=[],recognition=null,keep=false,listening=false,restartTimer=null,restartDelay=800,auto=true,queue=[],speaking=false,paused=false,current=null,micStream=null,finalText='',permissionReady=false;
 function message(s){$('message').textContent=s}
-function refreshVoices(){const previous=$('voice').value;voices=speechSynthesis?.getVoices?.()||[];const q=$('voiceSearch').value.trim().toLowerCase();const list=voices.map((v,i)=>({v,i})).filter(x=>!q||(x.v.name+' '+x.v.lang).toLowerCase().includes(q));$('voice').innerHTML='<option value="">Browser default</option>';for(const x of list){const o=document.createElement('option');o.value=x.i;o.textContent=x.v.name+' — '+x.v.lang;$('voice').append(o)}if([...$('voice').options].some(o=>o.value===previous))$('voice').value=previous;$('voiceCount').textContent=voices.length+' voices available'}
+function refreshVoices(){const previous=$('voice').value;voices=window.speechSynthesis?.getVoices?.()||[];const q=$('voiceSearch').value.trim().toLowerCase();const list=voices.map((v,i)=>({v,i})).filter(x=>!q||(x.v.name+' '+x.v.lang).toLowerCase().includes(q));$('voice').innerHTML='<option value="">Browser default</option>';for(const x of list){const o=document.createElement('option');o.value=x.i;o.textContent=x.v.name+' — '+x.v.lang;$('voice').append(o)}if([...$('voice').options].some(o=>o.value===previous))$('voice').value=previous;$('voiceCount').textContent=voices.length+' voices available'}
 if('speechSynthesis'in window){refreshVoices();speechSynthesis.onvoiceschanged=refreshVoices;setTimeout(refreshVoices,500)}
 $('voiceSearch').oninput=refreshVoices;
-function stopSpeech(){queue=[];speaking=false;current=null;speechSynthesis?.cancel()}
+function stopSpeech(){queue=[];speaking=false;current=null;window.speechSynthesis?.cancel()}
 function speak(t){if(auto&&t.trim()){queue.push(t.trim());runQueue()}}
 function runQueue(){if(speaking||paused||!queue.length||!window.speechSynthesis)return;const u=new SpeechSynthesisUtterance(queue.shift()),v=$('voice').value;if(v!==''&&voices[+v])u.voice=voices[+v];u.rate=+$('rate').value;u.pitch=+$('pitch').value;u.volume=+$('volume').value;u.lang=u.voice?.lang||$('language').value;current=u;speaking=true;u.onend=u.onerror=()=>{if(current!==u)return;current=null;speaking=false;runQueue()};speechSynthesis.speak(u)}
 $('rate').oninput=()=> $('rateValue').textContent=(+$('rate').value).toFixed(2)+'×';
@@ -63,19 +63,60 @@ $('volume').oninput=()=> $('volumeValue').textContent=Math.round(+$('volume').va
 $('preview').onclick=()=>{stopSpeech();auto=true;speak('Hello! This is your selected voice preview.')};
 $('auto').onclick=()=>{auto=!auto;$('auto').textContent='Instant speech: '+(auto?'ON':'OFF');$('auto').setAttribute('aria-pressed',String(auto));message(auto?'Instant speech enabled.':'Instant speech disabled.')};
 $('read').onclick=()=>{stopSpeech();paused=false;speak(box.value)};
-$('pause').onclick=()=>{if(!speechSynthesis)return;if(speechSynthesis.speaking&&!paused){speechSynthesis.pause();paused=true;$('pause').textContent='Resume'}else if(paused){speechSynthesis.resume();paused=false;$('pause').textContent='Pause';runQueue()}};
-$('clear').onclick=()=>{box.value='';box.dataset.final='';stopSpeech();message('Transcript cleared.')};
+$('pause').onclick=()=>{if(!window.speechSynthesis)return;if(speechSynthesis.speaking&&!paused){speechSynthesis.pause();paused=true;$('pause').textContent='Resume'}else if(paused){speechSynthesis.resume();paused=false;$('pause').textContent='Pause';runQueue()}};
+$('clear').onclick=()=>{box.value='';finalText='';stopSpeech();message('Transcript cleared.')};
 function ui(){ $('dot').classList.toggle('on',listening);$('liveLabel').textContent=listening?'Listening live':keep?'Reconnecting…':'Microphone off';$('start').disabled=keep;$('stop').disabled=!keep}
-function restart(){if(!keep)return;clearTimeout(restartTimer);restartTimer=setTimeout(begin,delay);delay=Math.min(delay*1.5,7000)}
-function begin(){if(!keep||listening)return;if(!SR){message('Speech recognition is not supported. Please use current Chrome or Edge.');keep=false;ui();return}const r=new SR();recognition=r;r.lang=$('language').value;r.continuous=true;r.interimResults=true;r.maxAlternatives=1;const spoken={};
-r.onstart=()=>{if(recognition!==r)return;listening=true;delay=650;ui();message('Listening — speak naturally.')};
-r.onresult=e=>{if(recognition!==r)return;let out=box.dataset.final||'';for(let i=0;i<e.results.length;i++){const res=e.results[i],phrase=(res[0]?.transcript||'').trim();if(!phrase)continue;const words=phrase.split(/\s+/),n=spoken[i]||0,ready=res.isFinal?words.length:Math.max(0,words.length-1);if(ready>n){speak(words.slice(n,ready).join(' '));spoken[i]=ready}if(res.isFinal){out+=phrase+' ';box.dataset.final=out;delete spoken[i]}else out+=phrase+' '}box.value=out;box.scrollTop=box.scrollHeight};
-r.onerror=e=>{if(recognition!==r)return;message('Recognition: '+e.error+(e.error==='not-allowed'?' — allow microphone access.':' — reconnecting…'));if(['not-allowed','service-not-allowed','audio-capture'].includes(e.error)){keep=false;listening=false;recognition=null;ui()}};
-r.onend=()=>{if(recognition!==r)return;recognition=null;listening=false;ui();if(keep){message('Reconnecting speech recognition…');restart()}else message('Dictation stopped.')};
-try{r.start()}catch(e){recognition=null;listening=false;ui();message('Could not start microphone: '+e.message);restart()}}
-$('start').onclick=()=>{if(keep)return;if(!SR){message('Speech recognition is unavailable in this browser.');return}keep=true;delay=650;box.dataset.final=box.value?box.value.trimEnd()+' ':'';begin()};
-$('stop').onclick=()=>{keep=false;clearTimeout(restartTimer);if(recognition){const r=recognition;recognition=null;try{r.stop()}catch{}}listening=false;ui();message('Dictation stopped.')};
-$('language').onchange=()=>{if(keep){keep=false;clearTimeout(restartTimer);if(recognition){const r=recognition;recognition=null;try{r.stop()}catch{}}listening=false;keep=true;delay=650;restart()}};
+function stopRecognition(){clearTimeout(restartTimer);const r=recognition;recognition=null;listening=false;if(r){r.onend=null;try{r.stop()}catch{}}ui()}
+function scheduleRestart(){if(!keep)return;clearTimeout(restartTimer);restartTimer=setTimeout(startRecognition,restartDelay);restartDelay=Math.min(restartDelay*1.6,5000)}
+function startRecognition(){
+ if(!keep||recognition)return;
+ if(!SR){keep=false;ui();message('Speech recognition is not supported. Use current Chrome or Edge.');return}
+ const r=new SR();recognition=r;r.lang=$('language').value;r.continuous=true;r.interimResults=true;r.maxAlternatives=1;
+ r.onstart=()=>{if(recognition!==r)return;listening=true;restartDelay=800;ui();message('Listening — speak naturally. Your transcript will appear here.')};
+ r.onresult=e=>{
+  if(recognition!==r)return;
+  let interim='';
+  for(let i=e.resultIndex;i<e.results.length;i++){
+   const result=e.results[i],phrase=(result[0]?.transcript||'').trim();
+   if(!phrase)continue;
+   if(result.isFinal){finalText+=(finalText && !finalText.endsWith(' ')?' ':'')+phrase+' ';speak(phrase)}
+   else interim+=phrase+' ';
+  }
+  box.value=finalText+interim.trimStart();box.scrollTop=box.scrollHeight;
+ };
+ r.onerror=e=>{
+  if(recognition!==r)return;
+  if(e.error==='not-allowed'||e.error==='service-not-allowed'||e.error==='audio-capture'){
+   keep=false;stopRecognition();message('Microphone access was denied or unavailable. Allow microphone access for this site in the address-bar lock icon, then press Start again.');return;
+  }
+  if(e.error!=='no-speech'&&e.error!=='aborted')message('Speech recognition: '+e.error+' — reconnecting…');
+ };
+ r.onend=()=>{if(recognition!==r)return;recognition=null;listening=false;ui();if(keep){message('Reconnecting speech recognition…');scheduleRestart()}else message('Dictation stopped.')};
+ try{r.start()}catch(err){if(recognition===r)recognition=null;listening=false;ui();message('Could not start recognition: '+err.message);scheduleRestart()}
+}
+async function startMic(){
+ if(keep)return;
+ if(!SR){message('Speech recognition is unavailable. Open this page in current Chrome or Edge.');return}
+ if(!navigator.mediaDevices?.getUserMedia){message('Microphone access requires HTTPS. Open this GitHub Pages HTTPS address.');return}
+ keep=true;ui();message('Checking microphone permission…');
+ try{
+  if(!permissionReady){
+   micStream=await navigator.mediaDevices.getUserMedia({audio:true});
+   permissionReady=true;
+   micStream.getTracks().forEach(t=>t.stop());micStream=null;
+  }
+  if(!keep)return;
+  finalText=box.value?box.value.trimEnd()+' ':'';
+  startRecognition();
+ }catch(err){
+  keep=false;ui();
+  const denied=err.name==='NotAllowedError'||err.name==='PermissionDeniedError';
+  message(denied?'Microphone permission is blocked. Click the lock/tune icon beside the address, set Microphone to Allow, then reload.':'Could not access microphone: '+err.message);
+ }
+}
+$('start').onclick=startMic;
+$('stop').onclick=()=>{keep=false;stopRecognition();message('Dictation stopped.')};
+$('language').onchange=()=>{if(keep){stopRecognition();scheduleRestart()}};
 ui();
 </script>
 </body></html>
