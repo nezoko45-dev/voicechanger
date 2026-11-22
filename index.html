@@ -108,7 +108,7 @@ setInterval(()=>{
 
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 if(SR){
-  let activeRecognition=null,sessionNumber=0,restartDelay=350,lastRecognitionError='',restartTimer=null,errorFallbackTimer=null;
+  let activeRecognition=null,sessionNumber=0,restartDelay=1000,lastRecognitionError='',restartTimer=null,errorFallbackTimer=null;
   function setDictationStatus(message){status.textContent=message}
   function scheduleRecognitionRestart(){
     if(!keepListening)return;
@@ -127,7 +127,7 @@ if(SR){
     activeRecognition=r;
     r.lang='en-US';
     // Chrome is more reliable with one utterance per session than an endless session.
-    r.continuous=false;
+    r.continuous=true;
     r.interimResults=true;
     r.maxAlternatives=1;
     let interimText='';
@@ -178,7 +178,7 @@ if(SR){
             if(!isCurrent()||!keepListening)return;
             try{r.abort()}catch(e){}
             retireSession(r,mySession);
-          },1500);
+          },6000);
         }
       };
       r.onend=()=>{if(isCurrent())retireSession(r,mySession)};
