@@ -49,7 +49,7 @@ textarea{width:100%;min-height:340px;resize:vertical;border:1px solid #eee5f0;bo
 <script>
 const $=id=>document.getElementById(id),box=$('transcript');
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-let voices=[],recognition=null,keep=false,listening=false,restartTimer=null,restartDelay=800,auto=true,queue=[],speaking=false,paused=false,current=null,micStream=null,finalText='',permissionReady=false;
+let voices=[],recognition=null,keep=false,listening=false,restartTimer=null,endWatchdog=null,restartDelay=800,auto=true,queue=[],speaking=false,paused=false,current=null,micStream=null,finalText='',permissionReady=false;
 function message(s){$('message').textContent=s}
 function refreshVoices(){const previous=$('voice').value;voices=window.speechSynthesis?.getVoices?.()||[];const q=$('voiceSearch').value.trim().toLowerCase();const list=voices.map((v,i)=>({v,i})).filter(x=>!q||(x.v.name+' '+x.v.lang).toLowerCase().includes(q));$('voice').innerHTML='<option value="">Browser default</option>';for(const x of list){const o=document.createElement('option');o.value=x.i;o.textContent=x.v.name+' — '+x.v.lang;$('voice').append(o)}if([...$('voice').options].some(o=>o.value===previous))$('voice').value=previous;$('voiceCount').textContent=voices.length+' voices available'}
 if('speechSynthesis'in window){refreshVoices();speechSynthesis.onvoiceschanged=refreshVoices;setTimeout(refreshVoices,500)}
@@ -66,13 +66,13 @@ $('read').onclick=()=>{stopSpeech();paused=false;speak(box.value)};
 $('pause').onclick=()=>{if(!window.speechSynthesis)return;if(speechSynthesis.speaking&&!paused){speechSynthesis.pause();paused=true;$('pause').textContent='Resume'}else if(paused){speechSynthesis.resume();paused=false;$('pause').textContent='Pause';runQueue()}};
 $('clear').onclick=()=>{box.value='';finalText='';stopSpeech();message('Transcript cleared.')};
 function ui(){ $('dot').classList.toggle('on',listening);$('liveLabel').textContent=listening?'Listening live':keep?'Reconnecting…':'Microphone off';$('start').disabled=keep;$('stop').disabled=!keep}
-function stopRecognition(){clearTimeout(restartTimer);const r=recognition;recognition=null;listening=false;if(r){r.onend=null;try{r.stop()}catch{}}ui()}
+function stopRecognition(){clearTimeout(restartTimer);clearTimeout(endWatchdog);const r=recognition;recognition=null;listening=false;if(r){r.onend=null;r.onerror=null;try{r.abort()}catch{try{r.stop()}catch{}}}ui()}
 function scheduleRestart(){if(!keep)return;clearTimeout(restartTimer);restartTimer=setTimeout(startRecognition,restartDelay);restartDelay=Math.min(restartDelay*1.6,5000)}
 function startRecognition(){
  if(!keep||recognition)return;
  if(!SR){keep=false;ui();message('Speech recognition is not supported. Use current Chrome or Edge.');return}
  const r=new SR();recognition=r;r.lang=$('language').value;r.continuous=true;r.interimResults=true;r.maxAlternatives=1;
- r.onstart=()=>{if(recognition!==r)return;listening=true;restartDelay=800;ui();message('Listening — speak naturally. Your transcript will appear here.')};
+ r.onstart=()=>{if(recognition!==r)return;clearTimeout(endWatchdog);listening=true;restartDelay=800;ui();message('Listening — speak naturally. Your transcript will appear here.')};
  r.onresult=e=>{
   if(recognition!==r)return;
   let interim='';
@@ -89,9 +89,18 @@ function startRecognition(){
   if(e.error==='not-allowed'||e.error==='service-not-allowed'||e.error==='audio-capture'){
    keep=false;stopRecognition();message('Microphone access was denied or unavailable. Allow microphone access for this site in the address-bar lock icon, then press Start again.');return;
   }
-  if(e.error!=='no-speech'&&e.error!=='aborted')message('Speech recognition: '+e.error+' — reconnecting…');
+  message('Speech recognition: '+e.error+' — restarting automatically…');
+  // Some Chromium builds occasionally emit an error without a matching onend.
+  // Recover the session if onend does not arrive, while avoiding overlapping recognizers.
+  clearTimeout(endWatchdog);
+  endWatchdog=setTimeout(()=>{
+   if(recognition!==r||!keep)return;
+   recognition=null;listening=false;
+   try{r.abort()}catch{}
+   ui();message('Restarting speech recognition…');scheduleRestart();
+  },2500);
  };
- r.onend=()=>{if(recognition!==r)return;recognition=null;listening=false;ui();if(keep){message('Reconnecting speech recognition…');scheduleRestart()}else message('Dictation stopped.')};
+ r.onend=()=>{if(recognition!==r)return;clearTimeout(endWatchdog);recognition=null;listening=false;ui();if(keep){message('Speech recognition ended — restarting automatically…');scheduleRestart()}else message('Dictation stopped.')};
  try{r.start()}catch(err){if(recognition===r)recognition=null;listening=false;ui();message('Could not start recognition: '+err.message);scheduleRestart()}
 }
 async function startMic(){
