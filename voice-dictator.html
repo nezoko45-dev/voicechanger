@@ -80,7 +80,7 @@ $('read').onclick=()=>{stopSpeech();paused=false;speakNow(textBox.value)};
 $('pause').onclick=()=>{if(!('speechSynthesis'in window))return;if(speechSynthesis.speaking&&!paused){speechSynthesis.pause();paused=true;$('pause').textContent='Resume'}else if(paused){speechSynthesis.resume();paused=false;$('pause').textContent='Pause';runQueue()}};
 $('clear').onclick=()=>{textBox.value='';stopSpeech();setStatus('Text cleared.')};
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-function setListeningUI(on){dot.classList.toggle('on',on);liveLabel.textContent=on?'Microphone active':'Not listening';$('start').disabled=on;$('stop').disabled=!keepListening}
+function setListeningUI(on){dot.classList.toggle('on',on);liveLabel.textContent=on?'Microphone active':(keepListening?'Reconnecting…':'Not listening');$('start').disabled=keepListening;$('stop').disabled=!keepListening}
 function restartRecognition(){if(!keepListening)return;clearTimeout(restartTimer);restartTimer=setTimeout(beginRecognition,restartDelay);restartDelay=Math.min(restartDelay*1.6,8000)}
 function beginRecognition(){
   if(!keepListening||listening)return;
