@@ -58,7 +58,7 @@ footer{text-align:center;color:#827b98;font-size:12px;padding:18px}
    <label for="warmth"><span>Warmth</span><output id="warmthValue">+1.5 dB</output></label>
    <input id="warmth" type="range" min="-3" max="4" step=".5" value="1.5"><div class="range-meta"><span>Less warmth</span><span>Warmer</span></div>
   </div>
-  <p class="note">Microsoft Edge gets an extra -2 semitone pitch adjustment; Chrome and other browsers keep the selected pitch unchanged. The low-pass filter creates the soft muffled character; reduce Muffle if consonants become hard to understand.</p>
+  <p class="note">Microsoft Edge gets an extra -4 semitone pitch adjustment and -1 semitone formant adjustment to reduce the cartoon-like sound; Chrome and other browsers keep the selected settings unchanged. The low-pass filter creates the soft muffled character; reduce Muffle if consonants become hard to understand.</p>
  </section>
  <section class="panel">
   <h2>VRChat routing</h2>
@@ -70,12 +70,13 @@ footer{text-align:center;color:#827b98;font-size:12px;padding:18px}
 <script type="module">
 const $=id=>document.getElementById(id);
 const isEdge=/Edg\//.test(navigator.userAgent);
-const edgePitchOffset=isEdge?-2:0; // Lower the processed voice by two semitones in Microsoft Edge only.
+const edgePitchOffset=isEdge?-4:0; // Lower the processed voice by four semitones in Microsoft Edge only.
+const edgeFormantOffset=isEdge?-1:0; // Remove the extra bright/cartoon-like formant lift in Edge.
 let context=null,stream=null,stretch=null,source=null,monitor=null,analyser=null,raf=0;
 let highpass=null,lowpass=null,warmthFilter=null,compressor=null;
 const status=(message,live=false)=>{$('status').textContent=message;$('dot').classList.toggle('live',live)};
 const values=()=>({
- pitch:Number($('pitch').value)+edgePitchOffset,formant:Number($('formant').value),
+ pitch:Number($('pitch').value)+edgePitchOffset,formant:Number($('formant').value)+edgeFormantOffset,
  muffle:Number($('muffle').value),warmth:Number($('warmth').value)
 });
 function updateLabels(){
