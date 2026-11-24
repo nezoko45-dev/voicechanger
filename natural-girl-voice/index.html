@@ -4,27 +4,27 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#171426">
-<title>Natural Girl Voice · Voicechanger</title>
+<title>Soft Muffled Girl Voice · Voicechanger</title>
 <style>
 :root{color-scheme:dark;--bg:#11101b;--panel:#1b1929;--panel2:#242136;--line:#39344e;--text:#f7f3ff;--muted:#aaa3bf;--pink:#f18acb;--violet:#a995ff;--good:#8be0bd}
 *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 50% -20%,#45305d 0,transparent 55%),var(--bg);color:var(--text);font:15px/1.5 Inter,ui-sans-serif,system-ui,Segoe UI,sans-serif;padding:28px 16px}
-main{width:min(820px,100%);margin:auto}.top{display:flex;align-items:center;gap:14px;margin-bottom:22px}.logo{width:48px;height:48px;border-radius:16px;background:linear-gradient(135deg,var(--pink),var(--violet));display:grid;place-items:center;font-size:24px;color:#20162c;box-shadow:0 8px 28px #d77cce40}
+main{width:min(860px,100%);margin:auto}.top{display:flex;align-items:center;gap:14px;margin-bottom:22px}.logo{width:48px;height:48px;border-radius:16px;background:linear-gradient(135deg,var(--pink),var(--violet));display:grid;place-items:center;font-size:24px;color:#20162c;box-shadow:0 8px 28px #d77cce40}
 h1{font-size:clamp(25px,5vw,34px);line-height:1.1;margin:0}.sub{color:var(--muted);margin:5px 0 0}
 .panel{background:linear-gradient(160deg,#211e31,#191725);border:1px solid var(--line);border-radius:22px;padding:22px;margin:14px 0;box-shadow:0 18px 55px #0003}
 .panel h2{font-size:16px;margin:0 0 14px}.row{display:grid;grid-template-columns:1fr 1fr;gap:14px}.field{min-width:0}label{display:flex;justify-content:space-between;gap:10px;color:#d9d2e9;font-weight:600;font-size:13px;margin:0 0 7px}
 select{width:100%;min-width:0;background:var(--panel2);border:1px solid var(--line);border-radius:11px;color:var(--text);padding:12px;font:inherit}
 input[type=range]{width:100%;accent-color:var(--pink);cursor:pointer}.range-meta{color:var(--muted);font-size:12px;display:flex;justify-content:space-between;margin-top:2px}
-.presets{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}.preset{border:1px solid var(--line);border-radius:12px;padding:12px 9px;background:var(--panel2);color:var(--text);cursor:pointer;text-align:center;font:inherit}.preset strong{display:block;font-size:13px}.preset small{color:var(--muted);font-size:11px}.preset.active{border-color:var(--pink);background:#633b6545;box-shadow:inset 0 0 0 1px #f18acb55}
+.presets{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.preset{border:1px solid var(--line);border-radius:12px;padding:12px 9px;background:var(--panel2);color:var(--text);cursor:pointer;text-align:center;font:inherit}.preset strong{display:block;font-size:13px}.preset small{color:var(--muted);font-size:11px}.preset.active{border-color:var(--pink);background:#633b6545;box-shadow:inset 0 0 0 1px #f18acb55}
 .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.btn{border:1px solid var(--line);border-radius:13px;padding:13px 18px;background:var(--panel2);color:var(--text);font:700 14px/1.2 Inter,system-ui,sans-serif;cursor:pointer}.btn.primary{background:linear-gradient(100deg,#e98bc7,#a995ff);color:#21172b;border:0;flex:1}.btn:disabled{opacity:.45;cursor:not-allowed}
 .status{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px;margin-top:16px}.dot{width:9px;height:9px;border-radius:50%;background:#777}.dot.live{background:var(--good);box-shadow:0 0 12px var(--good)}
 .note{color:var(--muted);font-size:12px;margin:14px 0 0}.meter{height:5px;background:#332e45;border-radius:9px;overflow:hidden;margin-top:12px}.meter span{display:block;width:0;height:100%;background:linear-gradient(90deg,var(--pink),var(--violet));transition:width .08s}
 footer{text-align:center;color:#827b98;font-size:12px;padding:18px}
-@media(max-width:580px){.row{grid-template-columns:1fr}.panel{padding:17px}.presets{grid-template-columns:1fr 1fr}.preset{text-align:left;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px}.preset small{font-size:12px}}
+@media(max-width:580px){.row{grid-template-columns:1fr}.panel{padding:17px}.presets{grid-template-columns:1fr}.preset{text-align:left}.preset small{font-size:12px}}
 </style>
 </head>
 <body>
 <main>
- <header class="top"><div class="logo">♫</div><div><h1>Natural Girl Voice</h1><p class="sub">Live voice shaping · Signalsmith Stretch engine</p></div></header>
+ <header class="top"><div class="logo">♫</div><div><h1>Soft Muffled Girl Voice</h1><p class="sub">Live microphone processing · Signalsmith Stretch + gentle EQ</p></div></header>
  <section class="panel">
   <h2>Audio devices</h2>
   <div class="row">
@@ -38,98 +38,120 @@ footer{text-align:center;color:#827b98;font-size:12px;padding:18px}
  <section class="panel">
   <h2>Voice style</h2>
   <div class="presets">
-   <button class="preset active" data-pitch="4" data-formant="4.5"><strong>Natural feminine</strong><small>Stronger feminine resonance</small></button>
-   <button class="preset" data-pitch="3.5" data-formant="3.5"><strong>Soft feminine</strong><small>Warm, less bright</small></button>
-   <button class="preset" data-pitch="5" data-formant="5.5"><strong>Anime girl</strong><small>Higher, brighter voice</small></button>
-   <button class="preset" data-pitch="6" data-formant="6.5"><strong>Bright anime</strong><small>Maximum bright feminine tone</small></button>
+   <button class="preset active" data-pitch="1" data-formant="1" data-muffle="45" data-warmth="1.5"><strong>Soft anime girl</strong><small>Natural feminine, gentle muffling</small></button>
+   <button class="preset" data-pitch="0.5" data-formant="0.75" data-muffle="30" data-warmth="2"><strong>Natural soft</strong><small>Subtle shaping, light warmth</small></button>
+   <button class="preset" data-pitch="1.5" data-formant="1.5" data-muffle="65" data-warmth="1"><strong>Dreamy muffled</strong><small>More covered and distant</small></button>
   </div>
   <div style="margin-top:20px">
-   <label for="pitch"><span>Pitch shift</span><output id="pitchValue">+4.0 semitones</output></label>
-   <input id="pitch" type="range" min="0" max="7" step=".25" value="4"><div class="range-meta"><span>Original</span><span>Higher</span></div>
+   <label for="pitch"><span>Pitch shift</span><output id="pitchValue">+1.0 semitone</output></label>
+   <input id="pitch" type="range" min="-2" max="4" step=".25" value="1"><div class="range-meta"><span>Lower</span><span>Higher</span></div>
   </div>
   <div style="margin-top:17px">
-   <label for="formant"><span>Formant / vocal resonance</span><output id="formantValue">+4.5 semitones</output></label>
-   <input id="formant" type="range" min="-1" max="7" step=".25" value="4.5"><div class="range-meta"><span>Deeper</span><span>Lighter / brighter</span></div>
+   <label for="formant"><span>Formant / vocal resonance</span><output id="formantValue">+1.0 semitone</output></label>
+   <input id="formant" type="range" min="-2" max="4" step=".25" value="1"><div class="range-meta"><span>Deeper</span><span>Lighter</span></div>
   </div>
-  <p class="note">Live pitch and formant updates are applied to the active processor. Formant shifting changes vocal resonance, but it is not a complete voice-conversion model and may not fully feminize every voice.</p>
+  <div style="margin-top:17px">
+   <label for="muffle"><span>Muffle intensity</span><output id="muffleValue">45%</output></label>
+   <input id="muffle" type="range" min="0" max="100" step="1" value="45"><div class="range-meta"><span>Clear</span><span>More muffled</span></div>
+  </div>
+  <div style="margin-top:17px">
+   <label for="warmth"><span>Warmth</span><output id="warmthValue">+1.5 dB</output></label>
+   <input id="warmth" type="range" min="-3" max="4" step=".5" value="1.5"><div class="range-meta"><span>Less warmth</span><span>Warmer</span></div>
+  </div>
+  <p class="note">The default preset uses only a small pitch/formant lift. The low-pass filter creates the soft muffled character; reduce Muffle if consonants become hard to understand.</p>
  </section>
  <section class="panel">
-  <h2>How to use it with VRChat</h2>
-  <p class="sub">Select your microphone here, then choose your virtual cable / Voicemeeter input as the output. In VRChat, select the matching virtual cable as your microphone.</p>
-  <p class="note">Audio is processed locally in this browser. No microphone recording is uploaded. Keep this tab open while using the voice changer.</p>
+  <h2>VRChat routing</h2>
+  <p class="sub">Choose your Voicemeeter virtual input as the output device here. In VRChat, choose the corresponding Voicemeeter virtual output as your microphone. Use headphones to avoid feedback.</p>
+  <p class="note">Audio is processed locally in this browser. No microphone audio is uploaded. Keep this tab open while using the voice changer. Chrome/Edge may require a click on Start to enable microphone and audio playback.</p>
  </section>
- <footer>Voicechanger · Natural pitch and formant processing · No Tone.js</footer>
+ <footer>Voicechanger · Real-time microphone DSP · Signalsmith Stretch</footer>
 </main>
 <script type="module">
 const $=id=>document.getElementById(id);
-let context=null,stream=null,stretch=null,source=null,monitor=null,streamDestination=null;
-let currentPitch=4,currentFormant=4.5;
+let context=null,stream=null,stretch=null,source=null,monitor=null,analyser=null,raf=0;
+let highpass=null,lowpass=null,warmthFilter=null,compressor=null;
 const status=(message,live=false)=>{$('status').textContent=message;$('dot').classList.toggle('live',live)};
-const updateValues=()=>{
- currentPitch=Number($('pitch').value);currentFormant=Number($('formant').value);
- $('pitchValue').textContent=(currentPitch>=0?'+':'')+currentPitch.toFixed(1)+' semitones';
- $('formantValue').textContent=(currentFormant>=0?'+':'')+currentFormant.toFixed(1)+' semitones';
- if(stretch)applySettings();
-};
-function applySettings(){
- if(!stretch||!context)return;
- stretch.schedule({active:true,semitones:currentPitch,formantSemitones:currentFormant,formantCompensation:true,formantBaseHz:120});
+const values=()=>({
+ pitch:Number($('pitch').value),formant:Number($('formant').value),
+ muffle:Number($('muffle').value),warmth:Number($('warmth').value)
+});
+function updateLabels(){
+ const v=values();
+ $('pitchValue').textContent=(v.pitch>=0?'+':'')+v.pitch.toFixed(1)+' semitones';
+ $('formantValue').textContent=(v.formant>=0?'+':'')+v.formant.toFixed(1)+' semitones';
+ $('muffleValue').textContent=v.muffle+'%';
+ $('warmthValue').textContent=(v.warmth>=0?'+':'')+v.warmth.toFixed(1)+' dB';
+ applySettings();
 }
-$('pitch').addEventListener('input',()=>{updateValues();document.querySelectorAll('.preset').forEach(b=>b.classList.remove('active'))});
-$('formant').addEventListener('input',()=>{updateValues();document.querySelectorAll('.preset').forEach(b=>b.classList.remove('active'))});
+function applySettings(){
+ if(!context)return;
+ const v=values();
+ if(stretch)stretch.schedule({active:true,semitones:v.pitch,formantSemitones:v.formant,formantCompensation:true,formantBaseHz:150});
+ // 0% = mostly open (8 kHz); 100% = strongly muffled (2.4 kHz).
+ if(lowpass)lowpass.frequency.setTargetAtTime(8000-(v.muffle*56),context.currentTime,.04);
+ if(warmthFilter)warmthFilter.gain.setTargetAtTime(v.warmth,context.currentTime,.04);
+}
+['pitch','formant','muffle','warmth'].forEach(id=>$(id).addEventListener('input',()=>{
+ updateLabels();document.querySelectorAll('.preset').forEach(b=>b.classList.remove('active'));
+}));
 document.querySelectorAll('.preset').forEach(button=>button.addEventListener('click',()=>{
  $('pitch').value=button.dataset.pitch;$('formant').value=button.dataset.formant;
- document.querySelectorAll('.preset').forEach(b=>b.classList.toggle('active',b===button));updateValues();
+ $('muffle').value=button.dataset.muffle;$('warmth').value=button.dataset.warmth;
+ document.querySelectorAll('.preset').forEach(b=>b.classList.toggle('active',b===button));updateLabels();
 }));
 async function refreshDevices(){
  if(!navigator.mediaDevices?.enumerateDevices)return;
  const devices=await navigator.mediaDevices.enumerateDevices();
- const fill=(id,list,kind,defaultText)=>{
+ const fill=(id,kind,defaultText)=>{
   const select=$(id),previous=select.value;select.innerHTML='';
   const def=document.createElement('option');def.value='';def.textContent=defaultText;select.append(def);
-  list.filter(d=>d.kind===kind).forEach((d,i)=>{const o=document.createElement('option');o.value=d.deviceId;o.textContent=d.label||kind+' '+(i+1);select.append(o)});
+  devices.filter(d=>d.kind===kind).forEach((d,i)=>{const o=document.createElement('option');o.value=d.deviceId;o.textContent=d.label||kind+' '+(i+1);select.append(o)});
   if([...select.options].some(o=>o.value===previous))select.value=previous;
  };
- fill('mic',devices,'audioinput','Default microphone');fill('output',devices,'audiooutput','Default speakers');
+ fill('mic','audioinput','Default microphone');fill('output','audiooutput','Default speakers');
 }
 async function stopAudio(){
+ cancelAnimationFrame(raf);
  try{if(stretch)stretch.stop()}catch{}
  if(source){try{source.disconnect()}catch{}source=null}
  if(stretch){try{stretch.disconnect()}catch{}stretch=null}
- if(monitor){try{monitor.pause();monitor.srcObject=null}catch{}monitor=null}
+ if(monitor){try{monitor.pause();monitor.srcObject=null;monitor.remove()}catch{}monitor=null}
  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
  if(context){try{await context.close()}catch{}context=null}
+ highpass=lowpass=warmthFilter=compressor=analyser=null;
  $('start').disabled=false;$('stop').disabled=true;$('meter').style.width='0%';status('Stopped.');
 }
 $('start').addEventListener('click',async()=>{
- $('start').disabled=true;
+ $('start').disabled=true;status('Starting microphone and loading Signalsmith…');
  try{
   if(!window.isSecureContext)throw new Error('Microphone access requires HTTPS. Open this app through GitHub Pages.');
+  if(!navigator.mediaDevices?.getUserMedia)throw new Error('This browser does not provide microphone capture.');
   const micId=$('mic').value,outputId=$('output').value;
-  stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:micId?{exact:micId}:undefined,echoCancellation:true,noiseSuppression:true,autoGainControl:false,channelCount:1},video:false});
+  stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:micId?{exact:micId}:undefined,echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1},video:false});
   await refreshDevices();
   context=new AudioContext({latencyHint:'interactive'});await context.resume();
   const {default:SignalsmithStretch}=await import('https://cdn.jsdelivr.net/npm/signalsmith-stretch@1.3.2/SignalsmithStretch.mjs');
   stretch=await SignalsmithStretch(context);
   source=context.createMediaStreamSource(stream);
-  const compressor=context.createDynamicsCompressor();compressor.threshold.value=-18;compressor.knee.value=18;compressor.ratio.value=2.2;compressor.attack.value=.008;compressor.release.value=.16;
-  streamDestination=context.createMediaStreamDestination();
-  stretch.connect(compressor);compressor.connect(streamDestination);
-  monitor=document.createElement('audio');monitor.autoplay=true;monitor.srcObject=streamDestination.stream;monitor.playsInline=true;monitor.style.position='fixed';monitor.style.width='1px';monitor.style.height='1px';monitor.style.opacity='0';monitor.style.pointerEvents='none';document.body.append(monitor);
+  highpass=context.createBiquadFilter();highpass.type='highpass';highpass.frequency.value=100;highpass.Q.value=.707;
+  warmthFilter=context.createBiquadFilter();warmthFilter.type='peaking';warmthFilter.frequency.value=260;warmthFilter.Q.value=.8;
+  lowpass=context.createBiquadFilter();lowpass.type='lowpass';lowpass.Q.value=.707;
+  compressor=context.createDynamicsCompressor();compressor.threshold.value=-20;compressor.knee.value=18;compressor.ratio.value=2;compressor.attack.value=.008;compressor.release.value=.16;
+  const destination=context.createMediaStreamDestination();
+  stretch.connect(highpass);highpass.connect(warmthFilter);warmthFilter.connect(lowpass);lowpass.connect(compressor);compressor.connect(destination);
+  monitor=document.createElement('audio');monitor.autoplay=true;monitor.srcObject=destination.stream;monitor.playsInline=true;monitor.style.position='fixed';monitor.style.width='1px';monitor.style.height='1px';monitor.style.opacity='0';monitor.style.pointerEvents='none';document.body.append(monitor);
   if(outputId&&typeof monitor.setSinkId==='function')await monitor.setSinkId(outputId);
   else if(outputId)throw new Error('This browser does not support selecting an audio output device.');
-  await stretch.start();
-  source.connect(stretch);
-  await stretch.schedule({active:true,semitones:currentPitch,formantSemitones:currentFormant,formantCompensation:true,formantBaseHz:120});
-  await monitor.play();
-  $('stop').disabled=false;status('Live voice is running. Select the virtual cable as VRChat microphone.',true);
-  const analyser=context.createAnalyser();analyser.fftSize=256;source.connect(analyser);const data=new Uint8Array(analyser.frequencyBinCount);
-  const draw=()=>{if(!context||context.state==='closed')return;analyser.getByteTimeDomainData(data);let sum=0;for(const v of data){const x=(v-128)/128;sum+=x*x}$('meter').style.width=Math.min(100,Math.sqrt(sum/data.length)*240)+'%';requestAnimationFrame(draw)};draw();
+  await stretch.start();source.connect(stretch);applySettings();await monitor.play();
+  $('stop').disabled=false;status('Live voice is running. Select the matching Voicemeeter device in VRChat.',true);
+  analyser=context.createAnalyser();analyser.fftSize=256;source.connect(analyser);const data=new Uint8Array(analyser.frequencyBinCount);
+  const draw=()=>{if(!context||context.state==='closed')return;analyser.getByteTimeDomainData(data);let sum=0;for(const v of data){const x=(v-128)/128;sum+=x*x}$('meter').style.width=Math.min(100,Math.sqrt(sum/data.length)*240)+'%';raf=requestAnimationFrame(draw)};draw();
  }catch(error){console.error(error);await stopAudio();status(error.message||'Could not start audio. Check microphone permissions.');$('start').disabled=false}
 });
 $('stop').addEventListener('click',stopAudio);
 navigator.mediaDevices?.addEventListener?.('devicechange',refreshDevices);
-refreshDevices().catch(()=>{});updateValues();
+refreshDevices().catch(()=>{});updateLabels();
 </script>
 </body>
 </html>
