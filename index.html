@@ -1,131 +1,157 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Voice Dictator Studio</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#171426">
+<title>Soft Muffled Girl Voice · Voicechanger</title>
 <style>
-:root{font-family:Inter,ui-sans-serif,system-ui,Segoe UI,sans-serif;color:#21182a;background:#fff8fc;font-synthesis:none}
-*{box-sizing:border-box}body{margin:0;min-height:100vh;background:linear-gradient(135deg,#fff8fc 0%,#f5efff 55%,#eef8ff 100%)}
-header{height:76px;padding:0 clamp(18px,5vw,72px);display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #eadfea;background:#ffffffb8;backdrop-filter:blur(12px)}
-.brand{display:flex;align-items:center;gap:12px;font-weight:850;letter-spacing:-.04em;font-size:1.15rem}.brandmark{width:38px;height:38px;border-radius:13px;background:#7c4dff;color:white;display:grid;place-items:center;font-size:1.25rem}
-.header-tag{font-size:.82rem;color:#75677e;background:#f2eafa;padding:8px 13px;border-radius:99px}
-main{width:min(1180px,94vw);margin:46px auto 60px}
-.hero{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:28px}.eyebrow{text-transform:uppercase;letter-spacing:.16em;font-size:.72rem;font-weight:800;color:#8757d8}
-h1{font-size:clamp(2.2rem,5vw,4rem);line-height:1.02;letter-spacing:-.065em;margin:10px 0 12px;color:#261936}.intro{color:#786d80;max-width:580px;margin:0;font-size:1.03rem}
-.workspace{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(290px,.85fr);gap:20px;align-items:start}
-.panel{background:#fff;border:1px solid #eee4f0;border-radius:24px;box-shadow:0 18px 55px #56366c0d}
-.editor{padding:24px}.panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}.panel-head h2{font-size:1rem;margin:0;letter-spacing:-.02em}.status{display:flex;align-items:center;gap:8px;font-size:.8rem;color:#8b8190}.dot{width:9px;height:9px;border-radius:50%;background:#c7becb}.dot.on{background:#24bd83;box-shadow:0 0 0 5px #24bd831c}
-textarea{width:100%;min-height:340px;resize:vertical;border:1px solid #eee5f0;border-radius:17px;padding:20px;background:#fffbff;color:#2d2034;font:1.08rem/1.7 inherit;outline:none}textarea:focus{border-color:#a98aff;box-shadow:0 0 0 4px #a98aff20}textarea::placeholder{color:#b4a9b9}
-.toolbar{display:flex;flex-wrap:wrap;gap:9px;margin-top:16px}button,select,input{font:inherit}button{border:1px solid #e9dfed;background:#fff;color:#51445a;border-radius:12px;padding:11px 15px;font-weight:700;cursor:pointer;transition:.15s}button:hover{transform:translateY(-1px);border-color:#bca6d8}button:disabled{opacity:.45;cursor:not-allowed;transform:none}.primary{background:#7448e8;color:#fff;border-color:#7448e8}.primary:hover{background:#6135d4}.stop{color:#bd3c69}
-.sidebar{padding:22px;display:grid;gap:20px}.sidebar h2{font-size:1rem;margin:0 0 4px}.field label{display:block;font-size:.83rem;font-weight:750;margin-bottom:8px;color:#51445a}.field small{display:block;color:#95899a;font-size:.76rem;margin-top:6px}.field select,.field input[type=search]{width:100%;border:1px solid #e9dfed;border-radius:11px;padding:11px 12px;background:#fffbff;color:#33263b;outline-color:#a98aff}.voice-pair{display:grid;grid-template-columns:1fr auto;gap:8px}.voice-pair button{padding-inline:12px}.range{display:flex;align-items:center;gap:12px}.range input{width:100%;accent-color:#7448e8}.range output{min-width:42px;text-align:right;font-size:.8rem;color:#796d80;font-variant-numeric:tabular-nums}
-.divider{height:1px;background:#f0e9f2}.notice{padding:12px 14px;background:#f7f1ff;border-radius:13px;color:#78618e;font-size:.79rem;line-height:1.5}#message{min-height:22px;color:#75677e;font-size:.85rem;margin-top:13px}
-@media(max-width:800px){.workspace{grid-template-columns:1fr}.hero{align-items:flex-start;flex-direction:column}.sidebar{grid-template-columns:repeat(2,minmax(0,1fr))}.notice{grid-column:1/-1}}
-@media(max-width:520px){main{margin:30px auto}.sidebar{grid-template-columns:1fr}.editor{padding:16px}textarea{min-height:260px}header{height:64px}}
+:root{color-scheme:dark;--bg:#11101b;--panel:#1b1929;--panel2:#242136;--line:#39344e;--text:#f7f3ff;--muted:#aaa3bf;--pink:#f18acb;--violet:#a995ff;--good:#8be0bd}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 50% -20%,#45305d 0,transparent 55%),var(--bg);color:var(--text);font:15px/1.5 Inter,ui-sans-serif,system-ui,Segoe UI,sans-serif;padding:28px 16px}
+main{width:min(860px,100%);margin:auto}.top{display:flex;align-items:center;gap:14px;margin-bottom:22px}.logo{width:48px;height:48px;border-radius:16px;background:linear-gradient(135deg,var(--pink),var(--violet));display:grid;place-items:center;font-size:24px;color:#20162c;box-shadow:0 8px 28px #d77cce40}
+h1{font-size:clamp(25px,5vw,34px);line-height:1.1;margin:0}.sub{color:var(--muted);margin:5px 0 0}
+.panel{background:linear-gradient(160deg,#211e31,#191725);border:1px solid var(--line);border-radius:22px;padding:22px;margin:14px 0;box-shadow:0 18px 55px #0003}
+.panel h2{font-size:16px;margin:0 0 14px}.row{display:grid;grid-template-columns:1fr 1fr;gap:14px}.field{min-width:0}label{display:flex;justify-content:space-between;gap:10px;color:#d9d2e9;font-weight:600;font-size:13px;margin:0 0 7px}
+select{width:100%;min-width:0;background:var(--panel2);border:1px solid var(--line);border-radius:11px;color:var(--text);padding:12px;font:inherit}
+input[type=range]{width:100%;accent-color:var(--pink);cursor:pointer}.range-meta{color:var(--muted);font-size:12px;display:flex;justify-content:space-between;margin-top:2px}
+.presets{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.preset{border:1px solid var(--line);border-radius:12px;padding:12px 9px;background:var(--panel2);color:var(--text);cursor:pointer;text-align:center;font:inherit}.preset strong{display:block;font-size:13px}.preset small{color:var(--muted);font-size:11px}.preset.active{border-color:var(--pink);background:#633b6545;box-shadow:inset 0 0 0 1px #f18acb55}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.btn{border:1px solid var(--line);border-radius:13px;padding:13px 18px;background:var(--panel2);color:var(--text);font:700 14px/1.2 Inter,system-ui,sans-serif;cursor:pointer}.btn.primary{background:linear-gradient(100deg,#e98bc7,#a995ff);color:#21172b;border:0;flex:1}.btn:disabled{opacity:.45;cursor:not-allowed}
+.status{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px;margin-top:16px}.dot{width:9px;height:9px;border-radius:50%;background:#777}.dot.live{background:var(--good);box-shadow:0 0 12px var(--good)}
+.note{color:var(--muted);font-size:12px;margin:14px 0 0}.meter{height:5px;background:#332e45;border-radius:9px;overflow:hidden;margin-top:12px}.meter span{display:block;width:0;height:100%;background:linear-gradient(90deg,var(--pink),var(--violet));transition:width .08s}
+footer{text-align:center;color:#827b98;font-size:12px;padding:18px}
+@media(max-width:580px){.row{grid-template-columns:1fr}.panel{padding:17px}.presets{grid-template-columns:1fr}.preset{text-align:left}.preset small{font-size:12px}}
 </style>
 </head>
 <body>
-<header><div class="brand"><span class="brandmark">♫</span><span>VOICE DICTATOR STUDIO</span></div><span class="header-tag">Live speech → instant voice</span></header>
 <main>
-<section class="hero"><div><div class="eyebrow">Your voice, in real time</div><h1>Speak. See it.<br>Hear it instantly.</h1><p class="intro">A dedicated dictation and read-aloud studio. Start your mic, choose any voice your browser provides, and hear recognized speech as it arrives.</p></div></section>
-<section class="workspace">
-<div class="panel editor">
-<div class="panel-head"><h2>Live transcript</h2><div class="status"><span class="dot" id="dot"></span><span id="liveLabel">Microphone off</span></div></div>
-<textarea id="transcript" placeholder="Your words will appear here as you speak…" spellcheck="false"></textarea>
-<div class="toolbar"><button class="primary" id="start">🎙 Start microphone</button><button class="stop" id="stop" disabled>Stop</button><button id="read">▶ Read all text</button><button id="pause">Pause</button><button id="clear">Clear text</button><button id="auto" aria-pressed="true">Instant speech: ON</button></div>
-<div id="message" role="status">Ready when you are. Press Start microphone to begin.</div>
-</div>
-<aside class="panel sidebar">
-<div class="field"><h2>Voice controls</h2><label for="voiceSearch">Search available voices</label><input id="voiceSearch" type="search" placeholder="Try English, Google, Ava…"><small id="voiceCount">Loading voices…</small></div>
-<div class="field"><label for="voice">Choose speaking voice</label><div class="voice-pair"><select id="voice"><option value="">Browser default</option></select><button id="preview">Test</button></div><small>Voice list comes from Chrome/Edge and installed system voices.</small></div>
-<div class="divider"></div>
-<div class="field"><label for="rate">Speaking speed</label><div class="range"><input id="rate" type="range" min=".65" max="1.6" step=".05" value="1"><output id="rateValue">1.00×</output></div></div>
-<div class="field"><label for="pitch">Pitch</label><div class="range"><input id="pitch" type="range" min=".5" max="2" step=".05" value="1"><output id="pitchValue">1.00</output></div></div>
-<div class="field"><label for="volume">Volume</label><div class="range"><input id="volume" type="range" min="0" max="1" step=".05" value="1"><output id="volumeValue">100%</output></div></div>
-<div class="field"><label for="language">Recognition language</label><select id="language"><option value="en-US">English (United States)</option><option value="en-GB">English (United Kingdom)</option><option value="en-AU">English (Australia)</option><option value="es-ES">Spanish</option><option value="fr-FR">French</option><option value="de-DE">German</option><option value="ja-JP">Japanese</option><option value="ko-KR">Korean</option><option value="zh-CN">Chinese (Mandarin)</option></select></div>
-<div class="notice">Chrome and Edge support varies by version. Speech recognition generally requires internet access. Available voices depend on your browser and operating system; this page does not download a million separate voices.</div>
-</aside>
-</section>
+ <header class="top"><div class="logo">♫</div><div><h1>Soft Muffled Girl Voice</h1><p class="sub">Live microphone processing · Signalsmith Stretch + gentle EQ</p></div></header>
+ <section class="panel">
+  <h2>Audio devices</h2>
+  <div class="row">
+   <div class="field"><label for="mic">Microphone input</label><select id="mic"><option value="">Default microphone</option></select></div>
+   <div class="field"><label for="output">Audio output</label><select id="output"><option value="">Default speakers</option></select></div>
+  </div>
+  <div class="actions"><button class="btn primary" id="start">Start live voice</button><button class="btn" id="stop" disabled>Stop</button></div>
+  <div class="status"><span class="dot" id="dot"></span><span id="status">Ready. Choose your devices, then start.</span></div>
+  <div class="meter"><span id="meter"></span></div>
+ </section>
+ <section class="panel">
+  <h2>Voice style</h2>
+  <div class="presets">
+   <button class="preset active" data-pitch="1" data-formant="1" data-muffle="45" data-warmth="1.5"><strong>Soft anime girl</strong><small>Natural feminine, gentle muffling</small></button>
+   <button class="preset" data-pitch="0.5" data-formant="0.75" data-muffle="30" data-warmth="2"><strong>Natural soft</strong><small>Subtle shaping, light warmth</small></button>
+   <button class="preset" data-pitch="1.5" data-formant="1.5" data-muffle="65" data-warmth="1"><strong>Dreamy muffled</strong><small>More covered and distant</small></button>
+  </div>
+  <div style="margin-top:20px">
+   <label for="pitch"><span>Pitch shift</span><output id="pitchValue">+1.0 semitone</output></label>
+   <input id="pitch" type="range" min="-2" max="4" step=".25" value="1"><div class="range-meta"><span>Lower</span><span>Higher</span></div>
+  </div>
+  <div style="margin-top:17px">
+   <label for="formant"><span>Formant / vocal resonance</span><output id="formantValue">+1.0 semitone</output></label>
+   <input id="formant" type="range" min="-2" max="4" step=".25" value="1"><div class="range-meta"><span>Deeper</span><span>Lighter</span></div>
+  </div>
+  <div style="margin-top:17px">
+   <label for="muffle"><span>Muffle intensity</span><output id="muffleValue">45%</output></label>
+   <input id="muffle" type="range" min="0" max="100" step="1" value="45"><div class="range-meta"><span>Clear</span><span>More muffled</span></div>
+  </div>
+  <div style="margin-top:17px">
+   <label for="warmth"><span>Warmth</span><output id="warmthValue">+1.5 dB</output></label>
+   <input id="warmth" type="range" min="-3" max="4" step=".5" value="1.5"><div class="range-meta"><span>Less warmth</span><span>Warmer</span></div>
+  </div>
+  <p class="note">The default preset uses only a small pitch/formant lift. The low-pass filter creates the soft muffled character; reduce Muffle if consonants become hard to understand.</p>
+ </section>
+ <section class="panel">
+  <h2>VRChat routing</h2>
+  <p class="sub">Choose your Voicemeeter virtual input as the output device here. In VRChat, choose the corresponding Voicemeeter virtual output as your microphone. Use headphones to avoid feedback.</p>
+  <p class="note">Audio is processed locally in this browser. No microphone audio is uploaded. Keep this tab open while using the voice changer. Chrome/Edge may require a click on Start to enable microphone and audio playback.</p>
+ </section>
+ <footer>Voicechanger · Real-time microphone DSP · Signalsmith Stretch</footer>
 </main>
-<script>
-const $=id=>document.getElementById(id),box=$('transcript');
-const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-let voices=[],recognition=null,keep=false,listening=false,restartTimer=null,endWatchdog=null,restartDelay=800,auto=true,queue=[],speaking=false,paused=false,current=null,micStream=null,finalText='',permissionReady=false;
-function message(s){$('message').textContent=s}
-function refreshVoices(){const previous=$('voice').value;voices=window.speechSynthesis?.getVoices?.()||[];const q=$('voiceSearch').value.trim().toLowerCase();const list=voices.map((v,i)=>({v,i})).filter(x=>!q||(x.v.name+' '+x.v.lang).toLowerCase().includes(q));$('voice').innerHTML='<option value="">Browser default</option>';for(const x of list){const o=document.createElement('option');o.value=x.i;o.textContent=x.v.name+' — '+x.v.lang;$('voice').append(o)}if([...$('voice').options].some(o=>o.value===previous))$('voice').value=previous;$('voiceCount').textContent=voices.length+' voices available'}
-if('speechSynthesis'in window){refreshVoices();speechSynthesis.onvoiceschanged=refreshVoices;setTimeout(refreshVoices,500)}
-$('voiceSearch').oninput=refreshVoices;
-function stopSpeech(){queue=[];speaking=false;current=null;window.speechSynthesis?.cancel()}
-function speak(t){if(auto&&t.trim()){queue.push(t.trim());runQueue()}}
-function runQueue(){if(speaking||paused||!queue.length||!window.speechSynthesis)return;const u=new SpeechSynthesisUtterance(queue.shift()),v=$('voice').value;if(v!==''&&voices[+v])u.voice=voices[+v];u.rate=+$('rate').value;u.pitch=+$('pitch').value;u.volume=+$('volume').value;u.lang=u.voice?.lang||$('language').value;current=u;speaking=true;u.onend=u.onerror=()=>{if(current!==u)return;current=null;speaking=false;runQueue()};speechSynthesis.speak(u)}
-$('rate').oninput=()=> $('rateValue').textContent=(+$('rate').value).toFixed(2)+'×';
-$('pitch').oninput=()=> $('pitchValue').textContent=(+$('pitch').value).toFixed(2);
-$('volume').oninput=()=> $('volumeValue').textContent=Math.round(+$('volume').value*100)+'%';
-$('preview').onclick=()=>{stopSpeech();auto=true;speak('Hello! This is your selected voice preview.')};
-$('auto').onclick=()=>{auto=!auto;$('auto').textContent='Instant speech: '+(auto?'ON':'OFF');$('auto').setAttribute('aria-pressed',String(auto));message(auto?'Instant speech enabled.':'Instant speech disabled.')};
-$('read').onclick=()=>{stopSpeech();paused=false;speak(box.value)};
-$('pause').onclick=()=>{if(!window.speechSynthesis)return;if(speechSynthesis.speaking&&!paused){speechSynthesis.pause();paused=true;$('pause').textContent='Resume'}else if(paused){speechSynthesis.resume();paused=false;$('pause').textContent='Pause';runQueue()}};
-$('clear').onclick=()=>{box.value='';finalText='';stopSpeech();message('Transcript cleared.')};
-function ui(){ $('dot').classList.toggle('on',listening);$('liveLabel').textContent=listening?'Listening live':keep?'Reconnecting…':'Microphone off';$('start').disabled=keep;$('stop').disabled=!keep}
-function stopRecognition(){clearTimeout(restartTimer);clearTimeout(endWatchdog);const r=recognition;recognition=null;listening=false;if(r){r.onend=null;r.onerror=null;try{r.abort()}catch{try{r.stop()}catch{}}}ui()}
-function scheduleRestart(){if(!keep)return;clearTimeout(restartTimer);restartTimer=setTimeout(startRecognition,restartDelay);restartDelay=Math.min(restartDelay*1.6,5000)}
-function startRecognition(){
- if(!keep||recognition)return;
- if(!SR){keep=false;ui();message('Speech recognition is not supported. Use current Chrome or Edge.');return}
- const r=new SR();recognition=r;r.lang=$('language').value;r.continuous=true;r.interimResults=true;r.maxAlternatives=1;
- r.onstart=()=>{if(recognition!==r)return;clearTimeout(endWatchdog);listening=true;restartDelay=800;ui();message('Listening — speak naturally. Your transcript will appear here.')};
- r.onresult=e=>{
-  if(recognition!==r)return;
-  let interim='';
-  for(let i=e.resultIndex;i<e.results.length;i++){
-   const result=e.results[i],phrase=(result[0]?.transcript||'').trim();
-   if(!phrase)continue;
-   if(result.isFinal){finalText+=(finalText && !finalText.endsWith(' ')?' ':'')+phrase+' ';speak(phrase)}
-   else interim+=phrase+' ';
-  }
-  box.value=finalText+interim.trimStart();box.scrollTop=box.scrollHeight;
- };
- r.onerror=e=>{
-  if(recognition!==r)return;
-  if(e.error==='not-allowed'||e.error==='service-not-allowed'||e.error==='audio-capture'){
-   keep=false;stopRecognition();message('Microphone access was denied or unavailable. Allow microphone access for this site in the address-bar lock icon, then press Start again.');return;
-  }
-  message('Speech recognition: '+e.error+' — restarting automatically…');
-  // Some Chromium builds occasionally emit an error without a matching onend.
-  // Recover the session if onend does not arrive, while avoiding overlapping recognizers.
-  clearTimeout(endWatchdog);
-  endWatchdog=setTimeout(()=>{
-   if(recognition!==r||!keep)return;
-   recognition=null;listening=false;
-   try{r.abort()}catch{}
-   ui();message('Restarting speech recognition…');scheduleRestart();
-  },2500);
- };
- r.onend=()=>{if(recognition!==r)return;clearTimeout(endWatchdog);recognition=null;listening=false;ui();if(keep){message('Speech recognition ended — restarting automatically…');scheduleRestart()}else message('Dictation stopped.')};
- try{r.start()}catch(err){if(recognition===r)recognition=null;listening=false;ui();message('Could not start recognition: '+err.message);scheduleRestart()}
+<script type="module">
+const $=id=>document.getElementById(id);
+let context=null,stream=null,stretch=null,source=null,monitor=null,analyser=null,raf=0;
+let highpass=null,lowpass=null,warmthFilter=null,compressor=null;
+const status=(message,live=false)=>{$('status').textContent=message;$('dot').classList.toggle('live',live)};
+const values=()=>({
+ pitch:Number($('pitch').value),formant:Number($('formant').value),
+ muffle:Number($('muffle').value),warmth:Number($('warmth').value)
+});
+function updateLabels(){
+ const v=values();
+ $('pitchValue').textContent=(v.pitch>=0?'+':'')+v.pitch.toFixed(1)+' semitones';
+ $('formantValue').textContent=(v.formant>=0?'+':'')+v.formant.toFixed(1)+' semitones';
+ $('muffleValue').textContent=v.muffle+'%';
+ $('warmthValue').textContent=(v.warmth>=0?'+':'')+v.warmth.toFixed(1)+' dB';
+ applySettings();
 }
-async function startMic(){
- if(keep)return;
- if(!SR){message('Speech recognition is unavailable. Open this page in current Chrome or Edge.');return}
- if(!navigator.mediaDevices?.getUserMedia){message('Microphone access requires HTTPS. Open this GitHub Pages HTTPS address.');return}
- keep=true;ui();message('Checking microphone permission…');
+function applySettings(){
+ if(!context)return;
+ const v=values();
+ if(stretch)stretch.schedule({active:true,semitones:v.pitch,formantSemitones:v.formant,formantCompensation:true,formantBaseHz:150});
+ // 0% = mostly open (8 kHz); 100% = strongly muffled (2.4 kHz).
+ if(lowpass)lowpass.frequency.setTargetAtTime(8000-(v.muffle*56),context.currentTime,.04);
+ if(warmthFilter)warmthFilter.gain.setTargetAtTime(v.warmth,context.currentTime,.04);
+}
+['pitch','formant','muffle','warmth'].forEach(id=>$(id).addEventListener('input',()=>{
+ updateLabels();document.querySelectorAll('.preset').forEach(b=>b.classList.remove('active'));
+}));
+document.querySelectorAll('.preset').forEach(button=>button.addEventListener('click',()=>{
+ $('pitch').value=button.dataset.pitch;$('formant').value=button.dataset.formant;
+ $('muffle').value=button.dataset.muffle;$('warmth').value=button.dataset.warmth;
+ document.querySelectorAll('.preset').forEach(b=>b.classList.toggle('active',b===button));updateLabels();
+}));
+async function refreshDevices(){
+ if(!navigator.mediaDevices?.enumerateDevices)return;
+ const devices=await navigator.mediaDevices.enumerateDevices();
+ const fill=(id,kind,defaultText)=>{
+  const select=$(id),previous=select.value;select.innerHTML='';
+  const def=document.createElement('option');def.value='';def.textContent=defaultText;select.append(def);
+  devices.filter(d=>d.kind===kind).forEach((d,i)=>{const o=document.createElement('option');o.value=d.deviceId;o.textContent=d.label||kind+' '+(i+1);select.append(o)});
+  if([...select.options].some(o=>o.value===previous))select.value=previous;
+ };
+ fill('mic','audioinput','Default microphone');fill('output','audiooutput','Default speakers');
+}
+async function stopAudio(){
+ cancelAnimationFrame(raf);
+ try{if(stretch)stretch.stop()}catch{}
+ if(source){try{source.disconnect()}catch{}source=null}
+ if(stretch){try{stretch.disconnect()}catch{}stretch=null}
+ if(monitor){try{monitor.pause();monitor.srcObject=null;monitor.remove()}catch{}monitor=null}
+ if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
+ if(context){try{await context.close()}catch{}context=null}
+ highpass=lowpass=warmthFilter=compressor=analyser=null;
+ $('start').disabled=false;$('stop').disabled=true;$('meter').style.width='0%';status('Stopped.');
+}
+$('start').addEventListener('click',async()=>{
+ $('start').disabled=true;status('Starting microphone and loading Signalsmith…');
  try{
-  if(!permissionReady){
-   micStream=await navigator.mediaDevices.getUserMedia({audio:true});
-   permissionReady=true;
-   micStream.getTracks().forEach(t=>t.stop());micStream=null;
-  }
-  if(!keep)return;
-  finalText=box.value?box.value.trimEnd()+' ':'';
-  startRecognition();
- }catch(err){
-  keep=false;ui();
-  const denied=err.name==='NotAllowedError'||err.name==='PermissionDeniedError';
-  message(denied?'Microphone permission is blocked. Click the lock/tune icon beside the address, set Microphone to Allow, then reload.':'Could not access microphone: '+err.message);
- }
-}
-$('start').onclick=startMic;
-$('stop').onclick=()=>{keep=false;stopRecognition();message('Dictation stopped.')};
-$('language').onchange=()=>{if(keep){stopRecognition();scheduleRestart()}};
-ui();
+  if(!window.isSecureContext)throw new Error('Microphone access requires HTTPS. Open this app through GitHub Pages.');
+  if(!navigator.mediaDevices?.getUserMedia)throw new Error('This browser does not provide microphone capture.');
+  const micId=$('mic').value,outputId=$('output').value;
+  stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:micId?{exact:micId}:undefined,echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1},video:false});
+  await refreshDevices();
+  context=new AudioContext({latencyHint:'interactive'});await context.resume();
+  const {default:SignalsmithStretch}=await import('https://cdn.jsdelivr.net/npm/signalsmith-stretch@1.3.2/SignalsmithStretch.mjs');
+  stretch=await SignalsmithStretch(context);
+  source=context.createMediaStreamSource(stream);
+  highpass=context.createBiquadFilter();highpass.type='highpass';highpass.frequency.value=100;highpass.Q.value=.707;
+  warmthFilter=context.createBiquadFilter();warmthFilter.type='peaking';warmthFilter.frequency.value=260;warmthFilter.Q.value=.8;
+  lowpass=context.createBiquadFilter();lowpass.type='lowpass';lowpass.Q.value=.707;
+  compressor=context.createDynamicsCompressor();compressor.threshold.value=-20;compressor.knee.value=18;compressor.ratio.value=2;compressor.attack.value=.008;compressor.release.value=.16;
+  const destination=context.createMediaStreamDestination();
+  stretch.connect(highpass);highpass.connect(warmthFilter);warmthFilter.connect(lowpass);lowpass.connect(compressor);compressor.connect(destination);
+  monitor=document.createElement('audio');monitor.autoplay=true;monitor.srcObject=destination.stream;monitor.playsInline=true;monitor.style.position='fixed';monitor.style.width='1px';monitor.style.height='1px';monitor.style.opacity='0';monitor.style.pointerEvents='none';document.body.append(monitor);
+  if(outputId&&typeof monitor.setSinkId==='function')await monitor.setSinkId(outputId);
+  else if(outputId)throw new Error('This browser does not support selecting an audio output device.');
+  await stretch.start();source.connect(stretch);applySettings();await monitor.play();
+  $('stop').disabled=false;status('Live voice is running. Select the matching Voicemeeter device in VRChat.',true);
+  analyser=context.createAnalyser();analyser.fftSize=256;source.connect(analyser);const data=new Uint8Array(analyser.frequencyBinCount);
+  const draw=()=>{if(!context||context.state==='closed')return;analyser.getByteTimeDomainData(data);let sum=0;for(const v of data){const x=(v-128)/128;sum+=x*x}$('meter').style.width=Math.min(100,Math.sqrt(sum/data.length)*240)+'%';raf=requestAnimationFrame(draw)};draw();
+ }catch(error){console.error(error);await stopAudio();status(error.message||'Could not start audio. Check microphone permissions.');$('start').disabled=false}
+});
+$('stop').addEventListener('click',stopAudio);
+navigator.mediaDevices?.addEventListener?.('devicechange',refreshDevices);
+refreshDevices().catch(()=>{});updateLabels();
 </script>
-</body></html>
+</body>
+</html>
