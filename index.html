@@ -58,7 +58,7 @@ footer{text-align:center;color:#827b98;font-size:12px;padding:18px}
    <label for="warmth"><span>Warmth</span><output id="warmthValue">+1.5 dB</output></label>
    <input id="warmth" type="range" min="-3" max="4" step=".5" value="1.5"><div class="range-meta"><span>Less warmth</span><span>Warmer</span></div>
   </div>
-  <p class="note">The default preset uses only a small pitch/formant lift. The low-pass filter creates the soft muffled character; reduce Muffle if consonants become hard to understand.</p>
+  <p class="note">Microsoft Edge gets an extra -2 semitone pitch adjustment; Chrome and other browsers keep the selected pitch unchanged. The low-pass filter creates the soft muffled character; reduce Muffle if consonants become hard to understand.</p>
  </section>
  <section class="panel">
   <h2>VRChat routing</h2>
@@ -69,16 +69,18 @@ footer{text-align:center;color:#827b98;font-size:12px;padding:18px}
 </main>
 <script type="module">
 const $=id=>document.getElementById(id);
+const isEdge=/Edg\//.test(navigator.userAgent);
+const edgePitchOffset=isEdge?-2:0; // Lower the processed voice by two semitones in Microsoft Edge only.
 let context=null,stream=null,stretch=null,source=null,monitor=null,analyser=null,raf=0;
 let highpass=null,lowpass=null,warmthFilter=null,compressor=null;
 const status=(message,live=false)=>{$('status').textContent=message;$('dot').classList.toggle('live',live)};
 const values=()=>({
- pitch:Number($('pitch').value),formant:Number($('formant').value),
+ pitch:Number($('pitch').value)+edgePitchOffset,formant:Number($('formant').value),
  muffle:Number($('muffle').value),warmth:Number($('warmth').value)
 });
 function updateLabels(){
  const v=values();
- $('pitchValue').textContent=(v.pitch>=0?'+':'')+v.pitch.toFixed(1)+' semitones';
+ $('pitchValue').textContent=(v.pitch>=0?'+':'')+v.pitch.toFixed(1)+' semitones'+(isEdge?' (Edge)':'');
  $('formantValue').textContent=(v.formant>=0?'+':'')+v.formant.toFixed(1)+' semitones';
  $('muffleValue').textContent=v.muffle+'%';
  $('warmthValue').textContent=(v.warmth>=0?'+':'')+v.warmth.toFixed(1)+' dB';
