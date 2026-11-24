@@ -60,6 +60,17 @@ footer{text-align:center;color:#827b98;font-size:12px;padding:18px}
   </div>
   <p class="note">Microsoft Edge gets an extra -4 semitone pitch adjustment and -1 semitone formant adjustment to reduce the cartoon-like sound; Chrome and other browsers keep the selected settings unchanged. The low-pass filter creates the soft muffled character; reduce Muffle if consonants become hard to understand.</p>
  </section>
+ <section class="panel" id="edgeVoicePanel" hidden>
+  <h2>Microsoft Edge female voice library</h2>
+  <p class="sub">Choose from voices installed and exposed by Microsoft Edge. “Likely female” labels are estimates based on voice names; preview voices to decide.</p>
+  <div class="row" style="margin-top:14px">
+   <div class="field"><label for="edgeVoice">Available Edge voices</label><select id="edgeVoice"><option value="">Detecting voices…</option></select></div>
+   <div class="field"><label for="edgeRate">Preview speed <output id="edgeRateValue">1.00×</output></label><input id="edgeRate" type="range" min=".7" max="1.2" step=".05" value="1"></div>
+  </div>
+  <div class="actions"><button class="btn primary" id="previewEdgeVoice" type="button">Preview selected voice</button><button class="btn" id="stopEdgePreview" type="button">Stop preview</button></div>
+  <p class="note" id="edgeVoiceStatus">Waiting for Edge's speech voice list…</p>
+  <p class="note">This preview uses Edge text-to-speech. Selecting a TTS voice does not yet convert your live microphone into that voice; the microphone path remains separate.</p>
+ </section>
  <section class="panel">
   <h2>VRChat routing</h2>
   <p class="sub">Choose your Voicemeeter virtual input as the output device here. In VRChat, choose the corresponding Voicemeeter virtual output as your microphone. Use headphones to avoid feedback.</p>
@@ -70,6 +81,35 @@ footer{text-align:center;color:#827b98;font-size:12px;padding:18px}
 <script type="module">
 const $=id=>document.getElementById(id);
 const isEdge=/Edg\//.test(navigator.userAgent);
+
+if(isEdge){
+ $('edgeVoicePanel').hidden=false;
+ const voiceSelect=$('edgeVoice'),voiceStatus=$('edgeVoiceStatus');
+ let edgeVoices=[];
+ const femaleName=/(female|woman|girl|zira|aria|jenny|sara|sonia|natasha|hazel|susan|eva|jane|linda|helen|catherine|samantha|karen|victoria|michelle|monica|tessa|olivia|ava|emma|mia|amy|libby|maisie|elsie|bella|clara|serena|priya|neerja|swara|ananya|andrea|paulina|lucia|elena|laura|silvia|francesca|katja|anna|petra|marie|amelie|julie|lea|lisa|natalie|yuna|haruka|nanami|xiaoxiao|xiaoyi|huihui|tingting)/i;
+ function refreshEdgeVoices(){
+  if(!('speechSynthesis' in window)){voiceStatus.textContent='Speech synthesis is unavailable.';return}
+  edgeVoices=speechSynthesis.getVoices();
+  const sorted=[...edgeVoices].sort((a,b)=>Number(femaleName.test(b.name))-Number(femaleName.test(a.name))||a.name.localeCompare(b.name));
+  voiceSelect.innerHTML='';
+  if(!sorted.length){const o=document.createElement('option');o.value='';o.textContent='No voices reported yet';voiceSelect.append(o);voiceStatus.textContent='No voices returned yet. Try refreshing in a moment.';return}
+  sorted.forEach(v=>{const o=document.createElement('option');o.value=String(edgeVoices.indexOf(v));o.textContent=v.name+' — '+(femaleName.test(v.name)?'likely female':'voice')+' · '+v.lang+(v.default?' · default':'');voiceSelect.append(o)});
+  const preferred=sorted.find(v=>femaleName.test(v.name));if(preferred)voiceSelect.value=String(edgeVoices.indexOf(preferred));
+  voiceStatus.textContent=sorted.length+' Edge voices detected. Gender labels are estimates because browser voice metadata does not reliably specify gender.';
+ }
+ speechSynthesis.addEventListener?.('voiceschanged',refreshEdgeVoices);refreshEdgeVoices();setTimeout(refreshEdgeVoices,500);setTimeout(refreshEdgeVoices,1500);
+ $('edgeRate').addEventListener('input',()=>{$('edgeRateValue').textContent=Number($('edgeRate').value).toFixed(2)+'×'});
+ $('previewEdgeVoice').addEventListener('click',()=>{
+  const voice=edgeVoices[Number(voiceSelect.value)];if(!voice){voiceStatus.textContent='Select an available voice first.';return}
+  speechSynthesis.cancel();const utterance=new SpeechSynthesisUtterance('Hello! This is a preview of my selected voice. How does this sound?');
+  utterance.voice=voice;utterance.rate=Number($('edgeRate').value);utterance.pitch=1;
+  utterance.onstart=()=>{voiceStatus.textContent='Previewing '+voice.name+'…'};
+  utterance.onend=()=>{voiceStatus.textContent='Preview finished. Selected: '+voice.name};
+  utterance.onerror=e=>{voiceStatus.textContent='Preview error: '+e.error};speechSynthesis.speak(utterance);
+ });
+ $('stopEdgePreview').addEventListener('click',()=>{speechSynthesis.cancel();voiceStatus.textContent='Preview stopped.'});
+}
+
 const edgePitchOffset=isEdge?-4:0; // Lower the processed voice by four semitones in Microsoft Edge only.
 const edgeFormantOffset=isEdge?-1:0; // Remove the extra bright/cartoon-like formant lift in Edge.
 let context=null,stream=null,stretch=null,source=null,monitor=null,analyser=null,raf=0;
