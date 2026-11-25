@@ -42,7 +42,7 @@ impl VoiceApp {
         cmd.arg("--reference").arg(reference)
             .arg("--engine").arg(&self.engine)
             .arg("--monitor").arg("--denoise")
-            .stdout(Stdio::piped()).stderr(Stdio::piped());
+            .stdout(Stdio::null()).stderr(Stdio::null());
         if !self.input_device.trim().is_empty() {
             cmd.arg("--input-device").arg(self.input_device.trim());
         }
