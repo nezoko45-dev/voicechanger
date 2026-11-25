@@ -1,0 +1,51 @@
+name: Build Ava Rust Voice Changer Package
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-ava-portable.yml"
+      - "ava-rust-launcher/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download latest vc-rs Windows ML release
+        shell: pwsh
+        run: |
+          $release = Invoke-RestMethod -Headers @{ "User-Agent" = "voicechanger-ava-package" } -Uri "https://api.github.com/repos/shirohata/vc-rs/releases/latest"
+          $asset = $release.assets | Where-Object { $_.name -match '^vc-rs-windowsml-.*\.zip$' } | Select-Object -First 1
+          if (-not $asset) { throw "No vc-rs Windows ML ZIP was found in the latest release." }
+          $zip = Join-Path $env:RUNNER_TEMP $asset.name
+          Invoke-WebRequest -Headers @{ "User-Agent" = "voicechanger-ava-package"; "Accept" = "application/octet-stream" } -Uri $asset.browser_download_url -OutFile $zip
+          $extract = Join-Path $env:RUNNER_TEMP "vc-rs-extracted"
+          Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
+          $gui = Get-ChildItem -LiteralPath $extract -Filter "vc-gui.exe" -File -Recurse | Select-Object -First 1
+          if (-not $gui) { throw "vc-gui.exe was not found in the downloaded package." }
+          $package = Join-Path $env:RUNNER_TEMP "Ava-Rust-Voice-Changer"
+          New-Item -ItemType Directory -Path $package -Force | Out-Null
+          Copy-Item -Path (Join-Path $gui.Directory.FullName "*") -Destination $package -Recurse -Force
+          New-Item -ItemType Directory -Path (Join-Path $package "models\Ava") -Force | Out-Null
+          Copy-Item "ava-rust-launcher\start-ava.bat" $package
+          Copy-Item "ava-rust-launcher\README-AVA.txt" $package
+          Copy-Item "ava-rust-launcher\models-Ava-README.txt" (Join-Path $package "models\Ava\README.txt")
+          "Upstream vc-rs release: $($release.tag_name)" | Set-Content (Join-Path $package "UPSTREAM-VERSION.txt")
+          $out = Join-Path $env:GITHUB_WORKSPACE "Ava-Rust-Voice-Changer-Windows.zip"
+          Compress-Archive -Path (Join-Path $package "*") -DestinationPath $out -CompressionLevel Optimal
+          "PACKAGE=$out" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload portable Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ava-Rust-Voice-Changer-Windows
+          path: Ava-Rust-Voice-Changer-Windows.zip
+          if-no-files-found: error
+          retention-days: 14
