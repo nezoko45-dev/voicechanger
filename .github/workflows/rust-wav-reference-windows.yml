@@ -1,4 +1,5 @@
-name: Rust WAV Reference Voice Changer (Windows)
+name: Build Rust WAV Reference Voice Changer (Windows Package)
+
 on:
   push:
     branches: [feature/rust-wav-reference-voicechanger]
@@ -11,17 +12,102 @@ on:
       - "rust-wav-reference/**"
       - ".github/workflows/rust-wav-reference-windows.yml"
   workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Build GUI
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build desktop GUI
         working-directory: rust-wav-reference
         run: cargo build --release
-      - name: Upload GUI executable
+
+      - name: Build AI voice conversion engine (WAV reference support)
+        shell: pwsh
+        run: |
+          $installRoot = Join-Path $env:RUNNER_TEMP "babiniku-install"
+          $env:CARGO_TARGET_DIR = Join-Path $env:RUNNER_TEMP "babiniku-target"
+          cargo install --git https://github.com/m96-chan/babiniku.rs babiniku --features wavlm --locked --root $installRoot
+          if ($LASTEXITCODE -ne 0) { throw "Babiniku engine compilation failed." }
+          $engine = Join-Path $installRoot "bin\babiniku.exe"
+          if (-not (Test-Path $engine)) { throw "babiniku.exe was not produced." }
+          & $engine --version
+          if ($LASTEXITCODE -ne 0) { throw "The packaged Babiniku engine failed its version check." }
+
+      - name: Assemble portable package
+        shell: pwsh
+        run: |
+          $package = Join-Path $env:GITHUB_WORKSPACE "Rust-WAV-Reference-Voice-Changer"
+          New-Item -ItemType Directory -Force -Path $package | Out-Null
+
+          Copy-Item "rust-wav-reference\target\release\rust-wav-reference-voicechanger.exe" (Join-Path $package "Rust-WAV-Reference-Voice-Changer.exe")
+          Copy-Item (Join-Path $env:RUNNER_TEMP "babiniku-install\bin\babiniku.exe") (Join-Path $package "babiniku.exe")
+
+          # The WavLM feature uses ONNX Runtime. Cargo's copy-dylibs feature
+          # places the runtime beside the compiled binary; include it when present.
+          $dllRoots = @(
+            (Join-Path $env:RUNNER_TEMP "babiniku-target"),
+            (Join-Path $env:RUNNER_TEMP "babiniku-install"),
+            (Join-Path $env:USERPROFILE ".cargo")
+          )
+          foreach ($root in $dllRoots) {
+            if (Test-Path $root) {
+              Get-ChildItem -Path $root -Filter "onnxruntime*.dll" -File -Recurse -ErrorAction SilentlyContinue |
+                ForEach-Object { Copy-Item $_.FullName $package -Force }
+            }
+          }
+
+          @'
+          RUST WAV REFERENCE VOICE CHANGER — WINDOWS x64
+
+          Included:
+          - Rust-WAV-Reference-Voice-Changer.exe — desktop control panel
+          - babiniku.exe — live AI voice-conversion engine built with WAV-reference (WavLM) support
+          - ONNX Runtime DLLs, when required by the engine build
+
+          QUICK START
+          1. Extract the entire ZIP to a normal folder.
+          2. Install VoiceMeeter Banana (or VB-CABLE) if you need a virtual microphone.
+          3. Put your target speaker's clean WAV recording somewhere accessible.
+          4. Run Rust-WAV-Reference-Voice-Changer.exe.
+          5. Select the WAV reference. Leave the microphone field blank to use the Windows default mic.
+          6. Keep the output device set to VoiceMeeter Input for VoiceMeeter Banana.
+          7. Start conversion. In VRChat, select VoiceMeeter Output as your microphone.
+
+          IMPORTANT — MODEL CHECKPOINTS ARE NOT INCLUDED
+          The two executables are compiled and included, but Babiniku's neural model
+          checkpoint files are separate downloads and are not bundled in this ZIP.
+          Follow the official engine setup guides before starting conversion:
+          MeanVC: https://github.com/m96-chan/babiniku.rs/blob/main/docs/meanvc.md
+          X-VC:   https://github.com/m96-chan/babiniku.rs/blob/main/docs/xvc.md
+          Windows audio routing: https://github.com/m96-chan/babiniku.rs/blob/main/docs/windows.md
+
+          MeanVC is the default CPU engine. Its default checkpoint is Mandarin-trained,
+          so English voice quality may be limited. X-VC is multilingual and may be a
+          better fit for English, but CPU real-time performance depends on the PC.
+
+          No Python or CUDA Toolkit is required for this CPU package.
+          This is a portable x64 build; it does not install VoiceMeeter or VB-CABLE.
+          '@ | Set-Content -Encoding UTF8 (Join-Path $package "README-FIRST.txt")
+
+          $zip = Join-Path $env:GITHUB_WORKSPACE "Rust-WAV-Reference-Voice-Changer-Windows-x64.zip"
+          Compress-Archive -Path (Join-Path $package "*") -DestinationPath $zip -CompressionLevel Optimal -Force
+          Get-FileHash $zip -Algorithm SHA256 | Format-List | Out-String | Set-Content (Join-Path $env:GITHUB_WORKSPACE "SHA256.txt")
+
+      - name: Upload complete Windows package
         uses: actions/upload-artifact@v4
         with:
-          name: rust-wav-reference-voicechanger-windows
-          path: rust-wav-reference/target/release/rust-wav-reference-voicechanger.exe
+          name: Rust-WAV-Reference-Voice-Changer-Windows-x64
+          path: |
+            Rust-WAV-Reference-Voice-Changer-Windows-x64.zip
+            SHA256.txt
+          if-no-files-found: error
+          retention-days: 30
