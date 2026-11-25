@@ -54,7 +54,7 @@ textarea{width:100%;min-height:310px;resize:vertical;border:1px solid var(--line
 </main>
 <script type="module">
 const $=id=>document.getElementById(id);
-let KokoroTTS=null,tts=null,listening=false,paused=false,busy=false,queue=[],playing=false,currentAudio=null,recognition=null,restartTimer=null,recognitionStarting=false,lastFinalText="";
+let KokoroTTS=null,tts=null,listening=false,paused=false,busy=false,queue=[],playing=false,currentAudio=null,recognition=null,restartTimer=null,recognitionStarting=false,recognitionFinalText='';
 const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
 const textBox=$('transcript');
 function status(s,live=listening){$('status').textContent=s;$('dot').classList.toggle('live',live)}
@@ -105,13 +105,12 @@ async function playQueue(){
 function enqueue(text){queue.push(text);playQueue()}
 
 function appendFinal(text){
- const clean=(text||'').replace(/\\s+/g,' ').trim();
+ const clean=(text||'').replace(/\s+/g,' ').trim();
  if(!clean)return;
- const existing=textBox.value.trim();
- const addition=clean;
- textBox.value=(existing?existing+' ':'')+addition+' ';
+ recognitionFinalText=(recognitionFinalText?recognitionFinalText+' ':'')+clean;
+ textBox.value=recognitionFinalText+' ';
  count();
- if($('autoRead').checked)enqueue(addition);
+ if($('autoRead').checked)enqueue(clean);
 }
 function scheduleRecognitionRestart(){
  if(!listening||paused)return;
@@ -138,7 +137,9 @@ function startRecognitionSession(){
     else interim+=item[0].transcript;
    }
    if(finalChunk)appendFinal(finalChunk);
-   if(interim)status('Listening · '+interim,true);
+   textBox.value=recognitionFinalText+(interim?(recognitionFinalText?' ':'')+interim:'');
+   count();
+   if(interim)status('Hearing: '+interim,true);
    else if(listening&&!paused)status('Listening continuously · Chrome Speech Recognition',true);
   };
   rec.onerror=e=>{
@@ -173,7 +174,7 @@ function startRecognitionSession(){
 function start(){
  if(listening)return;
  if(!SpeechRecognition){status('Chrome Speech Recognition is unavailable in this browser. Open this page in Google Chrome.',false);return}
- listening=true;paused=false;lastFinalText='';controls();
+ listening=true;paused=false;recognitionFinalText=textBox.value.trimEnd();controls();
  $('pause').textContent='Ⅱ Pause';
  status('Starting Chrome Speech Recognition…',true);
  startRecognitionSession();
