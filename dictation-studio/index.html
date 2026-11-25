@@ -46,7 +46,7 @@ textarea{width:100%;min-height:310px;resize:vertical;border:1px solid var(--line
 <div class="field"><div class="rangehead"><label for="volume">Playback volume</label><output id="volumeOut">100%</output></div><input id="volume" type="range" min="0" max="1" step=".05" value="1"></div>
 <div class="field"><label for="language">Dictation language</label><select id="language"><option value="en-US">English (United States)</option><option value="en-GB">English (United Kingdom)</option></select></div>
 <label class="check"><input type="checkbox" id="autoRead" checked> Read each completed phrase automatically</label>
-<label class="check"><input type="checkbox" id="pauseMic" checked disabled> Microphone stays active during AI speech</label>
+<label class="check"><input type="checkbox" id="pauseMic" checked disabled> Keep microphone indicator steady during dictation</label>
 <div class="hint"><strong>This is actual AI speech synthesis.</strong><br>Kokoro-82M runs on your device using the WASM CPU backend. WebGPU is not required. The model and voice files download once from public model hosting and are cached by the browser. Your dictated text is synthesized locally and is not sent to a voice API. First load is large; keep this tab open.</div>
 </aside>
 </div>
@@ -55,7 +55,7 @@ textarea{width:100%;min-height:310px;resize:vertical;border:1px solid var(--line
 <script type="module">
 import { KokoroTTS } from "https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js";
 const $=id=>document.getElementById(id), Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
-let tts=null,recognition=null,listening=false,paused=false,shouldRestart=false,busy=false,queue=[],playing=false,restartTimer=null,currentAudio=null;
+let tts=null,recognition=null,listening=false,paused=false,shouldRestart=false,busy=false,queue=[],playing=false,restartTimer=null,currentAudio=null,micKeepAlive=null;
 const textBox=$('transcript');
 function status(s,live=listening){$('status').textContent=s;$('dot').classList.toggle('live',live)}
 function modelStatus(s,loaded=false){$('modelStatus').textContent=s;$('modelDot').classList.toggle('live',loaded)}
@@ -118,8 +118,8 @@ function startRecognition(){
   recognition.start();
  }catch(e){status('Could not start dictation: '+e.message,false);listening=false;controls()}
 }
-function start(){if(!Recognition){status('Speech recognition is unavailable. Try current Edge or Chrome.',false);return}shouldRestart=true;paused=false;startRecognition()}
-function stop(){shouldRestart=false;paused=false;clearTimeout(restartTimer);queue=[];if(recognition){try{recognition.stop()}catch(e){}}if(currentAudio){currentAudio.pause();currentAudio=null}busy=false;playing=false;listening=false;controls();status('Dictation stopped.',false)}
+async function start(){if(!Recognition){status('Speech recognition is unavailable. Try current Edge or Chrome.',false);return}shouldRestart=true;paused=false;try{if(!micKeepAlive){status('Activating microphone…',false);micKeepAlive=await navigator.mediaDevices.getUserMedia({audio:true})}}catch(e){shouldRestart=false;status('Microphone access failed: '+(e.message||e),false);return}startRecognition()}
+function stop(){shouldRestart=false;paused=false;clearTimeout(restartTimer);if(micKeepAlive){micKeepAlive.getTracks().forEach(track=>track.stop());micKeepAlive=null}queue=[];if(recognition){try{recognition.stop()}catch(e){}}if(currentAudio){currentAudio.pause();currentAudio=null}busy=false;playing=false;listening=false;controls();status('Dictation stopped.',false)}
 $('load').onclick=()=>loadModel().catch(()=>{});
 $('start').onclick=start;$('stop').onclick=stop;
 $('pause').onclick=()=>{if(!listening)return;if(!paused){paused=true;try{recognition&&recognition.stop()}catch(e){}$('pause').textContent='▶ Resume';status('Dictation paused.',false)}else{paused=false;$('pause').textContent='Ⅱ Pause';startRecognition()}};
