@@ -62,7 +62,7 @@ function labels(){
 function apply(){
  labels();if(!ctx||!pitchNode)return;
  pitchNode.pitch=val("pitch");
- const b=val("brightness),w=val("warmth");
+ const b=val("brightness"),w=val("warmth");
  presenceEq.gain.setTargetAtTime((b-50)*.12,ctx.currentTime,.04);
  airEq.gain.setTargetAtTime((b-50)*.07,ctx.currentTime,.04);
  bodyEq.gain.setTargetAtTime((w-50)*.10,ctx.currentTime,.04);
