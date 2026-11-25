@@ -54,7 +54,7 @@ jobs:
           $package = Join-Path $env:GITHUB_WORKSPACE "Rust-WAV-Reference-Voice-Changer"
           New-Item -ItemType Directory -Force -Path $package | Out-Null
 
-          Copy-Item "rust-wav-reference\target\release\rust-wav-reference-voicechanger.exe" (Join-Path $package "Rust-WAV-Reference-Voice-Changer.exe")
+          Copy-Item "gui-artifact\rust-wav-reference-voicechanger.exe" (Join-Path $package "Rust-WAV-Reference-Voice-Changer.exe")
           Copy-Item (Join-Path $env:RUNNER_TEMP "babiniku-install\bin\babiniku.exe") (Join-Path $package "babiniku.exe")
 
           # The WavLM feature uses ONNX Runtime. Cargo's copy-dylibs feature
