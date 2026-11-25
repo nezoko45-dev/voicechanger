@@ -55,7 +55,7 @@ try {
       $found = Get-ChildItem -Path $extract -Filter ffmpeg.exe -Recurse | Select-Object -First 1
       if (-not $found) { throw 'FFmpeg archive did not contain ffmpeg.exe.' }
       New-Item -ItemType Directory -Force -Path $ffmpegDir | Out-Null
-      Copy-Item $found.FullName $ffmpeg -Force
+      Get-ChildItem -Path $found.DirectoryName -File | Copy-Item -Destination $ffmpegDir -Force
       Remove-Item $zip -Force -ErrorAction SilentlyContinue
       Remove-Item $extract -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -69,7 +69,7 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "vc-rs conversion failed (exit code $LASTEXITCODE). Check that all three ONNX models are compatible." }
   $msg = 'Conversion complete!' + [Environment]::NewLine + [Environment]::NewLine + $outputFile
   [System.Windows.Forms.MessageBox]::Show($msg,'RVC conversion complete') | Out-Null
-  Start-Process explorer.exe -ArgumentList @('/select', $outputFile)
+  Start-Process explorer.exe -ArgumentList ('/select,"' + $outputFile + '"')
 }
 catch {
   [System.Windows.Forms.MessageBox]::Show($_.Exception.Message,'RVC audio conversion error',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
