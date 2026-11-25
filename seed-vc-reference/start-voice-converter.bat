@@ -65,6 +65,20 @@ if errorlevel 1 (
   exit /b 1
 )
 
+echo Applying CPU-friendly conversion settings...
+".venv\Scripts\python.exe" cpu-performance-profile.py
+if errorlevel 1 (
+  echo Could not apply the CPU performance profile.
+  pause
+  exit /b 1
+)
+
+REM Limit CPU thread oversubscription on Intel processors.
+set "OMP_NUM_THREADS=4"
+set "MKL_NUM_THREADS=4"
+set "OPENBLAS_NUM_THREADS=4"
+set "NUMEXPR_NUM_THREADS=4"
+
 REM Public model downloads must not use an expired saved Hugging Face token.
 set "HF_HUB_DISABLE_IMPLICIT_TOKEN=1"
 set "HF_TOKEN="
