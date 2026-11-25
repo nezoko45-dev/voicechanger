@@ -147,9 +147,9 @@ async function transcribeNext(){
   const audio=resampleTo16k(transcribeQueue.shift(),audioContext?audioContext.sampleRate:48000);
   let energy=0;for(let i=0;i<audio.length;i+=16)energy+=audio[i]*audio[i];
   const rms=Math.sqrt(energy/Math.max(1,Math.ceil(audio.length/16)));
-  if(rms<0.006)continue;
+  if(rms<0.003){status('Microphone active · waiting for speech…',true);continue;}
   try{
-   status('Listening continuously · Whisper is transcribing…',true);
+   status('Transcribing recent speech with local Whisper…',true);
    const result=await whisper(audio,{language:'english',task:'transcribe'});
    mergeTranscript(result&&result.text);
    status('Listening continuously · local Whisper ready',true);
@@ -158,12 +158,13 @@ async function transcribeNext(){
  transcribing=false;
 }
 function beginAudioCapture(stream){
- audioContext=new (window.AudioContext||window.webkitAudioContext)();
+ if(!audioContext)audioContext=new (window.AudioContext||window.webkitAudioContext)();
+ if(audioContext.state==='suspended')audioContext.resume().catch(()=>{});
  const source=audioContext.createMediaStreamSource(stream);
  processor=audioContext.createScriptProcessor(4096,1,1);
  silentGain=audioContext.createGain();silentGain.gain.value=0;
  captureParts=[];captureLength=0;transcribeQueue=[];
- const chunkSize=Math.round(audioContext.sampleRate*10),overlapSize=Math.round(audioContext.sampleRate*1.2);
+ const chunkSize=Math.round(audioContext.sampleRate*4),overlapSize=Math.round(audioContext.sampleRate*0.8);
  processor.onaudioprocess=e=>{
   if(!listening||paused)return;
   const input=e.inputBuffer.getChannelData(0),copy=new Float32Array(input);
@@ -183,13 +184,18 @@ async function start(){
  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){status('Microphone capture requires HTTPS in a supported browser.',false);return}
  try{
   status('Opening microphone…',false);
+  audioContext=new (window.AudioContext||window.webkitAudioContext)();
+  await audioContext.resume();
   micKeepAlive=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
-  await loadWhisper();
   listening=true;paused=false;beginAudioCapture(micKeepAlive);
+  status('Microphone active · loading local Whisper model…',true);controls();
+  await loadWhisper();
+  if(!listening)return;
+  status('Listening continuously · local Whisper ready',true);
   status('Listening continuously · local Whisper ready',true);controls();$('pause').textContent='Ⅱ Pause';
  }catch(e){
   if(micKeepAlive){micKeepAlive.getTracks().forEach(t=>t.stop());micKeepAlive=null}
-  listening=false;controls();status(e.message||String(e),false);
+  listening=false;if(audioContext){audioContext.close().catch(()=>{});audioContext=null}controls();status(e.message||String(e),false);
  }
 }
 function stop(){
@@ -213,7 +219,7 @@ $('copy').onclick=async()=>{try{await navigator.clipboard.writeText(textBox.valu
 $('speed').oninput=()=>$('speedOut').textContent=Number($('speed').value).toFixed(2)+'×';
 $('volume').oninput=()=>{$('volumeOut').textContent=Math.round(Number($('volume').value)*100)+'%';if(currentAudio)currentAudio.volume=Number($('volume').value)};
 textBox.addEventListener('input',count);
-$('sttSupport').textContent=Recognition?'Dictation engine available':'Dictation engine unavailable';
+$('sttSupport').textContent='Local Whisper · CPU';
 if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){$('start').disabled=true;status('Microphone capture requires HTTPS in a supported browser.',false)}
 </script>
 </body>
