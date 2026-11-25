@@ -54,7 +54,7 @@ textarea{width:100%;min-height:310px;resize:vertical;border:1px solid var(--line
 </main>
 <script type="module">
 const $=id=>document.getElementById(id);
-let KokoroTTS=null,tts=null,listening=false,paused=false,busy=false,queue=[],playing=false,currentAudio=null,recognition=null,restartTimer=null,recognitionStarting=false,recognitionFinalText='';
+let KokoroTTS=null,tts=null,listening=false,paused=false,busy=false,queue=[],playing=false,currentAudio=null,recognition=null,restartTimer=null,recognitionStarting=false,recognitionFinalText='',restartAttempts=0;
 const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
 const textBox=$('transcript');
 function status(s,live=listening){$('status').textContent=s;$('dot').classList.toggle('live',live)}
@@ -88,7 +88,7 @@ async function playQueue(){
   try{
    busy=true;
    // Keep speech recognition running while AI audio plays.
-   status('Generating neural AI speech…',false);
+   status('Generating neural AI speech…',listening&&!paused);
    const result=await makeSpeech(phrase);
    await new Promise(resolve=>{
     currentAudio=new Audio(result.url);currentAudio.volume=Number($('volume').value);
@@ -96,16 +96,16 @@ async function playQueue(){
     currentAudio.onerror=()=>{URL.revokeObjectURL(result.url);resolve()};
     currentAudio.play().catch(()=>resolve());
    });
-  }catch(e){status('AI voice error: '+(e.message||e),false)}
+  }catch(e){status('AI voice error: '+(e.message||e),listening&&!paused)}
  }
  currentAudio=null;busy=false;playing=false;
- if(listening)status('Listening continuously · Chrome Speech Recognition',true);
+ if(listening&&!paused)status('Listening · Chrome Speech Recognition',true);
  else status('Ready.',false);
 }
 function enqueue(text){queue.push(text);playQueue()}
 
 function appendFinal(text){
- const clean=(text||'').replace(/\s+/g,' ').trim();
+ const clean=(text||'').replace(/\\s+/g,' ').trim();
  if(!clean)return;
  recognitionFinalText=(recognitionFinalText?recognitionFinalText+' ':'')+clean;
  textBox.value=recognitionFinalText+' ';
@@ -115,10 +115,14 @@ function appendFinal(text){
 function scheduleRecognitionRestart(){
  if(!listening||paused)return;
  clearTimeout(restartTimer);
- restartTimer=setTimeout(()=>startRecognitionSession(),350);
+ const delay=Math.min(2500,400*Math.pow(1.5,Math.min(restartAttempts,4)));
+ restartAttempts++;
+ status('Speech session ended · restarting in '+(delay/1000).toFixed(1)+'s…',true);
+ restartTimer=setTimeout(()=>{restartTimer=null;startRecognitionSession()},delay);
 }
 function startRecognitionSession(){
- if(!listening||paused||recognitionStarting)return;
+ if(!listening||paused||recognitionStarting||recognition)return;
+ if(!SpeechRecognition){listening=false;controls();status('Chrome Speech Recognition is unavailable in this browser.',false);return}
  try{
   recognitionStarting=true;
   const rec=new SpeechRecognition();
@@ -127,10 +131,14 @@ function startRecognitionSession(){
   rec.continuous=true;
   rec.interimResults=true;
   rec.maxAlternatives=1;
-  rec.onstart=()=>{recognitionStarting=false;status('Listening continuously · Chrome Speech Recognition',true);};
+  rec.onstart=()=>{
+   if(recognition!==rec)return;
+   recognitionStarting=false;restartAttempts=0;
+   status('Listening · speak normally; words will appear as you talk.',true);
+  };
   rec.onresult=e=>{
-   let finalChunk='';
-   let interim='';
+   if(recognition!==rec||!listening||paused)return;
+   let finalChunk='',interim='';
    for(let i=e.resultIndex;i<e.results.length;i++){
     const item=e.results[i];
     if(item.isFinal)finalChunk+=item[0].transcript+' ';
@@ -139,42 +147,44 @@ function startRecognitionSession(){
    if(finalChunk)appendFinal(finalChunk);
    textBox.value=recognitionFinalText+(interim?(recognitionFinalText?' ':'')+interim:'');
    count();
-   if(interim)status('Hearing: '+interim,true);
-   else if(listening&&!paused)status('Listening continuously · Chrome Speech Recognition',true);
+   if(interim)status('Recognizing: '+interim,true);
+   else status('Listening · Chrome Speech Recognition',true);
   };
   rec.onerror=e=>{
+   if(recognition!==rec)return;
    recognitionStarting=false;
-   if(e.error==='not-allowed'||e.error==='service-not-allowed'){
-    listening=false;controls();status('Microphone/speech permission denied. Allow microphone access for this site, then Start again.',false);
-    return;
-   }
-   if(e.error==='audio-capture'){
-    status('Chrome cannot access the microphone. Check the selected input device.',false);
-   }else if(e.error!=='no-speech'&&e.error!=='aborted'){
-    status('Speech recognition issue: '+e.error+' · restarting…',true);
+   if(e.error==='not-allowed'||e.error==='service-not-allowed'||e.error==='language-not-supported'){
+    listening=false;paused=false;clearTimeout(restartTimer);restartTimer=null;
+    recognition=null;controls();
+    const msg=e.error==='language-not-supported'?'This speech language is not supported. Choose English (US) or English (UK).':'Chrome blocked speech recognition. Check this site’s microphone permission and Chrome microphone access.';
+    status(msg,false);
+   }else if(e.error==='no-speech'){
+    status('No speech detected · keeping dictation active…',true);
+   }else if(e.error==='audio-capture'){
+    status('Chrome cannot access the microphone · checking again…',true);
+   }else if(e.error==='network'){
+    status('Chrome speech service had a network error · retrying…',true);
+   }else if(e.error!=='aborted'){
+    status('Speech recognition error: '+e.error+' · retrying…',true);
    }
   };
   rec.onend=()=>{
-   recognitionStarting=false;
-   if(recognition===rec)recognition=null;
-   if(listening&&!paused){
-    status('Speech session ended · restarting automatically…',true);
-    scheduleRecognitionRestart();
-   }
+   if(recognition!==rec)return;
+   recognition=null;recognitionStarting=false;
+   if(listening&&!paused)scheduleRecognitionRestart();
   };
   rec.start();
  }catch(e){
+  if(recognition)recognition=null;
   recognitionStarting=false;
-  if(listening&&!paused){
-   status('Could not restart speech recognition: '+(e.message||e),true);
-   scheduleRecognitionRestart();
-  }
+  if(listening&&!paused)scheduleRecognitionRestart();
+  status('Could not start speech recognition: '+(e.message||e),true);
  }
 }
 function start(){
  if(listening)return;
  if(!SpeechRecognition){status('Chrome Speech Recognition is unavailable in this browser. Open this page in Google Chrome.',false);return}
- listening=true;paused=false;recognitionFinalText=textBox.value.trimEnd();controls();
+ listening=true;paused=false;restartAttempts=0;recognitionFinalText=textBox.value.trimEnd();controls();
  $('pause').textContent='Ⅱ Pause';
  status('Starting Chrome Speech Recognition…',true);
  startRecognitionSession();
@@ -182,22 +192,22 @@ function start(){
 function stop(){
  listening=false;paused=false;clearTimeout(restartTimer);restartTimer=null;
  const rec=recognition;recognition=null;recognitionStarting=false;
- if(rec){rec.onend=null;rec.onerror=null;try{rec.stop()}catch(e){}}
+ if(rec){rec.onend=null;rec.onerror=null;rec.onresult=null;try{rec.stop()}catch(e){}}
  queue=[];if(currentAudio){currentAudio.pause();currentAudio=null}busy=false;playing=false;
  controls();status('Dictation stopped.',false);
 }
 $('load').onclick=()=>loadModel().catch(()=>{});
 $('start').onclick=()=>start();$('stop').onclick=stop;
-$('pause').onclick=()=>{if(!listening)return;paused=!paused;$('pause').textContent=paused?'▶ Resume':'Ⅱ Pause';if(paused){clearTimeout(restartTimer);if(recognition){const rec=recognition;recognition=null;rec.onend=null;try{rec.stop()}catch(e){}}status('Dictation paused.',false)}else{status('Resuming Chrome Speech Recognition…',true);startRecognitionSession()}};
+$('pause').onclick=()=>{if(!listening)return;paused=!paused;$('pause').textContent=paused?'▶ Resume':'Ⅱ Pause';if(paused){clearTimeout(restartTimer);restartTimer=null;const rec=recognition;recognition=null;recognitionStarting=false;if(rec){rec.onend=null;rec.onerror=null;rec.onresult=null;try{rec.stop()}catch(e){}}status('Dictation paused.',false)}else{recognitionStarting=false;status('Resuming Chrome Speech Recognition…',true);startRecognitionSession()}};
 $('read').onclick=()=>enqueue(textBox.value.trim());
 $('preview').onclick=()=>enqueue('Hello! This is a preview of the selected Kokoro neural AI voice.');
 $('pauseRead').onclick=()=>{if(currentAudio){if(currentAudio.paused)currentAudio.play();else currentAudio.pause()}};
-$('clear').onclick=()=>{textBox.value='';count()};
+$('clear').onclick=()=>{recognitionFinalText='';textBox.value='';count()};
 $('copy').onclick=async()=>{try{await navigator.clipboard.writeText(textBox.value);status('Transcript copied.',false)}catch(e){textBox.select();document.execCommand('copy');status('Transcript copied.',false)}};
 $('speed').oninput=()=>$('speedOut').textContent=Number($('speed').value).toFixed(2)+'×';
 $('volume').oninput=()=>{$('volumeOut').textContent=Math.round(Number($('volume').value)*100)+'%';if(currentAudio)currentAudio.volume=Number($('volume').value)};
-textBox.addEventListener('input',count);
-$('sttSupport').textContent='Local Whisper · CPU';
+textBox.addEventListener('input',()=>{recognitionFinalText=textBox.value.trimEnd();count()});
+$('sttSupport').textContent='Chrome Speech Recognition';
 if(!SpeechRecognition){$('start').disabled=true;status('Chrome Speech Recognition is unavailable. Open this page in Google Chrome.',false)}
 </script>
 </body>
