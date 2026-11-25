@@ -73,15 +73,15 @@ impl VoiceApp {
 
 impl eframe::App for VoiceApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if let Some(child) = self.child.as_mut() {
-            match child.try_wait() {
-                Ok(Some(exit)) => {
-                    self.status = format!("Engine exited ({exit}). Check device names, model checkpoints, and reference WAV.");
-                    self.child = None;
-                }
-                Ok(None) => self.status = "Conversion process is running.".into(),
-                Err(e) => self.status = format!("Could not read engine status: {e}"),
+        let child_state = self.child.as_mut().map(|child| child.try_wait());
+        match child_state {
+            Some(Ok(Some(exit))) => {
+                self.status = format!("Engine exited ({exit}). Check device names, model checkpoints, and reference WAV.");
+                self.child = None;
             }
+            Some(Ok(None)) => self.status = "Conversion process is running.".into(),
+            Some(Err(e)) => self.status = format!("Could not read engine status: {e}"),
+            None => {}
         }
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Rust WAV Reference Voice Changer");
