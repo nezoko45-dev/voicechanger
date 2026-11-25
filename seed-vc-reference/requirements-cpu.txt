@@ -13,3 +13,4 @@ funasr>=1.2.7
 numpy==1.26.4
 pyyaml
 python-dotenv
+imageio-ffmpeg==0.6.0
