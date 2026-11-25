@@ -5,6 +5,11 @@ on:
     paths:
       - "rust-wav-reference/**"
       - ".github/workflows/rust-wav-reference-windows.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "rust-wav-reference/**"
+      - ".github/workflows/rust-wav-reference-windows.yml"
   workflow_dispatch:
 jobs:
   build:
