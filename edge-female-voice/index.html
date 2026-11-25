@@ -23,7 +23,7 @@ select,input[type=range]{width:100%}select{background:#111520;color:var(--text);
 </style>
 </head>
 <body><main>
-<header class="hero"><div class="eyebrow">Edge · Tone.js · Live microphone</div><h1>Female Voice Studio</h1><p class="sub">Live microphone pitch shifting with Tone.js, plus EQ shaping for a softer, brighter feminine-style tone. No Signalsmith engine, Python, or voice model.</p></header>
+<header class="hero"><div class="eyebrow">Edge · Tone.js · Live microphone</div><h1>Female Voice Studio</h1><p class="sub">Live microphone pitch shifting with Tone.js, plus EQ shaping for a softer, brighter feminine-style tone.</p></header>
 <section class="panel">
 <h2>Audio devices</h2><div class="grid">
 <div><label for="mic">Microphone input</label><select id="mic"><option value="">Default microphone</option></select></div>
@@ -39,12 +39,12 @@ select,input[type=range]{width:100%}select{background:#111520;color:var(--text);
 <div class="control"><label for="brightness">Brightness / presence <span class="value" id="brightnessVal">48%</span></label><input id="brightness" type="range" min="0" max="100" value="48"></div>
 <div class="control"><label for="warmth">Warmth <span class="value" id="warmthVal">50%</span></label><input id="warmth" type="range" min="0" max="100" value="50"></div>
 <div class="control"><label for="wet">Processed voice mix <span class="value" id="wetVal">100%</span></label><input id="wet" type="range" min="0" max="100" value="100"></div>
-<p class="note">Tone.js pitch shifting does not independently move vocal formants. These EQ controls shape the tone, but they cannot guarantee a natural female voice. Keep pitch moderate to avoid a cartoon effect.</p>
+<p class="note">Tone.js PitchShift changes pitch but does not independently shift vocal formants. EQ shapes the tone; moderate pitch settings help avoid a cartoon effect.</p>
 </section>
 <section class="panel">
 <h2>Live conversion</h2><div class="buttons"><button id="start">Start microphone</button><button id="stop" class="secondary" disabled>Stop</button></div>
 <div class="status" id="status" role="status">Ready. Press Start microphone and allow Edge microphone access.</div>
-<div class="meter"><div id="level"></div></div><p class="note" id="engineInfo">Tone.js engine is ready to load.</p>
+<div class="meter"><div id="level"></div></div><p class="note" id="engineInfo">Tone.js engine is ready.</p>
 <p class="note warn">This processes live microphone audio only. It does not change Edge's built-in text-to-speech voice.</p>
 </section>
 <p class="footer">Audio is processed locally in this browser tab. Keep Edge open while using the converted microphone. For VRChat, route the output through VoiceMeeter.</p>
@@ -52,10 +52,9 @@ select,input[type=range]{width:100%}select{background:#111520;color:var(--text);
 <script type="module">
 import * as Tone from "https://cdn.jsdelivr.net/npm/tone@15.1.22/+esm";
 const $=id=>document.getElementById(id);
-let ctx=null,stream=null,source=null,destination=null,player=null,analyser=null,meterTimer=null;
-let pitchNode=null,lowShelf=null,highpass=null,bodyEq=null,presenceEq=null,airEq=null,compressor=null,wetGain=null,dryGain=null;
-const status=m=>$("status").textContent=m;
-const val=id=>Number($(id).value);
+let ctx=null,micNode=null,destination=null,player=null,analyser=null,meterTimer=null;
+let pitchNode=null,lowShelf=null,bodyEq=null,presenceEq=null,airEq=null,compressor=null,wetGain=null,dryGain=null;
+const status=m=>$("status").textContent=m, val=id=>Number($(id).value);
 function labels(){
  $("pitchVal").textContent=(val("pitch")>=0?"+":"")+val("pitch").toFixed(1)+" semitones";
  $("brightnessVal").textContent=val("brightness")+"%";$("warmthVal").textContent=val("warmth")+"%";$("wetVal").textContent=val("wet")+"%";
@@ -63,7 +62,7 @@ function labels(){
 function apply(){
  labels();if(!ctx||!pitchNode)return;
  pitchNode.pitch=val("pitch");
- const b=val("brightness"),w=val("warmth");
+ const b=val("brightness),w=val("warmth");
  presenceEq.gain.setTargetAtTime((b-50)*.12,ctx.currentTime,.04);
  airEq.gain.setTargetAtTime((b-50)*.07,ctx.currentTime,.04);
  bodyEq.gain.setTargetAtTime((w-50)*.10,ctx.currentTime,.04);
@@ -90,38 +89,38 @@ $("refresh").onclick=refreshDevices;
 async function start(){
  $("start").disabled=true;
  try{
-  if(!navigator.mediaDevices?.getUserMedia)throw Error("Open this page through its HTTPS GitHub Pages address in Edge.");
-  stream=await navigator.mediaDevices.getUserMedia({audio:{deviceId:$("mic").value?{exact:$("mic").value}:undefined,echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1}});
+  if(!navigator.mediaDevices?.getUserMedia)throw Error("Open the HTTPS GitHub Pages address in Edge.");
+  // Tone.UserMedia owns the microphone node, so Tone.js handles all Tone-to-Tone connections.
   ctx=new AudioContext({latencyHint:"interactive"});await ctx.resume();
-  // Give Tone.js the same AudioContext used by the microphone and output stream.
-  Tone.setContext(ctx);
-  source=ctx.createMediaStreamSource(stream);
-  pitchNode=new Tone.PitchShift({pitch:val("pitch"),windowSize:.1,delayTime:0.03,feedback:0});
-  highpass=ctx.createBiquadFilter();highpass.type="highpass";highpass.frequency.value=85;
-  lowShelf=ctx.createBiquadFilter();lowShelf.type="lowshelf";lowShelf.frequency.value=180;lowShelf.gain.value=0;
-  bodyEq=ctx.createBiquadFilter();bodyEq.type="peaking";bodyEq.frequency.value=900;bodyEq.Q.value=.8;bodyEq.gain.value=0;
-  presenceEq=ctx.createBiquadFilter();presenceEq.type="peaking";presenceEq.frequency.value=3200;presenceEq.Q.value=.8;presenceEq.gain.value=0;
-  airEq=ctx.createBiquadFilter();airEq.type="highshelf";airEq.frequency.value=6500;airEq.gain.value=0;
+  Tone.setContext(new Tone.Context(ctx));
+  micNode=new Tone.UserMedia();
+  await micNode.open($("mic").value||undefined);
+  pitchNode=new Tone.PitchShift({pitch:val("pitch"),windowSize:.1,delayTime:.03,feedback:0});
+  lowShelf=ctx.createBiquadFilter();lowShelf.type="lowshelf";lowShelf.frequency.value=180;
+  bodyEq=ctx.createBiquadFilter();bodyEq.type="peaking";bodyEq.frequency.value=900;bodyEq.Q.value=.8;
+  presenceEq=ctx.createBiquadFilter();presenceEq.type="peaking";presenceEq.frequency.value=3200;presenceEq.Q.value=.8;
+  airEq=ctx.createBiquadFilter();airEq.type="highshelf";airEq.frequency.value=6500;
   compressor=ctx.createDynamicsCompressor();compressor.threshold.value=-22;compressor.knee.value=12;compressor.ratio.value=2;compressor.attack.value=.01;compressor.release.value=.15;
   wetGain=ctx.createGain();dryGain=ctx.createGain();destination=ctx.createMediaStreamDestination();
-  // Tone's pitch shifter feeds native Web Audio EQ, compressor and device-selectable output.
-  source.connect(highpass);highpass.connect(pitchNode.input);pitchNode.output.connect(lowShelf);lowShelf.connect(bodyEq);bodyEq.connect(presenceEq);presenceEq.connect(airEq);airEq.connect(compressor);compressor.connect(wetGain);wetGain.connect(destination);
-  source.connect(dryGain);dryGain.connect(destination);
+  // Tone.UserMedia.connect() and PitchShift.connect() safely bridge into native Web Audio nodes.
+  micNode.connect(pitchNode);
+  pitchNode.connect(lowShelf);lowShelf.connect(bodyEq);bodyEq.connect(presenceEq);presenceEq.connect(airEq);airEq.connect(compressor);compressor.connect(wetGain);wetGain.connect(destination);
+  micNode.connect(dryGain);dryGain.connect(destination);
   player=new Audio();player.autoplay=true;player.playsInline=true;player.srcObject=destination.stream;
   if($("output").value){if(!player.setSinkId)throw Error("Output-device selection is not supported by this Edge version.");await player.setSinkId($("output").value);}
   await player.play();
-  analyser=ctx.createAnalyser();analyser.fftSize=256;source.connect(analyser);const data=new Uint8Array(analyser.frequencyBinCount);
+  analyser=ctx.createAnalyser();analyser.fftSize=256;micNode.connect(analyser);const data=new Uint8Array(analyser.frequencyBinCount);
   meterTimer=setInterval(()=>{if(!analyser)return;analyser.getByteTimeDomainData(data);let s=0;for(const x of data){const n=(x-128)/128;s+=n*n;}$("level").style.width=Math.min(100,Math.sqrt(s/data.length)*230)+"%";},80);
-  apply();$("stop").disabled=false;status("Tone.js pitch shifting is live. Speak and adjust the sliders.");$("engineInfo").textContent="Tone.js PitchShift · "+ctx.sampleRate+" Hz · output routed to "+($("output").selectedOptions[0]?.text||"default output");
+  apply();$("stop").disabled=false;status("Tone.js pitch shifting is live. Speak and adjust the sliders.");$("engineInfo").textContent="Tone.js PitchShift · "+ctx.sampleRate+" Hz · output: "+($("output").selectedOptions[0]?.text||"default");
   await refreshDevices();
  }catch(e){status("Could not start: "+e.message);await stop(false);}
 }
 async function stop(show=true){
  if(meterTimer)clearInterval(meterTimer);meterTimer=null;analyser=null;
  try{player?.pause();if(player)player.srcObject=null;}catch{}
- try{pitchNode?.dispose();}catch{}
- stream?.getTracks().forEach(t=>t.stop());try{await ctx?.close();}catch{}
- ctx=null;stream=null;source=null;destination=null;player=null;pitchNode=null;
+ try{micNode?.close();}catch{}try{pitchNode?.dispose();}catch{}
+ try{ctx?.close();}catch{}
+ ctx=null;micNode=null;destination=null;player=null;pitchNode=null;
  $("start").disabled=false;$("stop").disabled=true;$("level").style.width="0%";$("engineInfo").textContent="Tone.js engine stopped.";
  if(show)status("Stopped. Microphone capture has ended.");
 }
