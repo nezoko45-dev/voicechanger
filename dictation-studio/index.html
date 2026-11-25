@@ -46,7 +46,7 @@ textarea{width:100%;min-height:310px;resize:vertical;border:1px solid var(--line
 <div class="field"><div class="rangehead"><label for="volume">Playback volume</label><output id="volumeOut">100%</output></div><input id="volume" type="range" min="0" max="1" step=".05" value="1"></div>
 <div class="field"><label for="language">Dictation language</label><select id="language"><option value="en-US">English (United States)</option><option value="en-GB">English (United Kingdom)</option></select></div>
 <label class="check"><input type="checkbox" id="autoRead" checked> Read each completed phrase automatically</label>
-<label class="check"><input type="checkbox" id="pauseMic" checked> Pause microphone while AI generates / speaks</label>
+<label class="check"><input type="checkbox" id="pauseMic" checked disabled> Microphone stays active during AI speech</label>
 <div class="hint"><strong>This is actual AI speech synthesis.</strong><br>Kokoro-82M runs on your device using the WASM CPU backend. WebGPU is not required. The model and voice files download once from public model hosting and are cached by the browser. Your dictated text is synthesized locally and is not sent to a voice API. First load is large; keep this tab open.</div>
 </aside>
 </div>
@@ -85,7 +85,7 @@ async function playQueue(){
   const phrase=queue.shift();
   try{
    busy=true;
-   if($('pauseMic').checked&&recognition&&listening){try{recognition.stop()}catch(e){}}
+   // Keep speech recognition running while AI audio plays.
    status('Generating neural AI speech…',false);
    const result=await makeSpeech(phrase);
    await new Promise(resolve=>{
@@ -97,7 +97,7 @@ async function playQueue(){
   }catch(e){status('AI voice error: '+(e.message||e),false)}
  }
  currentAudio=null;busy=false;playing=false;
- if(shouldRestart&&!paused)startRecognition();
+ if(shouldRestart&&!paused&&!listening)startRecognition();
  else status('Ready.',false);
 }
 function enqueue(text){queue.push(text);playQueue()}
@@ -114,7 +114,7 @@ function startRecognition(){
    if(!busy)$('status').textContent='Listening'+(interim?' — '+interim:'…');
   };
   recognition.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed'){shouldRestart=false;listening=false;status('Microphone permission denied. Allow microphone access in site settings.',false);controls()}else if(e.error!=='no-speech'&&e.error!=='aborted')status('Speech recognition: '+e.error+' — retrying…',false)};
-  recognition.onend=()=>{if(shouldRestart&&!paused&&!busy){restartTimer=setTimeout(startRecognition,450)}else if(!shouldRestart){listening=false;controls();status('Dictation stopped.',false)}};
+  recognition.onend=()=>{if(shouldRestart&&!paused){restartTimer=setTimeout(startRecognition,250)}else if(!shouldRestart){listening=false;controls();status('Dictation stopped.',false)}};
   recognition.start();
  }catch(e){status('Could not start dictation: '+e.message,false);listening=false;controls()}
 }
