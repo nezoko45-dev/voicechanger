@@ -77,6 +77,21 @@ footer{text-align:center;color:#827b98;font-size:12px;padding:18px}
   <p class="note">Audio is processed locally in this browser. No microphone audio is uploaded. Keep this tab open while using the voice changer. Chrome/Edge may require a click on Start to enable microphone and audio playback.</p>
  </section>
  <footer>Voicechanger · Real-time microphone DSP · Signalsmith Stretch</footer>
+
+ <section class="panel" id="dictationPanel">
+  <h2>Continuous speech dictation · Chrome recognition</h2>
+  <p class="sub">Speak naturally. Chrome recognition restarts if it ends, finalized words are read aloud, then the text is cleared.</p>
+  <div class="row" style="margin-top:14px">
+   <div class="field"><label for="dictationVoice">Read-aloud voice (Edge / system voices)</label><select id="dictationVoice"><option value="">Loading available voices…</option></select></div>
+   <div class="field"><label for="dictationRate">Speaking speed <output id="dictationRateValue">1.00×</output></label><input id="dictationRate" type="range" min=".7" max="1.2" step=".05" value="1"></div>
+  </div>
+  <div class="actions"><button class="btn primary" id="dictationStart" type="button">Start continuous dictation</button><button class="btn" id="dictationStop" type="button" disabled>Stop dictation</button><button class="btn" id="dictationClear" type="button">Clear text</button></div>
+  <div class="status"><span class="dot" id="dictationDot"></span><span id="dictationStatus">Ready. Press Start and allow microphone access.</span></div>
+  <label for="dictationText" style="margin-top:16px">Recognized text (clears after read-aloud)</label>
+  <textarea id="dictationText" rows="4" readonly placeholder="Your recognized words will appear here…"></textarea>
+  <p class="note">Voice availability depends on the voices exposed to Chrome by Windows. Choose “Microsoft Ava” if it appears. Recognition uses Chrome's speech service; speech playback uses the selected voice from the browser voice list. Keep this page open while dictating.</p>
+ </section>
+
 </main>
 <script type="module">
 const $=id=>document.getElementById(id);
@@ -196,5 +211,76 @@ $('stop').addEventListener('click',stopAudio);
 navigator.mediaDevices?.addEventListener?.('devicechange',refreshDevices);
 refreshDevices().catch(()=>{});updateLabels();
 </script>
+
+<script>
+(()=>{
+ const $=id=>document.getElementById(id);
+ const textBox=$('dictationText'),voiceSelect=$('dictationVoice'),status=$('dictationStatus'),dot=$('dictationDot');
+ const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+ let recognition=null,running=false,restartTimer=null,queue=[],speaking=false,voices=[];
+ const setStatus=(s,live=running)=>{status.textContent=s;dot.classList.toggle('live',live)};
+ const preferred=v=>/microsoft.*ava|ava.*microsoft/i.test(v.name);
+ function loadVoices(){
+  if(!('speechSynthesis' in window)){voiceSelect.innerHTML='<option value="">Speech synthesis unavailable</option>';return}
+  voices=speechSynthesis.getVoices();
+  const previous=voiceSelect.value;
+  voiceSelect.innerHTML='';
+  if(!voices.length){voiceSelect.innerHTML='<option value="">No voices available yet</option>';return}
+  const sorted=[...voices].sort((a,b)=>Number(preferred(b))-Number(preferred(a))||a.name.localeCompare(b.name));
+  sorted.forEach(v=>{const o=document.createElement('option');o.value=String(voices.indexOf(v));o.textContent=v.name+' — '+v.lang+(preferred(v)?' · Ava':'');voiceSelect.append(o)});
+  const ava=sorted.find(preferred);
+  if(ava)voiceSelect.value=String(voices.indexOf(ava));
+  else if(previous&&[...voiceSelect.options].some(o=>o.value===previous))voiceSelect.value=previous;
+ }
+ speechSynthesis?.addEventListener?.('voiceschanged',loadVoices);loadVoices();setTimeout(loadVoices,500);setTimeout(loadVoices,1500);
+ $('dictationRate').addEventListener('input',()=>{$('dictationRateValue').textContent=Number($('dictationRate').value).toFixed(2)+'×'});
+ function selectedVoice(){return voices[Number(voiceSelect.value)]||null}
+ function speakNext(){
+  if(speaking||!queue.length)return;
+  const phrase=queue.shift();if(!phrase.trim()){speakNext();return}
+  speaking=true;
+  const utterance=new SpeechSynthesisUtterance(phrase);
+  utterance.voice=selectedVoice();utterance.rate=Number($('dictationRate').value);utterance.pitch=1;
+  utterance.onend=()=>{textBox.value='';speaking=false;setStatus(running?'Listening.':'Read aloud finished.',running);speakNext()};
+  utterance.onerror=e=>{console.warn('Speech playback:',e.error);textBox.value='';speaking=false;setStatus('Speech playback error: '+e.error,running);speakNext()};
+  speechSynthesis.speak(utterance);
+ }
+ function enqueue(phrase){
+  const clean=phrase.replace(/\s+/g,' ').trim();if(!clean)return;
+  textBox.value+=(textBox.value?' ':'')+clean;
+  queue.push(clean);setStatus('Reading recognized speech…',true);speakNext();
+ }
+ function scheduleRestart(delay=900){
+  clearTimeout(restartTimer);if(!running)return;
+  restartTimer=setTimeout(()=>{if(!running||!recognition)return;try{recognition.start()}catch(e){if(e.name!=='InvalidStateError'){console.warn(e);scheduleRestart(1500)}}},delay);
+ }
+ function start(){
+  if(!Recognition){setStatus('Chrome Speech Recognition is not available in this browser. Open this page in Chrome.',false);return}
+  if(running)return;
+  running=true;queue=[];speaking=false;
+  recognition=new Recognition();recognition.continuous=true;recognition.interimResults=false;recognition.lang=navigator.language||'en-US';recognition.maxAlternatives=1;
+  recognition.onstart=()=>setStatus('Listening continuously. Speak whenever you are ready.',true);
+  recognition.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)enqueue(e.results[i][0].transcript)}};
+  recognition.onerror=e=>{
+   if(e.error==='not-allowed'||e.error==='service-not-allowed'){running=false;$('dictationStart').disabled=false;$('dictationStop').disabled=true;setStatus('Microphone permission was denied. Allow microphone access for this site, then press Start.',false);return}
+   setStatus('Recognition interrupted ('+e.error+'). Reconnecting…',true);
+  };
+  recognition.onend=()=>{if(running){setStatus('Recognition ended. Restarting automatically…',true);scheduleRestart(1000)}else{setStatus('Dictation stopped.',false)}};
+  $('dictationStart').disabled=true;$('dictationStop').disabled=false;
+  try{recognition.start()}catch(e){running=false;$('dictationStart').disabled=false;$('dictationStop').disabled=true;setStatus('Could not start recognition: '+e.message,false)}
+ }
+ function stop(){
+  running=false;clearTimeout(restartTimer);
+  if(recognition){recognition.onend=null;try{recognition.stop()}catch{}recognition=null}
+  if(speechSynthesis)speechSynthesis.cancel();queue=[];speaking=false;
+  $('dictationStart').disabled=false;$('dictationStop').disabled=true;setStatus('Dictation stopped.',false);
+ }
+ $('dictationStart').addEventListener('click',start);
+ $('dictationStop').addEventListener('click',stop);
+ $('dictationClear').addEventListener('click',()=>{textBox.value='';queue=[];if(speechSynthesis)speechSynthesis.cancel();speaking=false;setStatus(running?'Listening. Text cleared.':'Text cleared.',running)});
+ window.addEventListener('beforeunload',stop);
+})();
+</script>
+
 </body>
 </html>
