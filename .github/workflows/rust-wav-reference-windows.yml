@@ -35,7 +35,7 @@ jobs:
         run: |
           $installRoot = Join-Path $env:RUNNER_TEMP "babiniku-install"
           $env:CARGO_TARGET_DIR = Join-Path $env:RUNNER_TEMP "babiniku-target"
-          cargo install --git https://github.com/m96-chan/babiniku.rs babiniku --features wavlm --locked --root $installRoot
+          cargo install --git https://github.com/m96-chan/babiniku.rs babiniku --features wavlm --root $installRoot
           if ($LASTEXITCODE -ne 0) { throw "Babiniku engine compilation failed." }
           $engine = Join-Path $installRoot "bin\babiniku.exe"
           if (-not (Test-Path $engine)) { throw "babiniku.exe was not produced." }
