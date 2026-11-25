@@ -1,0 +1,22 @@
+name: Rust WAV Reference Voice Changer (Windows)
+on:
+  push:
+    branches: [feature/rust-wav-reference-voicechanger]
+    paths:
+      - "rust-wav-reference/**"
+      - ".github/workflows/rust-wav-reference-windows.yml"
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build GUI
+        working-directory: rust-wav-reference
+        run: cargo build --release
+      - name: Upload GUI executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-wav-reference-voicechanger-windows
+          path: rust-wav-reference/target/release/rust-wav-reference-voicechanger.exe
