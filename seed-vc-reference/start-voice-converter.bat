@@ -14,9 +14,16 @@ if not exist "engine\real-time-gui.py" (
   exit /b 1
 )
 
+REM Public Seed-VC model downloads should not use an expired cached Hugging Face login.
+REM Disable implicit auth and clear token environment variables for this process only.
+set "HF_HUB_DISABLE_IMPLICIT_TOKEN=1"
+set "HF_TOKEN="
+set "HUGGING_FACE_HUB_TOKEN="
+
 cd /d "%~dp0engine"
 echo Starting Seed-VC. Choose your WAV or MP3 under "Load reference audio".
 echo Select your microphone as Input Device and Voicemeeter / virtual cable as Output Device.
+echo Public model downloads will run without your saved Hugging Face login.
 echo NOTE: CPU-only conversion may be too slow for smooth live use on this PC.
 "..\.venv\Scripts\python.exe" real-time-gui.py --fp16 False --gpu 0
 if errorlevel 1 (
