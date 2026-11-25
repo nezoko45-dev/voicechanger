@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build:
@@ -26,9 +27,14 @@ jobs:
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build desktop GUI
-        working-directory: rust-wav-reference
-        run: cargo build --release
+      - name: Download the previously CI-built GUI executable
+        uses: actions/download-artifact@v4
+        with:
+          name: rust-wav-reference-voicechanger-windows
+          path: gui-artifact
+          repository: nezoko45-dev/voicechanger
+          run-id: 45526912561
+          github-token: ${{ github.token }}
 
       - name: Build AI voice conversion engine (WAV reference support)
         shell: pwsh
