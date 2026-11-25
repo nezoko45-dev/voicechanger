@@ -55,7 +55,7 @@ textarea{width:100%;min-height:310px;resize:vertical;border:1px solid var(--line
 <script type="module">
 import { KokoroTTS } from "https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js";
 const $=id=>document.getElementById(id), Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
-let tts=null,recognition=null,listening=false,paused=false,shouldRestart=false,busy=false,queue=[],playing=false,restartTimer=null,currentAudio=null,micKeepAlive=null;
+let tts=null,recognition=null,listening=false,paused=false,shouldRestart=false,busy=false,queue=[],playing=false,restartTimer=null,currentAudio=null,micKeepAlive=null,restartDelay=300,recognitionStarting=false;
 const textBox=$('transcript');
 function status(s,live=listening){$('status').textContent=s;$('dot').classList.toggle('live',live)}
 function modelStatus(s,loaded=false){$('modelStatus').textContent=s;$('modelDot').classList.toggle('live',loaded)}
@@ -102,24 +102,25 @@ async function playQueue(){
 }
 function enqueue(text){queue.push(text);playQueue()}
 function startRecognition(){
- if(!Recognition||!shouldRestart||paused||busy)return;
+ if(!Recognition||!shouldRestart||paused||recognitionStarting||listening)return;
  clearTimeout(restartTimer);
+ recognitionStarting=true;
  try{
   recognition=new Recognition();recognition.continuous=true;recognition.interimResults=true;recognition.lang=$('language').value;
-  recognition.onstart=()=>{listening=true;status('Listening — speak normally.');controls();$('pause').textContent='Ⅱ Pause'};
+  recognition.onstart=()=>{recognitionStarting=false;restartDelay=300;listening=true;status('Listening — speak normally.');controls();$('pause').textContent='Ⅱ Pause'};
   recognition.onresult=e=>{
    let interim='',finalText='';
    for(let i=e.resultIndex;i<e.results.length;i++){const part=e.results[i][0].transcript;if(e.results[i].isFinal)finalText+=part;else interim+=part}
    if(finalText.trim()){const phrase=finalText.trim();textBox.value+=(textBox.value&&!/\s$/.test(textBox.value)?' ':'')+phrase+' ';count();if($('autoRead').checked)enqueue(phrase)}
    if(!busy)$('status').textContent='Listening'+(interim?' — '+interim:'…');
   };
-  recognition.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed'){shouldRestart=false;listening=false;status('Microphone permission denied. Allow microphone access in site settings.',false);controls()}else if(e.error!=='no-speech'&&e.error!=='aborted')status('Speech recognition: '+e.error+' — retrying…',false)};
-  recognition.onend=()=>{if(shouldRestart&&!paused){restartTimer=setTimeout(startRecognition,250)}else if(!shouldRestart){listening=false;controls();status('Dictation stopped.',false)}};
+  recognition.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed'){shouldRestart=false;listening=false;recognitionStarting=false;status('Microphone permission denied. Allow microphone access in site settings.',false);controls()}else if(e.error!=='no-speech'&&e.error!=='aborted')status('Speech recognition: '+e.error+' — reconnecting…',false)};
+  recognition.onend=()=>{listening=false;recognitionStarting=false;controls();if(shouldRestart&&!paused){const delay=restartDelay;restartDelay=Math.min(2000,restartDelay*1.5);clearTimeout(restartTimer);restartTimer=setTimeout(startRecognition,delay);status('Reconnecting microphone recognition…',false)}else if(!shouldRestart){status('Dictation stopped.',false)}};
   recognition.start();
- }catch(e){status('Could not start dictation: '+e.message,false);listening=false;controls()}
+ }catch(e){recognitionStarting=false;listening=false;controls();if(shouldRestart&&!paused){clearTimeout(restartTimer);restartTimer=setTimeout(startRecognition,restartDelay);restartDelay=Math.min(2000,restartDelay*1.5);status('Reconnecting after recognition error…',false)}else status('Could not start dictation: '+e.message,false)}
 }
 async function start(){if(!Recognition){status('Speech recognition is unavailable. Try current Edge or Chrome.',false);return}shouldRestart=true;paused=false;try{if(!micKeepAlive){status('Activating microphone…',false);micKeepAlive=await navigator.mediaDevices.getUserMedia({audio:true})}}catch(e){shouldRestart=false;status('Microphone access failed: '+(e.message||e),false);return}startRecognition()}
-function stop(){shouldRestart=false;paused=false;clearTimeout(restartTimer);if(micKeepAlive){micKeepAlive.getTracks().forEach(track=>track.stop());micKeepAlive=null}queue=[];if(recognition){try{recognition.stop()}catch(e){}}if(currentAudio){currentAudio.pause();currentAudio=null}busy=false;playing=false;listening=false;controls();status('Dictation stopped.',false)}
+function stop(){shouldRestart=false;paused=false;recognitionStarting=false;restartDelay=300;clearTimeout(restartTimer);if(micKeepAlive){micKeepAlive.getTracks().forEach(track=>track.stop());micKeepAlive=null}queue=[];if(recognition){try{recognition.stop()}catch(e){}}if(currentAudio){currentAudio.pause();currentAudio=null}busy=false;playing=false;listening=false;controls();status('Dictation stopped.',false)}
 $('load').onclick=()=>loadModel().catch(()=>{});
 $('start').onclick=start;$('stop').onclick=stop;
 $('pause').onclick=()=>{if(!listening)return;if(!paused){paused=true;try{recognition&&recognition.stop()}catch(e){}$('pause').textContent='▶ Resume';status('Dictation paused.',false)}else{paused=false;$('pause').textContent='Ⅱ Pause';startRecognition()}};
