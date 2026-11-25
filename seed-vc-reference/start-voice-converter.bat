@@ -17,7 +17,7 @@ if not exist "engine\real-time-gui.py" (
 echo.
 echo [1/3] Checking audio decoder...
 REM Repair the decoder dependency here too, so users do not have to guess whether setup was rerun.
-".venv\Scripts\python.exe" -m pip install --disable-pip-version-check imageio-ffmpeg==0.6.0 audioread
+".tools\uv.exe" pip install --python ".venv\Scripts\python.exe" imageio-ffmpeg==0.6.0 audioread
 if errorlevel 1 (
   echo Could not install the audio decoder. Check your internet connection and rerun setup.bat.
   pause
