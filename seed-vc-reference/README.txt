@@ -7,12 +7,13 @@ recording is used as the target voice; your microphone is the live source.
 
 INSTALL
 1. Extract this folder somewhere writable.
-2. Double-click setup.bat and let it finish.
-3. Double-click start-voice-converter.bat.
-4. In "Load reference audio", choose your WAV or MP3 voice sample.
-5. Select your actual microphone under Input Device.
-6. Select Voicemeeter Input / a virtual cable under Output Device.
-7. Start conversion in the GUI, then choose the matching virtual microphone
+2. Make sure the drive containing this folder has at least 6 GB free.
+3. Double-click setup.bat and let it finish.
+4. Double-click start-voice-converter.bat.
+5. In "Load reference audio", choose your WAV or MP3 voice sample.
+6. Select your actual microphone under Input Device.
+7. Select Voicemeeter Input / a virtual cable under Output Device.
+8. Start conversion in the GUI, then choose the matching virtual microphone
    in VRChat.
 
 NO MANUAL PYTHON INSTALL
@@ -38,3 +39,10 @@ TROUBLESHOOTING
   where available, then run setup.bat again.
 - If audio is choppy, try a larger Block Time and lower Diffusion Steps.
 - Use Voicemeeter or a virtual audio cable to route the converted output.
+
+DISK SPACE NOTE
+CPU PyTorch is a large download. Keep at least 6 GB free on the drive where
+this folder is located before running setup. The installer checks this first
+and avoids keeping duplicate package-cache copies. If setup previously failed
+because the disk was full, free space before retrying; do not delete the .venv
+folder unless you want to reinstall the environment from scratch.
