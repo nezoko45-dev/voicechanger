@@ -17,7 +17,7 @@ textarea{width:100%;min-height:310px;resize:vertical;border:1px solid var(--line
 </head>
 <body>
 <main>
-<header class="top"><div class="brand"><div class="logo">🎙️</div><div><h1>Dictation Studio</h1><p class="sub">Live dictation · Real neural AI voices · No API key</p></div></div><span class="tag">KOKORO AI · LOCAL</span></header>
+<header class="top"><div class="brand"><div class="logo">🎙️</div><div><h1>Dictation Studio</h1><p class="sub">Live dictation · Chatterbox voice cloning · No API key</p></div></div><span class="tag">CHATTERBOX · LOCAL</span></header>
 <div class="layout">
 <section class="panel">
 <h2>Live dictation</h2>
@@ -33,182 +33,130 @@ textarea{width:100%;min-height:310px;resize:vertical;border:1px solid var(--line
 </section>
 <aside class="panel">
 <h2>Neural AI voice</h2>
-<div class="toolbar"><button class="primary" id="load">⬇ Load AI voice model</button><button id="preview">▶ Preview voice</button></div>
-<div class="status"><span class="dot" id="modelDot"></span><span id="modelStatus">Not loaded · first download may take a few minutes</span></div>
+<div class="toolbar"><button class="primary" id="load">⬇ Load Chatterbox model</button><button id="preview">▶ Preview voice</button></div>
+<div class="status"><span class="dot" id="modelDot"></span><span id="modelStatus">Not loaded · first download is about 1.5 GB</span></div>
 <div class="bar"><i id="progress"></i></div>
-<div class="field"><label for="voice">Kokoro AI voice</label><select id="voice">
-<optgroup label="American female"><option value="af_heart">Heart — warm, expressive</option><option value="af_bella">Bella — expressive</option><option value="af_nicole">Nicole — soft</option><option value="af_sarah">Sarah</option><option value="af_sky">Sky</option><option value="af_nova">Nova</option><option value="af_kore">Kore</option><option value="af_aoede">Aoede</option><option value="af_alloy">Alloy</option><option value="af_jessica">Jessica</option><option value="af_river">River</option></optgroup>
-<optgroup label="British female"><option value="bf_emma">Emma</option><option value="bf_isabella">Isabella</option><option value="bf_alice">Alice</option><option value="bf_lily">Lily</option></optgroup>
-<optgroup label="American male"><option value="am_michael">Michael</option><option value="am_fenrir">Fenrir</option><option value="am_puck">Puck</option><option value="am_echo">Echo</option><option value="am_eric">Eric</option><option value="am_liam">Liam</option><option value="am_adam">Adam</option><option value="am_onyx">Onyx</option><option value="am_santa">Santa</option></optgroup>
-<optgroup label="British male"><option value="bm_george">George</option><option value="bm_lewis">Lewis</option><option value="bm_daniel">Daniel</option><option value="bm_fable">Fable</option></optgroup>
-</select></div>
-<div class="field"><div class="rangehead"><label for="speed">AI speaking speed</label><output id="speedOut">1.00×</output></div><input id="speed" type="range" min=".75" max="1.25" step=".05" value="1"></div>
+<div class="field"><label>Reference voice sample</label><button id="recordVoice" type="button">● Record 8-second sample</button><label for="voiceFile">Or upload a WAV, MP3, M4A, or audio file</label><input id="voiceFile" type="file" accept="audio/*"><small id="voiceName" style="color:var(--muted)">No reference sample loaded</small></div><div class="field"><div class="rangehead"><label for="exaggeration">Expressiveness</label><output id="exaggerationOut">0.50</output></div><input id="exaggeration" type="range" min="0" max="1.5" step="0.05" value="0.5"></div>
+<div class="field"><div class="rangehead"><label for="speed">Playback speed</label><output id="speedOut">1.00×</output></div><input id="speed" type="range" min=".75" max="1.25" step=".05" value="1"></div>
 <div class="field"><div class="rangehead"><label for="volume">Playback volume</label><output id="volumeOut">100%</output></div><input id="volume" type="range" min="0" max="1" step=".05" value="1"></div>
 <div class="field"><label for="language">Dictation language</label><select id="language"><option value="en-US">English (United States)</option><option value="en-GB">English (United Kingdom)</option></select></div>
 <label class="check"><input type="checkbox" id="autoRead" checked> Read each completed phrase automatically</label>
 <label class="check"><input type="checkbox" id="pauseMic" checked disabled> Keep microphone indicator steady during dictation</label>
-<div class="hint"><strong>This is actual AI speech synthesis.</strong><br>Kokoro-82M runs on your device using the WASM CPU backend. WebGPU is not required. The model and voice files download once from public model hosting and are cached by the browser. Your dictated text is synthesized locally and is not sent to a voice API. First load is large; keep this tab open.</div>
+<div class="hint"><strong>This is local AI voice cloning.</strong><br>Chatterbox runs in your browser with the WASM CPU backend; WebGPU is not required. Upload or record a clear 5–10 second reference voice. The model download is about 1.5 GB and may take a while. The reference audio and generated speech stay in your browser.</div>
 </aside>
 </div>
-<p class="footer">Dictation uses Chrome Speech Recognition; spoken output is generated by Kokoro.</p>
+<p class="footer">Dictation uses Chrome Speech Recognition; spoken output is generated locally by Chatterbox.</p>
 </main>
 <script type="module">
 const $=id=>document.getElementById(id);
-let KokoroTTS=null,tts=null,listening=false,paused=false,busy=false,queue=[],playing=false,currentAudio=null,recognition=null,restartTimer=null,recognitionStarting=false,recognitionFinalText='',restartAttempts=0;
 const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
 const textBox=$('transcript');
+let listening=false,paused=false,recognition=null,restartTimer=null,recognitionStarting=false;
+let recognitionFinalText='',restartAttempts=0,queue=[],playing=false,currentAudio=null;
+let worker=null,workerReady=false,speakerEncoded=false,speakerSamples=null;
+const SPEAKER_ID='reference-voice';
 function status(s,live=listening){$('status').textContent=s;$('dot').classList.toggle('live',live)}
 function modelStatus(s,loaded=false){$('modelStatus').textContent=s;$('modelDot').classList.toggle('live',loaded)}
 function count(){$('count').textContent=textBox.value.length.toLocaleString()+' characters'}
 function controls(){$('start').disabled=listening;$('stop').disabled=!listening;$('pause').disabled=!listening}
+function getWorker(){
+ if(worker)return worker;
+ worker=new Worker(new URL('chatterbox-worker.js',import.meta.url),{type:'module'});
+ worker.addEventListener('message',e=>{
+  const {type,data={}}=e.data||{};
+  if(type==='progress'){if(typeof data.progress==='number')$('progress').style.width=Math.max(2,Math.min(100,data.progress))+'%';if(data.status)modelStatus('Chatterbox: '+data.status);return}
+  const pending=worker._pending;
+  if(type==='error'){if(pending){worker._pending=null;pending.reject(new Error(data.message||'Chatterbox worker error'))}return}
+  if(pending&&type===pending.expected){worker._pending=null;pending.resolve(data)}
+ });
+ worker.addEventListener('error',e=>{if(worker?._pending){worker._pending.reject(new Error(e.message||'Chatterbox worker crashed'));worker._pending=null}});
+ return worker;
+}
+function workerCall(type,data={},transfer=[]){
+ const w=getWorker();if(w._pending)return Promise.reject(new Error('Chatterbox is still processing.'));
+ const expected=type+':complete';
+ return new Promise((resolve,reject)=>{w._pending={expected,resolve,reject};w.postMessage({type,data},transfer)});
+}
 async function loadModel(){
- if(tts)return tts;
- $('load').disabled=true;$('progress').style.width='3%';modelStatus('Loading Kokoro neural model…');
- const progress_callback=p=>{if(p&&p.progress!=null)$('progress').style.width=Math.max(3,Math.min(99,p.progress))+'%';if(p&&p.status)modelStatus('Loading: '+p.status)};
+ if(workerReady)return;
+ $('load').disabled=true;$('progress').style.width='2%';modelStatus('Starting Chatterbox · WASM CPU mode…');
+ try{await workerCall('load');workerReady=true;$('progress').style.width='100%';modelStatus('Chatterbox loaded · WASM CPU mode',true);$('load').textContent='✓ Chatterbox loaded';$('load').disabled=false;if(speakerSamples)await encodeSpeaker()}
+ catch(e){workerReady=false;$('load').disabled=false;$('progress').style.width='0%';modelStatus('Load failed: '+e.message);throw e}
+}
+async function decodeTo24kMono(file){
+ const raw=await file.arrayBuffer(),ctx=new AudioContext();let decoded;
+ try{decoded=await ctx.decodeAudioData(raw)}finally{await ctx.close()}
+ const length=Math.max(1,Math.round(decoded.duration*24000)),offline=new OfflineAudioContext(1,length,24000);
+ const source=offline.createBufferSource();source.buffer=decoded;source.connect(offline.destination);source.start();
+ return new Float32Array((await offline.startRendering()).getChannelData(0));
+}
+async function encodeSpeaker(){
+ if(!speakerSamples)throw new Error('Upload or record a reference voice sample first.');
+ if(!workerReady)await loadModel();
+ modelStatus('Preparing your reference voice…');
+ const copy=new Float32Array(speakerSamples);
+ await workerCall('encode_speaker',{id:SPEAKER_ID,audioData:copy.buffer},[copy.buffer]);
+ speakerEncoded=true;modelStatus('Chatterbox ready · reference voice loaded',true);
+}
+async function setSpeakerFile(file){
+ if(!file)return;speakerEncoded=false;modelStatus('Reading reference audio…');
  try{
-  modelStatus('Loading voice engine…');
-  if(!KokoroTTS){const mod=await import('https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js');KokoroTTS=mod.KokoroTTS;}
-  modelStatus('Loading WASM CPU backend (no GPU required)…');
-  tts=await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX',{dtype:'q8',device:'wasm',progress_callback});
-  $('progress').style.width='100%';modelStatus('AI model loaded · WASM CPU mode',true);$('load').textContent='✓ AI model loaded';$('load').disabled=false;return tts;
- }catch(e){tts=null;$('progress').style.width='0%';modelStatus('Model load failed: '+(e.message||e));$('load').disabled=false;throw e}
+  speakerSamples=await decodeTo24kMono(file);
+  if(speakerSamples.length<24000*3)throw new Error('Please use at least 3 seconds of clear speech.');
+  if(speakerSamples.length>24000*20)speakerSamples=speakerSamples.slice(0,24000*20);
+  $('voiceName').textContent=file.name+' · '+(speakerSamples.length/24000).toFixed(1)+' sec';
+  if(workerReady)await encodeSpeaker();else modelStatus('Reference sample ready · load Chatterbox to encode it');
+ }catch(e){speakerSamples=null;$('voiceName').textContent='No usable sample loaded';modelStatus('Voice sample error: '+e.message)}
+}
+function audioToWav(float32,sampleRate=24000){
+ const samples=float32 instanceof Float32Array?float32:new Float32Array(float32),buffer=new ArrayBuffer(44+samples.length*2),view=new DataView(buffer);
+ const write=(o,s)=>{for(let i=0;i<s.length;i++)view.setUint8(o+i,s.charCodeAt(i))};
+ write(0,'RIFF');view.setUint32(4,36+samples.length*2,true);write(8,'WAVE');write(12,'fmt ');view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);view.setUint32(24,sampleRate,true);view.setUint32(28,sampleRate*2,true);view.setUint16(32,2,true);view.setUint16(34,16,true);write(36,'data');view.setUint32(40,samples.length*2,true);
+ for(let i=0,o=44;i<samples.length;i++,o+=2){const s=Math.max(-1,Math.min(1,samples[i]));view.setInt16(o,s<0?s*32768:s*32767,true)}
+ return new Blob([buffer],{type:'audio/wav'});
 }
 async function makeSpeech(text){
- if(!text.trim())return;
- await loadModel();
- const audio=await tts.generate(text,{voice:$('voice').value,speed:Number($('speed').value)});
- const blob=audio.toBlob(),url=URL.createObjectURL(blob);
- return {url,blob};
+ if(!speakerSamples)throw new Error('Add a reference voice sample in the right panel first.');
+ if(!workerReady)await loadModel();if(!speakerEncoded)await encodeSpeaker();
+ modelStatus('Generating Chatterbox speech…',true);
+ const result=await workerCall('generate',{text,speakerId:SPEAKER_ID,exaggeration:Number($('exaggeration').value)});
+ return {url:URL.createObjectURL(audioToWav(new Float32Array(result.waveform),result.sampleRate||24000))};
 }
 async function playQueue(){
- if(playing||!queue.length)return;
- playing=true;
- while(queue.length){
-  const phrase=queue.shift();
-  try{
-   busy=true;
-   // Keep speech recognition running while AI audio plays.
-   status('Generating neural AI speech…',listening&&!paused);
-   const result=await makeSpeech(phrase);
-   await new Promise(resolve=>{
-    currentAudio=new Audio(result.url);currentAudio.volume=Number($('volume').value);
-    currentAudio.onended=()=>{URL.revokeObjectURL(result.url);resolve()};
-    currentAudio.onerror=()=>{URL.revokeObjectURL(result.url);resolve()};
-    currentAudio.play().catch(()=>resolve());
-   });
-  }catch(e){status('AI voice error: '+(e.message||e),listening&&!paused)}
- }
- currentAudio=null;busy=false;playing=false;
- if(listening&&!paused)status('Listening · Chrome Speech Recognition',true);
- else status('Ready.',false);
+ if(playing||!queue.length)return;playing=true;
+ while(queue.length){const phrase=queue.shift();try{
+  status('Generating Chatterbox voice…',listening&&!paused);const result=await makeSpeech(phrase);
+  await new Promise(resolve=>{currentAudio=new Audio(result.url);currentAudio.volume=Number($('volume').value);currentAudio.playbackRate=Number($('speed').value);currentAudio.onended=()=>{URL.revokeObjectURL(result.url);resolve()};currentAudio.onerror=()=>{URL.revokeObjectURL(result.url);resolve()};currentAudio.play().catch(()=>resolve())});
+ }catch(e){status('Chatterbox error: '+e.message,listening&&!paused)}}
+ currentAudio=null;playing=false;if(listening&&!paused)status('Listening · Chrome Speech Recognition',true);else status('Ready.',false);
 }
-function enqueue(text){queue.push(text);playQueue()}
-
-function appendFinal(text){
- const clean=(text||'').replace(/\\s+/g,' ').trim();
- if(!clean)return;
- recognitionFinalText=(recognitionFinalText?recognitionFinalText+' ':'')+clean;
- textBox.value=recognitionFinalText+' ';
- count();
- if($('autoRead').checked)enqueue(clean);
-}
-function scheduleRecognitionRestart(){
- if(!listening||paused)return;
- clearTimeout(restartTimer);
- const delay=Math.min(2500,400*Math.pow(1.5,Math.min(restartAttempts,4)));
- restartAttempts++;
- status('Speech session ended · restarting in '+(delay/1000).toFixed(1)+'s…',true);
- restartTimer=setTimeout(()=>{restartTimer=null;startRecognitionSession()},delay);
-}
+function enqueue(text){if(text.trim()){queue.push(text.trim());playQueue()}}
+function appendFinal(text){const clean=(text||'').replace(/\s+/g,' ').trim();if(!clean)return;recognitionFinalText=(recognitionFinalText?recognitionFinalText+' ':'')+clean;textBox.value=recognitionFinalText+' ';count();if($('autoRead').checked)enqueue(clean)}
+function scheduleRecognitionRestart(){if(!listening||paused)return;clearTimeout(restartTimer);const delay=Math.min(2500,400*Math.pow(1.5,Math.min(restartAttempts,4)));restartAttempts++;status('Speech session ended · restarting…',true);restartTimer=setTimeout(()=>{restartTimer=null;startRecognitionSession()},delay)}
 function startRecognitionSession(){
  if(!listening||paused||recognitionStarting||recognition)return;
- if(!SpeechRecognition){listening=false;controls();status('Chrome Speech Recognition is unavailable in this browser.',false);return}
+ if(!SpeechRecognition){listening=false;controls();status('Chrome Speech Recognition is unavailable.',false);return}
  try{
-  recognitionStarting=true;
-  const rec=new SpeechRecognition();
-  recognition=rec;
-  rec.lang=$('language').value;
-  rec.continuous=true;
-  rec.interimResults=true;
-  rec.maxAlternatives=1;
-  rec.onstart=()=>{
-   if(recognition!==rec)return;
-   recognitionStarting=false;restartAttempts=0;
-   status('Listening · speak normally; words will appear as you talk.',true);
-  };
-  rec.onresult=e=>{
-   if(recognition!==rec||!listening||paused)return;
-   let finalChunk='',interim='';
-   for(let i=e.resultIndex;i<e.results.length;i++){
-    const item=e.results[i];
-    if(item.isFinal)finalChunk+=item[0].transcript+' ';
-    else interim+=item[0].transcript;
-   }
-   if(finalChunk)appendFinal(finalChunk);
-   textBox.value=recognitionFinalText+(interim?(recognitionFinalText?' ':'')+interim:'');
-   count();
-   if(interim)status('Recognizing: '+interim,true);
-   else status('Listening · Chrome Speech Recognition',true);
-  };
-  rec.onerror=e=>{
-   if(recognition!==rec)return;
-   recognitionStarting=false;
-   if(e.error==='not-allowed'||e.error==='service-not-allowed'||e.error==='language-not-supported'){
-    listening=false;paused=false;clearTimeout(restartTimer);restartTimer=null;
-    recognition=null;controls();
-    const msg=e.error==='language-not-supported'?'This speech language is not supported. Choose English (US) or English (UK).':'Chrome blocked speech recognition. Check this site’s microphone permission and Chrome microphone access.';
-    status(msg,false);
-   }else if(e.error==='no-speech'){
-    status('No speech detected · keeping dictation active…',true);
-   }else if(e.error==='audio-capture'){
-    status('Chrome cannot access the microphone · checking again…',true);
-   }else if(e.error==='network'){
-    status('Chrome speech service had a network error · retrying…',true);
-   }else if(e.error!=='aborted'){
-    status('Speech recognition error: '+e.error+' · retrying…',true);
-   }
-  };
-  rec.onend=()=>{
-   if(recognition!==rec)return;
-   recognition=null;recognitionStarting=false;
-   if(listening&&!paused)scheduleRecognitionRestart();
-  };
-  rec.start();
- }catch(e){
-  if(recognition)recognition=null;
-  recognitionStarting=false;
-  if(listening&&!paused)scheduleRecognitionRestart();
-  status('Could not start speech recognition: '+(e.message||e),true);
- }
+  recognitionStarting=true;const rec=new SpeechRecognition();recognition=rec;rec.lang=$('language').value;rec.continuous=true;rec.interimResults=true;rec.maxAlternatives=1;
+  rec.onstart=()=>{if(recognition!==rec)return;recognitionStarting=false;restartAttempts=0;status('Listening · speak normally; words appear as you talk.',true)};
+  rec.onresult=e=>{if(recognition!==rec||!listening||paused)return;let finalChunk='',interim='';for(let i=e.resultIndex;i<e.results.length;i++){const item=e.results[i];if(item.isFinal)finalChunk+=item[0].transcript+' ';else interim+=item[0].transcript}if(finalChunk)appendFinal(finalChunk);textBox.value=recognitionFinalText+(interim?(recognitionFinalText?' ':'')+interim:'');count();if(interim)status('Recognizing: '+interim,true);else status('Listening · Chrome Speech Recognition',true)};
+  rec.onerror=e=>{if(recognition!==rec)return;recognitionStarting=false;if(['not-allowed','service-not-allowed','language-not-supported'].includes(e.error)){listening=false;paused=false;clearTimeout(restartTimer);recognition=null;controls();status(e.error==='language-not-supported'?'Choose a supported dictation language.':'Chrome blocked microphone or speech recognition. Check site permissions.',false)}else if(e.error==='network')status('Chrome speech service network error · retrying…',true);else if(e.error==='audio-capture')status('Microphone unavailable · retrying…',true);else if(e.error!=='no-speech'&&e.error!=='aborted')status('Speech error: '+e.error+' · retrying…',true)};
+  rec.onend=()=>{if(recognition!==rec)return;recognition=null;recognitionStarting=false;if(listening&&!paused)scheduleRecognitionRestart()};rec.start();
+ }catch(e){recognition=null;recognitionStarting=false;if(listening&&!paused)scheduleRecognitionRestart();status('Could not start recognition: '+e.message,true)}
 }
-function start(){
- if(listening)return;
- if(!SpeechRecognition){status('Chrome Speech Recognition is unavailable in this browser. Open this page in Google Chrome.',false);return}
- listening=true;paused=false;restartAttempts=0;recognitionFinalText=textBox.value.trimEnd();controls();
- $('pause').textContent='Ⅱ Pause';
- status('Starting Chrome Speech Recognition…',true);
- startRecognitionSession();
-}
-function stop(){
- listening=false;paused=false;clearTimeout(restartTimer);restartTimer=null;
- const rec=recognition;recognition=null;recognitionStarting=false;
- if(rec){rec.onend=null;rec.onerror=null;rec.onresult=null;try{rec.stop()}catch(e){}}
- queue=[];if(currentAudio){currentAudio.pause();currentAudio=null}busy=false;playing=false;
- controls();status('Dictation stopped.',false);
-}
+function start(){if(listening)return;if(!SpeechRecognition){status('Chrome Speech Recognition is unavailable. Open this page in Chrome.',false);return}listening=true;paused=false;restartAttempts=0;recognitionFinalText=textBox.value.trimEnd();controls();$('pause').textContent='Ⅱ Pause';status('Starting Chrome Speech Recognition…',true);startRecognitionSession()}
+function stop(){listening=false;paused=false;clearTimeout(restartTimer);restartTimer=null;const rec=recognition;recognition=null;recognitionStarting=false;if(rec){rec.onend=null;rec.onerror=null;rec.onresult=null;try{rec.stop()}catch(e){}}queue=[];if(currentAudio){currentAudio.pause();currentAudio=null}playing=false;controls();status('Dictation stopped.',false)}
 $('load').onclick=()=>loadModel().catch(()=>{});
-$('start').onclick=()=>start();$('stop').onclick=stop;
-$('pause').onclick=()=>{if(!listening)return;paused=!paused;$('pause').textContent=paused?'▶ Resume':'Ⅱ Pause';if(paused){clearTimeout(restartTimer);restartTimer=null;const rec=recognition;recognition=null;recognitionStarting=false;if(rec){rec.onend=null;rec.onerror=null;rec.onresult=null;try{rec.stop()}catch(e){}}status('Dictation paused.',false)}else{recognitionStarting=false;status('Resuming Chrome Speech Recognition…',true);startRecognitionSession()}};
-$('read').onclick=()=>enqueue(textBox.value.trim());
-$('preview').onclick=()=>enqueue('Hello! This is a preview of the selected Kokoro neural AI voice.');
-$('pauseRead').onclick=()=>{if(currentAudio){if(currentAudio.paused)currentAudio.play();else currentAudio.pause()}};
+$('start').onclick=start;$('stop').onclick=stop;
+$('pause').onclick=()=>{if(!listening)return;paused=!paused;$('pause').textContent=paused?'▶ Resume':'Ⅱ Pause';if(paused){clearTimeout(restartTimer);restartTimer=null;const rec=recognition;recognition=null;recognitionStarting=false;if(rec){rec.onend=null;rec.onerror=null;rec.onresult=null;try{rec.stop()}catch(e){}}status('Dictation paused.',false)}else{status('Resuming dictation…',true);startRecognitionSession()}};
+$('read').onclick=()=>enqueue(textBox.value.trim());$('preview').onclick=()=>enqueue('Hello! This is a preview of your Chatterbox cloned voice.');$('pauseRead').onclick=()=>{if(currentAudio){if(currentAudio.paused)currentAudio.play();else currentAudio.pause()}};
 $('clear').onclick=()=>{recognitionFinalText='';textBox.value='';count()};
 $('copy').onclick=async()=>{try{await navigator.clipboard.writeText(textBox.value);status('Transcript copied.',false)}catch(e){textBox.select();document.execCommand('copy');status('Transcript copied.',false)}};
-$('speed').oninput=()=>$('speedOut').textContent=Number($('speed').value).toFixed(2)+'×';
-$('volume').oninput=()=>{$('volumeOut').textContent=Math.round(Number($('volume').value)*100)+'%';if(currentAudio)currentAudio.volume=Number($('volume').value)};
-textBox.addEventListener('input',()=>{recognitionFinalText=textBox.value.trimEnd();count()});
-$('sttSupport').textContent='Chrome Speech Recognition';
-if(!SpeechRecognition){$('start').disabled=true;status('Chrome Speech Recognition is unavailable. Open this page in Google Chrome.',false)}
+$('voiceFile').onchange=e=>setSpeakerFile(e.target.files?.[0]);
+$('recordVoice').onclick=async()=>{const button=$('recordVoice');if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){modelStatus('Audio recording is not supported.');return}button.disabled=true;let stream,recorder,timer;try{stream=await navigator.mediaDevices.getUserMedia({audio:true});recorder=new MediaRecorder(stream);const chunks=[];recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};const stopped=new Promise(resolve=>recorder.onstop=resolve);recorder.start();button.textContent='● Recording 8 seconds…';modelStatus('Recording a clear voice sample…');timer=setTimeout(()=>{if(recorder.state!=='inactive')recorder.stop()},8000);await stopped;clearTimeout(timer);stream.getTracks().forEach(t=>t.stop());const blob=new Blob(chunks,{type:recorder.mimeType||'audio/webm'});await setSpeakerFile(new File([blob],'recorded-reference.webm',{type:blob.type}))}catch(e){if(stream)stream.getTracks().forEach(t=>t.stop());modelStatus('Recording failed: '+e.message)}finally{button.disabled=false;button.textContent='● Record 8-second sample'}};
+$('speed').oninput=()=>$('speedOut').textContent=Number($('speed').value).toFixed(2)+'×';$('volume').oninput=()=>{$('volumeOut').textContent=Math.round(Number($('volume').value)*100)+'%';if(currentAudio)currentAudio.volume=Number($('volume').value)};$('exaggeration').oninput=()=>$('exaggerationOut').textContent=Number($('exaggeration').value).toFixed(2);
+textBox.addEventListener('input',()=>{recognitionFinalText=textBox.value.trimEnd();count()});$('sttSupport').textContent='Chrome Speech Recognition';if(!SpeechRecognition){$('start').disabled=true;status('Chrome Speech Recognition is unavailable. Open this page in Chrome.',false)}
+
 </script>
 </body>
 </html>
