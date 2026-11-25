@@ -1,13 +1,12 @@
 # Edge Female Voice Studio
 
-Browser-based live microphone voice changer for Microsoft Edge using the official Signalsmith Stretch Web Audio WASM/AudioWorklet build.
+Browser-based live microphone voice changer for Microsoft Edge using Tone.js PitchShift and native Web Audio EQ.
 
 ## Run
-Open the GitHub Pages URL over HTTPS in Microsoft Edge, allow microphone access, choose your microphone and output, then Start microphone. For VRChat, select VoiceMeeter Output as the mic after routing this page's output into VoiceMeeter Input.
+Open the GitHub Pages URL over HTTPS in Microsoft Edge, allow microphone access, choose your microphone and output, then press **Start microphone**. For VRChat, route the page's output into VoiceMeeter Input and select VoiceMeeter Output as the VRChat microphone.
 
 ## Notes
-- Audio stays in the browser tab; there is no upload or server conversion.
-- Signalsmith Stretch handles pitch and formant shifting. The page uses the native Web Audio graph for routing and EQ.
-- Tone.js is intentionally not in the real-time signal path: Signalsmith Stretch requires a native AudioContext, and wrapping it in Tone.js' context abstraction can cause compatibility problems. Tone.js is not required for this effect chain.
-- Presets are starting points, not a guarantee of a naturally female voice. Adjust pitch and formant to suit the input voice.
-- Keep the tab open and active enough for Edge to process audio. Browser scheduling/background throttling can affect real-time performance.
+- Audio is processed locally in the browser tab; there is no upload or server conversion.
+- Tone.js PitchShift provides pitch shifting. Native Web Audio filters add brightness, warmth, and dynamics control.
+- Tone.js PitchShift does not independently shift vocal formants, so this cannot guarantee a naturally female voice. Use moderate pitch values to avoid a cartoon-like sound.
+- Keep the tab open while using the converted microphone. Browser scheduling and system load can affect real-time performance.
