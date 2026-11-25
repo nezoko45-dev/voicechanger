@@ -36,14 +36,26 @@ jobs:
           run-id: 45526912561
           github-token: ${{ github.token }}
 
-      - name: Build AI voice conversion engine (WAV reference support)
+      - name: Build AI voice conversion engine (pin compatible ONNX Runtime)
         shell: pwsh
         run: |
-          $installRoot = Join-Path $env:RUNNER_TEMP "babiniku-install"
+          $source = Join-Path $env:RUNNER_TEMP "babiniku-source"
           $env:CARGO_TARGET_DIR = Join-Path $env:RUNNER_TEMP "babiniku-target"
-          cargo install --git https://github.com/m96-chan/babiniku.rs babiniku --features wavlm --root $installRoot
+          git clone --depth 1 https://github.com/m96-chan/babiniku.rs.git $source
+          if ($LASTEXITCODE -ne 0) { throw "Could not clone Babiniku source." }
+
+          # Babiniku currently declares ort rc.10 without an exact-version pin.
+          # Cargo otherwise selects rc.15, whose Session::builder API is incompatible
+          # with the checked-in WavLM backend. Pin to the API version its code targets.
+          $manifest = Join-Path $source "Cargo.toml"
+          $toml = Get-Content $manifest -Raw
+          if (-not $toml.Contains('ort = "2.0.0-rc.10"')) { throw "Expected ort dependency declaration was not found; upstream changed." }
+          $toml = $toml.Replace('ort = "2.0.0-rc.10"', 'ort = "=2.0.0-rc.10"')
+          Set-Content -Path $manifest -Value $toml -Encoding utf8
+
+          cargo build --release --manifest-path (Join-Path $source "crates\babiniku\Cargo.toml") --features wavlm
           if ($LASTEXITCODE -ne 0) { throw "Babiniku engine compilation failed." }
-          $engine = Join-Path $installRoot "bin\babiniku.exe"
+          $engine = Join-Path $env:CARGO_TARGET_DIR "release\babiniku.exe"
           if (-not (Test-Path $engine)) { throw "babiniku.exe was not produced." }
           & $engine --version
           if ($LASTEXITCODE -ne 0) { throw "The packaged Babiniku engine failed its version check." }
@@ -55,7 +67,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $package | Out-Null
 
           Copy-Item "gui-artifact\rust-wav-reference-voicechanger.exe" (Join-Path $package "Rust-WAV-Reference-Voice-Changer.exe")
-          Copy-Item (Join-Path $env:RUNNER_TEMP "babiniku-install\bin\babiniku.exe") (Join-Path $package "babiniku.exe")
+          Copy-Item (Join-Path $env:RUNNER_TEMP "babiniku-target\release\babiniku.exe") (Join-Path $package "babiniku.exe")
 
           # The WavLM feature uses ONNX Runtime. Cargo's copy-dylibs feature
           # places the runtime beside the compiled binary; include it when present.
