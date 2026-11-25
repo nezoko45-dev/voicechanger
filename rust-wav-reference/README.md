@@ -17,7 +17,12 @@ A native Rust desktop control panel for live WAV-reference voice conversion. Thi
 2. In PowerShell, install the engine with the WAV voice-print feature:
 
    ```powershell
-   cargo install --git https://github.com/m96-chan/babiniku.rs babiniku --features wavlm
+   # The package workflow pins ONNX Runtime to the API version used by Babiniku:
+git clone https://github.com/m96-chan/babiniku.rs
+cd babiniku.rs
+(Get-Content Cargo.toml -Raw).Replace('ort = "2.0.0-rc.10"', 'ort = "=2.0.0-rc.10"') | Set-Content Cargo.toml
+cargo build --release --manifest-path crates/babiniku/Cargo.toml --features wavlm
+# Engine: target/release/babiniku.exe
    ```
 
    If Cargo's bin folder is not on PATH, copy the installed `babiniku.exe` next to this GUI or enter its full path.
