@@ -43,6 +43,83 @@ loadVoices();speechSynthesis.onvoiceschanged=loadVoices;
 function playNext(){if(isReading||!speechQueue.length)return;const u=new SpeechSynthesisUtterance(speechQueue.shift()),v=voices[Number(voiceSelect.value)];if(v)u.voice=v;u.rate=Number(document.querySelector('#rate').value);u.lang=v?.lang||'en-US';isReading=true;u.onend=u.onerror=()=>{isReading=false;playNext()};speechSynthesis.speak(u)}
 function enqueue(s){if(s.trim()){speechQueue.push(s.trim());playNext()}}
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let keepListening=false,restartTimer=null,restartDelay=350,lastError='';
+function setListeningUI(active){startBtn.disabled=active;stopBtn.disabled=!active}
+function startRecognition(){
+  if(!recognition||!keepListening||listening)return;
+  clearTimeout(restartTimer);
+  try{recognition.start()}catch(e){
+    statusBox.textContent='Reconnecting to microphone…';
+    restartTimer=setTimeout(startRecognition,700);
+  }
+}
+if(SR){
+  recognition=new SR();
+  recognition.lang='en-US';
+  recognition.continuous=true;
+  recognition.interimResults=true;
+  recognition.onstart=()=>{
+    listening=true;lastError='';finalText='';
+    setListeningUI(true);
+    statusBox.textContent='Listening…';
+  };
+  recognition.onresult=e=>{
+    let interim='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const t=e.results[i][0].transcript;
+      if(e.results[i].isFinal){
+        const clean=t.trim();
+        if(clean){finalText+=clean+' ';if(autoRead)enqueue(clean)}
+      }else interim+=t;
+    }
+    textBox.value=(textBox.dataset.before||'')+finalText+interim;
+    textBox.scrollTop=textBox.scrollHeight;
+  };
+  recognition.onerror=e=>{
+    lastError=e.error||'unknown';
+    if(lastError==='not-allowed'||lastError==='service-not-allowed'){
+      keepListening=false;clearTimeout(restartTimer);
+      statusBox.textContent='Microphone permission was denied. Allow microphone access, then press Start dictation.';
+      setListeningUI(false);
+    }else if(lastError==='audio-capture'){
+      keepListening=false;clearTimeout(restartTimer);
+      statusBox.textContent='No microphone was found. Check your input device, then press Start dictation.';
+      setListeningUI(false);
+    }else{
+      statusBox.textContent=lastError==='no-speech'?'No speech detected — restarting…':'Dictation connection interrupted — restarting…';
+    }
+  };
+  recognition.onend=()=>{
+    listening=false;
+    textBox.dataset.before=textBox.value;
+    finalText='';
+    if(keepListening){
+      setListeningUI(true);
+      statusBox.textContent='Session ended — restarting dictation…';
+      clearTimeout(restartTimer);
+      restartTimer=setTimeout(startRecognition,restartDelay);
+    }else{
+      setListeningUI(false);
+      statusBox.textContent='Dictation stopped.';
+    }
+  };
+  startBtn.onclick=()=>{
+    if(keepListening)return;
+    keepListening=true;
+    textBox.dataset.before=textBox.value?textBox.value.trimEnd()+' ':'';
+    finalText='';
+    statusBox.textContent='Starting microphone…';
+    startRecognition();
+  };
+  stopBtn.onclick=()=>{
+    keepListening=false;clearTimeout(restartTimer);
+    if(listening)recognition.stop();
+    else{setListeningUI(false);statusBox.textContent='Dictation stopped.'}
+  };
+}else{
+  startBtn.disabled=true;
+  statusBox.textContent='Speech recognition is not supported. Try the latest Microsoft Edge or Chrome.';
+}
 if(SR){recognition=new SR();recognition.lang='en-US';recognition.continuous=true;recognition.interimResults=true;let finalText='';recognition.onstart=()=>{listening=true;startBtn.disabled=true;stopBtn.disabled=false;statusBox.textContent='Listening…'};recognition.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal){finalText+=t.trim()+' ';if(autoRead)enqueue(t)}else interim+=t}textBox.value=(textBox.dataset.before||'')+finalText+interim;textBox.scrollTop=textBox.scrollHeight};recognition.onerror=e=>statusBox.textContent='Dictation error: '+e.error+'. Check microphone permission.';recognition.onend=()=>{listening=false;startBtn.disabled=false;stopBtn.disabled=true;textBox.dataset.before=textBox.value;finalText='';if(statusBox.textContent==='Listening…')statusBox.textContent='Dictation stopped.'};startBtn.onclick=()=>{textBox.dataset.before=textBox.value?textBox.value.trimEnd()+' ':'';finalText='';try{recognition.start()}catch(e){statusBox.textContent='Dictation is already starting.'}};stopBtn.onclick=()=>{if(listening)recognition.stop()}}else{startBtn.disabled=true;statusBox.textContent='Speech recognition is not supported. Try the latest Microsoft Edge.'}
 document.querySelector('#speak').onclick=()=>{const t=textBox.value.trim();if(!t)return; speechQueue=[];speechSynthesis.cancel();isReading=false;const u=new SpeechSynthesisUtterance(t),v=voices[Number(voiceSelect.value)];if(v)u.voice=v;u.rate=Number(document.querySelector('#rate').value);u.lang=v?.lang||'en-US';u.onstart=()=>statusBox.textContent='Reading aloud…';u.onend=()=>statusBox.textContent='Finished reading.';speechSynthesis.speak(u)};
 document.querySelector('#autoRead').onclick=()=>{autoRead=!autoRead;const b=document.querySelector('#autoRead');b.textContent='Auto read: '+(autoRead?'ON':'OFF');b.setAttribute('aria-pressed',String(autoRead));statusBox.textContent=autoRead?'Automatic read-aloud is on.':'Automatic read-aloud is off.'};
