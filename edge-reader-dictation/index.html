@@ -37,7 +37,7 @@ label{display:block;font-weight:600;margin:12px 0 6px}.settings{display:grid;gri
 </main>
 <script>
 const textBox=document.querySelector('#text'),statusBox=document.querySelector('#status'),startBtn=document.querySelector('#start'),stopBtn=document.querySelector('#stop'),voiceSelect=document.querySelector('#voice');
-let voices=[],recognition=null,listening=false,autoRead=true,speechQueue=[],isReading=false;
+let voices=[],recognition=null,listening=false,autoRead=true,speechQueue=[],isReading=false,finalText='';
 function loadVoices(){voices=speechSynthesis.getVoices();const old=voiceSelect.value;voiceSelect.innerHTML='';const ms=voices.filter(v=>/microsoft/i.test(v.name));const multi=ms.filter(v=>/ava/i.test(v.name)&&/multi.?lingual/i.test(v.name));const ava=ms.filter(v=>/ava/i.test(v.name)&&!/multi.?lingual/i.test(v.name));const preferred=[...multi,...ava,...ms.filter(v=>!/ava/i.test(v.name))];const ordered=[...preferred,...voices.filter(v=>!preferred.includes(v))];ordered.forEach(v=>{const o=document.createElement('option');o.value=voices.indexOf(v);o.textContent=v.name+' ('+v.lang+')'+(v.default?' — default':'');voiceSelect.append(o)});if(old&&[...voiceSelect.options].some(o=>o.value===old))voiceSelect.value=old;else if(preferred.length)voiceSelect.value=String(voices.indexOf(preferred[0]))}
 loadVoices();speechSynthesis.onvoiceschanged=loadVoices;
 function playNext(){if(isReading||!speechQueue.length)return;const u=new SpeechSynthesisUtterance(speechQueue.shift()),v=voices[Number(voiceSelect.value)];if(v)u.voice=v;u.rate=Number(document.querySelector('#rate').value);u.lang=v?.lang||'en-US';isReading=true;u.onend=u.onerror=()=>{isReading=false;playNext()};speechSynthesis.speak(u)}
